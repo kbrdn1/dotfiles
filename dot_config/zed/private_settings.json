@@ -1,0 +1,166 @@
+// Zed settings
+//
+// For information on how to configure Zed, see the Zed
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Zed's default settings without changing your
+// custom settings, run the `open default settings` command
+// from the command palette or from `Zed` application menu.
+{
+  "vim_mode": true,
+  "base_keymap": "VSCode",
+  "theme": "Catppuccin Macchiato",
+  "ui_font_size": 15,
+  "buffer_font_size": 14,
+  "autosave": {
+    "after_delay": {
+      "milliseconds": 1000
+    }
+  },
+  "semantic_index": {
+    "enabled": true
+  },
+  "preferred_line_length": 100,
+  "journal": {
+    "path": "~",
+    "hour_format": "hour12"
+  },
+  // "ui_font_family": "Monaspace Krypton",
+  // "buffer_font_family": "Monaspace Argon",
+  "format_on_save": "off",
+  "show_whitespaces": "selection",
+  "remove_trailing_whitespace_on_save": true,
+  "tab_size": 2,
+  "tabs": {
+    "git_status": true,
+    "close_position": "right"
+  },
+  "soft_wrap": "preferred_line_length",
+  "inlay_hints": {
+    "enabled": true,
+    "show_other_hints": true,
+    "show_parameter_hints": true,
+    "show_type_hints": true
+  },
+  "git": {
+    "git_gutter": "tracked_files",
+    "gutter_debounce": 1000
+  },
+  "lsp": {
+    "eslint": {
+      "settings": {
+        "codeActionOnSave": {
+          "rules": ["import/order"]
+        }
+      },
+      "initialization_options": {
+        "autoFix": true,
+        "format": true
+      }
+    },
+    "typescript-language-server": {
+      "initialization_options": {
+        "preferences": {
+          "includeInlayParameterNameHints": "all",
+          "includeInlayParameterNameHintsWhenArgumentMatchesName": true,
+          "includeInlayFunctionParameterTypeHints": true,
+          "includeInlayVariableTypeHints": true,
+          "includeInlayVariableTypeHintsWhenTypeMatchesName": false,
+          "includeInlayPropertyDeclarationTypeHints": true,
+          "includeInlayFunctionLikeReturnTypeHints": true,
+          "includeInlayEnumMemberValueHints": true
+        }
+      }
+    }
+  },
+  "formatter": "prettier",
+  "languages": {
+    "Python": {
+      "formatter": {
+        "external": {
+          "command": "black",
+          "arguments": ["-"]
+        }
+      }
+    },
+    "Markdown": {
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      }
+    },
+    "JSON": {
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      },
+      "code_actions_on_format": {
+        "source.fixAll": true
+      }
+    }
+  },
+  "PHP": {
+    "formatter": {
+      "external": {
+        "command": "pint",
+        "arguments": ["{buffer_path}"]
+      }
+    },
+    "code_actions_on_format": {
+      "source.fixAll": true,
+      "source.organizeImports": true
+    }
+  },
+  "TypeScript": {
+    "formatter": {
+      "external": {
+        "command": "prettier",
+        "arguments": ["--stdin-filepath", "{buffer_path}"]
+      }
+    },
+    "code_actions_on_format": {
+      "source.fixAll.eslint": true,
+      "source.organizeImports": true
+    }
+  },
+  "TSX": {
+    "formatter": {
+      "external": {
+        "command": "prettier",
+        "arguments": ["--stdin-filepath", "{buffer_path}"]
+      }
+    },
+    "code_actions_on_format": {
+      "source.fixAll.eslint": true,
+      "source.organizeImports": true
+    }
+  },
+  "JavaScript": {
+    "formatter": {
+      "external": {
+        "command": "prettier",
+        "arguments": ["--stdin-filepath", "{buffer_path}"]
+      }
+    },
+    "code_actions_on_format": {
+      "source.fixAll.eslint": true,
+      "source.organizeImports": true
+    }
+  },
+  "terminal": {
+    "font_family": "Monaspace Krypton Var",
+    "font_size": 14,
+    "shell": {
+      "program": "zsh"
+    }
+  },
+  "project_panel": {
+    "dock": "left",
+    "indent_size": 15,
+    "git_status": true
+  }
+}

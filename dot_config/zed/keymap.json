@@ -1,0 +1,23 @@
+[
+  {
+    "context": "Workspace",
+    "bindings": {
+      "cmd-ù": "terminal_panel::ToggleFocus",
+      "cmd-alt-i": "assistant::ToggleFocus"
+    }
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      "alt-shift-f": "editor::Format",
+      "cmd-shift-r": "editor::Rename",
+      "cmd-shift-k": "editor::DeleteLine",
+      "cmd-g": "editor::SelectLargerSyntaxNode",
+      "cmd-h": "editor::SelectSmallerSyntaxNode",
+      "alt-up": "editor::MoveLineUp",
+      "alt-down": "editor::MoveLineDown",
+      "alt-shift-p": "markdown::OpenPreview",
+      "cmd-i": "assistant::InlineAssist"
+    }
+  }
+]
