@@ -100,15 +100,18 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
+# Get user folder name
+export USER_FOLDER=$(basename $HOME)
+
 # bun completions
-[ -s "/Users/kylianb/.bun/_bun" ] && source "/Users/kylianb/.bun/_bun"
+[ -s "/Users/$USER_FOLDER/.bun/_bun" ] && source "/Users/$USER_FOLDER/.bun/_bun"
 
 # bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
 # pnpm
-export PNPM_HOME="/Users/kylianb/Library/pnpm"
+export PNPM_HOME="/Users/$USER_FOLDER/Library/pnpm"
 case ":$PATH:" in
   *":$PNPM_HOME:"*) ;;
   *) export PATH="$PNPM_HOME:$PATH" ;;
@@ -127,7 +130,6 @@ export PATH="/opt/homebrew/bin:$PATH"
 export HOMEBREW_NO_AUTO_UPDATE=1
 
 # ASDF Init
-echo -e "\n. $(brew --prefix asdf)/libexec/asdf.sh" >> ${ZDOTDIR:-~}/.zshrc
 . /usr/local/opt/asdf/libexec/asdf.sh
 
 # bison
@@ -135,5 +137,3 @@ export PATH="/usr/local/opt/bison/bin:$PATH"
 
 # pkg-config
 export PATH="/usr/local/opt/pkg-config/bin:$PATH"
-
-. /usr/local/opt/asdf/libexec/asdf.sh
