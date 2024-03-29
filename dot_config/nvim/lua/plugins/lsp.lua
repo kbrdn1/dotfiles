@@ -7,6 +7,13 @@ return {
     { "hrsh7th/nvim-cmp",                  commit = "538e37ba87284942c1d76ed38dd497e54e65b891" },
     { "hrsh7th/cmp-nvim-lsp",              commit = "5af77f54de1b16c34b23cba810150689a3a90312" },
     { "L3MON4D3/LuaSnip",                  tag = "v2.2.0" },
+    {
+      "zbirenbaum/copilot-cmp",
+      commit = "d427de01114f8d360de60f3eb569be52baf05d81",
+      config = function()
+        require("copilot_cmp").setup()
+      end
+    }
   },
   config = function()
     -- Default server
@@ -24,6 +31,7 @@ return {
       "tsserver",
       "volar",
       "yamlls",
+      "phpactor"
     }
 
     require("mason").setup()
@@ -72,6 +80,7 @@ return {
         end, { "i", "s" }),
       }),
       sources = cmp.config.sources({
+        { name = "copilot", group_index = 2 },
         { name = "nvim_lsp" },
         { name = "luasnip" },
       }, {
