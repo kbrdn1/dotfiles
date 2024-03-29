@@ -11,7 +11,7 @@ return {
       },
       change = {
         hl = "GitSignsChange",
-        text = "ﰣ",
+        text = "~",
         numhl = "GitSignsChangeNr",
         linehl = "GitSignsChangeLn",
       },
@@ -29,7 +29,7 @@ return {
       },
       changedelete = {
         hl = "GitSignsChange",
-        text = "ﰣ",
+        text = "~",
         numhl = "GitSignsChangeNr",
         linehl = "GitSignsChangeLn",
       },
