@@ -32,6 +32,29 @@ function keys.init()
         -- Other
         km("v", "J", ":m '>+1<CR>gv=gv", { desc = "Move line down", silent = true })
         km("v", "K", ":m '<-2<CR>gv=gv", { desc = "Move line up", silent = true })
+
+        -- Telescope
+        km("n", "<leader>ff", "<cmd>Telescope find_files<cr>", { desc = "Find files", silent = true })
+        km("n", "<leader>fg", "<cmd>Telescope live_grep<cr>", { desc = "Grep files", silent = true })
+        km("n", "<leader>fb", "<cmd>Telescope buffers<cr>", { desc = "Find buffers", silent = true })
+        km("n", "<leader>fh", "<cmd>Telescope help_tags<cr>", { desc = "Find help tags", silent = true })
+
+        -- Copilot Chat
+        km("n", "<leader>cci",
+                "<cmd>:lua function() local input = vim.fn.input('Ask Copilot: ') if input ~= '' then vim.cmd('CopilotChat ' .. input) end end<cr>",
+                { desc = "CopilotChat - Inline prompt", silent = true })
+        km("n", "<leader>cco", "<cmd>CopilotChatToggle<cr>", { desc = "CopilotChat - Toggle", silent = true })
+        km("n", "<leader>ccc", "<cmd>CopilotChatReset<cr>", { desc = "CopilotChat - Clear chat", silent = true })
+        km("n", "<leader>cce", "<cmd>CopilotChatExplain<cr>", { desc = "CopilotChat - Explain code", silent = true })
+        km("n", "<leader>cct", "<cmd>CopilotChatTests<cr>", { desc = "CopilotChat - Generate tests", silent = true })
+        km("n", "<leader>ccr", "<cmd>CopilotChatReview<cr>", { desc = "CopilotChat - Review code", silent = true })
+        km("n", "<leader>ccR", "<cmd>CopilotChatRefactor<cr>", { desc = "CopilotChat - Refactor code", silent = true })
+        km("n", "<leader>ccn", "<cmd>CopilotChatBetterNamings<cr>",
+                { desc = "CopilotChat - Better Naming", silent = true })
+        km("n", "<leader>ccff", "<cmd>CopilotChatFix<cr>", { desc = "CopilotChat - Fix", silent = true })
+        km("n", "<leader>ccfc", "<cmd>CopilotChatFixCode<cr>", { desc = "CopilotChat - Fix code", silent = true })
+        km("n", "<leader>ccfe", "<cmd>CopilotChatFixErrors<cr>", { desc = "CopilotChat - Fix errors", silent = true })
+        km("n", "<leader>ccfd", "<cmd>CopilotChatFixDiff<cr>", { desc = "CopilotChat - Fix diagnostics", silent = true })
 end
 
 return keys
