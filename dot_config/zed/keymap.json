@@ -13,7 +13,7 @@
       "cmd-shift-r": "editor::Rename",
       "cmd-shift-k": "editor::DeleteLine",
       "cmd-g": "editor::SelectLargerSyntaxNode",
-      "cmd-h": "editor::SelectSmallerSyntaxNode",
+      "cmd-shift-g": "editor::SelectSmallerSyntaxNode",
       "alt-up": "editor::MoveLineUp",
       "alt-down": "editor::MoveLineDown",
       "alt-shift-p": "markdown::OpenPreview",
