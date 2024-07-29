@@ -53,3 +53,8 @@ export PATH="/usr/local/opt/bison/bin:$PATH"
 
 # pkg-config
 export PATH="/usr/local/opt/pkg-config/bin:$PATH"
+
+# lazygit shortcut
+function lg() {
+  lazygit
+}
