@@ -1,0 +1,219 @@
+{
+  "html-template": {
+    "prefix": "html",
+    "body": [
+      "<!DOCTYPE html>",
+      "<html lang=\"en\">",
+      "<head>",
+      "  <meta charset=\"UTF-8\">",
+      "  <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">",
+      "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+      "  <title>$0</title>",
+      "</head>",
+      "<body>",
+      "  $1",
+      "</body>",
+      "</html>"
+    ],
+    "description": "HTML template"
+  },
+  "table": {
+    "prefix": "table",
+    "body": [
+      "<table>",
+      "  <thead>",
+      "    <tr>",
+      "      <th>$1</th>",
+      "      <th>$2</th>",
+      "    </tr>",
+      "  </thead>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>$3</td>",
+      "      <td>$4</td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>"
+    ],
+    "description": "HTML Table"
+  },
+  "css-template": {
+    "prefix": "css",
+    "body": [
+      "* {",
+      "  margin: 0;",
+      "  padding: 0;",
+      "  box-sizing: border-box;",
+      "}"
+    ],
+    "description": "CSS template"
+  },
+
+  "vue": {
+    "prefix": "vue",
+    "body": [
+      "<template>",
+      "    $0",
+      "</template>",
+      "",
+      "<script setup>",
+      "</script>"
+    ],
+    "description": "Vue 3 SFC"
+  },
+  "vue-ts": {
+    "prefix": "vts",
+    "body": [
+      "<template>",
+      "    $0",
+      "</template>",
+      "",
+      "<script setup lang=\"ts\">",
+      "</script>"
+    ],
+    "description": "Vue 3 SFC with TypeScript"
+  },
+  "vue-setup": {
+    "prefix": "vsetup",
+    "body": [
+      "<template>",
+      "    $0",
+      "</template>",
+      "",
+      "<script>",
+      "export default {",
+      "    setup() {",
+      "        return {",
+      "            $1",
+      "        }",
+      "    }",
+      "}",
+      "</script>"
+    ],
+    "description": "Vue 3 SFC with <script setup>"
+  },
+  "react-function-component": {
+    "prefix": "rfc",
+    "body": [
+      "import React from 'react';",
+      "",
+      "const $1 = () => {",
+      "    return (",
+      "        <div>",
+      "            $0",
+      "        </div>",
+      "    );",
+      "}",
+      "",
+      "export default $1;"
+    ],
+    "description": "React Function Component"
+  },
+  "react-function-compoenent-ts": {
+    "prefix": "rfcts",
+    "body": [
+      "import { FC } from 'react';",
+      "",
+      "const $1: FC = () => {",
+      "    return (",
+      "        <div>",
+      "            $0",
+      "        </div>",
+      "    );",
+      "}",
+      "",
+      "export default $1;"
+    ],
+    "description": "React Function Component with TypeScript"
+  },
+  "php": {
+    "prefix": "php",
+    "body": [
+      "<?php",
+      "",
+      "$0",
+      "",
+      "?>"
+    ],
+    "description": "PHP"
+  },
+  "console-log": {
+    "prefix": "cl",
+    "body": [
+      "console.log($0);"
+    ],
+    "description": "console.log"
+  },
+  "console-warn": {
+    "prefix": "cw",
+    "body": [
+      "console.warn($0);"
+    ],
+    "description": "console.warn"
+  },
+  "console-error": {
+    "prefix": "ce",
+    "body": [
+      "console.error($0);"
+    ],
+    "description": "console.error"
+  },
+  "fetch": {
+    "prefix": "fetch",
+    "body": [
+      "await fetch(`$1`, {",
+      "  method: '$2',",
+      "  headers: {",
+      "    'Content-Type': 'application/json',",
+      "  },",
+      "  body: JSON.stringify($3),",
+      "})",
+      ".then(res => res.json())",
+      ".then(data => console.log(data))",
+      ".catch(err => console.error(err));"
+    ],
+    "description": "fetch"
+  },
+  "import" : {
+    "prefix": "ip",
+    "body": [
+      "import $1 from '$2';"
+    ],
+    "description": "JS - import"
+  },
+  "import-all": {
+    "prefix": "ipa",
+    "body": [
+      "import * as $1 from '$2';"
+    ],
+    "description": "JS - import all"
+  },
+  "import-into": {
+    "prefix": "ipi",
+    "body": [
+      "import { $1 } from '$2';"
+    ],
+    "description": "JS - import into"
+  },
+  "export": {
+    "prefix": "exp",
+    "body": [
+      "export $1 from '$2';"
+    ],
+    "description": "JS - export"
+  },
+  "export-default": {
+    "prefix": "expd",
+    "body": [
+      "export default $1;"
+    ],
+    "description": "JS - export default"
+  },
+  "export-into": {
+    "prefix": "expi",
+    "body": [
+      "export { $1 } from '$2';"
+    ],
+    "description": "JS - export into"
+  }
+}
