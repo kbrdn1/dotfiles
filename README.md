@@ -110,3 +110,74 @@ chezmoi apply
 
 > [!NOTE]
 > Replace `<user>` with your username.
+
+## Usage 🚀
+
+### Navigation 🧭
+
+- Use `z` to quickly navigate to frequently visited directories.
+  ```bash
+  z projects
+  ```
+- Use `ls` to list directory contents with `eza` and `-l <number>` for a detailed tree view.
+  ```bash
+  eza -l 2
+  ```
+- Press `ctrl + t` or type `**` and press `tab` to open fzf and navigate to a directory or file.
+  ```bash
+  **<tab>
+  ```
+
+### Git 🌳
+
+- Use `git` to manage your repositories.
+  ```bash
+  git clone https://github.com/user/repo.git
+  ```
+- Use `lg` for a simple terminal UI for git commands.
+  ```bash
+  lg
+  ```
+
+### Docker 🐳
+
+- Use `docker` to manage your containers.
+  ```bash
+  docker run -d -p 80:80 nginx
+  ```
+- Use `docker-compose` to manage your multi-container Docker applications.
+  ```bash
+  docker-compose up -d
+  ```
+- Use `lzd` for a simple terminal UI for Docker.
+  ```bash
+  lzd
+  ```
+- Use `orbstack` app for a fast, lightweight Docker desktop alternative.
+
+### Help 🆘
+
+- Use `tldr` for general-purpose command-line help.
+  ```bash
+  tldr git
+  ```
+- Use `fk` to corrects your previous console command.
+  ```bash
+  fk
+  ```
+
+### Copilot 🤖
+
+- Use `gh copilot` to generate code with GitHub Copilot.
+  ```bash
+  gh copilot suggest
+  ```
+
+### Development 🛠
+
+- Use `asdf` to manage your versions.
+  ```bash
+  asdf list all <plugin>
+  ```
+- Use `composer` to manage your PHP dependencies.
+- Use `pnpm` to manage your Node.js dependencies.
