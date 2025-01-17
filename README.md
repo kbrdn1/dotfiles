@@ -88,7 +88,7 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 # Install CLI tools via Homebrew
-brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack
+brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack zsh-syntax-highlighting zsh-autosuggestions zsh-completions
 
 # Install applications via Homebrew Cask
 brew install --cask arc raycast zed ghostty warp postman slack discord figma docker whatsapp obsidian setapp
