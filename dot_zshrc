@@ -1,6 +1,10 @@
 # Path to your oh-my-zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
+# --- ZSH Aliases ---
+alias reload-zsh="source ~/.zshrc"
+alias edit-zsh="zed ~/.zshrc"
+
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time oh-my-zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
@@ -12,9 +16,26 @@ ZSH_THEME="refined"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(git)
+plugins=(git battery zsh-autosuggestions zsh-syntax-highlighting zsh-autosuggestions)
 
+eval "$(brew shellenv)"
 source $ZSH/oh-my-zsh.sh
+
+# history setup
+HISTFILE=$HOME/.zhistory
+SAVEHIST=1000
+HISTSIZE=999
+setopt share_history 
+setopt hist_expire_dups_first
+setopt hist_ignore_dups
+setopt hist_verify
+
+# completion using arrow keys (based on history)
+bindkey '^[[A' history-search-backward
+bindkey '^[[B' history-search-forward
+
+source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
 # --- User Folder ---
 export USER_FOLDER=$(basename $HOME)
@@ -26,10 +47,10 @@ alias laravel='php artisan'
 alias adonis='node ace'
 
 # --- BUN ---
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
+# export BUN_INSTALL="$HOME/.bun"
+# export PATH="$BUN_INSTALL/bin:$PATH"
 
-[ -s "/Users/$USER_FOLDER/.bun/_bun" ] && source "/Users/$USER_FOLDER/.bun/_bun"
+# [ -s "/Users/$USER_FOLDER/.bun/_bun" ] && source "/Users/$USER_FOLDER/.bun/_bun"
 
 # --- PNPM ---
 # export PNPM_HOME="/Users/$USER_FOLDER/Library/pnpm"
