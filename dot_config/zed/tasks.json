@@ -1,0 +1,6 @@
+[
+  {
+      "label": "Blame Around Line",
+      "command": "git blame $ZED_FILE -L $(($ZED_ROW - 5)),$(($ZED_ROW + 5))"
+    }
+]

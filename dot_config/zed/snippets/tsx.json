@@ -1,0 +1,19 @@
+{
+  "react-function-component": {
+    "prefix": "rfcts",
+    "body": [
+      "import { FC } from 'react'",
+      "",
+      "const $1: FC = () => {",
+      "    return (",
+      "        <div>",
+      "            $0",
+      "        </div>",
+      "    )",
+      "}",
+      "",
+      "export default $1"
+    ],
+    "description": "React Function Component with TypeScript"
+  }
+}

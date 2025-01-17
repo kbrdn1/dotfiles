@@ -1,0 +1,138 @@
+{
+  "html-template": {
+    "prefix": "html",
+    "body": [
+      "<!DOCTYPE html>",
+      "<html lang=\"en\">",
+      "<head>",
+      "  <meta charset=\"UTF-8\">",
+      "  <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">",
+      "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+      "  <title>$0</title>",
+      "</head>",
+      "<body>",
+      "  $1",
+      "</body>",
+      "</html>"
+    ],
+    "description": "HTML template"
+  },
+  "html-template-seo": {
+    "prefix": "html-seo",
+    "body": [
+      "<!DOCTYPE html>",
+      "<html lang=\"en\">",
+      "<head>",
+      "  <meta charset=\"UTF-8\">",
+      "  <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">",
+      "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+      "  <meta name=\"description\" content=\"$1\">",
+      "  <meta name=\"keywords\" content=\"$2\">",
+      "  <meta name=\"author\" content=\"$3\">",
+      "  <meta name=\"robots\" content=\"$4\">",
+      "  <meta property=\"og:title\" content=\"$5\">",
+      "  <meta property=\"og:description\" content=\"$6\">",
+      "  <meta property=\"og:image\" content=\"$7\">",
+      "  <meta property=\"og:url\" content=\"$8\">",
+      "  <meta property=\"og:type\" content=\"website\">",
+      "  <meta property=\"og:locale\" content=\"en_US\">",
+      "  <meta name=\"twitter:card\" content=\"$9\">",
+      "  <meta name=\"twitter:title\" content=\"$10\">",
+      "  <meta name=\"twitter:description\" content=\"$11\">",
+      "  <meta name=\"twitter:image\" content=\"$12\">",
+      "  <meta name=\"twitter:site\" content=\"@$13\">",
+      "  <meta name=\"twitter:creator\" content=\"@$14\">",
+      "  <title>$0</title>",
+      "</head>",
+      "<body>",
+      "  $15",
+      "</body>",
+      "</html>"
+    ],
+    "description": "HTML template with enhanced SEO and social media"
+  },
+  "meta": {
+    "prefix": "meta",
+    "body": [
+      "<meta name=\"$1\" content=\"$2\">"
+    ],
+    "description": "Meta"
+  },
+  "link": {
+    "prefix": "link",
+    "body": [
+      "<link rel=\"stylesheet\" href=\"$1\">"
+    ],
+    "description": "Link"
+  },
+  "table": {
+    "prefix": "table",
+    "body": [
+      "<table>",
+      "  <thead>",
+      "    <tr>",
+      "      <th>$1</th>",
+      "      <th>$2</th>",
+      "    </tr>",
+      "  </thead>",
+      "  <tbody>",
+      "    <tr>",
+      "      <td>$3</td>",
+      "      <td>$4</td>",
+      "    </tr>",
+      "  </tbody>",
+      "</table>"
+    ],
+    "description": "HTML Table"
+  },
+  "body-structure": {
+    "prefix": "bd",
+    "body": [
+      "<div class=\"container\">",
+      "  <header>",
+      "    <h1>$1</h1>",
+      "    <nav>",
+      "      <ul>",
+      "        <li><a href=\"$2\">Home</a></li>",
+      "        <li><a href=\"$3\">About</a></li>",
+      "        <li><a href=\"$4\">Contact</a></li>",
+      "      </ul>",
+      "    </nav>",
+      "  </header>",
+      "  <main>",
+      "    <section>",
+      "      <h2>$5</h2>",
+      "      <p>$6</p>",
+      "    </section>",
+      "    <aside>",
+      "      <h3>$7</h3>",
+      "      <ul>",
+      "        <li>$8</li>",
+      "        <li>$9</li>",
+      "        <li>$10</li>",
+      "      </ul>",
+      "    </aside>",
+      "  </main>",
+      "  <footer>",
+      "    <p>$11</p>",
+      "  </footer>",
+      "</div>"
+    ],
+    "description": "Complex HTML structure with header, main, and footer"
+  },
+  "form": {
+    "prefix": "form",
+    "body": [
+      "<form action=\"$1\" method=\"$2\">",
+      "  <label for=\"name\">Name:</label>",
+      "  <input type=\"text\" id=\"name\" name=\"name\">",
+      "  <label for=\"email\">Email:</label>",
+      "  <input type=\"email\" id=\"email\" name=\"email\">",
+      "  <label for=\"message\">Message:</label>",
+      "  <textarea id=\"message\" name=\"message\"></textarea>",
+      "  <button type=\"submit\">Submit</button>",
+      "</form>"
+    ],
+    "description": "HTML Form"
+  }
+}

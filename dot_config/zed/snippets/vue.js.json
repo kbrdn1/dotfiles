@@ -1,0 +1,45 @@
+{
+  "vue": {
+    "prefix": "vue",
+    "body": [
+      "<template>",
+      "    $0",
+      "</template>",
+      "",
+      "<script setup>",
+      "</script>"
+    ],
+    "description": "Vue 3 SFC"
+  },
+  "vue-ts": {
+    "prefix": "vts",
+    "body": [
+      "<template>",
+      "    $0",
+      "</template>",
+      "",
+      "<script setup lang=\"ts\">",
+      "</script>"
+    ],
+    "description": "Vue 3 SFC with TypeScript"
+  },
+  "vue-setup": {
+    "prefix": "vsetup",
+    "body": [
+      "<template>",
+      "    $0",
+      "</template>",
+      "",
+      "<script>",
+      "export default {",
+      "    setup() {",
+      "        return {",
+      "            $1",
+      "        }",
+      "    }",
+      "}",
+      "</script>"
+    ],
+    "description": "Vue 3 SFC with <script setup>"
+  }
+}

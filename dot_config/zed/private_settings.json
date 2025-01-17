@@ -1,0 +1,255 @@
+// Zed settings
+//
+// For information on how to configure Zed, see the Zed
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Zed's default settings without changing your
+// custom settings, run the `open default settings` command
+// from the command palette or from `Zed` application menu.
+{
+  "assistant": {
+    "default_model": {
+      "provider": "copilot_chat",
+      "model": "gpt-4"
+    },
+    "version": "2"
+  },
+  "enable_experimental_live_diffs": true,
+  "vim_mode": true,
+  "base_keymap": "VSCode",
+  "theme": "Catppuccin Macchiato (Blue Blur+)",
+  "ui_font_size": 15,
+  "buffer_font_size": 14,
+  "autosave": {
+    "after_delay": {
+      "milliseconds": 1000
+    }
+  },
+  "file_finder": {
+    "max_modal_width": "medium",
+    "modal_width": "medium"
+  },
+  "preview_tabs": {
+    "enabled": true,
+    "enable_preview_from_file_finder": true,
+    "enable_preview_from_code_navigation": true
+  },
+  "tab_bar": {
+    "show": true
+  },
+  "semantic_index": {
+    "enabled": true
+  },
+  "preferred_line_length": 100,
+  "journal": {
+    "path": "~",
+    "hour_format": "hour24"
+  },
+  // "ui_font_family": "Monaspace Neon Var",
+  // "buffer_font_family": "Monaspace Argon Var",
+  "format_on_save": "off",
+  "show_whitespaces": "selection",
+  "remove_trailing_whitespace_on_save": true,
+  "tab_size": 2,
+  "tabs": {
+    "file_icons": true,
+    "git_status": true,
+    "close_position": "right",
+    "activate_on_close": "history"
+  },
+  "toolbar": {
+    "breadcrumbs": true,
+    "quick_actions": true
+  },
+  "relative_line_numbers": true,
+  "soft_wrap": "preferred_line_length",
+  "inlay_hints": {
+    "enabled": true,
+    "show_other_hints": true,
+    "show_parameter_hints": true,
+    "show_type_hints": true,
+    "show_background": false
+  },
+  "git": {
+    "git_gutter": "tracked_files",
+    "inline_blame": {
+      "enabled": true,
+      "min_column": 100,
+      "show_commit_summary": true
+    },
+    "gutter_debounce": 1000
+  },
+  "indent_guides": {
+    "enabled": true,
+    "coloring": "fixed",
+    "indent_size": 2,
+    "background_coloring": "disabled",
+    "line_width": 1
+  },
+  "lsp": {
+    "discord_presence": {
+      "initialization_options": {
+        // application id for the rich presence (required, keep it if you don't know what you're doing)
+        "application_id": "1263505205522337886",
+        // Base url for all language icons
+        "base_icons_url": "https://raw.githubusercontent.com/xhyrom/zed-discord-presence/main/assets/icons/",
+
+        "state": "Working on {filename}",
+        "details": "In {workspace}",
+        // URL for large image
+        "large_image": "{base_icons_url}/{language}.png",
+        "large_text": "{language:u}", // :u makes first letter upper-case
+        // URL for small image
+        "small_image": "{base_icons_url}/zed.png",
+        "small_text": "Zed",
+
+        // Rules - disable presence in some workspaces
+        "rules": {
+          "mode": "blacklist", // or whitelist
+          "paths": ["absolute path"]
+        },
+
+        "git_integration": true
+      },
+      "enabled": true
+    },
+    "eslint": {
+      "settings": {
+        "codeActionOnSave": {
+          "rules": ["import/order"]
+        }
+      },
+      "initialization_options": {
+        "autoFix": true,
+        "format": true
+      }
+    },
+    "typescript-language-server": {
+      "initialization_options": {
+        "preferences": {
+          "includeInlayParameterNameHints": "all",
+          "includeInlayParameterNameHintsWhenArgumentMatchesName": true,
+          "includeInlayFunctionParameterTypeHints": true,
+          "includeInlayVariableTypeHints": true,
+          "includeInlayVariableTypeHintsWhenTypeMatchesName": false,
+          "includeInlayPropertyDeclarationTypeHints": true,
+          "includeInlayFunctionLikeReturnTypeHints": true,
+          "includeInlayEnumMemberValueHints": true
+        }
+      }
+    }
+  },
+  "formatter": "prettier",
+  "languages": {
+    "Python": {
+      "formatter": {
+        "external": {
+          "command": "black",
+          "arguments": ["-"]
+        }
+      }
+    },
+    "Markdown": {
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      }
+    },
+    "JSON": {
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      },
+      "code_actions_on_format": {
+        "source.fixAll": true
+      }
+    },
+    "PHP": {
+      "language_servers": ["intelephense", "!phpactor", "..."],
+      "code_actions_on_format": {
+        "source.fixAll": true,
+        "source.organizeImports": true
+      }
+    },
+    "TypeScript": {
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      },
+      "code_actions_on_format": {
+        "source.organizeImports": true,
+        "source.fixAll": true
+      }
+    },
+    "TSX": {
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      },
+      "code_actions_on_format": {
+        "source.organizeImports": true,
+        "source.fixAll": true
+      }
+    },
+    "JavaScript": {
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      },
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true,
+        "source.organizeImports": true
+      }
+    }
+  },
+  "terminal": {
+    "blinking": "on",
+    "font_family": "CaskaydiaCove Nerd Font",
+    "font_size": 14,
+    "font_features": {
+      "cv01": 7
+    },
+    "shell": {
+      "program": "zsh"
+    },
+    "toolbar": {
+      "breadcrumbs": true
+    },
+    "working_directory": "current_project_directory",
+    "button": true
+  },
+  "project_panel": {
+    "dock": "left",
+    "indent_size": 15,
+    "git_status": true
+  },
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+    "**/node_modules",
+    "**/dist",
+    "**/.idea",
+    "**/.vscode",
+    "**/__pycache__",
+    "**/.__mocks__"
+  ],
+  "experimental.theme_overrides": {
+    "background.appearance": "blurred"
+  }
+}

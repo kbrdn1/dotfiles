@@ -1,0 +1,88 @@
+{
+  "console-log": {
+    "prefix": "cl",
+    "body": [
+      "console.log($0)"
+    ],
+    "description": "console.log"
+  },
+  "console-warn": {
+    "prefix": "cw",
+    "body": [
+      "console.warn($0)"
+    ],
+    "description": "console.warn"
+  },
+  "console-error": {
+    "prefix": "ce",
+    "body": [
+      "console.error($0)"
+    ],
+    "description": "console.error"
+  },
+  "fetch": {
+    "prefix": "fetch",
+    "body": [
+      "await fetch(`$1`, {",
+      "  method: '$2',",
+      "  headers: {",
+      "    'Content-Type': 'application/json'",
+      "  },",
+      "  body: JSON.stringify($3)",
+      "})",
+      ".then(res => res.json())",
+      ".then(data => console.log(data))",
+      ".catch(err => console.error(err))"
+    ],
+    "description": "fetch"
+  },
+  "import" : {
+    "prefix": "ip",
+    "body": [
+      "import $1 from '$2'"
+    ],
+    "description": "JS - import"
+  },
+  "import-all": {
+    "prefix": "ipa",
+    "body": [
+      "import * as $1 from '$2'"
+    ],
+    "description": "JS - import all"
+  },
+  "import-into": {
+    "prefix": "ipi",
+    "body": [
+      "import { $1 } from '$2'"
+    ],
+    "description": "JS - import into"
+  },
+  "import-type": {
+    "prefix": "ipt",
+    "body": [
+      "import type { $1 } from '$2'"
+    ],
+    "description": "JS - import type"
+  },
+  "export": {
+    "prefix": "exp",
+    "body": [
+      "export $1 from '$2'"
+    ],
+    "description": "JS - export"
+  },
+  "export-default": {
+    "prefix": "expd",
+    "body": [
+      "export default $1"
+    ],
+    "description": "JS - export default"
+  },
+  "export-into": {
+    "prefix": "expi",
+    "body": [
+      "export { $1 } from '$2'"
+    ],
+    "description": "JS - export into"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "css-template": {
+    "prefix": "css",
+    "body": [
+      "* {",
+      "  margin: 0;",
+      "  padding: 0;",
+      "  box-sizing: border-box;",
+      "}"
+    ],
+    "description": "CSS template"
+  }
+}
