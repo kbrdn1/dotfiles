@@ -22,6 +22,7 @@ To get started, ensure you have the following command-line tools installed:
 - [Fd](https://github.com/sharkdp/fd): Simple, fast and user-friendly alternative to 'find'.
 - [Fzf](https://junegunn.github.io/fzf/): General-purpose command-line fuzzy finder.
 - [Thefuck](https://github.com/nvbn/thefuck): Magnificent app which corrects your previous console command.
+- [Powerlevel10k](https://github.com/romkatv/powerlevel10k): A fast reimplementation of Powerlevel9k ZSH theme.
 - [Bat](https://github.com/sharkdp/bat): A cat clone with syntax highlighting and Git integration.
 - [Eza](https://eza.rocks/): Modern replacement for 'ls'.
 - [Composer](https://getcomposer.org/): Dependency Manager for PHP.
@@ -88,7 +89,7 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 # Install CLI tools via Homebrew
-brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack zsh-syntax-highlighting zsh-autosuggestions zsh-completions
+brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack
 
 # Install applications via Homebrew Cask
 brew install --cask arc raycast zed ghostty warp postman slack discord figma docker whatsapp obsidian setapp
