@@ -23,7 +23,7 @@ alias edit-zsh="zed ~/.zshrc"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(macos git git-auto-fetch gh battery zsh-autosuggestions zsh-syntax-highlighting zsh-autosuggestions asdf brew chezmoi composer docker docker-compose alias-finder bun eza fzf golang history laravel symfony npm nvm perms pip qrcode ssh systemadmin thefuck vi-mode web-search)
+plugins=(macos git git-auto-fetch gh battery zsh-autosuggestions zsh-syntax-highlighting zsh-autosuggestions asdf brew chezmoi composer docker docker-compose alias-finder bun eza fzf history laravel symfony npm perms pip qrcode ssh systemadmin thefuck vi-mode web-search)
 
 eval "$(brew shellenv)"
 source $ZSH/oh-my-zsh.sh
