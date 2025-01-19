@@ -102,7 +102,7 @@ asdf plugin add pnpm && asdf install pnpm 9.15.4
 asdf plugin add golang && asdf install golang 1.23.4
 asdf plugin add nodejs && asdf install nodejs 22.9.0
 asdf plugin add rust && asdf install rust 1.83.0
-asdf plugin add bun && asdf install bun 1.1.43
+asdf plugin add bun && asdf install bun 1.1.45
 
 # Initialize and apply chezmoi configuration
 chezmoi init https://github.com/kbrdn1/dotfiles.git
