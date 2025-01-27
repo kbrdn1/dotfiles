@@ -1,14 +1,19 @@
 [
   {
+    "bindings": {
+      "cmd-@": "editor::RestartLanguageServer",
+    }
+  },
+  {
     "context": "Workspace",
     "bindings": {
-      "cmd-ù": "terminal_panel::ToggleFocus",
       "cmd-alt-i": "assistant::ToggleFocus"
     }
   },
   {
     "context": "Editor",
     "bindings": {
+      "cmd-<": "editor::ToggleInlayHints",
       "alt-shift-f": "editor::Format",
       "cmd-shift-r": "editor::Rename",
       "cmd-shift-k": "editor::DeleteLine",

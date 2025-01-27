@@ -124,11 +124,18 @@
         "format": true
       }
     },
+    "rust-analyzer": {
+      "initialization_options": {
+        "check": {
+          "command": "clippy" // rust-analyzer.check.command (default: "check")
+        }
+      }
+    },
     "typescript-language-server": {
       "initialization_options": {
         "preferences": {
           "includeInlayParameterNameHints": "all",
-          "includeInlayParameterNameHintsWhenArgumentMatchesName": true,
+          "includeInlayParameterNameHintsWhenArgumentMatchesName": false,
           "includeInlayFunctionParameterTypeHints": true,
           "includeInlayVariableTypeHints": true,
           "includeInlayVariableTypeHintsWhenTypeMatchesName": false,
@@ -141,6 +148,14 @@
   },
   "formatter": "prettier",
   "languages": {
+    "Rust": {
+      "formatter": {
+        "external": {
+          "command": "rustfmt",
+          "arguments": ["--emit=stdout"]
+        }
+      }
+    },
     "Python": {
       "formatter": {
         "external": {
