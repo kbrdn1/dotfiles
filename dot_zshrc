@@ -81,7 +81,7 @@ alias gca='gh copilot alias'
 
 # --- BUN ---
 # export BUN_INSTALL="$HOME/.bun"
-# export PATH="$BUN_INSTALL/bin:$PATH"
+export PATH="/Users/kbrdn1/.bun/bin:$PATH"
 
 # [ -s "/Users/$USER_FOLDER/.bun/_bun" ] && source "/Users/$USER_FOLDER/.bun/_bun"
 
@@ -105,7 +105,7 @@ export PATH="/opt/homebrew/bin:$PATH"
 export HOMEBREW_NO_AUTO_UPDATE=1
 
 # --- ASDF ---
-. $(brew --prefix)/opt/asdf/libexec/asdf.sh
+. /opt/homebrew/opt/asdf/libexec/asdf.sh
 
 # --- Bison ---
 export PATH="/usr/local/opt/bison/bin:$PATH"
