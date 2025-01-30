@@ -3,6 +3,6 @@ bun 1.2.1
 nodejs 23.2.0
 pnpm 9.15.4
 rust 1.84.0
-golang 1.23.4
+golang 1.23.5
 stripe-cli 1.22.0
 chezmoi 2.58.0
