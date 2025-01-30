@@ -1,7 +1,7 @@
 [
   {
     "bindings": {
-      "cmd-@": "editor::RestartLanguageServer",
+      "cmd-@": "editor::RestartLanguageServer"
     }
   },
   {
@@ -30,6 +30,7 @@
   {
     "context": "Editor && VimControl && !VimWaiting && !menu",
     "bindings": {
+      "cmd-;": "go_to_line::Toggle",
       "i": [
         "vim::PushOperator",
         {
@@ -197,7 +198,7 @@
         }
       ],
       "space end": [
-        "vim::OfLine",
+        "vim::EndOfLine",
         {
           "displayLines": true
         }
