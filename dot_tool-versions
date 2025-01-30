@@ -5,4 +5,4 @@ pnpm 9.15.4
 rust 1.84.0
 golang 1.23.5
 stripe-cli 1.23.10
-chezmoi 2.58.0
+chezmoi 2.59.0
