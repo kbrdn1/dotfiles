@@ -95,14 +95,14 @@ brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf the
 brew install --cask arc raycast zed ghostty warp postman slack discord figma docker whatsapp obsidian setapp
 
 # Install additional tools via asdf
-asdf plugin add neovim && asdf install neovim 0.10.3
-asdf plugin add chezmoi && asdf install chezmoi 2.58.0
-asdf plugin add stripe-cli && asdf install stripe-cli 1.22.0
+asdf plugin add neovim && asdf install neovim 0.10.4
+asdf plugin add chezmoi && asdf install chezmoi 2.59.0
+asdf plugin add stripe-cli && asdf install stripe-cli 1.23.10
 asdf plugin add pnpm && asdf install pnpm 9.15.4
-asdf plugin add golang && asdf install golang 1.23.4
-asdf plugin add nodejs && asdf install nodejs 22.9.0
-asdf plugin add rust && asdf install rust 1.83.0
-asdf plugin add bun && asdf install bun 1.1.45
+asdf plugin add golang && asdf install golang 1.23.5
+asdf plugin add nodejs && asdf install nodejs 23.2.0
+asdf plugin add rust && asdf install rust 1.84.0
+asdf plugin add bun && asdf install bun 1.2.1
 
 # Initialize and apply chezmoi configuration
 chezmoi init https://github.com/kbrdn1/dotfiles.git
