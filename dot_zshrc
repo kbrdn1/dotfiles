@@ -60,6 +60,7 @@ VI_MODE_CURSOR_OPPEND=0
 
 # --- Powerlevel10k ---
 source $(brew --prefix)/share/powerlevel10k/powerlevel10k.zsh-theme
+alias edit-p10k="zed ~/.p10k.zsh"
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
@@ -109,6 +110,7 @@ export HOMEBREW_NO_AUTO_UPDATE=1
 
 # --- Tmux ---
 alias reload-tmux="tmux source-file ~/.tmux.conf"
+alias edit-tmux="zed ~/.tmux.conf"
 
 # --- Bison ---
 export PATH="/usr/local/opt/bison/bin:$PATH"
@@ -181,3 +183,4 @@ eval $(thefuck --alias fk)
 
 # --- Neofetch ---
 neofetch
+
