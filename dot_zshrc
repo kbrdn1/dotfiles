@@ -107,6 +107,9 @@ export HOMEBREW_NO_AUTO_UPDATE=1
 # --- ASDF ---
 . /opt/homebrew/opt/asdf/libexec/asdf.sh
 
+# --- Tmux ---
+alias reload-tmux="tmux source-file ~/.tmux.conf"
+
 # --- Bison ---
 export PATH="/usr/local/opt/bison/bin:$PATH"
 export PATH="/opt/homebrew/opt/bison/bin:$PATH"
