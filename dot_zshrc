@@ -62,6 +62,9 @@ VI_MODE_CURSOR_VISUAL=6
 VI_MODE_CURSOR_INSERT=6
 VI_MODE_CURSOR_OPPEND=0
 
+# --- Editor ---
+export EDITOR="zed"
+
 # --- Sketchybar Aliases ---
 alias reload-sketchybar="brew services restart sketchybar"
 alias edit-sketchybar="zed ~/.config/sketchybar"
@@ -69,6 +72,9 @@ alias edit-sketchybar="zed ~/.config/sketchybar"
 # --- JankyBorders Aliases ---
 alias reload-jankyborders="brew services restart borders"
 alias edit-jankyborders="zed ~/.config/borders"
+
+# --- SketchyVim ---
+alias reload-svim="brew services restart svim"
 
 # --- Powerlevel10k ---
 source $(brew --prefix)/share/powerlevel10k/powerlevel10k.zsh-theme
@@ -141,6 +147,16 @@ export ASDF_PYTHON_PATCH_URL="https://github.com/python/cpython/commit/8ea6353.p
 
 # --- Eza ---
 alias ls="eza --color=always --long --git --no-filesize --icons=always --no-time --no-user --no-permissions --group-directories-first"
+
+# --- Yazi ---
+function y() {
+	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+	yazi "$@" --cwd-file="$tmp"
+	if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+		builtin cd -- "$cwd"
+	fi
+	rm -f -- "$tmp"
+}
 
 # -- FZF --
 # Set up fzf key bindings and fuzzy completion
