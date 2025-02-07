@@ -1,0 +1,36 @@
+{
+  "type": "module",
+  "name": "sketchybar-app-font",
+  "version": "2.0.31",
+  "description": "App font for sketchybar, bootstrapped using SVGs from simple-bar",
+  "scripts": {
+    "build": "node ./build.js",
+    "build:install": "node ./install.js",
+    "build:dev": "node ./watch.js"
+  },
+  "keywords": [],
+  "author": "Kevin Dreßler",
+  "license": "CC0-1.0",
+  "devDependencies": {
+    "svgtofont": "^6.2.0",
+    "chokidar": "^3.5.3",
+    "express": "^4.18.2",
+    "livereload": "^0.9.3"
+  },
+  "svgtofont": {
+    "fontSize": "12px",
+    "fontName": "sketchybar-app-font",
+    "website": false,
+    "css": false,
+    "emptyDist": true,
+    "useNameAsUnicode": true,
+    "svgicons2svgfont": {
+      "centerhorizontally": true,
+      "centervertically": true,
+      "height": 16,
+      "normalize": true,
+      "preserveAspectRatio": true,
+      "fixedWidth": true
+    }
+  }
+}
