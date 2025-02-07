@@ -2,7 +2,15 @@
 
 Welcome to my dotfiles repository! This repository is managed using [chezmoi](https://www.chezmoi.io/), a tool designed to manage your dotfiles across multiple machines.
 
-## Requirements 📋
+<img width="1512" alt="Preview" src="https://github.com/kbrdn1/dotfiles/blob/main/preview.png">
+
+## Table of Contents 📚
+
+- [CLI Tools](#cli-tools-)
+- [GUI Tools](#gui-tools-)
+- [Applications](#applications-)
+- [SetApp Applications](#setapp-applications-)
+- [Installation](#installation-)
 
 ### CLI Tools 🛠
 
@@ -92,30 +100,44 @@ If you are using SetApp, make sure to install these applications:
 
 Follow these steps to set up your environment:
 
+## Set up macOS defaults
+
 ```bash
-# Set up macOS defaults
 # Revert back: defaults delete com.apple.dock autohide-time-modifier; killall Dock
 defaults write com.apple.dock autohide-time-modifier -int 0
 defaults write com.apple.dock autohide-time-modifier -float 0.15; killall Dock
+```
 
-# Install Homebrew
+## Install Homebrew
+
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-echo >> /Users/<user>/.zprofile
-echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> /Users/<user>/.zprofile
+echo >> /Users/$whoami/.zprofile
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> /Users/$whoami/.zprofile
 eval "$(/opt/homebrew/bin/brew shellenv)"
+```
 
-# Install Oh My Zsh
+## Install Oh My Zsh
+
+```bash
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+```
 
-# Install CLI tools via Homebrew
+## Install CLI tools via Homebrew
+
+```bash
 brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack yq tmux yazi ffmpeg sevenzip jq poppler fd ripgrep fzf zoxide imagemagick font-symbols-only-nerd-font
+```
 
-# Install applications via Homebrew Cask
+## Install applications via Homebrew Cask
+
+```bash
 brew install --cask arc raycast zed ghostty warp postman slack discord figma docker whatsapp obsidian setapp
+```
 
-mkdir -p ~/.config/tmux/plugins/catppuccin
-git clone -b v2.1.2 https://github.com/catppuccin/tmux.git ~/.config/tmux/plugins/catppuccin/tmux
+## Install Sketchybar, JankyBorders, SketchyVim, and Yabai
 
+```bash
 brew install --cask sf-symbols
 brew install jq
 brew install gh
@@ -129,8 +151,14 @@ chmod +x ~/.config/sketchybar/*
 chmod +x ~/.config/sketchybar/items/*
 chmod +x ~/.config/sketchybar/plugins/*
 chmod +x ~/.config/sketchybar/helper/*
+```
 
-# Install additional tools via asdf
+> [!NOTE]
+> Visit the respective repositories for more information on how to set up and install these tools.
+
+## Install additional tools via asdf
+  
+```bash
 asdf plugin add neovim && asdf install neovim 0.10.4
 asdf plugin add chezmoi && asdf install chezmoi 2.59.0
 asdf plugin add stripe-cli && asdf install stripe-cli 1.23.10
@@ -139,82 +167,11 @@ asdf plugin add golang && asdf install golang 1.23.5
 asdf plugin add nodejs && asdf install nodejs 23.2.0
 asdf plugin add rust && asdf install rust 1.84.0
 asdf plugin add bun && asdf install bun 1.2.1
+```
 
-# Initialize and apply chezmoi configuration
+## Initialize and apply chezmoi configuration
+  
+```bash
 chezmoi init https://github.com/kbrdn1/dotfiles.git
 chezmoi apply
 ```
-
-> [!NOTE]
-> Replace `<user>` with your username.
-
-## Usage 🚀
-
-### Navigation 🧭
-
-- Use `z` to quickly navigate to frequently visited directories.
-  ```bash
-  z projects
-  ```
-- Use `ls` to list directory contents with `eza` and `-l <number>` for a detailed tree view.
-  ```bash
-  eza -l 2
-  ```
-- Press `ctrl + t` or type `**` and press `tab` to open fzf and navigate to a directory or file.
-  ```bash
-  **<tab>
-  ```
-
-### Git 🌳
-
-- Use `git` to manage your repositories.
-  ```bash
-  git clone https://github.com/user/repo.git
-  ```
-- Use `lg` for a simple terminal UI for git commands.
-  ```bash
-  lg
-  ```
-
-### Docker 🐳
-
-- Use `docker` to manage your containers.
-  ```bash
-  docker run -d -p 80:80 nginx
-  ```
-- Use `docker-compose` to manage your multi-container Docker applications.
-  ```bash
-  docker-compose up -d
-  ```
-- Use `lzd` for a simple terminal UI for Docker.
-  ```bash
-  lzd
-  ```
-- Use `orbstack` app for a fast, lightweight Docker desktop alternative.
-
-### Help 🆘
-
-- Use `tldr` for general-purpose command-line help.
-  ```bash
-  tldr git
-  ```
-- Use `fk` to corrects your previous console command.
-  ```bash
-  fk
-  ```
-
-### Copilot 🤖
-
-- Use `gh copilot` to generate code with GitHub Copilot.
-  ```bash
-  gh copilot suggest
-  ```
-
-### Development 🛠
-
-- Use `asdf` to manage your versions.
-  ```bash
-  asdf list all <plugin>
-  ```
-- Use `composer` to manage your PHP dependencies.
-- Use `pnpm` to manage your Node.js dependencies.
