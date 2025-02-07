@@ -142,15 +142,20 @@
       "ctrl-e": "vim::LineDown",
       "ctrl-y": "vim::LineUp",
       // "space" commands
+      "space R": "editor::Rename",
+      "space @": "editor::RestartLanguageServer",
       "space g": "editor::SelectLargerSyntaxNode",
       "space shift-g": "editor::SelectSmallerSyntaxNode",
       "space 0": "vim::StartOfDocument",
       "space o": "editor::Hover",
       "space tab": "pane::ActivateNextItem",
       "space shift-tab": "pane::ActivatePrevItem",
+      "space n": "pane::ActivateNextItem",
+      "space b": "pane::ActivatePrevItem",
+      "space x": "pane::CloseActiveItem",
+      "space c": "project_symbols::Toggle",
       "space d": "editor::GoToDefinition",
       "space shift-d": "editor::GoToTypeDefinition",
-      "space s": "outline::Toggle",
       "space shift-s": "project_symbols::Toggle",
       "space .": "editor::ToggleCodeActions", // zed specific
       "space shift-a": "editor::FindAllReferences", // zed specific
@@ -163,10 +168,11 @@
       "space c c p": "assistant::QuoteSelection",
       "space i": "assistant::InlineAssist",
       "space f f": "file_finder::Toggle",
-      "space f o": "vim::Search",
-      "space f p": "search::ToggleReplace",
+      "space f b": "vim::Search",
+      "space f s": "outline::Toggle",
+      "space f r": "search::ToggleReplace",
       "space e": "project_panel::ToggleFocus",
-      "space b f": "editor::Format",
+      "space F": "editor::Format",
       "space *": [
         "vim::MoveToNext",
         {
@@ -216,7 +222,7 @@
         }
       ],
       // z commands
-      "z t": "editor::ScrollCursorTop",
+      "s t": "editor::ScrollCursorTop",
       "z z": "editor::ScrollCursorCenter",
       "z b": "editor::ScrollCursorBottom",
       "z c": "editor::Fold",
