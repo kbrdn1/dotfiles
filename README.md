@@ -25,6 +25,7 @@ To get started, ensure you have the following command-line tools installed:
 - [Powerlevel10k](https://github.com/romkatv/powerlevel10k): A fast reimplementation of Powerlevel9k ZSH theme.
 - [Bat](https://github.com/sharkdp/bat): A cat clone with syntax highlighting and Git integration.
 - [Eza](https://eza.rocks/): Modern replacement for 'ls'.
+- [Yazi](https://github.com/sxyazi/yazi): Blazing Fast Terminal File Manager.
 - [Composer](https://getcomposer.org/): Dependency Manager for PHP.
 - [Zoxide](https://crates.io/crates/zoxide): A smarter cd command.
 - [Lazygit](https://github.com/jesseduffield/lazygit): Simple terminal UI for git commands.
@@ -35,6 +36,18 @@ To get started, ensure you have the following command-line tools installed:
 - [Pcov](https://github.com/krakjoe/pcov): Code coverage driver for PHP.
 - [Symfony CLI](https://symfony.com/download): CLI tool to manage Symfony applications.
 - [Python](https://www.python.org/): Powerful programming language.
+
+### GUI Tools 🖥
+
+Ensure you have the following GUI tools installed:
+
+- [SF Symbols](https://developer.apple.com/sf-symbols/): Over 3,100 configurable symbols for macOS, iOS, and watchOS.
+- [JQ](https://stedolan.github.io/jq/): Lightweight and flexible command-line JSON processor.
+- [Sketchybar](https://github.com/FelixKratz/SketchyBar): A macOS menu bar app that lets you run shell scripts.
+- [Sketchybar App Font](https://github.com/kvndrsslr/sketchybar-app-font): Font icons for Sketchybar.
+- [JankyBorders](https://github.com/FelixKratz/JankyBorders): A macOS app that lets you add borders to your windows.
+- [SketchyVim](https://github.com/FelixKratz/SketchyVim): Turns accessible input fields into a full Vim buffer.
+- [Yabai](https://github.com/koekeishiya/yabai): A tiling window manager for macOS.
 
 ### Applications 📦
 
@@ -54,6 +67,7 @@ high-performance collaboration with humans and AI.
 - [Docker](https://www.docker.com/): Platform for developing, shipping, and running applications.
 - [WhatsApp](https://www.whatsapp.com/): Messaging and voice over IP service.
 - [Obsidian](https://obsidian.md/): Powerful knowledge base that works on top of a local folder of plain text Markdown files.
+- [Rectangle](https://rectangleapp.com/): Move and resize windows in macOS using keyboard shortcuts or snap areas.
 - [Dashlane](https://www.dashlane.com/): Password manager and digital wallet.
 - [SetApp](https://setapp.com/): Subscription-based service for macOS applications.
 
@@ -79,6 +93,11 @@ If you are using SetApp, make sure to install these applications:
 Follow these steps to set up your environment:
 
 ```bash
+# Set up macOS defaults
+# Revert back: defaults delete com.apple.dock autohide-time-modifier; killall Dock
+defaults write com.apple.dock autohide-time-modifier -int 0
+defaults write com.apple.dock autohide-time-modifier -float 0.15; killall Dock
+
 # Install Homebrew
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 echo >> /Users/<user>/.zprofile
@@ -89,7 +108,7 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 # Install CLI tools via Homebrew
-brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack yq tmux
+brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack yq tmux yazi ffmpeg sevenzip jq poppler fd ripgrep fzf zoxide imagemagick font-symbols-only-nerd-font
 
 # Install applications via Homebrew Cask
 brew install --cask arc raycast zed ghostty warp postman slack discord figma docker whatsapp obsidian setapp
@@ -104,6 +123,7 @@ brew install switchaudio-osx
 brew tap FelixKratz/formulae
 brew install sketchybar
 brew install borders
+brew install svim
 brew install koekeishiya/formulae/yabai
 chmod +x ~/.config/sketchybar/*
 chmod +x ~/.config/sketchybar/items/*
