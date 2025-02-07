@@ -89,13 +89,26 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 # Install CLI tools via Homebrew
-brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack yd tmux
+brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack yq tmux
 
 # Install applications via Homebrew Cask
 brew install --cask arc raycast zed ghostty warp postman slack discord figma docker whatsapp obsidian setapp
 
 mkdir -p ~/.config/tmux/plugins/catppuccin
 git clone -b v2.1.2 https://github.com/catppuccin/tmux.git ~/.config/tmux/plugins/catppuccin/tmux
+
+brew install --cask sf-symbols
+brew install jq
+brew install gh
+brew install switchaudio-osx
+brew tap FelixKratz/formulae
+brew install sketchybar
+brew install borders
+brew install koekeishiya/formulae/yabai
+chmod +x ~/.config/sketchybar/*
+chmod +x ~/.config/sketchybar/items/*
+chmod +x ~/.config/sketchybar/plugins/*
+chmod +x ~/.config/sketchybar/helper/*
 
 # Install additional tools via asdf
 asdf plugin add neovim && asdf install neovim 0.10.4
