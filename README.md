@@ -14,203 +14,168 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 ### CLI Tools 🛠
 
-To get started, ensure you have the following command-line tools installed:
+Our essential command-line tools:
 
-- [Homebrew](https://brew.sh/): The missing package manager for macOS.
-- [Coreutils](https://www.gnu.org/software/coreutils/): Essential GNU utilities.
-- [Curl](https://curl.se/): Command-line tool for transferring data with URLs.
-- [Git](https://git-scm.com/): Distributed version control system.
-- [Bison](https://www.gnu.org/software/bison/): General-purpose parser generator.
-- [OpenSSL](https://www.openssl.org/): Robust, full-featured open-source toolkit for SSL/TLS.
-- [Chezmoi](https://www.chezmoi.io/docs/install/): Manage your dotfiles across multiple diverse machines.
-- [Asdf](https://asdf-vm.com/#/core-manage-asdf-vm): Extendable version manager with support for Ruby, Node.js, Elixir, Erlang & more.
-- [Oh My Zsh](https://ohmyz.sh/): Framework for managing your Zsh configuration.
-- [GH](https://cli.github.com/): GitHub’s official command line tool.
-- [Tldr](https://tldr.sh/): Simplified and community-driven man pages.
-- [Fd](https://github.com/sharkdp/fd): Simple, fast and user-friendly alternative to 'find'.
-- [Fzf](https://junegunn.github.io/fzf/): General-purpose command-line fuzzy finder.
-- [Thefuck](https://github.com/nvbn/thefuck): Magnificent app which corrects your previous console command.
-- [Powerlevel10k](https://github.com/romkatv/powerlevel10k): A fast reimplementation of Powerlevel9k ZSH theme.
-- [Bat](https://github.com/sharkdp/bat): A cat clone with syntax highlighting and Git integration.
-- [Eza](https://eza.rocks/): Modern replacement for 'ls'.
-- [Yazi](https://github.com/sxyazi/yazi): Blazing Fast Terminal File Manager.
-- [Composer](https://getcomposer.org/): Dependency Manager for PHP.
-- [Zoxide](https://crates.io/crates/zoxide): A smarter cd command.
-- [Lazygit](https://github.com/jesseduffield/lazygit): Simple terminal UI for git commands.
-- [Lazydocker](https://github.com/jesseduffield/lazydocker): Simple terminal UI for Docker.
-- [Neofetch](https://github.com/dylanaraps/neofetch): A command-line system information tool.
-- [Dashlane CLI](https://cli.dashlane.com/install): Command-line interface for Dashlane.
-- [PHP](https://www.php.net/): Popular general-purpose scripting language.
-- [Pcov](https://github.com/krakjoe/pcov): Code coverage driver for PHP.
-- [Symfony CLI](https://symfony.com/download): CLI tool to manage Symfony applications.
-- [Python](https://www.python.org/): Powerful programming language.
-- [BlueUtil](https://github.com/toy/blueutil): Command-line tool to control Bluetooth.
+- **Package Management**
+  - [Homebrew](https://brew.sh/): The missing package manager for macOS
+  - [Asdf](https://asdf-vm.com/): Multi-language version manager
+
+- **Core Utilities**
+  - [Coreutils](https://www.gnu.org/software/coreutils/): GNU core utilities
+  - [Curl](https://curl.se/): Data transfer tool
+  - [Git](https://git-scm.com/): Version control system
+  - [OpenSSL](https://www.openssl.org/): SSL/TLS toolkit
+  - [Bison](https://www.gnu.org/software/bison/): Parser generator
+
+- **Shell & Terminal**
+  - [Oh My Zsh](https://ohmyz.sh/): Zsh configuration framework
+  - [Powerlevel10k](https://github.com/romkatv/powerlevel10k): Zsh theme
+  - [Bat](https://github.com/sharkdp/bat): Enhanced cat command
+  - [Eza](https://eza.rocks/): Modern ls replacement
+  - [Yazi](https://github.com/sxyazi/yazi): Terminal file manager
+  - [Tmux](https://github.com/tmux/tmux): Terminal multiplexer
+
+- **Development Tools**
+  - [PHP](https://www.php.net/) & [Composer](https://getcomposer.org/): PHP ecosystem
+  - [Python](https://www.python.org/): Programming language
+  - [Symfony CLI](https://symfony.com/download): Symfony framework tools
+  - [Node.js](https://nodejs.org/): JavaScript runtime
+  - [Rust](https://www.rust-lang.org/): Systems programming language
+  - [Go](https://golang.org/): Programming language
+  - [Bun](https://bun.sh/): JavaScript runtime & toolkit
+
+- **Productivity Tools**
+  - [GH](https://cli.github.com/): GitHub CLI
+  - [Lazygit](https://github.com/jesseduffield/lazygit): Git TUI
+  - [Lazydocker](https://github.com/jesseduffield/lazydocker): Docker TUI
+  - [Fzf](https://github.com/junegunn/fzf): Fuzzy finder
+  - [Zoxide](https://github.com/ajeetdsouza/zoxide): Smarter cd
+  - [Thefuck](https://github.com/nvbn/thefuck): Command correction
+  - [Neofetch](https://github.com/dylanaraps/neofetch): System info tool
+  - [Dashlane CLI](https://cli.dashlane.com/): Password manager CLI
 
 ### GUI Tools 🖥
 
-Ensure you have the following GUI tools installed:
+Essential graphical tools:
 
-- [SF Symbols](https://developer.apple.com/sf-symbols/): Over 3,100 configurable symbols for macOS, iOS, and watchOS.
-- [JQ](https://stedolan.github.io/jq/): Lightweight and flexible command-line JSON processor.
-- [Sketchybar](https://github.com/FelixKratz/SketchyBar): A macOS menu bar app that lets you run shell scripts.
-- [Sketchybar App Font](https://github.com/kvndrsslr/sketchybar-app-font): Font icons for Sketchybar.
-- [JankyBorders](https://github.com/FelixKratz/JankyBorders): A macOS app that lets you add borders to your windows.
-- [SketchyVim](https://github.com/FelixKratz/SketchyVim): Turns accessible input fields into a full Vim buffer.
-- [Yabai](https://github.com/koekeishiya/yabai): A tiling window manager for macOS.
+- **Window Management**
+  - [Yabai](https://github.com/koekeishiya/yabai): Tiling window manager
+  - [Skhd](https://github.com/koekeishiya/skhd): Hotkey daemon
+  - [JankyBorders](https://github.com/FelixKratz/JankyBorders): Window borders
+  - [SketchyVim](https://github.com/FelixKratz/SketchyVim): Vim input fields
+
+- **UI Enhancement**
+  - [Sketchybar](https://github.com/FelixKratz/SketchyBar): Custom menu bar
+  - [SF Symbols](https://developer.apple.com/sf-symbols/): Apple system symbols
+  - [Sketchybar App Font](https://github.com/kvndrsslr/sketchybar-app-font): Icon font
 
 ### Applications 📦
 
-Ensure you have the following applications installed:
+Key applications:
 
-- [Arc](https://arc.net/): A new kind of web browser.
-- [Raycast](https://raycast.com/): Blazing fast, totally extendable launcher.
-- [Zed](https://zed.dev/): next-generation code editor designed for
-high-performance collaboration with humans and AI.
-- [Ghostty](https://ghostty.org/): Fast, feature-rich, and cross-platform terminal emulator that uses platform-native UI and GPU acceleration.
-- [Warp](https://warp.dev/): A modern, Rust-based terminal.
-- [OrbStack](https://orbstack.dev/): Fast, lightweight Docker desktop alternative.
-- [Postman](https://www.postman.com/): API development environment.
-- [Slack](https://slack.com/): Collaboration hub that connects your work.
-- [Discord](https://discord.com/): Voice, video, and text communication service.
-- [Figma](https://www.figma.com/): Collaborative interface design tool.
-- [Docker](https://www.docker.com/): Platform for developing, shipping, and running applications.
-- [WhatsApp](https://www.whatsapp.com/): Messaging and voice over IP service.
-- [Obsidian](https://obsidian.md/): Powerful knowledge base that works on top of a local folder of plain text Markdown files.
-- [Rectangle](https://rectangleapp.com/): Move and resize windows in macOS using keyboard shortcuts or snap areas.
-- [Dashlane](https://www.dashlane.com/): Password manager and digital wallet.
-- [SetApp](https://setapp.com/): Subscription-based service for macOS applications.
+- **Development**
+  - [Zed](https://zed.dev/): Modern code editor
+  - [Ghostty](https://ghostty.org/): GPU-accelerated terminal
+  - [Warp](https://warp.dev/): Rust-based terminal
+  - [OrbStack](https://orbstack.dev/): Docker alternative
+  - [Postman](https://www.postman.com/): API platform
+
+- **Browsers & Communication**
+  - [Arc](https://arc.net/): Modern browser
+  - [Slack](https://slack.com/): Team communication
+  - [Discord](https://discord.com/): Community platform
+  - [WhatsApp](https://www.whatsapp.com/): Messaging
+
+- **Productivity**
+  - [Raycast](https://raycast.com/): Launcher & productivity tool
+  - [Obsidian](https://obsidian.md/): Knowledge base
+  - [Rectangle](https://rectangleapp.com/): Window management
+  - [Dashlane](https://www.dashlane.com/): Password manager
+  - [Figma](https://www.figma.com/): Design tool
 
 ### SetApp Applications 📦
 
-If you are using SetApp, make sure to install these applications:
+Premium applications via SetApp:
 
-- [TablePlus](https://tableplus.com/): Modern, native tool for database management.
-- [Canary Mail](https://canarymail.io/): Secure email app.
-- [CleanMyMac X](https://macpaw.com/cleanmymac): All-in-one package to clean your Mac.
-- [CleanShot X](https://cleanshot.com/): Best screenshot tool for macOS.
-- [PixelSnap](https://getpixelsnap.com/): Measure anything on your screen.
-- [Sip](https://sipapp.io/): The best way to collect, organize & share your colors.
-- [NotchNook](https://lo.cafe/notchnook): Utility to manage the notch on your MacBook.
-- [Yoink](https://eternalstorms.at/yoink/mac/): Simplifies and improves drag and drop between windows, apps, spaces, and fullscreen apps.
-- [Clop](https://setapp.com/fr/apps/clop?accname=setapp&adgroupid=159512510282&adpos=&ci=737183467&ck=clop%20mac&creative=688198389097&extensionid=&gnetwork=g&match=e&placecat=&placement=&targetid=aud-315654669593:kwd-2273594097558): Lightweight images, videos, and PDFs.
+- **Development**
+  - [TablePlus](https://tableplus.com/): Database management
 
-> [!IMPORTANT]
-> Refer to the `.tool-versions` file for the specific versions of the tools and other CLI utilities that need to be installed.
+- **Productivity**
+  - [CleanShot X](https://cleanshot.com/): Screenshot tool
+  - [PixelSnap](https://getpixelsnap.com/): Measurement tool
+  - [Sip](https://sipapp.io/): Color management
+  - [Yoink](https://eternalstorms.at/yoink/mac/): Drag and drop helper
+
+- **System Tools**
+  - [CleanMyMac X](https://macpaw.com/cleanmymac): System cleaner
+  - [NotchNook](https://lo.cafe/notchnook): Notch utility
+  - [Canary Mail](https://canarymail.io/): Email client
+  - [Clop](https://setapp.com/apps/clop): Media optimizer
 
 ## Installation 📥
 
-Follow these steps to set up your environment:
-
-## Set up macOS defaults
-
-## Keyboard
+### One-Line Installation
 
 ```bash
-defaults write NSGlobalDomain KeyRepeat -int 1
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/kbrdn1/dotfiles/main/install.sh)"
 ```
 
-### Screenshots
+### Manual Installation
 
-```bash
-mkdir ~/Screenshots
-defaults write com.apple.screencapture location ~/Screenshots
-defaults write com.apple.screencapture type png
-defaults write com.apple.screencapture disable-shadow -bool true
-killall SystemUIServer
-```
-
-### Menu bar
-
-```bash
-defaults write NSGlobalDomain _HIHideMenuBar -bool true
-```
-
-### Dock
-```bash
-defaults write com.apple.dock autohide -bool true
-defaults write com.apple.dock autohide-time-modifier -int 0
-defaults write com.apple.dock autohide-time-modifier -float 0.15; killall Dock
-```
-
-> [!NOTE]
-> Revert back to the default settings using the following command:
-> ```bash
-> defaults delete com.apple.dock autohide-time-modifier; killall Dock
-> ```
-
-## Install Xcode Command Line Tools
-
+1. **Install Command Line Tools**
 ```bash
 xcode-select --install
 ```
 
-## Install Homebrew
-
+2. **Install Homebrew**
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-echo >> /Users/$whoami/.zprofile
-echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> /Users/$whoami/.zprofile
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
 eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
-> [!NOTE]
-> Visit the [Homebrew website](https://brew.sh/) for more information.
-
-## Install Homebrew Cask
-
-```bash
-brew tap homebrew/cask
-```
-
-## Install Oh My Zsh
-
+3. **Install Oh My Zsh**
 ```bash
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 ```
 
-## Install CLI tools via Homebrew
-
-```bash
-sudo brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack yq tmux yazi ffmpeg sevenzip jq poppler fd ripgrep fzf zoxide imagemagick font-symbols-only-nerd-font blueutil
-```
-
-## Install applications via Homebrew Cask
-
-```bash
-brew install --cask arc raycast zed ghostty warp postman slack discord figma docker whatsapp obsidian setapp
-```
-
-## Install Sketchybar, JankyBorders, SketchyVim, and Yabai
-
-```bash
-# Install GUI tools and dependencies
-brew install --cask sf-symbols && \
-brew install jq gh switchaudio-osx && \
-brew tap FelixKratz/formulae && \
-brew install sketchybar borders svim koekeishiya/formulae/yabai && \
-chmod +x ~/.config/sketchybar/* ~/.config/sketchybar/plugins/**/* ~/.config/sketchybar/helper/*
-```
-
-> [!IMPORTANT]
-> Visit the respective repositories for more information on how to set up and install these tools.
-> Yabai requires SIP to be disabled, and you need to grant it the necessary permissions.
-
-## Install additional tools via asdf
-  
-```bash
-asdf plugin add neovim && asdf install neovim 0.10.4
-asdf plugin add chezmoi && asdf install chezmoi 2.59.1
-asdf plugin add stripe-cli && asdf install stripe-cli 1.23.10
-asdf plugin add pnpm && asdf install pnpm 9.15.5
-asdf plugin add golang && asdf install golang 1.23.6
-asdf plugin add nodejs && asdf install nodejs 23.2.0
-asdf plugin add rust && asdf install rust 1.84.1
-asdf plugin add bun && asdf install bun 1.2.2
-```
-
-## Initialize and apply chezmoi configuration
-  
+4. **Clone and Apply Dotfiles**
 ```bash
 chezmoi init https://github.com/kbrdn1/dotfiles.git
 chezmoi apply
 ```
+
+### Post-Installation
+
+1. Configure system preferences:
+```bash
+# Keyboard
+defaults write NSGlobalDomain KeyRepeat -int 1
+
+# Screenshots
+mkdir ~/Screenshots
+defaults write com.apple.screencapture location ~/Screenshots
+defaults write com.apple.screencapture type png
+defaults write com.apple.screencapture disable-shadow -bool true
+
+# Menu Bar
+defaults write NSGlobalDomain _HIHideMenuBar -bool true
+
+# Dock
+defaults write com.apple.dock autohide -bool true
+defaults write com.apple.dock autohide-time-modifier -float 0.15
+```
+
+2. Set up Yabai permissions
+3. Install SetApp applications manually
+4. Restart your computer
+
+## Acknowledgments 🙏
+
+Special thanks to:
+- [FelixKratz](https://github.com/FelixKratz) for window management setup inspiration
+- [The Chezmoi team](https://github.com/twpayne/chezmoi) for the dotfiles management tool
+
+## License 📄
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
