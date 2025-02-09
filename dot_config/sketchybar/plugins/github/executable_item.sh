@@ -1,4 +1,7 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
+source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
+source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
 
 POPUP_CLICK_SCRIPT="sketchybar --set \$NAME popup.drawing=toggle"
 
@@ -9,8 +12,8 @@ github_bell=(
   icon.color=$BLUE
   label=$LOADING
   label.highlight_color=$BLUE
-  popup.align=right
-  script="$PLUGIN_DIR/github.sh"
+  popup.align=left
+  script="$PLUGIN_DIR/github/github.sh"
   click_script="$POPUP_CLICK_SCRIPT"
 )
 

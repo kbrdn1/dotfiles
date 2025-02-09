@@ -1,4 +1,6 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
+source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
 
 cpu_top=(
   label.font="$FONT:Semibold:7"

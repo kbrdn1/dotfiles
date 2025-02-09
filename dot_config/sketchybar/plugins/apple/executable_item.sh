@@ -1,4 +1,7 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
+source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
+source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
 
 POPUP_OFF="sketchybar --set apple.logo popup.drawing=off"
 POPUP_CLICK_SCRIPT="sketchybar --set \$NAME popup.drawing=toggle"
@@ -9,6 +12,7 @@ apple_logo=(
   icon.color=$GREEN
   padding_right=15
   label.drawing=off
+  script="$PLUGIN_DIR/apple/apple.sh"
   click_script="$POPUP_CLICK_SCRIPT"
 )
 
@@ -32,6 +36,10 @@ apple_lock=(
 
 sketchybar --add item apple.logo left                  \
            --set apple.logo "${apple_logo[@]}"         \
+           --subscribe apple.logo mouse.clicked        \
+                                  mouse.exited         \
+                                  mouse.exited.global  \
+                                  mouse.entered        \
                                                        \
            --add item apple.prefs popup.apple.logo     \
            --set apple.prefs "${apple_prefs[@]}"       \

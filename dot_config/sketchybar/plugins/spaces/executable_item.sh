@@ -1,4 +1,7 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
+source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
+source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
 
 SPACE_ICONS=("1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15")
 
@@ -19,14 +22,14 @@ do
     padding_left=2
     padding_right=2
     label.padding_right=20
-    icon.highlight_color=$RED
+    icon.highlight_color=$MAGENTA
     label.font="sketchybar-app-font:Regular:16.0"
     label.background.height=26
     label.background.drawing=on
     label.background.color=$BACKGROUND_2
     label.background.corner_radius=8
     label.drawing=off
-    script="$PLUGIN_DIR/space.sh"
+    script="$PLUGIN_DIR/spaces/spaces.sh"
   )
 
   sketchybar --add space space.$sid left    \
@@ -42,7 +45,7 @@ spaces=(
 )
 
 separator=(
-  icon=􀆊
+  icon=$SEPARATOR
   icon.font="$FONT:Heavy:16.0"
   padding_left=15
   padding_right=15

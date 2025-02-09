@@ -1,9 +1,9 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
+source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
+source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
 
 update() {
-  source "$HOME/.config/sketchybar/colors.sh"
-  source "$HOME/.config/sketchybar/icons.sh"
-
   NOTIFICATIONS="$(gh api notifications)"
   COUNT="$(echo "$NOTIFICATIONS" | jq 'length')"
   args=()

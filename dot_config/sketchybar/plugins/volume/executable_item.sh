@@ -1,7 +1,10 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
+source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
+source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
 
 volume_slider=(
-  script="$PLUGIN_DIR/volume.sh"
+  script="$PLUGIN_DIR/volume/volume.sh"
   updates=on
   label.drawing=off
   icon.drawing=off
@@ -14,7 +17,7 @@ volume_slider=(
 )
 
 volume_icon=(
-  click_script="$PLUGIN_DIR/volume_click.sh"
+  click_script="$PLUGIN_DIR/volume/actions/click.sh"
   padding_left=10
   padding_right=0
   icon=$VOLUME_100
@@ -25,6 +28,7 @@ volume_icon=(
   label.width=25
   label.align=left
   label.font="$FONT:Regular:14.0"
+  drawing=on
 )
 
 status_bracket=(

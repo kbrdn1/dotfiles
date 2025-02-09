@@ -1,9 +1,10 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
 
 window_state() {
-  source "$HOME/.config/sketchybar/colors.sh"
-  source "$HOME/.config/sketchybar/icons.sh"
-
+  source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
+  source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
+  
   WINDOW=$(yabai -m query --windows --window)
   CURRENT=$(echo "$WINDOW" | jq '.["stack-index"]')
 

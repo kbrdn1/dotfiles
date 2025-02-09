@@ -1,11 +1,12 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
 
 battery=(
-  script="$PLUGIN_DIR/battery.sh"
+  script="$PLUGIN_DIR/battery/battery.sh"
   icon.font="$FONT:Regular:19.0"
   padding_right=5
   padding_left=0
-  label.drawing=off
+  label.drawing=on
   update_freq=120
   updates=on
 )

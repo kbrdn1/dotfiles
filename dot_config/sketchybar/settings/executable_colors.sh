@@ -7,6 +7,7 @@ export RED=0xffed8796
 export GREEN=0xffa6da95
 export BLUE=0xff8aadf4
 export YELLOW=0xffeed49f
+export PEACH=0xfff5a97f
 export ORANGE=0xfff5a97f
 export MAGENTA=0xffc6a0f6
 export GREY=0xff939ab7

@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
 
 calendar=(
   icon=cal
@@ -8,7 +9,7 @@ calendar=(
   label.align=right
   padding_left=15
   update_freq=30
-  script="$PLUGIN_DIR/calendar.sh"
+  script="$PLUGIN_DIR/calendar/calendar.sh"
   click_script="$PLUGIN_DIR/zen.sh"
 )
 

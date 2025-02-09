@@ -1,27 +1,35 @@
 #!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
+source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
+source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
 
 WIDTH=100
 
 volume_change() {
-  source "$HOME/.config/sketchybar/icons.sh"
-  case $INFO in
-    [6-9][0-9]|100) ICON=$VOLUME_100
-    ;;
-    [3-5][0-9]) ICON=$VOLUME_66
-    ;;
-    [1-2][0-9]) ICON=$VOLUME_33
-    ;;
-    [1-9]) ICON=$VOLUME_10
-    ;;
-    0) ICON=$VOLUME_0
-    ;;
-    *) ICON=$VOLUME_100
-  esac
+  CONNECTED="$(blueutil --connected | grep -o 'AirPods')"
+  if [ "$CONNECTED" == 'AirPods' ]; then
+    ICON=$AIRPODS
+    sketchybar --set volume_icon icon.drawing=off
+  else
+    case $INFO in
+      [6-9][0-9]|100) ICON=$VOLUME_100
+      ;;
+      [3-5][0-9]) ICON=$VOLUME_66
+      ;;
+      [1-2][0-9]) ICON=$VOLUME_33
+      ;;
+      [1-9]) ICON=$VOLUME_10
+      ;;
+      0) ICON=$VOLUME_0
+      ;;
+      *) ICON=$VOLUME_100
+    esac
+  fi
 
-  sketchybar --set volume_icon label=$ICON
+  sketchybar --set volume_icon label=$ICON \
 
   sketchybar --set $NAME slider.percentage=$INFO \
-             --animate tanh 30 --set $NAME slider.width=$WIDTH 
+             --animate tanh 30 --set $NAME slider.width=$WIDTH
 
   sleep 2
 
