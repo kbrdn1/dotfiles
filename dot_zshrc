@@ -15,8 +15,9 @@ export ZSH="$HOME/.oh-my-zsh"
 export EDITOR="zed"
 
 # --- Config Aliases ---
-alias config="cd ~/.config"
-alias edit-config="$EDITOR ~/.config"
+export XDG_CONFIG_HOME="$HOME/.config"
+alias config="cd $XDG_CONFIG_HOME"
+alias edit-config="$EDITOR $XDG_CONFIG_HOME"
 
 # --- ZSH Aliases ---
 alias reload-zsh="source ~/.zshrc"
@@ -64,13 +65,13 @@ VI_MODE_CURSOR_OPPEND=0
 
 # --- Sketchybar Aliases ---
 alias reload-sketchybar="brew services restart sketchybar"
-alias edit-sketchybar="$EDITOR ~/.config/sketchybar"
+alias edit-sketchybar="$EDITOR $XDG_CONFIG_HOME/sketchybar"
 
 # --- JankyBorders Aliases ---
 alias reload-jankyborders="brew services restart borders"
 alias reload-borders="brew services restart borders"
-alias edit-jankyborders="$EDITOR ~/.config/borders"
-alias edit-borders="$EDITOR ~/.config/borders"
+alias edit-jankyborders="$EDITOR $XDG_CONFIG_HOME/borders"
+alias edit-borders="$EDITOR $XDG_CONFIG_HOME/borders"
 
 # --- SketchyVim ---
 alias reload-svim="brew services restart svim"
@@ -88,7 +89,9 @@ export USER_FOLDER=$(basename $HOME)
 # --- Aliases ---
 alias py='python3'
 alias python='/usr/bin/python3'
+alias pa='php artisan'
 alias laravel='php artisan'
+alias a='adonis ace'
 alias adonis='node ace'
 alias yt='youtube'
 alias gg='google'
@@ -98,25 +101,7 @@ alias gcc='gh copilot config'
 alias gca='gh copilot alias'
 
 # --- BUN ---
-# export BUN_INSTALL="$HOME/.bun"
 export PATH="/Users/kbrdn1/.bun/bin:$PATH"
-
-# [ -s "/Users/$USER_FOLDER/.bun/_bun" ] && source "/Users/$USER_FOLDER/.bun/_bun"
-
-# --- PNPM ---
-# export PNPM_HOME="/Users/$USER_FOLDER/Library/pnpm"
-# case ":$PATH:" in
-#   *":$PNPM_HOME:"*) ;;
-#   *) export PATH="$PNPM_HOME:$PATH" ;;
-# esac
-
-# --- Console Ninja ---
-# PATH=~/.console-ninja/.bin:$PATH
-
-# --- NVM ---
-# export NVM_DIR="$HOME/.nvm"
-# [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-# [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
 # --- Homebrew ---
 export PATH="/opt/homebrew/bin:$PATH"
@@ -133,8 +118,12 @@ alias reload-tmux="tmux source-file ~/.tmux.conf"
 alias edit-tmux="$EDITOR ~/.tmux.conf"
 
 # --- Yabai ---
-alias reload-yabai="brew services restart yabai"
-alias edit-yabai="$EDITOR ~/.config/yabai"
+alias reload-yabai="yabai --restart-service"
+alias edit-yabai="$EDITOR $XDG_CONFIG_HOME/yabai"
+
+# --- Skhd ---
+alias reload-skhd="skhd --restart-service"
+alias edit-skhd="$EDITOR $XDG_CONFIG_HOME/skhd/skhdrc"
 
 # --- Bison ---
 export PATH="/usr/local/opt/bison/bin:$PATH"
@@ -235,7 +224,7 @@ function margin () {
 }
 
 function zen () {
-  ~/.config/sketchybar/plugins/zen.sh $1
+  $XDG_CONFIG_HOME/sketchybar/plugins/zen.sh $1
 }
 
 function suyabai () {
