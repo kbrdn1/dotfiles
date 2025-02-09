@@ -44,6 +44,7 @@ To get started, ensure you have the following command-line tools installed:
 - [Pcov](https://github.com/krakjoe/pcov): Code coverage driver for PHP.
 - [Symfony CLI](https://symfony.com/download): CLI tool to manage Symfony applications.
 - [Python](https://www.python.org/): Powerful programming language.
+- [BlueUtil](https://github.com/toy/blueutil): Command-line tool to control Bluetooth.
 
 ### GUI Tools 🖥
 
@@ -102,10 +103,45 @@ Follow these steps to set up your environment:
 
 ## Set up macOS defaults
 
+## Keyboard
+
 ```bash
-# Revert back: defaults delete com.apple.dock autohide-time-modifier; killall Dock
+defaults write NSGlobalDomain KeyRepeat -int 1
+```
+
+### Screenshots
+
+```bash
+mkdir ~/Screenshots
+defaults write com.apple.screencapture location ~/Screenshots
+defaults write com.apple.screencapture type png
+defaults write com.apple.screencapture disable-shadow -bool true
+killall SystemUIServer
+```
+
+### Menu bar
+
+```bash
+defaults write NSGlobalDomain _HIHideMenuBar -bool true
+```
+
+### Dock
+```bash
+defaults write com.apple.dock autohide -bool true
 defaults write com.apple.dock autohide-time-modifier -int 0
 defaults write com.apple.dock autohide-time-modifier -float 0.15; killall Dock
+```
+
+> [!NOTE]
+> Revert back to the default settings using the following command:
+> ```bash
+> defaults delete com.apple.dock autohide-time-modifier; killall Dock
+> ```
+
+## Install Xcode Command Line Tools
+
+```bash
+xcode-select --install
 ```
 
 ## Install Homebrew
@@ -117,6 +153,15 @@ echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> /Users/$whoami/.zprofile
 eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
+> [!NOTE]
+> Visit the [Homebrew website](https://brew.sh/) for more information.
+
+## Install Homebrew Cask
+
+```bash
+brew tap homebrew/cask
+```
+
 ## Install Oh My Zsh
 
 ```bash
@@ -126,7 +171,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 ## Install CLI tools via Homebrew
 
 ```bash
-brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack yq tmux yazi ffmpeg sevenzip jq poppler fd ripgrep fzf zoxide imagemagick font-symbols-only-nerd-font
+sudo brew install coreutils curl git gd bison openssl chezmoi asdf gh tldr fd fzf thefuck powerlevel10k bat eza composer zoxide lazygit lazydocker neofetch dashlane/tap/dashlane-cli php@8.4 pcov@8.4 symfony-cli python@3.12 orbstack yq tmux yazi ffmpeg sevenzip jq poppler fd ripgrep fzf zoxide imagemagick font-symbols-only-nerd-font blueutil
 ```
 
 ## Install applications via Homebrew Cask
@@ -138,23 +183,17 @@ brew install --cask arc raycast zed ghostty warp postman slack discord figma doc
 ## Install Sketchybar, JankyBorders, SketchyVim, and Yabai
 
 ```bash
-brew install --cask sf-symbols
-brew install jq
-brew install gh
-brew install switchaudio-osx
-brew tap FelixKratz/formulae
-brew install sketchybar
-brew install borders
-brew install svim
-brew install koekeishiya/formulae/yabai
-chmod +x ~/.config/sketchybar/*
-chmod +x ~/.config/sketchybar/items/*
-chmod +x ~/.config/sketchybar/plugins/*
-chmod +x ~/.config/sketchybar/helper/*
+# Install GUI tools and dependencies
+brew install --cask sf-symbols && \
+brew install jq gh switchaudio-osx && \
+brew tap FelixKratz/formulae && \
+brew install sketchybar borders svim koekeishiya/formulae/yabai && \
+chmod +x ~/.config/sketchybar/* ~/.config/sketchybar/plugins/**/* ~/.config/sketchybar/helper/*
 ```
 
-> [!NOTE]
+> [!IMPORTANT]
 > Visit the respective repositories for more information on how to set up and install these tools.
+> Yabai requires SIP to be disabled, and you need to grant it the necessary permissions.
 
 ## Install additional tools via asdf
   
