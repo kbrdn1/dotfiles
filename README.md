@@ -6,11 +6,25 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 ## Table of Contents 📚
 
-- [CLI Tools](#cli-tools-)
-- [GUI Tools](#gui-tools-)
-- [Applications](#applications-)
-- [SetApp Applications](#setapp-applications-)
-- [Installation](#installation-)
+- [CLI Tools 🛠️](#cli-tools-)
+- [GUI Tools 🖥️](#gui-tools-)
+- [Applications 📦](#applications-)
+- [SetApp Applications 🎯](#setapp-applications-)
+- [Aliases & Functions 🔧](#aliases--functions-)
+  - [System Aliases 🖥️](#system-aliases)
+  - [Development Aliases 👨‍💻](#development-aliases)
+  - [GitHub Copilot Aliases 🤖](#github-copilot-aliases)
+  - [Window Manager Service Aliases 🪟](#window-manager-service-aliases)
+  - [Tmux Aliases 📟](#tmux-aliases)
+  - [Custom Functions ⚙️](#custom-functions)
+- [Shortcuts & Keybindings ⌨️](#shortcuts--keybindings-)
+  - [Space & Window Navigation 🔍](#space--window-navigation)
+  - [Window Management 🪟](#window-management)
+  - [Window Stacking & Resizing 📐](#window-stacking--resizing)
+  - [Miscellaneous Controls 🎛️](#miscellaneous-controls)
+- [Installation 📥](#installation-)
+- [Acknowledgments 🙏](#acknowledgments-)
+- [License 📄](#license-)
 
 ### CLI Tools 🛠
 
@@ -111,6 +125,92 @@ Premium applications via SetApp:
   - [NotchNook](https://lo.cafe/notchnook): Notch utility
   - [Canary Mail](https://canarymail.io/): Email client
   - [Clop](https://setapp.com/apps/clop): Media optimizer
+
+## Aliases & Functions 🔧
+
+### System Aliases
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `x` | `exit` | Exit terminal |
+| `config` | `cd $XDG_CONFIG_HOME` | Navigate to config directory |
+| `edit-config` | `$EDITOR $XDG_CONFIG_HOME` | Edit config directory |
+| `reload-zsh` | `source ~/.zshrc` | Reload ZSH configuration |
+| `edit-zsh` | `$EDITOR ~/.zshrc` | Edit ZSH configuration |
+
+### Development Aliases
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `py`, `python` | `/usr/bin/python3` | Python 3 |
+| `pa`, `laravel` | `php artisan` | PHP Artisan CLI |
+| `a`, `adonis` | `node ace` | Adonis Ace CLI |
+| `ls` | `eza --color=always --long --git --no-filesize --icons=always --no-time --no-user --no-permissions --group-directories-first` | Enhanced listing |
+| `cd` | `zoxide` | Enhanced directory navigation |
+| `lg` | `lazygit` | Terminal UI for Git |
+| `lzd` | `lazydocker` | Terminal UI for Docker |
+
+### GitHub Copilot Aliases
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `gcs` | `gh copilot suggest` | Get command suggestions |
+| `gce` | `gh copilot explain` | Explain commands |
+| `gcc` | `gh copilot config` | Configure Copilot |
+| `gca` | `gh copilot alias` | Manage Copilot aliases |
+
+### Window Manager Service Aliases
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `reload-sketchybar` | `brew services restart sketchybar` | Restart Sketchybar |
+| `edit-sketchybar` | `$EDITOR $XDG_CONFIG_HOME/sketchybar` | Edit Sketchybar config |
+| `reload-borders` | `brew services restart borders` | Restart JankyBorders |
+| `edit-borders` | `$EDITOR $XDG_CONFIG_HOME/borders` | Edit JankyBorders config |
+| `reload-yabai` | `yabai --restart-service` | Restart Yabai |
+| `edit-yabai` | `$EDITOR $XDG_CONFIG_HOME/yabai` | Edit Yabai config |
+| `reload-skhd` | `skhd --restart-service` | Restart SKHD |
+| `edit-skhd` | `$EDITOR $XDG_CONFIG_HOME/skhd/skhdrc` | Edit SKHD config |
+
+### Tmux Aliases
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `t` | `tmux -2` | Launch Tmux with 256 colors |
+| `reload-tmux` | `tmux source-file ~/.tmux.conf` | Reload Tmux configuration |
+| `edit-tmux` | `$EDITOR ~/.tmux.conf` | Edit Tmux configuration |
+
+## Shortcuts & Keybindings ⌨️
+
+### Space & Window Navigation
+| Shortcut | Action |
+|----------|--------|
+| <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>5</kbd> | Focus space 1-5 on current display |
+| <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Focus window in direction (west/south/north/east) |
+| <kbd>⌥</kbd> + <kbd>0</kbd> | Focus first window |
+| <kbd>⌥</kbd> + <kbd>$</kbd> | Focus last window |
+| <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle float window |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>f</kbd> | Toggle fullscreen |
+| <kbd>⌥</kbd> + <kbd>f</kbd> | Toggle parent zoom |
+
+### Window Management
+| Shortcut | Action |
+|----------|--------|
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Move window in direction |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>s</kbd> | Toggle split orientation |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>5</kbd> | Move window to space 1-5 |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>b</kbd>/<kbd>n</kbd> | Move window to prev/next space |
+
+### Window Stacking & Resizing
+| Shortcut | Action |
+|----------|--------|
+| <kbd>⇧</kbd> + <kbd>⌃</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Stack window in direction |
+| <kbd>⇧</kbd> + <kbd>⌃</kbd> + <kbd>b</kbd>/<kbd>p</kbd> | Navigate through stack |
+| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Resize window |
+| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>e</kbd> | Equalize window sizes |
+| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>g</kbd> | Toggle gaps |
+
+### Miscellaneous Controls
+| Shortcut | Action |
+|----------|--------|
+| <kbd>⌥</kbd> + <kbd>-</kbd>/<kbd>_</kbd> | Create new window in horizontal/vertical split |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle Sketchybar visibility |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>r</kbd> | Reload Sketchybar |
 
 ## Installation 📥
 
