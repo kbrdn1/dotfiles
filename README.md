@@ -22,6 +22,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
   - [Window Management 🪟](#window-management)
   - [Window Stacking & Resizing 📐](#window-stacking--resizing)
   - [Miscellaneous Controls 🎛️](#miscellaneous-controls)
+  - [Tmux Keybindings 🖥️](#tmux-keybindings-)
 - [Installation 📥](#installation-)
 - [Acknowledgments 🙏](#acknowledgments-)
 - [License 📄](#license-)
@@ -211,6 +212,40 @@ Premium applications via SetApp:
 | <kbd>⌥</kbd> + <kbd>-</kbd>/<kbd>_</kbd> | Create new window in horizontal/vertical split |
 | <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle Sketchybar visibility |
 | <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>r</kbd> | Reload Sketchybar |
+
+### Tmux Keybindings 🖥️
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>⌃</kbd> + <kbd>s</kbd> | `prefix` | Prefix key (replaces default <kbd>⌃</kbd> + <kbd>b</kbd>) |
+
+#### Session Management
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>prefix</kbd> + <kbd>r</kbd> | `source-file ~/.tmux.conf` | Reload tmux configuration |
+| <kbd>prefix</kbd> + <kbd>o</kbd> | `tmux-sessionx` | Open session manager |
+| <kbd>prefix</kbd> + <kbd>Space</kbd> | `which-key` | Show available keybindings |
+
+#### Window Management
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>prefix</kbd> + <kbd>c</kbd> | `new-window` | Create new window |
+| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>H</kbd> | `previous-window` | Go to previous window |
+| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>L</kbd> | `next-window` | Go to next window |
+| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>x</kbd> | `kill-window` | Close current window |
+
+#### Pane Management
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>prefix</kbd> + <kbd>h</kbd> | `select-pane -L` | Focus left pane |
+| <kbd>prefix</kbd> + <kbd>j</kbd> | `select-pane -D` | Focus down pane |
+| <kbd>prefix</kbd> + <kbd>k</kbd> | `select-pane -U` | Focus up pane |
+| <kbd>prefix</kbd> + <kbd>l</kbd> | `select-pane -R` | Focus right pane |
+| <kbd>prefix</kbd> + <kbd>x</kbd> | `kill-pane` | Close current pane |
+| <kbd>prefix</kbd> + <kbd>-</kbd> | `split-window -h` | Split pane horizontally |
+| <kbd>prefix</kbd> + <kbd>_</kbd> | `split-window -v` | Split pane vertically |
+
+> [!NOTE]
+> The prefix key (<kbd>⌃</kbd> + <kbd>s</kbd>) must be pressed before using most tmux commands. After pressing the prefix key, release it before pressing the command key.
 
 ## Installation 📥
 
