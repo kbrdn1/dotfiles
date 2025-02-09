@@ -1,8 +1,8 @@
 neovim 0.10.4
-bun 1.2.1
+bun 1.2.2
 nodejs 23.2.0
-pnpm 9.15.4
-rust 1.84.0
-golang 1.23.5
+pnpm 9.15.5
+rust 1.84.1
+golang 1.23.6
 stripe-cli 1.23.10
-chezmoi 2.59.0
+chezmoi 2.59.1
