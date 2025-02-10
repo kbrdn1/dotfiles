@@ -148,6 +148,7 @@ Premium applications via SetApp:
 | `cd` | `zoxide` | Enhanced directory navigation |
 | `lg` | `lazygit` | Terminal UI for Git |
 | `lzd` | `lazydocker` | Terminal UI for Docker |
+| `f` | `fzf --tmux top,50%` | Fuzzy finder in Tmux fixed on top with 50% height |
 
 ### GitHub Copilot Aliases
 | Alias | Command | Description |
