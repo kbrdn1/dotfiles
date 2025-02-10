@@ -65,10 +65,21 @@ export ASDF_PYTHON_PATCH_URL="https://github.com/python/cpython/commit/8ea6353.p
 
 # FZF Configuration
 eval "$(fzf --zsh)"
-export FZF_DEFAULT_COMMAND="fd --hidden --strip-cwd-prefix --exclude .git"
+export FZF_DEFAULT_COMMAND="fd --hidden --exclude .git"
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 export FZF_ALT_C_COMMAND="fd --type d --hidden --strip-cwd-prefix --exclude .git"
-export FZF_CTRL_T_OPTS="--preview 'bat -n --color=always --line-range :500 {}'"
+export FZF_DEFAULT_OPTS="--style full \
+    --border-label ' FZF ' --header-label ' File Type ' \
+  --preview 'bat -n --color=always --line-range :500 {}' \
+    --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' \
+    --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' \
+    --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' \
+    --color 'border:#494d64,label:#cad3f5' \
+    --color 'preview-border:#8aadf4,preview-label:#b7bdf8' \
+    --color 'list-border:#a6da95,list-label:#a6da95' \
+    --color 'input-border:#ed8796,input-label:#f5a9b8' \
+    --color 'header-border:#7dc4e4,header-label:#91d7e3'"
+export FZF_CTRL_T_OPTS="$FZF_DEFAULT_OPTS"
 export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always {} | head -200'"
 
 # Bat
@@ -97,6 +108,7 @@ alias ls="eza --color=always --long --git --no-filesize --icons=always --no-time
 alias cd="z"
 alias lg="lazygit"
 alias lzd='lazydocker'
+alias f="fzf --tmux top,50%"
 
 # GitHub Copilot
 alias gcs='gh copilot suggest'
