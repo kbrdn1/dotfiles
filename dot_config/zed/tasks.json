@@ -1,6 +1,24 @@
 [
   {
-      "label": "Blame Around Line",
-      "command": "git blame $ZED_FILE -L $(($ZED_ROW - 5)),$(($ZED_ROW + 5))"
-    }
+    "label": "Blame Around Line",
+    "command": "git blame $ZED_FILE -L $(($ZED_ROW - 5)),$(($ZED_ROW + 5))"
+  },
+  {
+    "label": "Rename Files (Script)",
+    "command": "~/.config/zed/tasks/rename_files.sh \"${1:Chemin de recherche (ex: app)}\" \"${2:Pattern de fichier (ex: *Ressource.php)}\" \"${3:Motif à remplacer (ex: Ressource\\.php)}\" \"${4:Nouveau motif (ex: Resource\\.php)}\"",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "use_new_terminal": true,
+    "reveal": "always",
+    "show_summary": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Lazygit",
+    "command": "lazygit -p $ZED_WORKTREE_ROOT"
+  }
 ]
