@@ -7,18 +7,31 @@
 // custom settings, run the `open default settings` command
 // from the command palette or from `Zed` application menu.
 {
+  "edit_predictions": {
+    "disabled_globs": [],
+    "mode": "eager",
+    "copilot": {
+      "proxy": null,
+      "proxy_no_verify": null
+    },
+    "enabled_in_assistant": false
+  },
+  "show_edit_predictions": true,
+  "features": {
+    "edit_prediction_provider": "copilot"
+  },
   "icon_theme": "Catppuccin Macchiato",
   "assistant": {
     "default_model": {
-      "provider": "zed.dev",
-      "model": "claude-3-5-sonnet-latest"
+      "provider": "anthropic",
+      "model": "claude-3-7-sonnet-latest"
     },
     "version": "2"
   },
   "enable_experimental_live_diffs": true,
   "vim_mode": true,
   "base_keymap": "VSCode",
-  "theme": "Catppuccin Macchiato (Blue Blur+)",
+  "theme": "Catppuccin Macchiato",
   "ui_font_size": 15,
   "buffer_font_size": 14,
   "autosave": {
@@ -61,8 +74,19 @@
     "activate_on_close": "history"
   },
   "toolbar": {
+    "selections_menu": true,
     "breadcrumbs": true,
     "quick_actions": true
+  },
+  "diagnostics": {
+    "include_warnings": true,
+    "inline": {
+      "enabled": true,
+      "update_debounce_ms": 0,
+      "padding": 2,
+      "min_column": 0,
+      "max_severity": null
+    }
   },
   "relative_line_numbers": true,
   "soft_wrap": "preferred_line_length",
@@ -71,8 +95,14 @@
     "show_other_hints": true,
     "show_parameter_hints": true,
     "show_type_hints": true,
-    "show_background": false
+    "scroll_debounce_ms": 50,
+    "show_background": false,
+    "edit_debounce_ms": 0,
+    "toggle_on_modifiers_press": {
+      "control": true
+    }
   },
+  "ensure_final_newline_on_save": false,
   "git": {
     "git_gutter": "tracked_files",
     "inline_blame": {
@@ -84,10 +114,11 @@
   },
   "indent_guides": {
     "enabled": true,
-    "coloring": "fixed",
+    "coloring": "indent_aware",
     "indent_size": 2,
     "background_coloring": "disabled",
-    "line_width": 1
+    "line_width": 1,
+    "active_line_width": 2
   },
   "lsp": {
     "discord_presence": {
