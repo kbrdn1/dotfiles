@@ -23,7 +23,7 @@
   "icon_theme": "Catppuccin Macchiato",
   "assistant": {
     "default_model": {
-      "provider": "anthropic",
+      "provider": "zed.dev",
       "model": "claude-3-7-sonnet-latest"
     },
     "version": "2"
@@ -31,7 +31,7 @@
   "enable_experimental_live_diffs": true,
   "vim_mode": true,
   "base_keymap": "VSCode",
-  "theme": "Catppuccin Macchiato",
+  "theme": "Catppuccin Macchiato Darker (Blur)",
   "ui_font_size": 15,
   "buffer_font_size": 14,
   "autosave": {
@@ -265,6 +265,7 @@
     "blinking": "on",
     "font_family": "CaskaydiaCove Nerd Font",
     "font_size": 14,
+    "line_height":"standard",
     "font_features": {
       "cv01": 7
     },
