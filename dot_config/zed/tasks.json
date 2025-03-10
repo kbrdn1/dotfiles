@@ -61,5 +61,35 @@
     "allow_concurrent_runs": false,
     "hide": "never",
     "reveal_target": "center"
+  },
+  {
+    "label": "Laravel Migrate (fresh and seed)",
+    "command": "cd $ZED_WORKTREE_ROOT && php artisan migrate:fresh --seed",
+    "use_new_terminal": true,
+    "reveal": "no_focus",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "dock"
+  },
+  {
+    "label": "Laravel Migrate (fresh)",
+    "command": "cd $ZED_WORKTREE_ROOT && php artisan migrate:fresh",
+    "use_new_terminal": true,
+    "reveal": "no_focus",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "dock"
   }
 ]
