@@ -9,8 +9,13 @@
     "context": "Workspace",
     "bindings": {
       "cmd-alt-i": "assistant::ToggleFocus",
-      "alt-g": ["task::Spawn", { "task_name": "Lazygit", "reveal_target": "center" }],
+      "alt-z": ["task::Spawn", { "task_name": "FZF" }],
+      "alt-y": ["task::Spawn", { "task_name": "Yazi" }],
+      "alt-g": ["task::Spawn", { "task_name": "Lazygit" }],
       "alt-r": ["task::Spawn", { "task_name": "Rename Files (Script)" }],
+      "alt-d": ["task::Spawn", { "task_name": "Redis" }],
+      "alt-shift-d": ["task::Spawn", { "task_name": "Lazydocker" }],
+      "alt-shift-k": ["task::Spawn", { "task_name": "Lazykube" }],
       "alt-t": ["task::Spawn", { "task_name": "Laravel Test" }],
       "alt-shift-t": ["task::Spawn", { "task_name": "Laravel Test (coverage)" }],
       "alt-shift-m": ["task::Spawn", { "task_name": "Laravel Migrate (fresh and seed)"}]
@@ -36,6 +41,8 @@
   {
     "context": "Editor && VimControl && !VimWaiting && !menu",
     "bindings": {
+      "alt-k": "editor::MoveLineUp",
+      "alt-j": "editor::MoveLineDown",
       "cmd-;": "go_to_line::Toggle",
       "i": [
         "vim::PushObject",
@@ -123,12 +130,14 @@
       // "space" commands
       "space R": "editor::Rename",
       "space r": ["task::Spawn", { "task_name": "Rename Files (Script)" }],
+      "space t r": ["task::Spawn", { "task_name": "Redis" }],
+      "space t d": ["task::Spawn", { "task_name": "Lazydocker" }],
       "space @": "editor::RestartLanguageServer",
       // "space g": "editor::SelectLargerSyntaxNode",
       // "space shift-g": "editor::SelectSmallerSyntaxNode",
-      "space g g": ["task::Spawn", { "task_name": "Lazygit", "reveal_target": "center" }],
-      "space t": ["task::Spawn", { "task_name": "Laravel Test" }],
-      "space T": ["task::Spawn", { "task_name": "Laravel Test (coverage)" }],
+      "space g g": ["task::Spawn", { "task_name": "Lazygit" }],
+      "space t t": ["task::Spawn", { "task_name": "Laravel Test" }],
+      "space t T": ["task::Spawn", { "task_name": "Laravel Test (coverage)" }],
       "space M": ["task::Spawn", { "task_name": "Laravel Migrate (fresh and seed)"}],
       "space 0": "vim::StartOfDocument",
       "space o": "editor::Hover",
@@ -144,8 +153,8 @@
       "space .": "editor::ToggleCodeActions", // zed specific
       "space shift-a": "editor::FindAllReferences", // zed specific
       "space w d": "pane::CloseActiveItem",
-      "space h": "workspace::ActivatePaneLeft",
-      "space l": "workspace::ActivatePaneRight",
+      "ctrl-h": "workspace::ActivatePaneLeft",
+      "ctrl-l": "workspace::ActivatePaneRight",
       "space j": "workspace::ActivatePaneUp",
       "space k": "workspace::ActivatePaneDown",
       "space c c o": "assistant::ToggleFocus",
