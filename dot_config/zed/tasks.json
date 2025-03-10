@@ -31,5 +31,35 @@
     "allow_concurrent_runs": false,
     "hide": "on_success",
     "reveal_target": "center"
+  },
+  {
+    "label": "Laravel Test",
+    "command": "cd $ZED_WORKTREE_ROOT && php artisan test",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "allow_concurrent_runs": false,
+    "hide": "never",
+    "reveal_target": "center"
+  },
+  {
+    "label": "Laravel Test (coverage)",
+    "command": "cd $ZED_WORKTREE_ROOT && php artisan test --coverage",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "allow_concurrent_runs": false,
+    "hide": "never",
+    "reveal_target": "center"
   }
 ]
