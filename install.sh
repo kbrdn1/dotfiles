@@ -74,7 +74,7 @@ asdf plugin add pnpm && asdf install pnpm 10.6.1
 asdf plugin add golang && asdf install golang 1.23.6
 asdf plugin add nodejs && asdf install nodejs 23.2.0
 asdf plugin add rust && asdf install rust 1.84.1
-asdf plugin add bun && asdf install bun 1.2.4
+asdf plugin add bun && asdf install bun 1.2.5
 
 # Setup sketchybar
 echo "🎨 Setting up sketchybar..."
@@ -87,6 +87,6 @@ chezmoi apply
 
 echo "✨ Installation complete!"
 echo "⚠️ Don't forget to:"
-echo "1. Configure Yabai permissions"
+echo "1. Configure Yabai permissions (See the wiki on GitHub)"
 echo "2. Install SetApp applications manually"
 echo "3. Restart your computer to apply all changes"

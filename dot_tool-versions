@@ -1,5 +1,5 @@
 neovim 0.10.4
-bun 1.2.4
+bun 1.2.5
 nodejs 23.2.0
 pnpm 10.6.1
 rust 1.84.1
