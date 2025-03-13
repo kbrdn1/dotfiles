@@ -6,3 +6,4 @@ rust 1.84.1
 golang 1.23.6
 stripe-cli 1.23.10
 chezmoi 2.60.1
+deno 2.2.3

@@ -58,6 +58,7 @@ Our essential command-line tools:
   - [Rust](https://www.rust-lang.org/): Systems programming language
   - [Go](https://golang.org/): Programming language
   - [Bun](https://bun.sh/): JavaScript runtime & toolkit
+  - [Deno](https://deno.land/): JavaScript runtime
 
 - **Productivity Tools**
   - [GH](https://cli.github.com/): GitHub CLI

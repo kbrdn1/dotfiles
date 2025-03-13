@@ -75,6 +75,7 @@ asdf plugin add golang && asdf install golang 1.23.6
 asdf plugin add nodejs && asdf install nodejs 23.2.0
 asdf plugin add rust && asdf install rust 1.84.1
 asdf plugin add bun && asdf install bun 1.2.5
+asdf plugin add deno && asdf install deno 2.2.3
 
 # Setup sketchybar
 echo "🎨 Setting up sketchybar..."
