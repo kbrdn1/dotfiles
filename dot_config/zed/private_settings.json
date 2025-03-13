@@ -23,7 +23,7 @@
   "icon_theme": "Catppuccin Macchiato",
   "assistant": {
     "default_model": {
-      "provider": "zed.dev",
+      "provider": "anthropic",
       "model": "claude-3-7-sonnet-latest"
     },
     "version": "2"
@@ -259,6 +259,12 @@
         "source.fixAll.eslint": true,
         "source.organizeImports": true
       }
+    }
+  },
+  "jupyter": {
+    "kernel_selections": {
+      "typescript": "deno",
+      "javascript": "deno"
     }
   },
   "terminal": {
