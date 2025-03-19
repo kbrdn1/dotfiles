@@ -7,6 +7,141 @@
 // custom settings, run the `open default settings` command
 // from the command palette or from `Zed` application menu.
 {
+  // Theme & Appearance
+  "theme": "Catppuccin Macchiato Custom (Blur)",
+  "icon_theme": "Catppuccin Macchiato",
+  "experimental.theme_overrides": {
+    "background.appearance": "blurred"
+  },
+
+  // Editor Behavior
+  "vim_mode": true,
+  "base_keymap": "VSCode",
+  "enable_experimental_live_diffs": true,
+  "tab_size": 2,
+  "relative_line_numbers": true,
+  "preferred_line_length": 100,
+  "soft_wrap": "preferred_line_length",
+  "show_whitespaces": "selection",
+  "ensure_final_newline_on_save": false,
+  "remove_trailing_whitespace_on_save": true,
+  "format_on_save": "off",
+  "formatter": "prettier",
+  "autosave": {
+    "after_delay": {
+      "milliseconds": 300
+    }
+  },
+
+  // Font Settings
+  // "ui_font_family": "Monaspace Argon Var",
+  "ui_font_size": 15,
+  "ui_font_features": {
+    "liga": true // www
+  },
+  "ui_font_weight": 300,
+
+  "buffer_font_family": "Monaspace Neon Frozen",
+  "buffer_font_size": 14,
+  "buffer_font_fallbacks": ["CaskaydiaCove Nerd Font"],
+  // "buffer_font_weight": 300,
+  "buffer_font_features": {
+    "liga": true, // www /// !! ;;
+    "zero": true, // 0
+    "cv01": true, // a
+    "cv06": true, // i
+    "cv27": true, // []
+    "CV31": true, // ()
+    "ss01": true, // ===
+    "ss02": true, // >= <=
+    "ss03": true, // <--> <->
+    "ss04": true, // </> </ <>
+    "ss05": true, // [|  [] /\ |>
+    "ss06": true, // ### +++ &&&
+    "ss07": true, // -:- =:= ::> :::
+    "ss08": true, // ..= ..- ..<
+    "ss09": true, // <=> <<= >>=
+    "ss10": true, // fi ft
+    "ordn": false, // No. 1st 2nd
+    "clig": true, // _|_
+    "salt": false, // Stylistic Alternates
+    "calt": true, // Contextual Alternates (fi -> ﬁ)
+    "dlig": true // Discretionary Ligatures (== -> ===)
+  },
+
+  // UI Elements
+  "tab_bar": {
+    "show": true
+  },
+  "tabs": {
+    "file_icons": true,
+    "git_status": true,
+    "close_position": "right",
+    "activate_on_close": "history"
+  },
+  "toolbar": {
+    "selections_menu": true,
+    "breadcrumbs": true,
+    "quick_actions": true
+  },
+  "file_finder": {
+    "max_modal_width": "medium",
+    "modal_width": "medium"
+  },
+  "preview_tabs": {
+    "enabled": true,
+    "enable_preview_from_file_finder": true,
+    "enable_preview_from_code_navigation": true
+  },
+  "project_panel": {
+    "dock": "left",
+    "indent_size": 15,
+    "git_status": true
+  },
+
+  // Code Intelligence
+  "semantic_index": {
+    "enabled": true
+  },
+  "inlay_hints": {
+    "enabled": true,
+    "show_other_hints": true,
+    "show_parameter_hints": true,
+    "show_type_hints": true,
+    "scroll_debounce_ms": 50,
+    "show_background": false,
+    "edit_debounce_ms": 0,
+    "toggle_on_modifiers_press": {
+      "platform": true
+    }
+  },
+  "diagnostics": {
+    "include_warnings": true,
+    "inline": {
+      "enabled": true,
+      "update_debounce_ms": 0,
+      "padding": 2,
+      "min_column": 0,
+      "max_severity": null
+    }
+  },
+  "indent_guides": {
+    "enabled": true,
+    "coloring": "indent_aware",
+    "indent_size": 2,
+    "background_coloring": "disabled",
+    "line_width": 1,
+    "active_line_width": 2
+  },
+
+  // AI Assistance
+  "assistant": {
+    "default_model": {
+      "provider": "zed.dev",
+      "model": "claude-3-7-sonnet-latest"
+    },
+    "version": "2"
+  },
   "edit_predictions": {
     "disabled_globs": [],
     "mode": "eager",
@@ -20,162 +155,55 @@
   "features": {
     "edit_prediction_provider": "copilot"
   },
-  "icon_theme": "Catppuccin Macchiato",
-  "assistant": {
-    "default_model": {
-      "provider": "zed.dev",
-      "model": "claude-3-7-sonnet-latest"
-    },
-    "version": "2"
+
+  // File Handling
+  "file_types": {
+    "Dockerfile": ["Dockerfile", "Dockerfile.*"],
+    "JSON": ["json", "jsonc", "*.code-snippets"],
+    "Shell Script": ["sh", "bash", "zsh", "fish", "ksh", "csh", "tcsh", "sh.*", "bash.*", "zsh.*", "fish.*", "ksh.*", "csh.*", "tcsh.*"] 
   },
-  "enable_experimental_live_diffs": true,
-  "vim_mode": true,
-  "base_keymap": "VSCode",
-  "theme": "Catppuccin Macchiato Custom (Blur)",
-  "ui_font_size": 15,
-  "buffer_font_size": 14,
-  "autosave": {
-    "after_delay": {
-      "milliseconds": 1000
-    }
-  },
-  "file_finder": {
-    "max_modal_width": "medium",
-    "modal_width": "medium"
-  },
-  "preview_tabs": {
-    "enabled": true,
-    "enable_preview_from_file_finder": true,
-    "enable_preview_from_code_navigation": true
-  },
-  "tab_bar": {
-    "show": true
-  },
-  "semantic_index": {
-    "enabled": true
-  },
-  "preferred_line_length": 100,
-  "journal": {
-    "path": "~",
-    "hour_format": "hour24"
-  },
-  // "ui_font_family": "Monaspace Neon Var",
-  // "buffer_font_family": "Monaspace Argon Var",
-  "buffer_font_family": "CaskaydiaCove Nerd Font Mono",
-  "buffer_font_weight": 300,
-  "format_on_save": "off",
-  "show_whitespaces": "selection",
-  "remove_trailing_whitespace_on_save": true,
-  "tab_size": 2,
-  "ui_font_features": {
-    "liga": true, // www
-    "zero": true, // 0
-    "cv01": true, // a
-    "cv06": true, // i
-    "cv27": true, // []
-    "CV31": true, // ()
-    "ss03": true, // &
-    "ss04": true, // $
-    "ss05": true, // @
-    "ss06": true, // \\
-    "ss07": true, // =~
-    "ss09": true, // <> >==
-    "ss10": true, // fi ft
-    "ordn": false, // No. 1st 2nd
-    "clig": true, // _|_
-    "salt": false, // Stylistic Alternates
-    "calt": true, // Contextual Alternates (fi -> ﬁ)
-    "dlig": true, // Discretionary Ligatures (== -> ===)
-    "frac": false, // Fractions (1/2 1/4 3/4)
-    "sups": false, // Superscript (x² y³)
-    "subs": false, // Subscript (H₂O)
-    "tnum": true, // Tabular Numbers (123 456)
-    "case": true, // Case-Sensitive Forms (¿Hola?)
-    "kern": true  // Kerning (AV → AV)
-  },
-  "buffer_font_features": { // #c6a0f6
-    "liga": true, // www
-    "zero": true, // 0
-    "cv01": true, // a
-    "cv06": true, // i
-    "cv27": true, // []
-    "CV31": true, // ()
-    "ss03": true, // &
-    "ss04": true, // $
-    "ss05": true, // @
-    "ss06": true, // \\
-    "ss07": true, // =~
-    "ss09": true, // <> >==
-    "ss10": true, // fi ft
-    "ordn": false, // No. 1st 2nd
-    "clig": true, // _|_
-    "salt": false, // Stylistic Alternates
-    "calt": true, // Contextual Alternates (fi -> ﬁ)
-    "dlig": true, // Discretionary Ligatures (== -> ===)
-    "frac": false, // Fractions (1/2 1/4 3/4)
-    "sups": false, // Superscript (x² y³)
-    "subs": false, // Subscript (H₂O)
-    "case": true, // Case-Sensitive Forms (¿Hola?)
-    "kern": true  // Kerning (AV → AV)
-  },
-  "tabs": {
-    "file_icons": true,
-    "git_status": true,
-    "close_position": "right",
-    "activate_on_close": "history"
-  },
-  "toolbar": {
-    "selections_menu": true,
-    "breadcrumbs": true,
-    "quick_actions": true
-  },
-  "diagnostics": {
-    "include_warnings": true,
-    "inline": {
-      "enabled": true,
-      "update_debounce_ms": 0,
-      "padding": 2,
-      "min_column": 0,
-      "max_severity": null
-    }
-  },
-  "relative_line_numbers": true,
-  "soft_wrap": "preferred_line_length",
-  "inlay_hints": {
-    "enabled": true,
-    "show_other_hints": true,
-    "show_parameter_hints": true,
-    "show_type_hints": true,
-    "scroll_debounce_ms": 50,
-    "show_background": false,
-    "edit_debounce_ms": 0,
-    "toggle_on_modifiers_press": {
-      "platform": true
-    }
-  },
-  "ensure_final_newline_on_save": false,
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+    // above is default from Zed
+    "**/node_modules",
+    "**/dist",
+    "**/.idea",
+    "**/.vscode",
+    "**/__pycache__",
+    "**/.__mocks__",
+    "**/out",
+    "**/.husky",
+    "**/.turbo",
+    "**/.vscode-test",
+    "**/.next",
+    "**/.nuxt",
+    "**/.storybook",
+    "**/.tap",
+    "**/.nyc_output",
+    "**/report"
+  ],
+
+  // Git Integration
   "git": {
     "git_gutter": "tracked_files",
+    "hunk_style": "staged_hollow",
     "inline_blame": {
       "enabled": true,
       "min_column": 100,
-      "show_commit_summary": true
+      "show_commit_summary": true,
+      "delay_ms": 0
     },
     "gutter_debounce": 1000
   },
-  "indent_guides": {
-    "enabled": true,
-    "coloring": "indent_aware",
-    "indent_size": 2,
-    "background_coloring": "disabled",
-    "line_width": 1,
-    "active_line_width": 2
-  },
-  "file_types": {
-      "Dockerfile": ["Dockerfile", "Dockerfile.*"],
-      "JSON": ["json", "jsonc", "*.code-snippets"],
-      "Shell Script": ["sh", "bash", "zsh", "fish", "ksh", "csh", "tcsh", "sh.*", "bash.*", "zsh.*", "fish.*", "ksh.*", "csh.*", "tcsh.*"] 
-    },
+
+  // Language & LSP Settings
   "lsp": {
     "discord_presence": {
       "initialization_options": {
@@ -236,7 +264,6 @@
       }
     }
   },
-  "formatter": "prettier",
   "languages": {
     "Rust": {
       "formatter": {
@@ -317,42 +344,38 @@
       }
     }
   },
-  "jupyter": {
-    "kernel_selections": {
-      "typescript": "deno",
-      "javascript": "deno"
-    }
-  },
+
+  // Terminal Settings
   "terminal": {
     "blinking": "on",
-    "font_family": "CaskaydiaCove Nerd Font",
+    // "font_family": "CaskaydiaCove Nerd Font",
+    "font_family": "Monaspace Neon Frozen",
+    "font_fallbacks": ["CaskaydiaCove Nerd Font"],
     "font_size": 14,
+    // "font_weight": 300,
     "line_height":"standard",
     "font_features": {
-      "liga": true, // www
+      "liga": true, // www /// !! ;;
       "zero": true, // 0
       "cv01": true, // a
       "cv06": true, // i
       "cv27": true, // []
       "CV31": true, // ()
-      "ss03": true, // &
-      "ss04": true, // $
-      "ss05": true, // @
-      "ss06": true, // \\
-      "ss07": true, // =~
-      "ss09": true, // <> >==
+      "ss01": true, // ===
+      "ss02": true, // >= <=
+      "ss03": true, // <--> <->
+      "ss04": true, // </> </ <>
+      "ss05": true, // [|  [] /\ |>
+      "ss06": true, // ### +++ &&&
+      "ss07": true, // -:- =:= ::> :::
+      "ss08": true, // ..= ..- ..<
+      "ss09": true, // <=> <<= >>=
       "ss10": true, // fi ft
       "ordn": false, // No. 1st 2nd
       "clig": true, // _|_
       "salt": false, // Stylistic Alternates
       "calt": true, // Contextual Alternates (fi -> ﬁ)
-      "dlig": true, // Discretionary Ligatures (== -> ===)
-      "frac": false, // Fractions (1/2 1/4 3/4)
-      "sups": false, // Superscript (x² y³)
-      "subs": false, // Subscript (H₂O)
-      "tnum": true, // Tabular Numbers (123 456)
-      "case": true, // Case-Sensitive Forms (¿Hola?)
-      "kern": true  // Kerning (AV → AV)
+      "dlig": true // Discretionary Ligatures (== -> ===)
     },
     "shell": {
       "program": "zsh"
@@ -363,39 +386,16 @@
     "working_directory": "current_project_directory",
     "button": true
   },
-  "project_panel": {
-    "dock": "left",
-    "indent_size": 15,
-    "git_status": true
+
+  // Other Settings
+  "journal": {
+    "path": "~",
+    "hour_format": "hour24"
   },
-  "file_scan_exclusions": [
-    "**/.git",
-    "**/.svn",
-    "**/.hg",
-    "**/CVS",
-    "**/.DS_Store",
-    "**/Thumbs.db",
-    "**/.classpath",
-    "**/.settings",
-    // above is default from Zed
-    "**/node_modules",
-    "**/dist",
-    "**/.idea",
-    "**/.vscode",
-    "**/__pycache__",
-    "**/.__mocks__",
-    "**/out",
-    "**/.husky",
-    "**/.turbo",
-    "**/.vscode-test",
-    "**/.next",
-    "**/.nuxt",
-    "**/.storybook",
-    "**/.tap",
-    "**/.nyc_output",
-    "**/report"
-  ],
-  "experimental.theme_overrides": {
-    "background.appearance": "blurred"
+  "jupyter": {
+    "kernel_selections": {
+      "typescript": "deno",
+      "javascript": "deno"
+    }
   }
 }
