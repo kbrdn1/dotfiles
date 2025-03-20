@@ -130,7 +130,7 @@
     "allow_concurrent_runs": false,
     "hide": "never",
     "reveal_target": "center"
-  }, 
+  },
   {
     "label": "Laravel: Migrate (fresh and seed)",
     "command": "cd $ZED_WORKTREE_ROOT && php artisan migrate:fresh --seed",
