@@ -9,8 +9,8 @@
       "?>"
     ],
     "description": "PHP"
-  }
-"php-class": {
+  },
+  "php-class": {
     "prefix": "phpcl",
     "body": [
       "class $0 {",
@@ -24,4 +24,53 @@
       "}"
     ],
     "description": "PHP Class"
+  },
+  "php-trait": {
+    "prefix": "phptr",
+    "body": [
+      "trait $0 {",
+      "  public function __construct() {",
+      "    $1",
+      "  }",
+      "",
+      "  public function $2() {",
+      "    $3",
+      "  }",
+      "}"
+    ],
+    "description": "PHP Trait"
+  },
+  "php-interface": {
+    "prefix": "phpint",
+    "body": [
+      "interface $0 {",
+      "  public function __construct() {",
+      "    $1",
+      "  }",
+      "",
+      "  public function $2() {",
+      "    $3",
+      "  }",
+      "}"
+    ],
+    "description": "PHP Interface"
+  },
+  "php-enum": {
+    "prefix": "phpenum",
+    "body": [
+      "enum $0 {",
+      "  case $1;",
+      "}"
+    ],
+    "description": "PHP Enum"
+  },
+  "php-namespace": {
+    "prefix": "phpns",
+    "body": [
+      "namespace $0;",
+      "",
+      "$1"
+    ],
+    "description": "PHP Namespace"
+  }
 }
