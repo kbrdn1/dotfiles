@@ -23,7 +23,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
   - [Window Stacking & Resizing 📐](#window-stacking--resizing)
   - [Miscellaneous Controls 🎛️](#miscellaneous-controls)
   - [Tmux Keybindings 🖥️](#tmux-keybindings-)
-- [Zed Configuration](#zed-configuration-)
+- [Zed Configuration ⚡](#zed-configuration-)
   - [Keybindings 🎹](#keybindings-)
   - [Vim-Mode Keybindings 🧙‍♂️](#vim-mode-keybindings-)
   - [Tasks 🔄](#tasks-)
