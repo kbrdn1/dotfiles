@@ -1,11 +1,7 @@
 [
   {
-    "label": "Blame Around Line",
-    "command": "git blame $ZED_FILE -L $(($ZED_ROW - 5)),$(($ZED_ROW + 5))"
-  },
-  {
-    "label": "Rename Files (Script)",
-    "command": "~/.config/zed/tasks/rename_files.sh \"${1:Chemin de recherche (ex: app)}\" \"${2:Pattern de fichier (ex: *Ressource.php)}\" \"${3:Motif à remplacer (ex: Ressource\\.php)}\" \"${4:Nouveau motif (ex: Resource\\.php)}\"",
+    "label": "Git: Generate Git Logs file",
+    "command": "~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 400",
     "shell": {
       "with_arguments": {
         "program": "/bin/bash",
@@ -18,7 +14,21 @@
     "allow_concurrent_runs": false
   },
   {
-    "label": "Lazygit",
+    "label": "Git: Generate Git Logs file (All)",
+    "command": "~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 999999",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "use_new_terminal": true,
+    "reveal": "always",
+    "show_summary": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Git: Lazygit",
     "command": "lazygit -p $ZED_WORKTREE_ROOT",
     "use_new_terminal": true,
     "reveal": "always",
@@ -33,37 +43,21 @@
     "reveal_target": "center"
   },
   {
-    "label": "Lazykube",
-    "command": "cd $ZED_WORKTREE_ROOT && lazykube",
-    "use_new_terminal": true,
-    "reveal": "always",
+    "label": "Files: Rename Files (Script)",
+    "command": "~/.config/zed/tasks/rename_files.sh \"${1:Chemin de recherche (ex: app)}\" \"${2:Pattern de fichier (ex: *Ressource.php)}\" \"${3:Motif à remplacer (ex: Ressource\\.php)}\" \"${4:Nouveau motif (ex: Resource\\.php)}\"",
     "shell": {
       "with_arguments": {
         "program": "/bin/bash",
         "args": ["-c"]
       }
     },
-    "allow_concurrent_runs": false,
-    "hide": "on_success",
-    "reveal_target": "center"
-  },
-  {
-    "label": "Lazydocker",
-    "command": "lazydocker",
     "use_new_terminal": true,
     "reveal": "always",
-    "shell": {
-      "with_arguments": {
-        "program": "/bin/bash",
-        "args": ["-c"]
-      }
-    },
-    "allow_concurrent_runs": false,
-    "hide": "on_success",
-    "reveal_target": "center"
+    "show_summary": true,
+    "allow_concurrent_runs": false
   },
   {
-    "label": "FZF",
+    "label": "Files: FZF",
     "command": "cd $ZED_WORKTREE_ROOT && fzf --style full --border-label ' FZF ' --header-label ' File Type ' --preview 'bat -n --color=always --line-range :500 {}' --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' --bind 'enter:execute($EDITOR {})' --color 'border:#494d64,label:#cad3f5' --color 'preview-border:#8aadf4,preview-label:#b7bdf8' --color 'list-border:#a6da95,list-label:#a6da95' --color 'input-border:#ed8796,input-label:#f5a9b8' --color 'header-border:#7dc4e4,header-label:#91d7e3'",
     "use_new_terminal": true,
     "reveal": "always",
@@ -78,7 +72,7 @@
     "reveal_target": "center"
   },
   {
-    "label": "Yazi",
+    "label": "Files: Yazi",
     "command": "cd $ZED_WORKTREE_ROOT && yazi",
     "use_new_terminal": true,
     "reveal": "always",
@@ -93,7 +87,22 @@
     "reveal_target": "center"
   },
   {
-    "label": "Laravel Test",
+    "label": "Files: Generate Project Structure file",
+    "command": "cd $ZED_WORKTREE_ROOT && eza --tree --level=5 --git-ignore --ignore-glob=\"vendor|node_modules|.git|storage|bootstrap/cache|*.log\" > project-structure.txt",
+    "use_new_terminal": true,
+    "reveal": "no_focus",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "dock"
+  },
+  {
+    "label": "Laravel: Test",
     "command": "cd $ZED_WORKTREE_ROOT && php artisan test",
     "use_new_terminal": true,
     "reveal": "always",
@@ -108,7 +117,7 @@
     "reveal_target": "center"
   },
   {
-    "label": "Laravel Test (coverage)",
+    "label": "Laravel: Test (coverage)",
     "command": "cd $ZED_WORKTREE_ROOT && php artisan test --coverage",
     "use_new_terminal": true,
     "reveal": "always",
@@ -121,9 +130,9 @@
     "allow_concurrent_runs": false,
     "hide": "never",
     "reveal_target": "center"
-  },
+  }, 
   {
-    "label": "Laravel Migrate (fresh and seed)",
+    "label": "Laravel: Migrate (fresh and seed)",
     "command": "cd $ZED_WORKTREE_ROOT && php artisan migrate:fresh --seed",
     "use_new_terminal": true,
     "reveal": "no_focus",
@@ -138,7 +147,7 @@
     "reveal_target": "dock"
   },
   {
-    "label": "Laravel Migrate (fresh)",
+    "label": "Laravel: Migrate (fresh)",
     "command": "cd $ZED_WORKTREE_ROOT && php artisan migrate:fresh",
     "use_new_terminal": true,
     "reveal": "no_focus",
@@ -153,7 +162,37 @@
     "reveal_target": "dock"
   },
   {
-    "label": "Redis",
+    "label": "Docker: Lazydocker",
+    "command": "lazydocker",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center"
+  },
+  {
+    "label": "Kubernetes: Lazykube",
+    "command": "cd $ZED_WORKTREE_ROOT && lazykube",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"]
+      }
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center"
+  },
+  {
+    "label": "Database: Redis CLI",
     "command": "redis-cli",
     "use_new_terminal": true,
     "reveal": "always",

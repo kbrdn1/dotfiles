@@ -8,7 +8,7 @@
 // from the command palette or from `Zed` application menu.
 {
   // Theme & Appearance
-  "theme": "Catppuccin Macchiato Custom (Blur)",
+  "theme": "Catppuccin Macchiato Darker (Blur)",
   "icon_theme": "Catppuccin Macchiato",
   "experimental.theme_overrides": {
     "background.appearance": "blurred"
@@ -51,7 +51,7 @@
     "cv01": true, // a
     "cv06": true, // i
     "cv27": true, // []
-    "CV31": true, // ()
+    "cv31": true, // ()
     "ss01": true, // ===
     "ss02": true, // >= <=
     "ss03": true, // <--> <->
@@ -65,8 +65,7 @@
     "ordn": false, // No. 1st 2nd
     "clig": true, // _|_
     "salt": false, // Stylistic Alternates
-    "calt": true, // Contextual Alternates (fi -> ﬁ)
-    "dlig": true // Discretionary Ligatures (== -> ===)
+    "calt": true // Contextual Alternates (fi -> ﬁ)
   },
 
   // UI Elements
@@ -144,16 +143,16 @@
   },
   "edit_predictions": {
     "disabled_globs": [],
-    "mode": "eager",
+    "mode": "subtle",
     "copilot": {
       "proxy": null,
       "proxy_no_verify": null
     },
-    "enabled_in_assistant": false
+    "enabled_in_assistant": true
   },
   "show_edit_predictions": true,
   "features": {
-    "edit_prediction_provider": "copilot"
+    "edit_prediction_provider": "zed"
   },
 
   // File Handling
@@ -374,8 +373,7 @@
       "ordn": false, // No. 1st 2nd
       "clig": true, // _|_
       "salt": false, // Stylistic Alternates
-      "calt": true, // Contextual Alternates (fi -> ﬁ)
-      "dlig": true // Discretionary Ligatures (== -> ===)
+      "calt": true // Contextual Alternates (fi -> ﬁ)
     },
     "shell": {
       "program": "zsh"
