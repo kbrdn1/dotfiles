@@ -23,6 +23,10 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
   - [Window Stacking & Resizing 📐](#window-stacking--resizing)
   - [Miscellaneous Controls 🎛️](#miscellaneous-controls)
   - [Tmux Keybindings 🖥️](#tmux-keybindings-)
+- [Zed Configuration](#zed-configuration-)
+  - [Keybindings 🎹](#keybindings-)
+  - [Vim-Mode Keybindings 🧙‍♂️](#vim-mode-keybindings-)
+  - [Tasks 🔄](#tasks-)
 - [Installation 📥](#installation-)
 - [Acknowledgments 🙏](#acknowledgments-)
 - [License 📄](#license-)
@@ -248,6 +252,79 @@ Premium applications via SetApp:
 
 > [!NOTE]
 > The prefix key (<kbd>⌃</kbd> + <kbd>s</kbd>) must be pressed before using most tmux commands. After pressing the prefix key, release it before pressing the command key.
+
+## Zed Configuration ⚡
+
+My Zed editor configuration with custom keybindings and tasks.
+
+### Keybindings 🎹
+
+| Shortcut | Context | Action | Description |
+|----------|---------|--------|-------------|
+| <kbd>⌘</kbd> + <kbd>@</kbd> | Editor | `editor::RestartLanguageServer` | Restart language server |
+| <kbd>⌘</kbd> + <kbd>ù</kbd> | Editor | `git_panel::ToggleFocus` | Toggle Git panel |
+| <kbd>⌘</kbd> + <kbd>⌥</kbd> + <kbd>i</kbd> | Workspace | `assistant::ToggleFocus` | Toggle AI assistant |
+| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn` | Open task launcher |
+| <kbd>⌥</kbd> + <kbd>z</kbd> | Workspace | `task::Spawn "Files: FZF"` | Open FZF file finder |
+| <kbd>⌥</kbd> + <kbd>y</kbd> | Workspace | `task::Spawn "Files: Yazi"` | Open Yazi file manager |
+| <kbd>⌥</kbd> + <kbd>g</kbd> | Workspace | `task::Spawn "Git: Lazygit"` | Open Lazygit |
+| <kbd>⌥</kbd> + <kbd>r</kbd> | Workspace | `task::Spawn "Files: Rename Files"` | Run file rename script |
+| <kbd>⌥</kbd> + <kbd>d</kbd> | Workspace | `task::Spawn "Database: Redis CLI"` | Open Redis CLI |
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>d</kbd> | Workspace | `task::Spawn "Docker: Lazydocker"` | Open Lazydocker |
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>k</kbd> | Workspace | `task::Spawn "Kubernetes: Lazykube"` | Open Lazykube |
+| <kbd>⌥</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn "Laravel: Test"` | Run Laravel tests |
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn "Laravel: Test (coverage)"` | Run Laravel tests with coverage |
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>m</kbd> | Workspace | `task::Spawn "Laravel: Migrate (fresh and seed)"` | Run Laravel migration fresh with seed |
+| <kbd>⌥</kbd> + <kbd>p</kbd> | Workspace | `task::Spawn "Files: Generate Project Structure"` | Generate project structure file |
+| <kbd>⌥</kbd> + <kbd>l</kbd> | Workspace | `task::Spawn "Git: Generate Git Logs"` | Generate Git logs file |
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>l</kbd> | Workspace | `task::Spawn "Git: Generate Git Logs (All)"` | Generate complete Git logs file |
+
+> [!NOTE]
+> See the [Zed Keybindings Documentation](https://zed.dev/docs/key-bindings) for more information.
+
+### Vim-Mode Keybindings 🧙‍♂️
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>R</kbd> | `editor::Rename` | Rename symbol |
+| <kbd>Space</kbd> + <kbd>r</kbd> | `task::Spawn "Files: Rename Files"` | Run file rename script |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>r</kbd> | `task::Spawn "Database: Redis CLI"` | Open Redis CLI |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>d</kbd> | `task::Spawn "Docker: Lazydocker"` | Open Lazydocker |
+| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>g</kbd> | `task::Spawn "Git: Lazygit"` | Open Lazygit |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>t</kbd> | `task::Spawn "Laravel: Test"` | Run Laravel tests |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>T</kbd> | `task::Spawn "Laravel: Test (coverage)"` | Run Laravel tests with coverage |
+| <kbd>Space</kbd> + <kbd>M</kbd> | `task::Spawn "Laravel: Migrate (fresh and seed)"` | Run Laravel migration fresh with seed |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>f</kbd> | `file_finder::Toggle` | Toggle file finder |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>b</kbd> | `vim::Search` | Search in current file |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>s</kbd> | `outline::Toggle` | Toggle outline view |
+| <kbd>Space</kbd> + <kbd>i</kbd> | `assistant::InlineAssist` | Inline AI assist |
+| <kbd>Space</kbd> + <kbd>e</kbd> | `project_panel::ToggleFocus` | Toggle project panel |
+| <kbd>Space</kbd> + <kbd>F</kbd> | `editor::Format` | Format current file |
+
+> [!NOTE]
+> You can use the default Vim keybindings in Zed by enabling Vim mode in the settings.
+> See the [Zed Vim Documentation](https://zed.dev/docs/vim) for more information.
+
+### Tasks 🔄
+
+| Task Name | Command | Description |
+|-----------|---------|-------------|
+| Git: Generate Git Logs | `~/.config/zed/tasks/generate_git_log.sh` | Generate Git logs for current branch |
+| Git: Lazygit | `lazygit -p $ZED_WORKTREE_ROOT` | Open Lazygit in project root |
+| Files: Rename Files | `~/.config/zed/tasks/rename_files.sh` | Script to batch rename files |
+| Files: FZF | `fzf` with preview | Interactive file finder with preview |
+| Files: Yazi | `yazi` | Terminal file manager |
+| Files: Generate Project Structure | `eza --tree` | Generate project structure text file |
+| Laravel: Test | `php artisan test` | Run Laravel tests |
+| Laravel: Test (coverage) | `php artisan test --coverage` | Run Laravel tests with coverage |
+| Laravel: Migrate (fresh and seed) | `php artisan migrate:fresh --seed` | Fresh database migration with seed |
+| Docker: Lazydocker | `lazydocker` | Terminal UI for Docker |
+| Kubernetes: Lazykube | `lazykube` | Terminal UI for Kubernetes |
+| Database: Redis CLI | `redis-cli` | Redis command line interface |
+
+> [!NOTE]
+> The tasks are executed in the context of the current workspace. The `ZED_WORKTREE_ROOT` environment variable is set to the root directory of the current workspace.
+> See the [Zed Tasks Documentation](https://zed.dev/docs/tasks) for more information.
 
 ## Installation 📥
 
