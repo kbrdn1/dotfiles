@@ -10,6 +10,22 @@
     }
   },
   {
+    "context": "GitPanel",
+    "bindings": {
+      "p": "git::Pull",
+      "P": "git::Push",
+      "c": "git::Commit",
+      "C": "git::GenerateCommitMessage",
+      "b": "git::Branch",
+      "B": "git::Switch",
+      "r": "git::RestoreFile",
+      "R": "git::RestoreTrackedFiles",
+      "D": "git::Diff",
+      "d": "git::TrashUntrackedFiles",
+      "f": "git::Fetch"
+    }
+  },
+  {
     "context": "Workspace",
     "bindings": {
       "cmd-alt-i": "assistant::ToggleFocus",
@@ -28,6 +44,12 @@
     }
   },
   {
+    "context": "Terminal",
+    "bindings": {
+      "ctrl-escape": "terminal::ToggleViMode"
+    }
+  },
+  {
     "context": "Editor",
     "bindings": {
       "cmd-<": "editor::ToggleInlayHints",
@@ -41,7 +63,8 @@
       "alt-up": "editor::MoveLineUp",
       "alt-down": "editor::MoveLineDown",
       "alt-shift-p": "markdown::OpenPreview",
-      "cmd-i": "assistant::InlineAssist"
+      "cmd-i": "assistant::InlineAssist",
+      "cmd-;": "go_to_line::Toggle"
     }
   },
   {
@@ -49,7 +72,7 @@
     "bindings": {
       "alt-k": "editor::MoveLineUp",
       "alt-j": "editor::MoveLineDown",
-      "cmd-;": "go_to_line::Toggle",
+      "space ;": "go_to_line::Toggle",
       // "space" commands
       "space R": "editor::Rename",
       "space t r": ["task::Spawn", { "task_name": "Files: Rename Files (Script)" }],
@@ -63,7 +86,9 @@
       "space @": "editor::RestartLanguageServer",
       // "space g": "editor::SelectLargerSyntaxNode",
       // "space shift-g": "editor::SelectSmallerSyntaxNode",
+      "space j": "terminal_panel::ToggleFocus",
       "space g g": ["task::Spawn", { "task_name": "Git: Lazygit" }],
+      "space ù": "git_panel::ToggleFocus",
       "space t t": ["task::Spawn", { "task_name": "Laravel: Test" }],
       "space t T": ["task::Spawn", { "task_name": "Laravel: Test (coverage)" }],
       "space M": ["task::Spawn", { "task_name": "Laravel: Migrate (fresh and seed)" }],
@@ -74,8 +99,8 @@
       "ctrl-n": "pane::ActivateNextItem",
       "ctrl-b": "pane::ActivatePreviousItem",
       "ctrl-x": "pane::CloseActiveItem",
-      "ctrl--": "pane::SplitLeft",
-      "ctrl-_": "pane::SplitDown",
+      "ctrl--": "pane::SplitRight",
+      "ctrl-shift--": "pane::SplitUp",
       "space shift-s": "project_symbols::Toggle",
       "space .": "editor::ToggleCodeActions", // zed specific
       "space shift-a": "editor::FindAllReferences", // zed specific
