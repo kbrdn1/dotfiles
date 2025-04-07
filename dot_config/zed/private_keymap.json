@@ -28,6 +28,12 @@
     }
   },
   {
+    "context": "Terminal",
+    "bindings": {
+      "ctrl-escape": "terminal::ToggleViMode"
+    }
+  },
+  {
     "context": "Editor",
     "bindings": {
       "cmd-<": "editor::ToggleInlayHints",
@@ -41,7 +47,8 @@
       "alt-up": "editor::MoveLineUp",
       "alt-down": "editor::MoveLineDown",
       "alt-shift-p": "markdown::OpenPreview",
-      "cmd-i": "assistant::InlineAssist"
+      "cmd-i": "assistant::InlineAssist",
+      "cmd-;": "go_to_line::Toggle"
     }
   },
   {
@@ -49,7 +56,6 @@
     "bindings": {
       "alt-k": "editor::MoveLineUp",
       "alt-j": "editor::MoveLineDown",
-      "cmd-;": "go_to_line::Toggle",
       "z a": "editor::ToggleFold",
       "z l": "editor::Fold",
       "z shift-l": "editor::FoldAll",
@@ -60,6 +66,7 @@
       "ctrl-x": "pane::CloseActiveItem",
       "ctrl--": "pane::SplitRight",
       "ctrl-=": "pane::SplitDown",
+      "space ;": "go_to_line::Toggle",
       // "space" commands
       "space R": "editor::Rename",
       "space t r": ["task::Spawn", { "task_name": "Files: Rename Files (Script)" }],
@@ -73,7 +80,9 @@
       "space @": "editor::RestartLanguageServer",
       "space g": "editor::SelectLargerSyntaxNode",
       "space shift-g": "editor::SelectSmallerSyntaxNode",
+      "space j": "terminal_panel::ToggleFocus",
       "space g g": ["task::Spawn", { "task_name": "Git: Lazygit" }],
+      "space ù": "git_panel::ToggleFocus",
       "space t t": ["task::Spawn", { "task_name": "Laravel: Test" }],
       "space t T": ["task::Spawn", { "task_name": "Laravel: Test (coverage)" }],
       "space M": ["task::Spawn", { "task_name": "Laravel: Migrate (fresh and seed)" }],
