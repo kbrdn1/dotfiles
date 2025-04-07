@@ -68,14 +68,14 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 # Install ASDF plugins and versions
 echo "📦 Installing ASDF plugins and versions..."
 asdf plugin add neovim && asdf install neovim 0.10.4
-asdf plugin add chezmoi && asdf install chezmoi 2.60.1
+asdf plugin add chezmoi && asdf install chezmoi 2.62.0
 asdf plugin add stripe-cli && asdf install stripe-cli 1.23.10
-asdf plugin add pnpm && asdf install pnpm 10.6.1
+asdf plugin add pnpm && asdf install pnpm 10.7.1
 asdf plugin add golang && asdf install golang 1.23.6
 asdf plugin add nodejs && asdf install nodejs 23.2.0
 asdf plugin add rust && asdf install rust 1.84.1
-asdf plugin add bun && asdf install bun 1.2.5
-asdf plugin add deno && asdf install deno 2.2.3
+asdf plugin add bun && asdf install bun 1.2.8
+asdf plugin add deno && asdf install deno 2.2.8
 
 # Setup sketchybar
 echo "🎨 Setting up sketchybar..."
