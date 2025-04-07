@@ -147,7 +147,7 @@ Premium applications via SetApp:
 | Alias | Command | Description |
 |-------|---------|-------------|
 | `py`, `python` | `/usr/bin/python3` | Python 3 |
-| `pa`, `laravel` | `php artisan` | PHP Artisan CLI |
+| `pa` | `php artisan` | PHP Artisan CLI |
 | `a`, `adonis` | `node ace` | Adonis Ace CLI |
 | `ls` | `eza --color=always --long --git --no-filesize --icons=always --no-time --no-user --no-permissions --group-directories-first` | Enhanced listing |
 | `cd` | `zoxide` | Enhanced directory navigation |
@@ -259,47 +259,142 @@ My Zed editor configuration with custom keybindings and tasks.
 
 ### Keybindings 🎹
 
+#### General Navigation
+
 | Shortcut | Context | Action | Description |
 |----------|---------|--------|-------------|
+| <kbd>⌃</kbd> + <kbd>h</kbd> | Editor | `workspace::ActivatePaneLeft` | Focus left pane |
+| <kbd>⌃</kbd> + <kbd>j</kbd> | Editor | `workspace::ActivatePaneDown` | Focus down pane |
+| <kbd>⌃</kbd> + <kbd>k</kbd> | Editor | `workspace::ActivatePaneUp` | Focus up pane |
+| <kbd>⌃</kbd> + <kbd>l</kbd> | Editor | `workspace::ActivatePaneRight` | Focus right pane |
 | <kbd>⌘</kbd> + <kbd>@</kbd> | Editor | `editor::RestartLanguageServer` | Restart language server |
 | <kbd>⌘</kbd> + <kbd>ù</kbd> | Editor | `git_panel::ToggleFocus` | Toggle Git panel |
-| <kbd>⌘</kbd> + <kbd>⌥</kbd> + <kbd>i</kbd> | Workspace | `assistant::ToggleFocus` | Toggle AI assistant |
+| <kbd>⌘</kbd> + <kbd><</kbd> | Editor | `editor::ToggleInlayHints` | Toggle inlay hints |
+| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>k</kbd> | Editor | `editor::DeleteLine` | Delete current line |
+| <kbd>⌘</kbd> + <kbd>g</kbd> | Editor | `editor::SelectLargerSyntaxNode` | Select larger syntax node |
+| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>g</kbd> | Editor | `editor::SelectSmallerSyntaxNode` | Select smaller syntax node |
+| <kbd>⌘</kbd> + <kbd>i</kbd> | Editor | `assistant::InlineAssist` | Inline AI assist |
+| <kbd>⌘</kbd> + <kbd>;</kbd> | Editor | `go_to_line::Toggle` | Toggle go to line |
+| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>r</kbd> | Editor | `editor::Rename` | Rename symbol |
+
+#### Formatting and Movement
+| Shortcut | Context | Action | Description |
+|----------|---------|--------|-------------|
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>f</kbd> | Editor | `editor::Format` | Format current file |
+| <kbd>⌥</kbd> + <kbd>k</kbd> | Editor | `editor::MoveLineUp` | Move line up |
+| <kbd>⌥</kbd> + <kbd>j</kbd> | Editor | `editor::MoveLineDown` | Move line down |
+| <kbd>⌥</kbd> + <kbd>↑</kbd> | Editor | `editor::MoveLineUp` | Move line up |
+| <kbd>⌥</kbd> + <kbd>↓</kbd> | Editor | `editor::MoveLineDown` | Move line down |
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>p</kbd> | Editor | `markdown::OpenPreview` | Open markdown preview |
+
+#### Task Shortcuts
+
+| Shortcut | Context | Action | Description |
+|----------|---------|--------|-------------|
 | <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn` | Open task launcher |
-| <kbd>⌥</kbd> + <kbd>z</kbd> | Workspace | `task::Spawn "Files: FZF"` | Open FZF file finder |
+| <kbd>⌥</kbd> + <kbd>f</kbd> | Workspace | `task::Spawn "Files: FZF"` | Open FZF file finder |
 | <kbd>⌥</kbd> + <kbd>y</kbd> | Workspace | `task::Spawn "Files: Yazi"` | Open Yazi file manager |
 | <kbd>⌥</kbd> + <kbd>g</kbd> | Workspace | `task::Spawn "Git: Lazygit"` | Open Lazygit |
-| <kbd>⌥</kbd> + <kbd>r</kbd> | Workspace | `task::Spawn "Files: Rename Files"` | Run file rename script |
+| <kbd>⌥</kbd> + <kbd>r</kbd> | Workspace | `task::Spawn "Files: Rename Files (Script)"` | Run file rename script |
 | <kbd>⌥</kbd> + <kbd>d</kbd> | Workspace | `task::Spawn "Database: Redis CLI"` | Open Redis CLI |
 | <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>d</kbd> | Workspace | `task::Spawn "Docker: Lazydocker"` | Open Lazydocker |
 | <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>k</kbd> | Workspace | `task::Spawn "Kubernetes: Lazykube"` | Open Lazykube |
 | <kbd>⌥</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn "Laravel: Test"` | Run Laravel tests |
 | <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn "Laravel: Test (coverage)"` | Run Laravel tests with coverage |
 | <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>m</kbd> | Workspace | `task::Spawn "Laravel: Migrate (fresh and seed)"` | Run Laravel migration fresh with seed |
-| <kbd>⌥</kbd> + <kbd>p</kbd> | Workspace | `task::Spawn "Files: Generate Project Structure"` | Generate project structure file |
-| <kbd>⌥</kbd> + <kbd>l</kbd> | Workspace | `task::Spawn "Git: Generate Git Logs"` | Generate Git logs file |
-| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>l</kbd> | Workspace | `task::Spawn "Git: Generate Git Logs (All)"` | Generate complete Git logs file |
+| <kbd>⌥</kbd> + <kbd>p</kbd> | Workspace | `task::Spawn "Files: Generate Project Structure file"` | Generate project structure file |
+
+#### AI and Terminal
+
+| Shortcut | Context | Action | Description |
+|----------|---------|--------|-------------|
+| <kbd>⌘</kbd> + <kbd>⌥</kbd> + <kbd>i</kbd> | Workspace | `assistant::ToggleFocus` | Toggle AI assistant |
+| <kbd>⌃</kbd> + <kbd>Esc</kbd> | Terminal | `terminal::ToggleViMode` | Toggle Vi mode in terminal |
 
 > [!NOTE]
 > See the [Zed Keybindings Documentation](https://zed.dev/docs/key-bindings) for more information.
 
 ### Vim-Mode Keybindings 🧙‍♂️
 
+#### Editor Navigation
 | Shortcut | Action | Description |
 |----------|--------|-------------|
+| <kbd>z</kbd> + <kbd>a</kbd> | `editor::ToggleFold` | Toggle fold at cursor |
+| <kbd>z</kbd> + <kbd>l</kbd> | `editor::Fold` | Fold at cursor |
+| <kbd>z</kbd> + <kbd>L</kbd> | `editor::FoldAll` | Fold all regions |
+| <kbd>z</kbd> + <kbd>h</kbd> | `editor::UnfoldLines` | Unfold at cursor |
+| <kbd>z</kbd> + <kbd>H</kbd> | `editor::UnfoldAll` | Unfold all regions |
+| <kbd>⌃</kbd> + <kbd>n</kbd> | `pane::ActivateNextItem` | Next tab/buffer |
+| <kbd>⌃</kbd> + <kbd>b</kbd> | `pane::ActivatePreviousItem` | Previous tab/buffer |
+| <kbd>⌃</kbd> + <kbd>x</kbd> | `pane::CloseActiveItem` | Close active tab/buffer |
+| <kbd>⌃</kbd> + <kbd>-</kbd> | `pane::SplitRight` | Split pane right |
+| <kbd>⌃</kbd> + <kbd>=</kbd> | `pane::SplitDown` | Split pane down |
+
+#### Space Leader Commands
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>;</kbd> | `go_to_line::Toggle` | Toggle go to line |
 | <kbd>Space</kbd> + <kbd>R</kbd> | `editor::Rename` | Rename symbol |
-| <kbd>Space</kbd> + <kbd>r</kbd> | `task::Spawn "Files: Rename Files"` | Run file rename script |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>r</kbd> | `task::Spawn "Database: Redis CLI"` | Open Redis CLI |
+| <kbd>Space</kbd> + <kbd>@</kbd> | `editor::RestartLanguageServer` | Restart language server |
+| <kbd>Space</kbd> + <kbd>g</kbd> | `editor::SelectLargerSyntaxNode` | Select larger syntax node |
+| <kbd>Space</kbd> + <kbd>G</kbd> | `editor::SelectSmallerSyntaxNode` | Select smaller syntax node |
+| <kbd>Space</kbd> + <kbd>j</kbd> | `terminal_panel::ToggleFocus` | Toggle terminal panel |
+| <kbd>Space</kbd> + <kbd>ù</kbd> | `git_panel::ToggleFocus` | Toggle Git panel |
+| <kbd>Space</kbd> + <kbd>0</kbd> | `vim::StartOfDocument` | Go to start of document |
+| <kbd>Space</kbd> + <kbd>o</kbd> | `editor::Hover` | Show hover information |
+| <kbd>Space</kbd> + <kbd>Tab</kbd> | `pane::ActivateNextItem` | Next tab/buffer |
+| <kbd>Space</kbd> + <kbd>⇧</kbd> + <kbd>Tab</kbd> | `pane::ActivatePreviousItem` | Previous tab/buffer |
+| <kbd>Space</kbd> + <kbd>⇧</kbd> + <kbd>s</kbd> | `project_symbols::Toggle` | Toggle project symbols |
+| <kbd>Space</kbd> + <kbd>.</kbd> | `editor::ToggleCodeActions` | Toggle code actions |
+| <kbd>Space</kbd> + <kbd>⇧</kbd> + <kbd>a</kbd> | `editor::FindAllReferences` | Find all references |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>d</kbd> | `pane::CloseActiveItem` | Close active item |
+| <kbd>Space</kbd> + <kbd>*</kbd> | `vim::MoveToNext` (partial_word) | Move to next occurrence of word |
+| <kbd>Space</kbd> + <kbd>¨</kbd> | `vim::MoveToPrevious` (partial_word) | Move to previous occurrence of word |
+
+#### Task Commands
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>r</kbd> | `task::Spawn "Files: Rename Files (Script)"` | Run file rename script |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>f</kbd> | `task::Spawn "Files: FZF"` | Open FZF file finder |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>y</kbd> | `task::Spawn "Files: Yazi"` | Open Yazi file manager |
 | <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>d</kbd> | `task::Spawn "Docker: Lazydocker"` | Open Lazydocker |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>k</kbd> | `task::Spawn "Kubernetes: Lazykube"` | Open Lazykube |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>p</kbd> | `task::Spawn "Files: Generate Project Structure file"` | Generate project structure file |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>l</kbd> | `task::Spawn "Git: Generate Git Logs file"` | Generate Git logs file |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>L</kbd> | `task::Spawn "Git: Generate Git Logs file (All)"` | Generate all Git logs file |
 | <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>g</kbd> | `task::Spawn "Git: Lazygit"` | Open Lazygit |
 | <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>t</kbd> | `task::Spawn "Laravel: Test"` | Run Laravel tests |
 | <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>T</kbd> | `task::Spawn "Laravel: Test (coverage)"` | Run Laravel tests with coverage |
 | <kbd>Space</kbd> + <kbd>M</kbd> | `task::Spawn "Laravel: Migrate (fresh and seed)"` | Run Laravel migration fresh with seed |
+
+#### File & Search Operations
+| Shortcut | Action | Description |
+|----------|--------|-------------|
 | <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>f</kbd> | `file_finder::Toggle` | Toggle file finder |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>p</kbd> | `projects::OpenRecent` | Open recent project |
 | <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>b</kbd> | `vim::Search` | Search in current file |
 | <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>s</kbd> | `outline::Toggle` | Toggle outline view |
-| <kbd>Space</kbd> + <kbd>i</kbd> | `assistant::InlineAssist` | Inline AI assist |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>r</kbd> | `search::ToggleReplace` | Toggle search & replace |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>l</kbd> | `go_to_line::Toggle` | Toggle go to line |
+| <kbd>Space</kbd> + <kbd>d</kbd> | `editor::SelectAllMatches` | Select all matches |
 | <kbd>Space</kbd> + <kbd>e</kbd> | `project_panel::ToggleFocus` | Toggle project panel |
-| <kbd>Space</kbd> + <kbd>F</kbd> | `editor::Format` | Format current file |
+| <kbd>Space</kbd> + <kbd>b</kbd> + <kbd>f</kbd> | `editor::Format` | Format current file |
+
+#### AI Assistant
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>i</kbd> | `assistant::InlineAssist` | Inline AI assist |
+| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>c</kbd> + <kbd>o</kbd> | `assistant::ToggleFocus` | Toggle AI assistant |
+| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>c</kbd> + <kbd>p</kbd> | `assistant::QuoteSelection` | Quote selected text to assistant |
+
+#### Settings & Configuration
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>k</kbd> | `zed::OpenKeymap` | Open keymap settings |
+| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>s</kbd> | `zed::OpenSettings` | Open settings |
+| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>t</kbd> | `zed::OpenTasks` | Open tasks |
+| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>T</kbd> | `theme_selector::Toggle` | Toggle theme selector |
+| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>d</kbd> | `diagnostics::Deploy` | Deploy diagnostics |
 
 > [!NOTE]
 > You can use the default Vim keybindings in Zed by enabling Vim mode in the settings.
@@ -309,15 +404,17 @@ My Zed editor configuration with custom keybindings and tasks.
 
 | Task Name | Command | Description |
 |-----------|---------|-------------|
-| Git: Generate Git Logs | `~/.config/zed/tasks/generate_git_log.sh` | Generate Git logs for current branch |
+| Git: Generate Git Logs file | `~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 400` | Generate Git logs for current branch (limited entries) |
+| Git: Generate Git Logs file (All) | `~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 999999` | Generate Git logs for current branch (all entries) |
 | Git: Lazygit | `lazygit -p $ZED_WORKTREE_ROOT` | Open Lazygit in project root |
-| Files: Rename Files | `~/.config/zed/tasks/rename_files.sh` | Script to batch rename files |
-| Files: FZF | `fzf` with preview | Interactive file finder with preview |
-| Files: Yazi | `yazi` | Terminal file manager |
-| Files: Generate Project Structure | `eza --tree` | Generate project structure text file |
+| Files: Rename Files (Script) | `~/.config/zed/tasks/rename_files.sh "${1:Path}" "${2:Pattern}" "${3:Find}" "${4:Replace}"` | Interactive batch file renaming with parameters |
+| Files: FZF | `fzf` with preview and custom bindings | Advanced file finder with preview and syntax highlighting |
+| Files: Yazi | `yazi` | Terminal file manager in project root |
+| Files: Generate Project Structure | `eza --tree --level=5 --git-ignore` | Generate project structure avoiding vendor/node_modules |
 | Laravel: Test | `php artisan test` | Run Laravel tests |
 | Laravel: Test (coverage) | `php artisan test --coverage` | Run Laravel tests with coverage |
 | Laravel: Migrate (fresh and seed) | `php artisan migrate:fresh --seed` | Fresh database migration with seed |
+| Laravel: Migrate (fresh) | `php artisan migrate:fresh` | Fresh database migration without seed |
 | Docker: Lazydocker | `lazydocker` | Terminal UI for Docker |
 | Kubernetes: Lazykube | `lazykube` | Terminal UI for Kubernetes |
 | Database: Redis CLI | `redis-cli` | Redis command line interface |
