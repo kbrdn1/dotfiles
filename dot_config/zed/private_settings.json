@@ -8,6 +8,7 @@
 // from the command palette or from `Zed` application menu.
 {
   // Theme & Appearance
+  "bottom_dock_layout": "contained",
   "theme": "Catppuccin Macchiato Darker (Blur)",
   "icon_theme": "Catppuccin Macchiato",
   "experimental.theme_overrides": {
@@ -19,6 +20,9 @@
   "base_keymap": "VSCode",
   "enable_experimental_live_diffs": true,
   "tab_size": 2,
+  "minimap": {
+    "show": "auto"
+  },
   "relative_line_numbers": true,
   "preferred_line_length": 100,
   "soft_wrap": "preferred_line_length",
@@ -35,7 +39,7 @@
 
   // Font Settings
   // "ui_font_family": "Monaspace Argon Var",
-  "ui_font_size": 15,
+  "ui_font_size": 13.55,
   "ui_font_features": {
     "liga": true // www
   },
@@ -74,6 +78,20 @@
   // UI Elements
   "tab_bar": {
     "show": true
+  },
+  "title_bar": {
+    "show_branch_icon": true,
+    "show_branch_name": true,
+    "show_onboarding_banner": true,
+    "show_project_items": true,
+    "show_user_picture": true
+  },
+  "search": {
+    "button": true,
+    "case_sensitive": false,
+    "whole_word": false,
+    "regex": false,
+    "include_ignored": false
   },
   "tabs": {
     "close_position": "right",
@@ -126,7 +144,8 @@
     "show_background": false,
     "edit_debounce_ms": 0,
     "toggle_on_modifiers_press": {
-      "platform": true
+      "platform": true,
+      "function": true
     }
   },
   "diagnostics": {
@@ -151,10 +170,123 @@
   },
 
   // AI Assistance
-  "assistant": {
+  "agent": {
+    "inline_assistant_model": {
+      "provider": "zed.dev",
+      "model": "claude-3-7-sonnet-thinking-latest"
+    },
+    "profiles": {
+      "development": {
+        "name": "Development",
+        "tools": {
+          "web_search": true,
+          "rename": true,
+          "contents": true,
+          "code_actions": true,
+          "thinking": true,
+          "symbol_info": true,
+          "grep": true,
+          "read_file": true,
+          "find_path": true,
+          "open": true,
+          "now": true,
+          "move_path": true,
+          "list_directory": true,
+          "edit_file": true,
+          "fetch": true,
+          "diagnostics": true,
+          "delete_path": true,
+          "create_directory": true,
+          "create_file": true,
+          "copy_path": true,
+          "code_symbols": true,
+          "batch_tool": true,
+          "terminal": true
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {
+          "mcp-server-sequential-thinking": {
+            "tools": {
+              "sequentialthinking": true
+            },
+            "mcp-server-github": {
+              "tools": {
+                "github": true
+              },
+              "settings": {
+                "github_personal_access_token": ""
+              }
+            }
+          }
+        }
+      },
+      "write": {
+        "name": "Write",
+        "tools": {
+          "terminal": true,
+          "batch_tool": true,
+          "code_symbols": true,
+          "copy_path": false,
+          "create_file": true,
+          "delete_path": false,
+          "diagnostics": true,
+          "edit_file": true,
+          "fetch": true,
+          "list_directory": false,
+          "move_path": false,
+          "now": true,
+          "find_path": true,
+          "read_file": true,
+          "grep": true,
+          "symbol_info": true,
+          "thinking": true,
+          "create_directory": false
+        },
+        "enable_all_context_servers": true,
+        "context_servers": {
+          "mcp-server-sequential-thinking": {
+            "tools": {
+              "sequentialthinking": true
+            }
+          }
+        }
+      },
+      "ask": {
+        "name": "Ask",
+        "tools": {
+          "symbol_info": true,
+          "open": true,
+          "delete_path": false,
+          "create_file": false,
+          "create_directory": false,
+          "copy_path": false,
+          "code_symbols": false,
+          "batch_tool": false,
+          "diagnostics": false,
+          "fetch": true,
+          "list_directory": true,
+          "now": true,
+          "find_path": true,
+          "read_file": true,
+          "grep": true,
+          "thinking": true,
+          "terminal": false
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {
+          "mcp-server-sequential-thinking": {
+            "tools": {
+              "sequentialthinking": true
+            }
+          }
+        }
+      }
+    },
+    "default_profile": "development",
+    "always_allow_tool_actions": true,
     "default_model": {
-      "provider": "anthropic",
-      "model": "claude-3-7-sonnet-latest"
+      "provider": "zed.dev",
+      "model": "claude-3-7-sonnet-thinking-latest"
     },
     "version": "2"
   },
@@ -165,7 +297,7 @@
       "proxy": null,
       "proxy_no_verify": null
     },
-    "enabled_in_assistant": true
+    "enabled_in_text_threads": true
   },
   "show_edit_predictions": true,
   "features": {
@@ -176,7 +308,22 @@
   "file_types": {
     "Dockerfile": ["Dockerfile", "Dockerfile.*"],
     "JSON": ["json", "jsonc", "*.code-snippets"],
-    "Shell Script": ["sh", "bash", "zsh", "fish", "ksh", "csh", "tcsh", "sh.*", "bash.*", "zsh.*", "fish.*", "ksh.*", "csh.*", "tcsh.*"] 
+    "Shell Script": [
+      "sh",
+      "bash",
+      "zsh",
+      "fish",
+      "ksh",
+      "csh",
+      "tcsh",
+      "sh.*",
+      "bash.*",
+      "zsh.*",
+      "fish.*",
+      "ksh.*",
+      "csh.*",
+      "tcsh.*"
+    ]
   },
   "file_scan_exclusions": [
     "**/.git",
@@ -420,7 +567,8 @@
   "jupyter": {
     "kernel_selections": {
       "typescript": "deno",
-      "javascript": "deno"
+      "javascript": "deno",
+      "python": "python3"
     }
   }
 }
