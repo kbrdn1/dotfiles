@@ -1,9 +1,9 @@
 neovim 0.10.4
-bun 1.2.8
-nodejs 23.2.0
+bun 1.2.13
+nodejs 24.O.1
 pnpm 10.7.1
 rust 1.84.1
 golang 1.23.6
-stripe-cli 1.23.10
-chezmoi 2.62.0
-deno 2.2.8
+stripe-cli 1.26.1
+chezmoi 2.62.4
+deno 2.3.1
