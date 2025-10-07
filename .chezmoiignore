@@ -33,3 +33,10 @@
 **/*.pem
 **/*.key
 **/id_rsa*
+
+# ===================================================================
+# Claude Projects - Conversation Histories (EXCLUDE - Machine Specific)
+# ===================================================================
+# Project conversation histories are machine-specific and very large
+.claude/projects/**/*.jsonl
+.claude/projects/**/
