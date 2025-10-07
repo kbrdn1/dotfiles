@@ -15,6 +15,37 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
   - [Development Aliases 👨‍💻](#development-aliases)
   - [GitHub Copilot Aliases 🤖](#github-copilot-aliases)
   - [Window Manager Service Aliases 🪟](#window-manager-service-aliases)
+
+## 🪟 Window Manager Migration (Yabai → AeroSpace) 
+
+> **⚠️ IMPORTANT**: Ce repo a migré de Yabai vers AeroSpace en août 2025 
+
+### Migration complète Yabai → AeroSpace + Karabiner 
+
+**Ancien setup**: 
+- Yabai (window manager avec SIP désactivé) 
+- skhd (raccourcis clavier) 
+
+**Nouveau setup**: 
+- **AeroSpace**: Window manager moderne (pas de SIP requis) 
+- **Karabiner**: Gestion intelligente raccourcis (exclusion IDE) 
+- **skhd**: Raccourcis Alt droite uniquement 
+
+📖 **Documentation complète**: [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md) 
+
+### Architecture unique 
+```
+AeroSpace (window manager) → skhd (Alt droite) → Karabiner (désactive dans IDEs)
+``` 
+
+### Avantages 
+- ✅ Fonctionne avec SIP activé 
+- ✅ Zéro conflit macOS 
+- ✅ Raccourcis IDE préservés 
+- ✅ 10 workspaces (au lieu de 5) 
+- ✅ Documentation complète (1762 lignes) 
+
+
   - [Tmux Aliases 📟](#tmux-aliases)
   - [Custom Functions ⚙️](#custom-functions)
 - [Shortcuts & Keybindings ⌨️](#shortcuts--keybindings-)
@@ -164,6 +195,37 @@ Premium applications via SetApp:
 | `gca` | `gh copilot alias` | Manage Copilot aliases |
 
 ### Window Manager Service Aliases
+
+## 🪟 Window Manager Migration (Yabai → AeroSpace) 
+
+> **⚠️ IMPORTANT**: Ce repo a migré de Yabai vers AeroSpace en août 2025 
+
+### Migration complète Yabai → AeroSpace + Karabiner 
+
+**Ancien setup**: 
+- Yabai (window manager avec SIP désactivé) 
+- skhd (raccourcis clavier) 
+
+**Nouveau setup**: 
+- **AeroSpace**: Window manager moderne (pas de SIP requis) 
+- **Karabiner**: Gestion intelligente raccourcis (exclusion IDE) 
+- **skhd**: Raccourcis Alt droite uniquement 
+
+📖 **Documentation complète**: [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md) 
+
+### Architecture unique 
+```
+AeroSpace (window manager) → skhd (Alt droite) → Karabiner (désactive dans IDEs)
+``` 
+
+### Avantages 
+- ✅ Fonctionne avec SIP activé 
+- ✅ Zéro conflit macOS 
+- ✅ Raccourcis IDE préservés 
+- ✅ 10 workspaces (au lieu de 5) 
+- ✅ Documentation complète (1762 lignes) 
+
+
 | Alias | Command | Description |
 |-------|---------|-------------|
 | `reload-sketchybar` | `brew services restart sketchybar` | Restart Sketchybar |
