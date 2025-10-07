@@ -1,0 +1,97 @@
+#!/bin/bash
+source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
+source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
+source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
+
+# Setting up and starting the helper process
+HELPER=git.felix.helper
+killall helper 2>/dev/null || true
+cd $HOME/.config/sketchybar/helper && make 2>/dev/null || true
+$HOME/.config/sketchybar/helper/helper $HELPER > /dev/null 2>&1 &
+
+# Unload the macOS on screen indicator overlay for volume change
+launchctl unload -F /System/Library/LaunchAgents/com.apple.OSDUIHelper.plist > /dev/null 2>&1 &
+
+# Setting up the general bar appearance of the bar
+bar=(
+  height=$BAR_HEIGHT
+  color=$BAR_COLOR
+  shadow=on
+  position=$BAR_POSITION
+  sticky=on
+  padding_right=$BAR_PADDINGS
+  padding_left=$BAR_PADDINGS
+  corner_radius=$BAR_BORDER_RADIUS
+  y_offset=$BAR_Y_OFFSET
+  margin=$BAR_MARGIN
+  blur_radius=$BAR_BLUR_RADIUS
+  notch_width=$BAR_NOTCH_WIDTH
+)
+
+sketchybar --bar "${bar[@]}"
+
+# Setting up default values
+defaults=(
+  updates=when_shown
+  icon.font="$FONT:Bold:14.0"
+  icon.color=$ICON_COLOR
+  icon.padding_left=$PADDINGS
+  icon.padding_right=$PADDINGS
+  label.font="$FONT:Semibold:13.0"
+  label.color=$LABEL_COLOR
+  label.padding_left=$PADDINGS
+  label.padding_right=$PADDINGS
+  padding_right=$PADDINGS
+  padding_left=$PADDINGS
+  background.height=$BG_HEIGHT
+  background.corner_radius=$BG_BORDER_RADIUS
+  popup.background.border_width=$POPUP_BORDER_WIDTH
+  popup.background.corner_radius=$POPUP_BORDER_RADIUS
+  popup.background.border_color=$POPUP_BORDER_COLOR
+  popup.background.color=$POPUP_BACKGROUND_COLOR
+  popup.blur_radius=$POPUP_BLUR_RADIUS
+  popup.background.shadow.drawing=on
+)
+
+sketchybar --default "${defaults[@]}"
+
+# Left side
+source "$PLUGIN_DIR/apple/item.sh"
+
+# AeroSpace integration - replaces yabai spaces
+source "$PLUGIN_DIR/spaces/item.sh"
+
+# Front app
+source "$PLUGIN_DIR/front_app.sh"
+
+# AeroSpace window manager status
+sketchybar --add item aerospace right \
+           --set aerospace icon=$AEROSPACE_TILED \
+                          icon.color=$ORANGE \
+                          label.drawing=off \
+                          script="$PLUGIN_DIR/aerospace.sh" \
+           --subscribe aerospace aerospace_workspace_change \
+                               window_focus \
+                               windows_on_spaces \
+                               mouse.clicked
+
+# Right side
+source "$PLUGIN_DIR/calendar/item.sh"
+source "$PLUGIN_DIR/brew/item.sh"
+source "$PLUGIN_DIR/battery/item.sh"
+source "$PLUGIN_DIR/wifi/item.sh"
+# source "$PLUGIN_DIR/bluetooth/item.sh"
+source "$PLUGIN_DIR/github/item.sh"
+source "$PLUGIN_DIR/volume/item.sh"
+source "$PLUGIN_DIR/cpu.sh"
+source "$PLUGIN_DIR/svim/item.sh"
+
+# Add AeroSpace workspace change event
+sketchybar --add event aerospace_workspace_change
+
+sketchybar --hotload on
+
+# Forcing all item scripts to run (never do this outside of sketchybarrc)
+sketchybar --update
+
+echo "sketchybar configuration loaded with AeroSpace integration.."

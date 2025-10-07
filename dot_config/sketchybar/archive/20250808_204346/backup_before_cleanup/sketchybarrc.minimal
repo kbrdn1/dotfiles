@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# ===== Core Settings =====
+export PLUGIN_DIR="$HOME/.config/sketchybar/plugins"
+export SETTINGS_DIR="$HOME/.config/sketchybar/settings"
+
+source "$SETTINGS_DIR/settings.sh"
+source "$SETTINGS_DIR/colors.sh"
+source "$SETTINGS_DIR/icons.sh"
+
+# ===== Bar Configuration =====
+sketchybar --bar \
+  height=33 \
+  color=0x24000000 \
+  shadow=on \
+  position=top \
+  sticky=on \
+  padding_right=10 \
+  padding_left=10 \
+  corner_radius=9 \
+  y_offset=5 \
+  margin=10 \
+  blur_radius=20 \
+  notch_width=0
+
+# ===== Default Values =====
+sketchybar --default \
+  updates=when_shown \
+  icon.font="SF Pro:Bold:14.0" \
+  icon.color=0xffffffff \
+  icon.padding_left=3 \
+  icon.padding_right=3 \
+  label.font="SF Pro:Semibold:13.0" \
+  label.color=0xffffffff \
+  label.padding_left=3 \
+  label.padding_right=3 \
+  padding_right=3 \
+  padding_left=3 \
+  background.height=25 \
+  background.corner_radius=9
+
+# ===== Left Side =====
+# Apple Logo
+source "$PLUGIN_DIR/apple/item.sh"
+
+# Workspaces
+source "$PLUGIN_DIR/spaces/items.sh"
+
+# Front App
+source "$PLUGIN_DIR/front_app_aerospace.sh"
+
+# ===== Right Side =====
+# Time & Date
+source "$PLUGIN_DIR/calendar/item.sh"
+
+# CPU Monitor
+source "$PLUGIN_DIR/cpu.sh"
+
+# Battery
+source "$PLUGIN_DIR/battery/item.sh"
+
+# WiFi
+source "$PLUGIN_DIR/wifi/item.sh"
+
+# Volume
+source "$PLUGIN_DIR/volume/item.sh"
+
+# ===== Events =====
+sketchybar --add event aerospace_workspace_change
+
+# ===== Finalize =====
+sketchybar --hotload on
+sketchybar --update
+
+echo "SketchyBar loaded"

@@ -1,0 +1,139 @@
+#!/bin/bash
+
+# ╭─────────────────────────────────────────────────────────────╮
+# │              SketchyBar + AeroSpace (Working)               │
+# │                Simple & Functional Config                   │
+# ╰─────────────────────────────────────────────────────────────╯
+
+# Load settings
+source "$HOME/.config/sketchybar/settings/settings.sh" 2>/dev/null || true
+source "$HOME/.config/sketchybar/settings/colors.sh" 2>/dev/null || true
+source "$HOME/.config/sketchybar/settings/icons.sh" 2>/dev/null || true
+
+# Fallback colors if settings not loaded
+BACKGROUND_1=${BACKGROUND_1:-0xff24273a}
+BACKGROUND_2=${BACKGROUND_2:-0x90494d64}
+MAGENTA=${MAGENTA:-0xffc6a0f6}
+WHITE=${WHITE:-0xffcad3f5}
+BAR_COLOR=${BAR_COLOR:-0xff1e1e2e}
+FONT=${FONT:-"SF Pro"}
+
+# ═══════════════════════════════════════════════════════════════
+# BAR SETUP
+# ═══════════════════════════════════════════════════════════════
+
+sketchybar --bar \
+    height=33 \
+    color=$BAR_COLOR \
+    position=top \
+    sticky=on \
+    padding_left=10 \
+    padding_right=10 \
+    corner_radius=10 \
+    y_offset=5 \
+    margin=10 \
+    blur_radius=30
+
+# ═══════════════════════════════════════════════════════════════
+# DEFAULT SETTINGS
+# ═══════════════════════════════════════════════════════════════
+
+sketchybar --default \
+    updates=when_shown \
+    icon.font="$FONT:Bold:14.0" \
+    icon.color=$WHITE \
+    icon.padding_left=8 \
+    icon.padding_right=4 \
+    label.font="$FONT:Semibold:13.0" \
+    label.color=$WHITE \
+    label.padding_left=4 \
+    label.padding_right=8 \
+    padding_left=4 \
+    padding_right=4 \
+    background.height=28 \
+    background.corner_radius=6
+
+# ═══════════════════════════════════════════════════════════════
+# AEROSPACE WORKSPACES
+# ═══════════════════════════════════════════════════════════════
+
+# Setup AeroSpace workspaces using our working script
+"$HOME/.config/sketchybar/plugins/aerospace-workspaces.sh" setup
+
+# ═══════════════════════════════════════════════════════════════
+# SYSTEM INFO (RIGHT SIDE)
+# ═══════════════════════════════════════════════════════════════
+
+# Date & Time
+sketchybar --add item datetime right \
+           --set datetime \
+                 icon="󰃭" \
+                 icon.color=$MAGENTA \
+                 background.color=$BACKGROUND_2 \
+                 background.drawing=on \
+                 update_freq=30 \
+                 script='sketchybar --set datetime label="$(date +"%H:%M %d/%m")"'
+
+# Battery (if available)
+if system_profiler SPPowerDataType | grep -q "Battery"; then
+    sketchybar --add item battery right \
+               --set battery \
+                     icon="󰁹" \
+                     icon.color=$WHITE \
+                     background.color=$BACKGROUND_2 \
+                     background.drawing=on \
+                     update_freq=60 \
+                     script='PERCENTAGE=$(pmset -g batt | grep -o "[0-9]\+%" | head -1); sketchybar --set battery label="$PERCENTAGE"'
+fi
+
+# Volume
+sketchybar --add item volume right \
+           --set volume \
+                 icon="󰕾" \
+                 icon.color=$WHITE \
+                 background.color=$BACKGROUND_2 \
+                 background.drawing=on \
+                 script='VOLUME=$(osascript -e "output volume of (get volume settings)"); sketchybar --set volume label="${VOLUME}%"' \
+           --subscribe volume volume_change
+
+# ═══════════════════════════════════════════════════════════════
+# FRONT APP (CENTER)
+# ═══════════════════════════════════════════════════════════════
+
+sketchybar --add item front_app center \
+           --set front_app \
+                 icon.drawing=off \
+                 background.color=$BACKGROUND_2 \
+                 background.drawing=on \
+                 script='sketchybar --set front_app label="$(aerospace list-windows --focused --format "%{app-name}" 2>/dev/null || echo "Desktop")"' \
+           --subscribe front_app front_app_switched
+
+# ═══════════════════════════════════════════════════════════════
+# FINAL SETUP
+# ═══════════════════════════════════════════════════════════════
+
+# Create periodic update for workspace highlighting
+sketchybar --add item workspace_monitor left \
+           --set workspace_monitor \
+                 icon.drawing=off \
+                 label.drawing=off \
+                 width=0 \
+                 script="$HOME/.config/sketchybar/plugins/aerospace-workspaces.sh monitor" \
+                 update_freq=2
+
+# Update everything
+sketchybar --update
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ SketchyBar + AeroSpace configuration loaded successfully!"
+echo ""
+echo "🚀 AeroSpace Workspaces:"
+echo "   1 = 📧 Mail       |  4 = 🌐 Arc (Q)"
+echo "   2 = 🧪 Postman    |  5 = 💬 Slack (W)" 
+echo "   3 = 💻 Code       |  6 = 🗄️  Database (E)"
+echo ""
+echo "💡 Usage:"
+echo "   • Click workspace icons to switch"
+echo "   • Alt+1,2,3,Q,W,E for keyboard navigation"
+echo "   • All 6 workspaces should be visible"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

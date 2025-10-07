@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# ===== Loading Core Settings =====
+source "$HOME/.config/sketchybar/settings/settings.sh"
+source "$SETTINGS_DIR/colors.sh"
+source "$SETTINGS_DIR/icons.sh"
+
+# ===== Helper Process =====
+HELPER=git.felix.helper
+killall helper 2>/dev/null
+cd $HOME/.config/sketchybar/helper && make 2>/dev/null
+$HOME/.config/sketchybar/helper/helper $HELPER > /dev/null 2>&1 &
+
+# ===== Bar Configuration =====
+sketchybar --bar \
+  height=$BAR_HEIGHT \
+  color=$BAR_COLOR \
+  shadow=on \
+  position=$BAR_POSITION \
+  sticky=on \
+  padding_right=$BAR_PADDINGS \
+  padding_left=$BAR_PADDINGS \
+  corner_radius=$BAR_BORDER_RADIUS \
+  y_offset=$BAR_Y_OFFSET \
+  margin=$BAR_MARGIN \
+  blur_radius=$BAR_BLUR_RADIUS \
+  notch_width=$BAR_NOTCH_WIDTH
+
+# ===== Default Item Settings =====
+sketchybar --default \
+  updates=when_shown \
+  icon.font="$FONT:Bold:14.0" \
+  icon.color=$ICON_COLOR \
+  icon.padding_left=$PADDINGS \
+  icon.padding_right=$PADDINGS \
+  label.font="$FONT:Semibold:13.0" \
+  label.color=$LABEL_COLOR \
+  label.padding_left=$PADDINGS \
+  label.padding_right=$PADDINGS \
+  padding_right=$PADDINGS \
+  padding_left=$PADDINGS \
+  background.height=$BG_HEIGHT \
+  background.corner_radius=$BG_BORDER_RADIUS \
+  popup.background.border_width=$POPUP_BORDER_WIDTH \
+  popup.background.corner_radius=$POPUP_BORDER_RADIUS \
+  popup.background.border_color=$POPUP_BORDER_COLOR \
+  popup.background.color=$POPUP_BACKGROUND_COLOR \
+  popup.blur_radius=$POPUP_BLUR_RADIUS \
+  popup.background.shadow.drawing=on
+
+# ===== Left Side Items =====
+# Apple Menu
+source "$PLUGIN_DIR/apple/item.sh"
+
+# AeroSpace Workspaces
+source "$PLUGIN_DIR/spaces/items.sh"
+
+# Front App Display
+source "$PLUGIN_DIR/front_app_aerospace.sh"
+
+# ===== Right Side Items =====
+# Calendar & Time
+source "$PLUGIN_DIR/calendar/item.sh"
+
+# System Monitor
+source "$PLUGIN_DIR/cpu.sh"
+
+# Battery
+source "$PLUGIN_DIR/battery/item.sh"
+
+# WiFi
+source "$PLUGIN_DIR/wifi/item.sh"
+
+# Volume
+source "$PLUGIN_DIR/volume/item.sh"
+
+# ===== Event Configuration =====
+# AeroSpace workspace change event
+sketchybar --add event aerospace_workspace_change
+
+# Enable hot reload for development
+sketchybar --hotload on
+
+# ===== Force Initial Update =====
+sketchybar --update
+
+echo "SketchyBar configuration loaded successfully"

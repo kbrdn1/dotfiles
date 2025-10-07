@@ -1,0 +1,198 @@
+#!/bin/bash
+
+# ╭─────────────────────────────────────────────────────────────╮
+# │                  SketchyBar AeroSpace Config                │
+# │           Configuration moderne pour développeur            │
+# │                    Workspaces 1,2,3,Q,W,E                  │
+# ╰─────────────────────────────────────────────────────────────╯
+
+# Kill existing SketchyBar process
+sketchybar --bar-restart
+
+# ═══════════════════════════════════════════════════════════════
+# VARIABLES ET COULEURS
+# ═══════════════════════════════════════════════════════════════
+
+# Fonts (Nerd Fonts requis)
+FONT_FACE="SF Pro"
+NERD_FONT="SFMono Nerd Font"
+
+# Couleurs modernes (thème sombre)
+BAR_COLOR=0xff1e1e2e       # Catppuccin Mocha base
+BG_PRIMARY=0xff313244      # Catppuccin Mocha surface0  
+BG_SECONDARY=0xff45475a    # Catppuccin Mocha surface1
+ACCENT_COLOR=0xff89b4fa    # Catppuccin Mocha blue
+ACTIVE_COLOR=0xffa6e3a1    # Catppuccin Mocha green
+TEXT_COLOR=0xffcdd6f4      # Catppuccin Mocha text
+MUTED_COLOR=0xff6c7086     # Catppuccin Mocha subtext0
+RED_COLOR=0xfff38ba8       # Catppuccin Mocha red
+YELLOW_COLOR=0xfff9e2af    # Catppuccin Mocha yellow
+
+# Tailles et espacements
+BAR_HEIGHT=35
+CORNER_RADIUS=10
+PADDING=8
+
+# ═══════════════════════════════════════════════════════════════
+# CONFIGURATION DE LA BARRE
+# ═══════════════════════════════════════════════════════════════
+
+sketchybar --bar \
+    height=$BAR_HEIGHT \
+    color=$BAR_COLOR \
+    shadow=on \
+    position=top \
+    sticky=on \
+    padding_left=$PADDING \
+    padding_right=$PADDING \
+    corner_radius=$CORNER_RADIUS \
+    y_offset=8 \
+    margin=12 \
+    blur_radius=50 \
+    notch_width=200
+
+# Valeurs par défaut
+sketchybar --default \
+    updates=when_shown \
+    icon.font="$NERD_FONT:Bold:16.0" \
+    icon.color=$TEXT_COLOR \
+    icon.padding_left=8 \
+    icon.padding_right=4 \
+    label.font="$FONT_FACE:Semibold:13.0" \
+    label.color=$TEXT_COLOR \
+    label.padding_left=4 \
+    label.padding_right=8 \
+    background.color=$BG_PRIMARY \
+    background.corner_radius=6 \
+    background.height=28 \
+    popup.background.border_width=2 \
+    popup.background.corner_radius=8 \
+    popup.background.border_color=$ACCENT_COLOR \
+    popup.background.color=$BAR_COLOR
+
+# ═══════════════════════════════════════════════════════════════
+# WORKSPACES AEROSPACE (1,2,3,Q,W,E)
+# ═══════════════════════════════════════════════════════════════
+
+# Configuration des workspaces avec icônes spécialisées
+WORKSPACE_ICONS=(
+    "1:󰇮"  # Mail/Calendar
+    "2:󰖟"  # Postman/Tests  
+    "3:󰨞"  # Code/Terminal
+    "4:󰖟"  # Arc Browser (Q)
+    "5:󰭻"  # Communication (W)
+    "6:󰆼"  # Database/Docker (E)
+)
+
+WORKSPACE_KEYS=("1" "2" "3" "q" "w" "e")
+WORKSPACE_NAMES=("Mail" "Postman" "Code" "Arc" "Slack" "Database")
+
+# Créer les workspaces
+for i in "${!WORKSPACE_ICONS[@]}"; do
+    workspace_id=$((i + 1))
+    if [[ $workspace_id -eq 4 ]]; then workspace_id=4; fi
+    if [[ $workspace_id -eq 5 ]]; then workspace_id=5; fi  
+    if [[ $workspace_id -eq 6 ]]; then workspace_id=6; fi
+    
+    # Adapter les IDs selon notre config (1,2,3,4,5,6)
+    case $i in
+        0) real_workspace=1 ;;
+        1) real_workspace=2 ;;
+        2) real_workspace=3 ;;
+        3) real_workspace=4 ;;  # Q -> workspace 4
+        4) real_workspace=5 ;;  # W -> workspace 5
+        5) real_workspace=6 ;;  # E -> workspace 6
+    esac
+    
+    sketchybar --add item workspace.${real_workspace} left \
+        --set workspace.${real_workspace} \
+        icon="${WORKSPACE_ICONS[$i]}" \
+        label="${WORKSPACE_NAMES[$i]}" \
+        icon.color=$MUTED_COLOR \
+        label.color=$MUTED_COLOR \
+        background.color=$BG_SECONDARY \
+        background.drawing=off \
+        script="$HOME/.config/sketchybar/plugins/aerospace.sh" \
+        click_script="aerospace workspace ${real_workspace}" \
+        --subscribe workspace.${real_workspace} aerospace_workspace_change
+done
+
+# Séparateur après workspaces
+sketchybar --add item workspace_separator left \
+    --set workspace_separator \
+    icon="│" \
+    icon.color=$MUTED_COLOR \
+    background.drawing=off \
+    label.drawing=off
+
+# ═══════════════════════════════════════════════════════════════
+# ÉLÉMENTS SYSTÈME - DROITE
+# ═══════════════════════════════════════════════════════════════
+
+# CPU Usage
+sketchybar --add item cpu right \
+    --set cpu \
+    icon="󰘚" \
+    icon.color=$ACCENT_COLOR \
+    update_freq=5 \
+    script="$HOME/.config/sketchybar/plugins/cpu.sh"
+
+# RAM Usage  
+sketchybar --add item ram right \
+    --set ram \
+    icon="󰍛" \
+    icon.color=$YELLOW_COLOR \
+    update_freq=5 \
+    script="$HOME/.config/sketchybar/plugins/ram.sh"
+
+# Battery
+sketchybar --add item battery right \
+    --set battery \
+    update_freq=30 \
+    script="$HOME/.config/sketchybar/plugins/battery.sh"
+
+# DateTime
+sketchybar --add item datetime right \
+    --set datetime \
+    icon="󰃭" \
+    icon.color=$ACTIVE_COLOR \
+    update_freq=30 \
+    script="$HOME/.config/sketchybar/plugins/datetime.sh"
+
+# ═══════════════════════════════════════════════════════════════
+# ÉLÉMENTS CENTRE - MODE/LAYOUT AEROSPACE
+# ═══════════════════════════════════════════════════════════════
+
+# Indicateur de mode layout
+sketchybar --add item layout_mode center \
+    --set layout_mode \
+    icon="󰙀" \
+    label="Tiles" \
+    icon.color=$ACCENT_COLOR \
+    background.color=$BG_SECONDARY \
+    script="$HOME/.config/sketchybar/plugins/layout.sh" \
+    click_script="aerospace layout tiles horizontal vertical"
+
+# ═══════════════════════════════════════════════════════════════
+# DÉMARRAGE DES PLUGINS
+# ═══════════════════════════════════════════════════════════════
+
+# Démarrer SketchyBar
+sketchybar --update
+
+echo "SketchyBar AeroSpace configuré !"
+echo ""
+echo "🚀 Workspaces AeroSpace :"
+echo "  📧 1 = Mail/Calendar"
+echo "  🧪 2 = Postman/Tests"
+echo "  💻 3 = Code/Terminal"
+echo "  🌐 Q = Arc Browser"
+echo "  💬 W = Communication"
+echo "  🗄️ E = Database/Docker"
+echo ""
+echo "✨ Fonctionnalités :"
+echo "  • Clic sur workspace pour naviguer"
+echo "  • Indicateurs visuels workspace actif"
+echo "  • Monitoring système (CPU, RAM, Batterie)"
+echo "  • Indicateur layout AeroSpace"
+echo ""
