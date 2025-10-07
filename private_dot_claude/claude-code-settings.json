@@ -1,0 +1,104 @@
+{
+  "statusLine": {
+    "segments": [
+      {
+        "type": "os",
+        "style": {
+          "foreground": "#7dc4e4",
+          "bold": true
+        }
+      },
+      {
+        "type": "separator",
+        "content": " ",
+        "style": {
+          "foreground": "#494d64"
+        }
+      },
+      {
+        "type": "dir",
+        "style": {
+          "foreground": "#a6da95",
+          "bold": false
+        },
+        "options": {
+          "maxLength": 30,
+          "truncateFromFront": true
+        }
+      },
+      {
+        "type": "git_branch",
+        "style": {
+          "foreground": "#f5a97f",
+          "bold": false
+        },
+        "prefix": " ",
+        "suffix": ""
+      },
+      {
+        "type": "git_status",
+        "style": {
+          "foreground": "#ed8796"
+        },
+        "options": {
+          "showClean": false,
+          "showDirty": true,
+          "dirtyIndicator": "*"
+        }
+      },
+      {
+        "type": "separator",
+        "content": " | ",
+        "style": {
+          "foreground": "#494d64"
+        }
+      },
+      {
+        "type": "language",
+        "style": {
+          "foreground": "#b7bdf8"
+        },
+        "options": {
+          "showIcon": true,
+          "languages": ["node", "python", "go", "php", "rust", "java"]
+        }
+      },
+      {
+        "type": "separator",
+        "content": " | ",
+        "style": {
+          "foreground": "#494d64"
+        }
+      },
+      {
+        "type": "time",
+        "style": {
+          "foreground": "#8aadf4"
+        },
+        "options": {
+          "format": "HH:mm:ss",
+          "use24Hour": true
+        }
+      },
+      {
+        "type": "separator",
+        "content": " ",
+        "style": {
+          "foreground": "#494d64"
+        }
+      },
+      {
+        "type": "exit_code",
+        "style": {
+          "foreground": "#a6da95",
+          "foregroundError": "#ed8796",
+          "bold": true
+        },
+        "successIndicator": "✓",
+        "errorIndicator": "✗"
+      }
+    ],
+    "separator": " ",
+    "theme": "catppuccin-macchiato"
+  }
+}

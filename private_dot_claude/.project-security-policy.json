@@ -1,0 +1,48 @@
+{
+  "version": "1.0",
+  "default_policy": "work",
+  "description": "Security classification for Claude Code projects",
+  "policies": {
+    "public": "Versioned without encryption - safe to share",
+    "work": "Versioned with age encryption - client/work projects",
+    "private": "Excluded from versioning - personal sensitive data"
+  },
+  "projects": {
+    "MNS-e-commerce-back": {
+      "policy": "work",
+      "reason": "Client project - contains business logic",
+      "encrypt_patterns": ["*.env*", "*secret*", "*key*", "*.pem"]
+    },
+    "cv-exporter": {
+      "policy": "private",
+      "reason": "Personal sensitive data - exclude entirely"
+    },
+    "Flippad-fiches-pedagogiques": {
+      "policy": "work",
+      "reason": "Work project - encrypt sensitive configs"
+    }
+  },
+  "public_projects": [
+    "-Users-kbrdn1--claude",
+    "-Users-kbrdn1--config"
+  ],
+  "global_encrypt_patterns": [
+    "*.env",
+    "*.env.*",
+    "*secret*",
+    "*password*",
+    "*.pem",
+    "*.key",
+    "id_rsa*",
+    "*.p12",
+    "*.pfx"
+  ],
+  "global_ignore_patterns": [
+    "node_modules/",
+    ".git/",
+    "dist/",
+    "build/",
+    "*.log",
+    ".DS_Store"
+  ]
+}

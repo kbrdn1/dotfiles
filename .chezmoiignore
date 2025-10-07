@@ -1,1 +1,35 @@
 ~/.zsh_secrets
+# ===================================================================
+# Claude Code - Runtime Data (NEVER VERSION)
+# ===================================================================
+.claude/logs/
+.claude/history.jsonl
+.claude/todos/
+.claude/file-history/
+.claude/shell-snapshots/
+.claude/statsig/
+
+# ===================================================================
+# Claude Projects - Security Policy Exclusions
+# ===================================================================
+# PRIVATE projects (sensitive personal data)
+.claude/projects/*cv-exporter*/
+.claude/projects/*personal*/
+.claude/projects/*private*/
+
+# Temporary/cache files in all projects
+.claude/projects/**/node_modules/
+.claude/projects/**/.git/
+.claude/projects/**/.env.local
+.claude/projects/**/dist/
+.claude/projects/**/build/
+.claude/projects/**/*.log
+
+# ===================================================================
+# Sensitive patterns (across all projects)
+# ===================================================================
+**/*secret*
+**/*password*
+**/*.pem
+**/*.key
+**/id_rsa*
