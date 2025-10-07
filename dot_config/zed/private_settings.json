@@ -18,7 +18,7 @@
   // Editor Behavior
   "vim_mode": true,
   "base_keymap": "VSCode",
-  "enable_experimental_live_diffs": true,
+  // "enable_experimental_live_diffs": true,
   "tab_size": 2,
   "minimap": {
     "show": "auto"
@@ -36,7 +36,6 @@
       "milliseconds": 300
     }
   },
-
   // Font Settings
   // "ui_font_family": "Monaspace Argon Var",
   "ui_font_size": 13.55,
@@ -107,8 +106,8 @@
     "quick_actions": true
   },
   "file_finder": {
-    "max_modal_width": "xlarge",
-    "modal_width": "xlarge"
+    // "max_modal_width": "xlarge",
+    // "modal_width": "xlarge"
   },
   "preview_tabs": {
     "enabled": true,
@@ -116,7 +115,7 @@
     "enable_preview_from_code_navigation": true
   },
   "project_panel": {
-    "dock": "left",
+    "dock": "right",
     "entry_spacing": "standard",
     "indent_size": 15,
     "git_status": true,
@@ -132,9 +131,9 @@
   },
 
   // Code Intelligence
-  "semantic_index": {
-    "enabled": true
-  },
+  // "semantic_index": {
+  //   "enabled": true
+  // },
   "inlay_hints": {
     "enabled": true,
     "show_other_hints": true,
@@ -156,9 +155,9 @@
       "padding": 2,
       "min_column": 0,
       "max_severity": null
-    },
-    "update_with_cursor": true,
-    "use_rendered": true
+    }
+    // "update_with_cursor": true,
+    // "use_rendered": true
   },
   "indent_guides": {
     "enabled": true,
@@ -171,6 +170,7 @@
 
   // AI Assistance
   "agent": {
+    "dock": "left",
     "inline_assistant_model": {
       "provider": "zed.dev",
       "model": "claude-3-7-sonnet-thinking-latest"
@@ -288,7 +288,6 @@
       "provider": "zed.dev",
       "model": "claude-3-7-sonnet-thinking-latest"
     },
-    "version": "2"
   },
   "edit_predictions": {
     "disabled_globs": [],

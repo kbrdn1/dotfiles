@@ -40,4 +40,3 @@
 # Project conversation histories are machine-specific and very large
 .claude/projects/**/*.jsonl
 .claude/projects/**/
-.config/zed/
