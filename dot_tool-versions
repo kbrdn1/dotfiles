@@ -1,6 +1,6 @@
 neovim 0.10.4
 bun 1.2.22
-nodejs 24.O.1
+nodejs 24.0.1
 pnpm 10.7.1
 rust 1.84.1
 golang 1.23.6
