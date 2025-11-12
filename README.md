@@ -224,65 +224,99 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 > Modern tiling window manager (no SIP required) - See [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md)
 
-### Space & Window Navigation
+### Workspace Navigation
+
+| Shortcut | Action | Workspace |
+|----------|--------|-----------|
+| <kbd>⌥</kbd> + <kbd>1</kbd> | Focus workspace 1 | Mail/Calendar |
+| <kbd>⌥</kbd> + <kbd>2</kbd> | Focus workspace 2 | Postman |
+| <kbd>⌥</kbd> + <kbd>3</kbd> | Focus workspace 3 | Code Editors |
+| <kbd>⌥</kbd> + <kbd>Q</kbd> | Focus workspace 4 | Arc Browser |
+| <kbd>⌥</kbd> + <kbd>W</kbd> | Focus workspace 5 | Communication/Web |
+| <kbd>⌥</kbd> + <kbd>E</kbd> | Focus workspace 6 | Database/Docker |
+| <kbd>⌥</kbd> + <kbd>Tab</kbd> | Back and forth | Previous workspace |
+
+### Window Focus
 
 | Shortcut | Action |
 |----------|--------|
-| <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>0</kbd> | Focus workspace 1-10 |
 | <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Focus window (left/down/up/right) |
-| <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle float window |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>f</kbd> | Toggle fullscreen |
+| <kbd>⌥</kbd> + <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | Focus window (arrows) |
 
-### Window Management
+### Window Movement
 
 | Shortcut | Action |
 |----------|--------|
 | <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Move window (left/down/up/right) |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>0</kbd> | Move window to workspace 1-10 |
-| <kbd>⌥</kbd> + <kbd>-</kbd>/<kbd>_</kbd> | Split horizontal/vertical |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | Move window (arrows) |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> | Move to workspace 1/2/3 |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd> | Move to workspace 4/5/6 |
+| <kbd>⌃</kbd> + <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1-6</kbd> | Move to workspace and follow |
 
-### UI Controls
+### Layout & Display
 
 | Shortcut | Action |
 |----------|--------|
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle Sketchybar visibility |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>r</kbd> | Reload Sketchybar |
+| <kbd>⌥</kbd> + <kbd>/</kbd> | Toggle tiles layout (horizontal/vertical) |
+| <kbd>⌥</kbd> + <kbd>,</kbd> | Toggle accordion layout (cascade) |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle floating/tiling |
+| <kbd>⌥</kbd> + <kbd>F</kbd> | Toggle fullscreen |
+| <kbd>⌥</kbd> + <kbd>-</kbd>/<kbd>=</kbd> | Resize window (smart -50/+50) |
+| <kbd>⌥</kbd> + <kbd>R</kbd> | Enter resize mode |
+
+### Utilities
+
+| Shortcut | Action |
+|----------|--------|
+| <kbd>⌥</kbd> + <kbd>Enter</kbd> | Open Ghostty terminal |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>X</kbd> | Close window |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>=</kbd> | Balance window sizes |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>R</kbd> | Reload AeroSpace config |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>;</kbd> | Enter service mode |
 
 ## Shortcuts & Keybindings ⌨️
 
 ### Tmux Keybindings 🖥️
-| Shortcut | Action | Description |
-|----------|--------|-------------|
-| <kbd>⌃</kbd> + <kbd>s</kbd> | `prefix` | Prefix key (replaces default <kbd>⌃</kbd> + <kbd>b</kbd>) |
+
+> **Prefix**: <kbd>⌃</kbd> + <kbd>S</kbd> (replaces default <kbd>⌃</kbd> + <kbd>B</kbd>)
 
 #### Session Management
+
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| <kbd>prefix</kbd> + <kbd>r</kbd> | `source-file ~/.tmux.conf` | Reload tmux configuration |
-| <kbd>prefix</kbd> + <kbd>o</kbd> | `tmux-sessionx` | Open session manager |
-| <kbd>prefix</kbd> + <kbd>Space</kbd> | `which-key` | Show available keybindings |
+| <kbd>prefix</kbd> + <kbd>R</kbd> | `source-file ~/.tmux.conf` | Reload configuration |
+| <kbd>prefix</kbd> + <kbd>O</kbd> | Sessionx | Open session manager plugin |
+| <kbd>prefix</kbd> + <kbd>Space</kbd> | Which-key | Show available keybindings |
 
 #### Window Management
-| Shortcut | Action | Description |
-|----------|--------|-------------|
-| <kbd>prefix</kbd> + <kbd>c</kbd> | `new-window` | Create new window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>H</kbd> | `previous-window` | Go to previous window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>L</kbd> | `next-window` | Go to next window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>x</kbd> | `kill-window` | Close current window |
+
+| Shortcut | Action |
+|----------|--------|
+| <kbd>prefix</kbd> + <kbd>C</kbd> | Create new window |
+| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>H</kbd> | Previous window |
+| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>L</kbd> | Next window |
+| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>X</kbd> | Close window |
 
 #### Pane Management
-| Shortcut | Action | Description |
-|----------|--------|-------------|
-| <kbd>prefix</kbd> + <kbd>h</kbd> | `select-pane -L` | Focus left pane |
-| <kbd>prefix</kbd> + <kbd>j</kbd> | `select-pane -D` | Focus down pane |
-| <kbd>prefix</kbd> + <kbd>k</kbd> | `select-pane -U` | Focus up pane |
-| <kbd>prefix</kbd> + <kbd>l</kbd> | `select-pane -R` | Focus right pane |
-| <kbd>prefix</kbd> + <kbd>x</kbd> | `kill-pane` | Close current pane |
-| <kbd>prefix</kbd> + <kbd>-</kbd> | `split-window -h` | Split pane horizontally |
-| <kbd>prefix</kbd> + <kbd>_</kbd> | `split-window -v` | Split pane vertically |
 
-> [!NOTE]
-> The prefix key (<kbd>⌃</kbd> + <kbd>s</kbd>) must be pressed before using most tmux commands. After pressing the prefix key, release it before pressing the command key.
+| Shortcut | Action |
+|----------|--------|
+| <kbd>prefix</kbd> + <kbd>H</kbd> | Focus left pane |
+| <kbd>prefix</kbd> + <kbd>J</kbd> | Focus down pane |
+| <kbd>prefix</kbd> + <kbd>K</kbd> | Focus up pane |
+| <kbd>prefix</kbd> + <kbd>L</kbd> | Focus right pane |
+| <kbd>prefix</kbd> + <kbd>X</kbd> | Close pane |
+| <kbd>prefix</kbd> + <kbd>-</kbd> | Split horizontally |
+| <kbd>prefix</kbd> + <kbd>_</kbd> | Split vertically |
+
+#### Plugins
+
+| Plugin | Trigger | Purpose |
+|--------|---------|---------|
+| tmux-sessionx | <kbd>prefix</kbd> + <kbd>O</kbd> | Session manager |
+| tmux-which-key | <kbd>prefix</kbd> + <kbd>Space</kbd> | Keybinding helper |
+| vim-tmux-navigator | <kbd>⌃</kbd> + <kbd>h/j/k/l</kbd> | Seamless vim/tmux navigation |
+| catppuccin/tmux | - | Catppuccin Macchiato theme |
 
 ## Zed Configuration ⚡
 
