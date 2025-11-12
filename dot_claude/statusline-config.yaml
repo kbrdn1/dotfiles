@@ -1,0 +1,325 @@
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║ StatusLine Configuration File - Complete Reference                       ║
+# ║ Location: ~/.claude/statusline-config.yaml                               ║
+# ║                                                                           ║
+# ║ Priority: Environment variables > YAML config > defaults                 ║
+# ║ All settings are optional - defaults will be used if not specified       ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# ============================================================================
+# FEATURES - Enable/Disable Specific Functionality
+# ============================================================================
+features:
+  # ── Git Features ──────────────────────────────────────────────────────────
+  git:
+    enabled: true                    # Master toggle for all Git features
+    show_branch: true                # Show ⎇ main
+    show_status: true                # Show *2 !5 ?1 (staged/modified/untracked)
+    show_ahead_behind: true          # Show ↑3 ↓2 (commits ahead/behind upstream)
+    show_stash: true                 # Show ⊟2 (stash count)
+    show_conflict: true              # Show ⚠CONFLICT (merge conflicts)
+    clean_indicator: true            # Show ✓ when repo is clean
+
+  # ── Language Versions ─────────────────────────────────────────────────────
+  versions:
+    enabled: true                    # Master toggle for all version detection
+    node: true                       # Show ⬢ 23.9.0 (Node.js)
+    php: true                        # Show ◆ 8.4 (PHP)
+    go: true                         # Show ◈ 1.24 (Go)
+    python: true                     # Show ⊙ 3.13 (Python)
+    rust: true                       # Show ⚙ 1.75 (Rust)
+    ruby: true                       # Show ◊ 3.3 (Ruby)
+    java: true                       # Show ◈ 21 (Java)
+    smart_detection: true            # Only show if project uses the language
+
+  # ── Container & Orchestration ─────────────────────────────────────────────
+  devops:
+    docker: true                     # Show ◧ 3 (running containers count)
+    kubernetes: true                 # Show ⎈ prod (current k8s context)
+    k8s_max_length: 15              # Max length for k8s context name
+
+  # ── Token Usage & Performance ─────────────────────────────────────────────
+  tokens:
+    enabled: true                    # Master toggle for ccusage stats
+    show_input_output: true          # Show ⇣1200 ⇡4990
+    show_burn_rate: true             # Show ≈ 222k tok/min
+    show_cost: true                  # Show $6.32
+    show_time_remaining: true        # Show ⧗ 4h 2m
+
+  # ── Model & System Info ───────────────────────────────────────────────────
+  system:
+    show_model: true                 # Show ◉ Sonnet 4.5, Opus 4, etc.
+    show_path: true                  # Show ⌂ ~/path
+    use_path_aliases: true           # Use ◆ Perso instead of ~/Projects/Perso
+
+# ============================================================================
+# DISPLAY - Customize Output Format & Style
+# ============================================================================
+display:
+  # ── Date & Time ───────────────────────────────────────────────────────────
+  show_date: true                    # Show ◫ 07/10/25
+  show_time: true                    # Show ◷ 14:30
+  date_format: "%d/%m/%y"           # Date format (strftime)
+  time_format: "%H:%M"              # Time format (strftime)
+
+  # ── Path Display ──────────────────────────────────────────────────────────
+  max_path_length: 50               # Maximum path length before truncation
+  path_truncate_strategy: "middle"  # Options: "middle", "start", "end"
+  show_full_path: false             # Show full path instead of basename
+
+  # ── Git Display ───────────────────────────────────────────────────────────
+  git_stats_style: "compact"        # Options: "compact" (*2), "verbose" (2 staged)
+  show_clean_branch: true           # Show branch name even if repo is clean
+
+  # ── Separators & Spacing ──────────────────────────────────────────────────
+  separator: "  "                   # Separator between sections (2 spaces)
+  compact_mode: false               # Reduce spacing for compact display
+
+# ============================================================================
+# COLORS - Customize Statusline Colors (ANSI Codes)
+# ============================================================================
+colors:
+  # ── Section Colors ────────────────────────────────────────────────────────
+  # Use ANSI escape codes for terminal colors
+  # Format: '\e[XXm' where XX is the color code
+  #
+  # Basic colors (30-37):
+  #   30=black, 31=red, 32=green, 33=yellow
+  #   34=blue, 35=magenta, 36=cyan, 37=white
+  #
+  # Bright colors (90-97):
+  #   90=bright_black, 91=bright_red, 92=bright_green, 93=bright_yellow
+  #   94=bright_blue, 95=bright_magenta, 96=bright_cyan, 97=bright_white
+
+  # Model (◉ Sonnet 4.5)
+  model: '\e[38;5;208m'              # Orange (RGB 208) - like Claude logo
+
+  # Path (⌂ ~/path)
+  path: '\e[34m'                     # Default: blue (\e[34m)
+
+  # Git - Dynamic color based on repo status:
+  git_branch: '\e[95m'               # Default: bright magenta (\e[95m)
+  git_clean: '\e[32m'                # Clean repo: green (\e[32m)
+  git_dirty: '\e[33m'                # Has changes: yellow (\e[33m)
+  git_conflict: '\e[91m'             # Conflicts: bright red (\e[91m)
+
+  # Language Versions (⬢ Node, ◆ PHP, etc.)
+  version: '\e[36m'                  # Default: cyan (\e[36m)
+
+  # DevOps (◧ Docker, ⎈ K8s)
+  docker: '\e[94m'                   # Default: bright blue (\e[94m)
+  kubernetes: '\e[95m'               # Default: bright magenta (\e[95m)
+
+  # Tokens & Performance (◉ tokens, ≈ burn rate)
+  token: '\e[93m'                    # Default: bright yellow (\e[93m)
+
+  # Date & Time (◫ date, ◷ time)
+  datetime: '\e[90m'                 # Default: bright black/gray (\e[90m)
+
+# Example Color Themes:
+# ────────────────────────────────────────────────────────────────────────────
+#
+# Theme: Ocean (Blue & Cyan tones)
+# colors:
+#   model: '\e[96m'      # bright cyan
+#   path: '\e[34m'       # blue
+#   git_branch: '\e[36m' # cyan
+#   git_clean: '\e[92m'  # bright green
+#   git_dirty: '\e[93m'  # bright yellow
+#   git_conflict: '\e[91m' # bright red
+#   version: '\e[94m'    # bright blue
+#   docker: '\e[96m'     # bright cyan
+#   kubernetes: '\e[34m' # blue
+#   token: '\e[33m'      # yellow
+#   datetime: '\e[90m'   # gray
+#
+# Theme: Forest (Green & Earth tones)
+# colors:
+#   model: '\e[92m'      # bright green
+#   path: '\e[32m'       # green
+#   git_branch: '\e[36m' # cyan
+#   git_clean: '\e[32m'  # green
+#   git_dirty: '\e[33m'  # yellow
+#   git_conflict: '\e[31m' # red
+#   version: '\e[36m'    # cyan
+#   docker: '\e[34m'     # blue
+#   kubernetes: '\e[35m' # magenta
+#   token: '\e[93m'      # bright yellow
+#   datetime: '\e[90m'   # gray
+#
+# Theme: Sunset (Warm tones)
+# colors:
+#   model: '\e[93m'      # bright yellow
+#   path: '\e[35m'       # magenta
+#   git_branch: '\e[95m' # bright magenta
+#   git_clean: '\e[92m'  # bright green
+#   git_dirty: '\e[93m'  # bright yellow
+#   git_conflict: '\e[91m' # bright red
+#   version: '\e[33m'    # yellow
+#   docker: '\e[35m'     # magenta
+#   kubernetes: '\e[36m' # cyan
+#   token: '\e[91m'      # bright red
+#   datetime: '\e[90m'   # gray
+#
+# Theme: Monochrome (Grayscale)
+# colors:
+#   model: '\e[97m'      # bright white
+#   path: '\e[37m'       # white
+#   git_branch: '\e[37m' # white
+#   git_clean: '\e[92m'  # bright green
+#   git_dirty: '\e[93m'  # bright yellow
+#   git_conflict: '\e[91m' # bright red
+#   version: '\e[90m'    # gray
+#   docker: '\e[37m'     # white
+#   kubernetes: '\e[37m' # white
+#   token: '\e[90m'      # gray
+#   datetime: '\e[90m'   # gray
+
+# ============================================================================
+# SYMBOLS - Customize Icons (Unicode/Nerd Fonts)
+# ============================================================================
+symbols:
+  # You can override any symbol used in the statusline
+  # Uncomment and modify to customize
+
+  # model: "◉"
+  # folder: "⌂"
+  # git: "⎇"
+  # git_clean: "✓"
+  # git_modified: "✗"
+  # node: "⬢"
+  # php: "◆"
+  # go: "◈"
+  # rust: "⚙"
+  # python: "⊙"
+  # ruby: "◊"
+  # java: "◈"
+  # token: "◉"
+  # burn: "≈"
+  # time: "◷"
+  # calendar: "◫"
+  # input: "⇣"
+  # output: "⇡"
+  # remaining: "⧗"
+  # ahead: "↑"
+  # behind: "↓"
+  # stash: "⊟"
+  # conflict: "⚠"
+  # docker: "◧"
+  # k8s: "⎈"
+
+# ============================================================================
+# PATH ALIASES - Custom Directory Shortcuts
+# ============================================================================
+path_aliases:
+  # Custom aliases for frequently used directories
+  # Format: "full_path": "alias_display"
+
+  enabled: true
+
+  # Projects
+  # "~/Projects/MyProject": "◈ MyProj"
+  # "~/Projects/Work": "◇ Work"
+
+  # System
+  # "~/Code": "⌘ Code"
+  # "~/Development": "◆ Dev"
+
+# ============================================================================
+# PERFORMANCE - Optimize for Speed
+# ============================================================================
+performance:
+  # Disable slower features for better performance
+  disable_slow_git: false           # Disable ahead/behind if slow
+  cache_duration: 2                 # Cache results for N seconds (0 = disabled)
+  parallel_execution: true          # Run independent checks in parallel
+  timeout_ms: 200                   # Max execution time per check (ms)
+
+# ============================================================================
+# PROFILES - Quick Presets
+# ============================================================================
+# Uncomment one profile to use, or create your own below
+
+# Profile: minimal
+# features:
+#   git: { enabled: true, show_ahead_behind: false, show_stash: false }
+#   versions: { enabled: true, smart_detection: true }
+#   devops: { docker: false, kubernetes: false }
+#   tokens: { enabled: false }
+# display:
+#   show_date: false
+#   show_time: true
+
+# Profile: performance
+# features:
+#   git: { enabled: true, show_ahead_behind: false, show_stash: false }
+#   versions: { enabled: true }
+#   devops: { docker: false, kubernetes: false }
+#   tokens: { enabled: true, show_burn_rate: false }
+# performance:
+#   disable_slow_git: true
+#   cache_duration: 5
+
+# Profile: devops
+# features:
+#   git: { enabled: true, show_ahead_behind: true, show_stash: true }
+#   versions: { enabled: true }
+#   devops: { docker: true, kubernetes: true }
+#   tokens: { enabled: true }
+# display:
+#   show_date: true
+#   show_time: true
+
+# Profile: complete (everything enabled - default)
+# All features enabled with default settings
+
+# ============================================================================
+# ENVIRONMENT VARIABLE REFERENCE
+# ============================================================================
+# You can also use environment variables for quick toggles:
+#
+# Git Features:
+#   STATUSLINE_GIT_ENABLED=true|false
+#   STATUSLINE_GIT_AHEAD_BEHIND=true|false
+#   STATUSLINE_GIT_STASH=true|false
+#   STATUSLINE_GIT_CONFLICT=true|false
+#
+# Versions:
+#   STATUSLINE_VERSIONS_ENABLED=true|false
+#   STATUSLINE_NODE=true|false
+#   STATUSLINE_PHP=true|false
+#   STATUSLINE_GO=true|false
+#   STATUSLINE_PYTHON=true|false
+#   STATUSLINE_RUST=true|false
+#   STATUSLINE_RUBY=true|false
+#   STATUSLINE_JAVA=true|false
+#
+# DevOps:
+#   STATUSLINE_DOCKER=true|false
+#   STATUSLINE_KUBERNETES=true|false
+#
+# Tokens:
+#   STATUSLINE_TOKENS_ENABLED=true|false
+#   STATUSLINE_SHOW_COST=true|false
+#   STATUSLINE_SHOW_BURN_RATE=true|false
+#
+# Display:
+#   STATUSLINE_SHOW_DATE=true|false
+#   STATUSLINE_SHOW_TIME=true|false
+#   STATUSLINE_MAX_PATH_LENGTH=50
+#   STATUSLINE_SHOW_MODEL=true|false
+#
+# Colors (ANSI escape codes):
+#   STATUSLINE_COLOR_MODEL='\e[96m'
+#   STATUSLINE_COLOR_PATH='\e[34m'
+#   STATUSLINE_COLOR_GIT_BRANCH='\e[95m'
+#   STATUSLINE_COLOR_GIT_CLEAN='\e[32m'
+#   STATUSLINE_COLOR_GIT_DIRTY='\e[33m'
+#   STATUSLINE_COLOR_GIT_CONFLICT='\e[91m'
+#   STATUSLINE_COLOR_VERSION='\e[36m'
+#   STATUSLINE_COLOR_DOCKER='\e[94m'
+#   STATUSLINE_COLOR_K8S='\e[95m'
+#   STATUSLINE_COLOR_TOKEN='\e[93m'
+#   STATUSLINE_COLOR_DATETIME='\e[90m'
+#
+# Add to ~/.zshrc or ~/.bashrc to make permanent

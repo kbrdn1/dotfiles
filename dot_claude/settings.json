@@ -1,0 +1,54 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /Users/kbrdn1/.claude/scripts/validate-command.js"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/finish.mp3"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/need-human.mp3"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bunx -y ccstatusline@latest",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "git-workflow@claude-code-templates": true,
+    "testing-suite@claude-code-templates": true,
+    "security-pro@claude-code-templates": true,
+    "ai-ml-toolkit@claude-code-templates": true,
+    "devops-automation@claude-code-templates": true,
+    "documentation-generator@claude-code-templates": true,
+    "performance-optimizer@claude-code-templates": true,
+    "project-management-suite@claude-code-templates": true,
+    "docker-mcp-toolkit@docker": true
+  },
+  "alwaysThinkingEnabled": false
+}

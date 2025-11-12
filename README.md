@@ -22,7 +22,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 | Layer | Tool | Purpose |
 |-------|------|---------|
-| **Package Manager** | Nix + Home Manager 24.11 | Declarative CLI tools (62 packages) |
+| **Package Manager** | Nix + Home Manager 24.11 | Declarative CLI tools (63 packages) |
 | **GUI Apps** | Homebrew Casks | GUI applications and system tools |
 | **Dotfiles** | Chezmoi | Configuration file management |
 | **Shell** | Zsh + Oh-My-Zsh | Interactive shell with plugins |
@@ -35,7 +35,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | Tool | Version | Purpose | Packages |
 |------|---------|---------|----------|
 | **Nix** | Multi-user daemon | Declarative package manager | System foundation |
-| **Home Manager** | 24.11 | User environment management | 62 CLI tools |
+| **Home Manager** | 24.11 | User environment management | 63 CLI tools |
 | **Homebrew** | Latest | GUI apps & system tools | Complementary to Nix |
 | **Chezmoi** | Latest | Dotfile management | Config sync |
 
@@ -54,6 +54,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 |------|---------|------------|-------|
 | [Node.js](https://nodejs.org/) | 24.11.0 | Nix | JavaScript runtime |
 | [Python](https://www.python.org/) | 3.13.8 | Nix | Python interpreter |
+| [uv](https://docs.astral.sh/uv/) | 0.8.23 | Nix | Fast Python package manager |
 | [PHP](https://www.php.net/) | 8.4.14 | Nix | With pcov, redis extensions |
 | [Go](https://golang.org/) | 1.25.2 | Nix | Golang compiler |
 | [Rust](https://www.rust-lang.org/) | 1.89.0 | Nix | Rust toolchain |

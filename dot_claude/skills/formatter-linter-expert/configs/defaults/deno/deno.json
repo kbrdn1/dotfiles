@@ -1,0 +1,53 @@
+{
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false,
+    "proseWrap": "preserve",
+    "include": [
+      "src/",
+      "tests/"
+    ],
+    "exclude": [
+      "node_modules",
+      "vendor",
+      "dist",
+      "build"
+    ]
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"],
+      "include": [
+        "ban-untagged-todo",
+        "camelcase",
+        "eqeqeq",
+        "explicit-function-return-type",
+        "no-const-assign",
+        "no-debugger",
+        "no-eval",
+        "no-inferrable-types",
+        "no-throw-literal",
+        "no-unused-vars"
+      ],
+      "exclude": []
+    },
+    "include": [
+      "src/",
+      "tests/"
+    ],
+    "exclude": [
+      "node_modules",
+      "vendor",
+      "dist",
+      "build"
+    ]
+  },
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"],
+    "strict": true
+  }
+}

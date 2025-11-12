@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "default_mode": "analyze",
+  "default_asdf_mode": "fallback",
+  "exclude_patterns": [
+    "node_modules",
+    "vendor",
+    "dist",
+    "build",
+    ".git",
+    "__pycache__",
+    ".next",
+    ".nuxt",
+    "target",
+    "coverage",
+    ".pytest_cache"
+  ],
+  "timeouts": {
+    "format": 120,
+    "lint": 120,
+    "analyze": 60
+  },
+  "parallel_execution": false,
+  "auto_fix_safe_only": true
+}
