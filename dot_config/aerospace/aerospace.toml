@@ -39,8 +39,8 @@ on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
 
 # Intégration Sketchybar - notification changements workspace
 exec-on-workspace-change = [
-    '/bin/bash', '-c',
-    'sketchybar --trigger aerospace_workspace_change'
+    '/bin/bash',
+    '/Users/kbrdn1/.config/sketchybar/plugins/spaces/aerospace_trigger.sh'
 ]
 
 # Commandes après démarrage
@@ -81,7 +81,8 @@ inner.horizontal = 8
 inner.vertical = 8
 outer.left = 8
 outer.bottom = 8
-outer.top = 8
+# outer.top = 8
+outer.top = 44
 outer.right = 8
 
 # ═══════════════════════════════════════════════════════════════
@@ -95,111 +96,108 @@ outer.right = 8
 # └─────────────────────────────────────────────────────────────┘
 
 # Workspaces optimisés AZERTY (préserve { } [ ] | \ @ ` pour le code)
-alt-1 = 'workspace 1'    # Mail/Calendar
-alt-2 = 'workspace 2'    # Postman  
-alt-3 = 'workspace 3'    # Code Editors
-alt-q = 'workspace 4'    # Arc Browser (Q proche de A=Arc)
-alt-w = 'workspace 5'    # Communication/Web (W=Web)
-alt-e = 'workspace 6'    # Database/Docker (E=Environment)
+ctrl-alt-1 = 'workspace 1'    # Mail/Calendar (Home)
+ctrl-alt-2 = 'workspace 2'    # Postman  
+ctrl-alt-3 = 'workspace 3'    # Code Editors
+ctrl-alt-q = 'workspace 4'    # Arc Browser (Q=A sur AZERTY)
+ctrl-alt-w = 'workspace 5'    # Communication/Zen (W=Z sur AZERTY)
+ctrl-alt-e = 'workspace 6'    # Database/Docker (E=Environment)
+ctrl-alt-o = 'workspace 7'    # Obsidian (O=Obsidian)
 
 # Navigation rapide
-alt-tab = 'workspace-back-and-forth'
+ctrl-alt-b = 'workspace-back-and-forth'
+ctrl-alt-n = 'workspace next'    # Workspace suivant
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                   DÉPLACER VERS WORKSPACES                  │
 # └─────────────────────────────────────────────────────────────┘
 
 # Déplacer fenêtre active vers workspace
-alt-shift-1 = 'move-node-to-workspace 1'
-alt-shift-2 = 'move-node-to-workspace 2'
-alt-shift-3 = 'move-node-to-workspace 3'
-alt-shift-q = 'move-node-to-workspace 4'
-alt-shift-w = 'move-node-to-workspace 5'
-alt-shift-e = 'move-node-to-workspace 6'
+ctrl-alt-shift-1 = 'move-node-to-workspace 1'
+ctrl-alt-shift-2 = 'move-node-to-workspace 2'
+ctrl-alt-shift-3 = 'move-node-to-workspace 3'
+ctrl-alt-shift-q = 'move-node-to-workspace 4'
+ctrl-alt-shift-w = 'move-node-to-workspace 5'
+ctrl-alt-shift-e = 'move-node-to-workspace 6'
+ctrl-alt-shift-o = 'move-node-to-workspace 7'
 
 # Déplacer ET suivre
-alt-ctrl-shift-1 = ['move-node-to-workspace 1', 'workspace 1']
-alt-ctrl-shift-2 = ['move-node-to-workspace 2', 'workspace 2']
-alt-ctrl-shift-3 = ['move-node-to-workspace 3', 'workspace 3']
-alt-ctrl-shift-q = ['move-node-to-workspace 4', 'workspace 4']
-alt-ctrl-shift-w = ['move-node-to-workspace 5', 'workspace 5']
-alt-ctrl-shift-e = ['move-node-to-workspace 6', 'workspace 6']
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                      FOCUS FENÊTRES                         │
 # └─────────────────────────────────────────────────────────────┘
 
 # Navigation vim-style
-alt-h = 'focus left'
-alt-j = 'focus down'
-alt-k = 'focus up'
-alt-l = 'focus right'
+ctrl-alt-h = 'focus left'
+ctrl-alt-j = 'focus down'
+ctrl-alt-k = 'focus up'
+ctrl-alt-l = 'focus right'
 
 # Navigation flèches
-alt-left = 'focus left'
-alt-down = 'focus down'
-alt-up = 'focus up'
-alt-right = 'focus right'
+ctrl-alt-left = 'focus left'
+ctrl-alt-down = 'focus down'
+ctrl-alt-up = 'focus up'
+ctrl-alt-right = 'focus right'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                    DÉPLACER FENÊTRES                        │
 # └─────────────────────────────────────────────────────────────┘
 
 # Déplacer fenêtres vim-style
-alt-shift-h = 'move left'
-alt-shift-j = 'move down'
-alt-shift-k = 'move up'
-alt-shift-l = 'move right'
+ctrl-alt-shift-h = 'move left'
+ctrl-alt-shift-j = 'move down'
+ctrl-alt-shift-k = 'move up'
+ctrl-alt-shift-l = 'move right'
 
 # Déplacer fenêtres avec flèches
-alt-shift-left = 'move left'
-alt-shift-down = 'move down'
-alt-shift-up = 'move up'
-alt-shift-right = 'move right'
+ctrl-alt-shift-left = 'move left'
+ctrl-alt-shift-down = 'move down'
+ctrl-alt-shift-up = 'move up'
+ctrl-alt-shift-right = 'move right'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                       LAYOUTS                               │
 # └─────────────────────────────────────────────────────────────┘
 
 # Basculer entre tiles et accordion (cascade)
-alt-slash = 'layout tiles horizontal vertical'
-alt-comma = 'layout accordion horizontal vertical'
+ctrl-alt-slash = 'layout tiles horizontal vertical'
+ctrl-alt-comma = 'layout accordion horizontal vertical'
 
 # Toggle floating
-alt-shift-space = 'layout floating tiling'
+ctrl-alt-shift-space = 'layout floating tiling'
 
 # Fullscreen toggle
-alt-f = 'fullscreen'
+ctrl-alt-f = 'fullscreen'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                      REDIMENSIONNER                         │
 # └─────────────────────────────────────────────────────────────┘
 
 # Redimensionner intelligemment
-alt-minus = 'resize smart -50'
-alt-equal = 'resize smart +50'
+ctrl-alt-minus = 'resize smart -50'
+ctrl-alt-equal = 'resize smart +50'
 
 # Mode resize dédié
-alt-r = 'mode resize'
+ctrl-alt-r = 'mode resize'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                       UTILITAIRES                           │
 # └─────────────────────────────────────────────────────────────┘
 
 # Mode service pour actions avancées
-alt-shift-semicolon = 'mode service'
+ctrl-alt-shift-semicolon = 'mode service'
 
 # Reload config
-alt-shift-r = 'reload-config'
+ctrl-alt-shift-r = 'reload-config'
 
 # Fermer fenêtre
-alt-shift-x = 'close'
+ctrl-alt-shift-x = 'close'
 
 # Balance automatique
-alt-shift-equal = 'balance-sizes'
+ctrl-alt-shift-equal = 'balance-sizes'
 
 # Ouvrir terminal (Ghostty)
-alt-enter = '''exec-and-forget osascript -e '
+ctrl-alt-enter = '''exec-and-forget osascript -e '
 tell application "Ghostty"
     activate
 end tell'
@@ -230,10 +228,10 @@ w = ['layout accordion horizontal', 'mode main'] # Wide tabs (cascade horizontal
 t = ['layout tiles', 'mode main']               # Tiles auto
 
 # Join containers
-alt-shift-h = ['join-with left', 'mode main']
-alt-shift-j = ['join-with down', 'mode main']
-alt-shift-k = ['join-with up', 'mode main']
-alt-shift-l = ['join-with right', 'mode main']
+ctrl-alt-shift-h = ['join-with left', 'mode main']
+ctrl-alt-shift-j = ['join-with down', 'mode main']
+ctrl-alt-shift-k = ['join-with up', 'mode main']
+ctrl-alt-shift-l = ['join-with right', 'mode main']
 
 # Contrôle volume (bonus)
 down = 'volume down'
@@ -292,6 +290,10 @@ run = 'move-node-to-workspace 1'
 if.app-id = 'com.microsoft.Calendar'
 run = 'move-node-to-workspace 1'
 
+[[on-window-detected]]
+if.app-id = 'com.mailrtech.canarymail'
+run = 'move-node-to-workspace 1'
+
 # ┌─────────────────────────────────────────────────────────────┐
 # │                    WORKSPACE 2: API & TESTS                 │
 # │                     (Postman + Arc flottant)                │
@@ -316,6 +318,10 @@ run = 'move-node-to-workspace 2'
 
 [[on-window-detected]]
 if.app-id = 'dev.zed.Zed'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'dev.zed.Zed-Preview'
 run = 'move-node-to-workspace 3'
 
 [[on-window-detected]]
@@ -415,6 +421,15 @@ run = 'move-node-to-workspace 6'
 [[on-window-detected]]
 if.app-id = 'com.docker.docker'
 run = 'move-node-to-workspace 6'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                WORKSPACE 7: PRISE DE NOTES                  │
+# │                     (Obsidian exclusif)                     │
+# └─────────────────────────────────────────────────────────────┘
+
+[[on-window-detected]]
+if.app-id = 'md.obsidian'
+run = 'move-node-to-workspace 7'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                    FENÊTRES FLOTTANTES                      │
@@ -521,8 +536,12 @@ run = 'layout floating'
 #   - TablePlus en haut, OrbStack en bas
 #   - Parfait pour monitoring base + containers
 
+# Workspace 7 (Obsidian) : Layout tiles par défaut
+#   - Obsidian exclusif pour prise de notes
+#   - Accès rapide avec alt-o
+
 # RACCOURCIS IMPORTANTS (Alt DROITE optimisé AZERTY) :
-#   alt-1,2,3,Q,W,E : Navigation workspaces (préserve caractères code)
+#   alt-1,2,3,4,W,E,O : Navigation workspaces (préserve caractères code)
 #   alt-slash : tiles (splits)
 #   alt-comma : accordion (cascade)  
 #   alt-shift-space : toggle floating
@@ -531,6 +550,6 @@ run = 'layout floating'
 #   alt-shift-semicolon : mode service (actions avancées)
 #   alt-enter : ouvrir Ghostty
 #
-# AZERTY PRÉSERVÉ pour le code : Alt gauche + 4,5,6,7,8,0 = { } [ ] | \ @ `
-# 1=Mail, 2=Postman, 3=Code, Q=Arc, W=Communication, E=Database
-# Compromis optimal : 1,2,3,9 perdus mais caractères critiques préservés!
+# AZERTY PRÉSERVÉ pour le code : Alt gauche + 5,6,7,8 = { } [ ] | \ @ `
+# 1=Mail, 2=Postman, 3=Code, 4=Arc, W=Communication, E=Database, O=Obsidian
+# Compromis optimal : 1,2,3,4,9,0 perdus mais caractères critiques préservés!

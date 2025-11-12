@@ -4,75 +4,74 @@
 
 | Raccourci | Action |
 |-----------|--------|
-| `⌥→ + 1-0` | Aller au workspace 1-10 |
-| `⌥→ + Tab` | Basculer workspace précédent |
+| `Ctrl + Alt + 1` | Workspace 1 - Mail/Calendar |
+| `Ctrl + Alt + 2` | Workspace 2 - Postman/API |
+| `Ctrl + Alt + 3` | Workspace 3 - Code Editors |
+| `Ctrl + Alt + Q` | Workspace 4 - Arc Browser |
+| `Ctrl + Alt + W` | Workspace 5 - Communication/Zen |
+| `Ctrl + Alt + E` | Workspace 6 - Database/Docker |
+| `Ctrl + Alt + O` | Workspace 7 - Obsidian |
+| `Ctrl + Alt + B` | Basculer workspace précédent (Back) |
+| `Ctrl + Alt + N` | Aller au workspace suivant (Next) |
 
 ## 🎯 Navigation Fenêtres
 
 | Raccourci | Action |
 |-----------|--------|
-| `⌥→ + H` | Focus gauche |
-| `⌥→ + J` | Focus bas |
-| `⌥→ + K` | Focus haut |
-| `⌥→ + L` | Focus droite |
+| `Ctrl + Alt + H` | Focus gauche |
+| `Ctrl + Alt + J` | Focus bas |
+| `Ctrl + Alt + K` | Focus haut |
+| `Ctrl + Alt + L` | Focus droite |
+| `Ctrl + Alt + ←` | Focus gauche (flèche) |
+| `Ctrl + Alt + ↓` | Focus bas (flèche) |
+| `Ctrl + Alt + ↑` | Focus haut (flèche) |
+| `Ctrl + Alt + →` | Focus droite (flèche) |
 
 ## 📦 Déplacement Fenêtres
 
 | Raccourci | Action |
 |-----------|--------|
-| `⌥→ + ⇧ + H` | Déplacer gauche |
-| `⌥→ + ⇧ + J` | Déplacer bas |
-| `⌥→ + ⇧ + K` | Déplacer haut |
-| `⌥→ + ⇧ + L` | Déplacer droite |
+| `Ctrl + Alt + Shift + H` | Déplacer gauche |
+| `Ctrl + Alt + Shift + J` | Déplacer bas |
+| `Ctrl + Alt + Shift + K` | Déplacer haut |
+| `Ctrl + Alt + Shift + L` | Déplacer droite |
+| `Ctrl + Alt + Shift + ←` | Déplacer gauche (flèche) |
+| `Ctrl + Alt + Shift + ↓` | Déplacer bas (flèche) |
+| `Ctrl + Alt + Shift + ↑` | Déplacer haut (flèche) |
+| `Ctrl + Alt + Shift + →` | Déplacer droite (flèche) |
 
 ## 🚀 Déplacement vers Workspaces
 
 | Raccourci | Action |
 |-----------|--------|
-| `⌥→ + ⇧ + 1-0` | Déplacer vers workspace 1-10 |
+| `Ctrl + Alt + Shift + 1` | Déplacer vers workspace 1 (Mail) |
+| `Ctrl + Alt + Shift + 2` | Déplacer vers workspace 2 (Postman) |
+| `Ctrl + Alt + Shift + 3` | Déplacer vers workspace 3 (Code) |
+| `Ctrl + Alt + Shift + Q` | Déplacer vers workspace 4 (Arc) |
+| `Ctrl + Alt + Shift + W` | Déplacer vers workspace 5 (Communication) |
+| `Ctrl + Alt + Shift + E` | Déplacer vers workspace 6 (Database) |
+| `Ctrl + Alt + Shift + O` | Déplacer vers workspace 7 (Obsidian) |
 
 ## 🔄 Manipulation Fenêtres
 
 | Raccourci | Action |
 |-----------|--------|
-| `⌥→ + F` | Plein écran AeroSpace |
-| `⌥→ + ⇧ + F` | Plein écran macOS |
-| `⌥→ + Space` | Basculer floating/tiling |
-| `⌥→ + ⇧ + Space` | Changer layout tiles |
-| `⌥→ + ⇧ + X` | Fermer fenêtre |
+| `Ctrl + Alt + F` | Plein écran |
+| `Ctrl + Alt + Shift + Space` | Basculer floating/tiling |
+| `Ctrl + Alt + /` | Layout tiles (horizontal/vertical) |
+| `Ctrl + Alt + ,` | Layout accordion (cascade) |
+| `Ctrl + Alt + Shift + X` | Fermer fenêtre |
 
-## 🔧 Organisation
-
-| Raccourci | Action |
-|-----------|--------|
-| `⌥→ + ⇧ + S` | Joindre en bas |
-| `⌥→ + ⌃ + S` | Joindre à droite |
-| `⌥→ + ⇧ + V` | Joindre en bas (alt) |
-| `⌥→ + ⇧ + B` | Joindre à droite (alt) |
-| `⌥→ + ⌃ + E` | Équilibrer |
-| `⌥→ + =` | Équilibrer (alt) |
-
-## 📺 Multi-Moniteurs
+## 🔧 Organisation & Redimensionnement
 
 | Raccourci | Action |
 |-----------|--------|
-| `⌥→ + ←` | Focus moniteur gauche |
-| `⌥→ + →` | Focus moniteur droit |
-| `⌥→ + ↑` | Focus moniteur haut |
-| `⌥→ + ↓` | Focus moniteur bas |
-| `⌥→ + ⇧ + ←` | Déplacer vers moniteur gauche |
-| `⌥→ + ⇧ + →` | Déplacer vers moniteur droit |
-| `⌥→ + ⌃ + ←` | Workspace vers moniteur gauche |
-| `⌥→ + ⌃ + →` | Workspace vers moniteur droit |
+| `Ctrl + Alt + -` | Réduire fenêtre (-50px) |
+| `Ctrl + Alt + =` | Agrandir fenêtre (+50px) |
+| `Ctrl + Alt + Shift + =` | Équilibrer les tailles |
+| `Ctrl + Alt + R` | Mode Resize |
 
-## 🎛 Modes Spéciaux
-
-| Raccourci | Action |
-|-----------|--------|
-| `⌥→ + ⌃ + R` | Mode Resize |
-| `⌥→ + ⌃ + ;` | Mode Service |
-
-### Mode Resize (après `⌥→ + ⌃ + R`)
+### Mode Resize (après `Ctrl + Alt + R`)
 
 | Raccourci | Action |
 |-----------|--------|
@@ -80,50 +79,84 @@
 | `J` | Augmenter hauteur (+50px) |
 | `K` | Réduire hauteur (-50px) |
 | `L` | Augmenter largeur (+50px) |
-| `⇧ + H/J/K/L` | Ajustement gros (-/+100px) |
-| `Entrée/Échap/Q` | Sortir du mode |
+| `Shift + H` | Réduire largeur (-10px fin) |
+| `Shift + J` | Augmenter hauteur (+10px fin) |
+| `Shift + K` | Réduire hauteur (-10px fin) |
+| `Shift + L` | Augmenter largeur (+10px fin) |
+| `-` | Smart resize (-50px) |
+| `=` | Smart resize (+50px) |
+| `Shift + -` | Smart resize (-10px fin) |
+| `Shift + =` | Smart resize (+10px fin) |
+| `Entrée/Échap` | Sortir du mode |
 
-### Mode Service (après `⌥→ + ⌃ + ;`)
+## 🎛 Mode Service
 
 | Raccourci | Action |
 |-----------|--------|
-| `R` | Recharger config |
-| `H` | Layout horizontal |
-| `V` | Layout vertical |
-| `S` | Layout stack |
-| `W` | Layout wide |
-| `F` | Layout floating |
-| `Échap/Q` | Sortir du mode |
+| `Ctrl + Alt + Shift + ;` | Entrer en mode Service |
+
+### Actions Mode Service
+
+| Raccourci | Action |
+|-----------|--------|
+| `R` | Aplatir workspace + sortir |
+| `F` | Toggle floating/tiling + sortir |
+| `Backspace` | Fermer toutes sauf fenêtre active + sortir |
+| `H` | Layout tiles horizontal + sortir |
+| `V` | Layout tiles vertical + sortir |
+| `S` | Layout accordion vertical + sortir |
+| `W` | Layout accordion horizontal + sortir |
+| `T` | Layout tiles auto + sortir |
+| `Ctrl + Alt + Shift + H/J/K/L` | Join containers + sortir |
+| `↓` | Volume bas |
+| `↑` | Volume haut |
+| `Shift + ↓` | Mute (volume 0) + sortir |
+| `Échap` | Sortir du mode |
 
 ## 🏗 Organisation Workspaces
 
 ```
-⌥→ + 1  →  💻 Développement    ⌥→ + 6  →  🎨 Design
-⌥→ + 2  →  🖥 Terminal         ⌥→ + 7  →  📄 Documents  
-⌥→ + 3  →  🌐 Web              ⌥→ + 8  →  🔧 Utilitaires
-⌥→ + 4  →  📧 Communication    ⌥→ + 9  →  🎵 Média
-⌥→ + 5  →  🤝 Réunions         ⌥→ + 0  →  🎮 Gaming
+Ctrl+Alt+1  →  📧 Mail/Calendar      Ctrl+Alt+E  →  🗄️ Database/Docker
+Ctrl+Alt+2  →  📮 Postman/API        Ctrl+Alt+O  →  📝 Obsidian
+Ctrl+Alt+3  →  💻 Code Editors
+Ctrl+Alt+Q  →  🌐 Arc Browser
+Ctrl+Alt+W  →  💬 Communication/Zen
 ```
 
 ## ⚡ Workflows Recommandés
 
 ### Démarrage de journée
 ```
-⌥ + 1  →  Éditeur de code
-⌥ + 2  →  Terminal/CLI  
-⌥ + 3  →  Navigateur web
+Ctrl+Alt+1  →  Emails & Calendar
+Ctrl+Alt+3  →  Éditeur de code
+Ctrl+Alt+Q  →  Arc Browser
 ```
 
-### Organisation projet
-- **Workspace 1** : Éditeur principal
-- **Workspace 2** : Outils CLI/Terminal
-- **Workspace 3** : Documentation/Web
+### Mode développement API
+```
+Ctrl+Alt+3  →  Code (éditeur)
+Ctrl+Alt+2  →  Postman (tests API)
+Ctrl+Alt+E  →  TablePlus + OrbStack (DB/Containers)
+```
 
-### Raccourcis power user
-- `⌥→ + Tab` : Basculer workspace précédent
-- `⌥→ + =` : Équilibrer toutes les fenêtres
-- `⌥→ + ⌃ + ; → R` : Recharger configuration
-- `⌥→ + ⌃ + E` : Équilibrer les tailles
+### Navigation rapide
+- `Ctrl+Alt+B` : Retour rapide au workspace précédent
+- `Ctrl+Alt+N` : Cycle à travers les workspaces
+- `Ctrl+Alt+Shift+=` : Équilibrer toutes les fenêtres
+
+### Raccourcis utiles (AZERTY)
+- **Touches physiques** : Q/W/E/O (pas A/Z qui sont des positions QWERTY)
+- `Ctrl+Alt+/` : Basculer entre splits horizontaux/verticaux
+- `Ctrl+Alt+,` : Mode cascade pour naviguer entre plusieurs fenêtres
+- `Ctrl+Alt+Shift+;` : Mode service pour actions avancées
+- `Ctrl+Alt+Enter` : Ouvrir Ghostty (terminal)
+
+## 🎹 Note sur Clavier AZERTY
+
+AeroSpace utilise le preset `qwerty`, donc :
+- **Q physique (AZERTY)** = A logique (QWERTY) → Workspace Arc
+- **W physique (AZERTY)** = Z logique (QWERTY) → Workspace Communication
+- Les caractères spéciaux `{ } [ ] | \ @ ` restent accessibles normalement
 
 ---
-*Référence rapide AeroSpace v0.19.2-Beta*
+*Référence rapide AeroSpace v0.19.2-Beta - Configuration 1/2/3/Q/W/E/O*

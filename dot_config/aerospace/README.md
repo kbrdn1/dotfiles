@@ -41,32 +41,32 @@ Cette configuration transforme votre expérience AeroSpace avec :
 
 | # | 🎯 Fonction | 📱 Applications Typiques |
 |---|-------------|---------------------------|
+| **1** | 📧 **Mail/Calendar** | Mail, Outlook, Calendar |
+| **2** | 📮 **Postman/API** | Postman, Insomnia |
+| **3** | 💻 **Code Editors** | Zed, VS Code, Terminal |
+| **4** | 🌐 **Arc Browser** | Arc (navigation principale) |
+| **5** | 💬 **Communication** | Slack, Discord, Messages |
+| **6** | 🗄️ **Database/Docker** | TablePlus, OrbStack |
+| **7** | 📝 **Obsidian** | Obsidian (notes) |
+
+| # | 🎯 Fonction | 📱 Applications Typiques |
+|---|-------------|---------------------------|
 | **1** | 💻 **Développement** | VS Code, Zed, Xcode |
 | **2** | 🖥 **Terminal** | Terminal, iTerm2, Ghostty |
 | **3** | 🌐 **Web** | Chrome, Safari, Firefox |
-| **4** | 📧 **Communication** | Mail, Messages |
-| **5** | 🤝 **Réunions** | Zoom, Teams, Slack |
-| **6** | 🎨 **Design** | Figma, Sketch, Photoshop |
-| **7** | 📄 **Documents** | Office, PDF, Notes |
-| **8** | 🔧 **Utilitaires** | Monitoring, outils système |
-| **9** | 🎵 **Média** | Spotify, VLC, Music |
-| **10** | 🎮 **Gaming** | Steam, jeux |
-
-## ⌨️ Raccourcis Essentiels
-
-### Navigation Rapide (Alt Droite UNIQUEMENT)
 ```
-⌥→ + 1-0     →  Workspaces 1-10
-⌥→ + H/J/K/L →  Focus directionnel
-⌥→ + Tab     →  Workspace précédent
+Ctrl+Alt+1,2,3,Q,W,E,O  →  Workspaces 1-7
+Ctrl+Alt+H/J/K/L    →  Focus directionnel
+Ctrl+Alt+B           →  Workspace précédent (Back)
+Ctrl+Alt+N           →  Workspace suivant (Next)
 ```
 
 ### Manipulation des Fenêtres (Alt Droite UNIQUEMENT)
 ```
-⌥→ + F               →  Plein écran
-⌥→ + Space           →  Toggle floating/tiling
-⌥→ + ⇧ + H/J/K/L     →  Déplacer fenêtre
-⌥→ + ⇧ + 1-0         →  Déplacer vers workspace
+Ctrl+Alt+F           →  Plein écran
+Ctrl+Alt+Shift+Space →  Toggle floating/tiling
+Ctrl+Alt+Shift+H/J/K/L  →  Déplacer fenêtre
+Ctrl+Alt+Shift+1/2/3/Q/W/E/O  →  Déplacer vers workspace
 ```
 
 ### Organisation (Alt Droite UNIQUEMENT)
