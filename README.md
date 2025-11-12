@@ -115,7 +115,6 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 |------|---------|------------|---------|
 | [AWS CLI](https://aws.amazon.com/cli/) | v2 | Nix | Amazon Web Services |
 | [Stripe CLI](https://stripe.com/docs/stripe-cli) | Latest | Nix | Stripe API testing |
-| [Dashlane CLI](https://cli.dashlane.com/) | Latest | Homebrew | Password manager CLI |
 
 ## GUI Applications 🖥️
 
@@ -127,7 +126,6 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | [Ghostty](https://ghostty.org/) | GPU-accelerated terminal | Homebrew | `ghostty` |
 | [Warp](https://warp.dev/) | Rust-based terminal | Homebrew | `warp` |
 | [OrbStack](https://orbstack.dev/) | Docker alternative | Homebrew | `orbstack` |
-| [Herd](https://herd.laravel.com/) | PHP development environment | Homebrew | `herd` |
 | [Postman](https://www.postman.com/) | API platform | Homebrew | `postman` |
 | [TablePlus](https://tableplus.com/) | Database management | SetApp | - |
 
@@ -149,6 +147,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | [Raycast](https://raycast.com/) | Launcher & productivity | Homebrew | `raycast` |
 | [Obsidian](https://obsidian.md/) | Knowledge base | Homebrew | `obsidian` |
 | [Claude](https://claude.ai/) | AI assistant | Homebrew | `claude` |
+| [Dashlane](https://www.dashlane.com/) | Password manager | App Store | - |
 | [Figma](https://www.figma.com/) | Design tool | Homebrew | `figma` |
 | [Anki](https://apps.ankiweb.net/) | Spaced repetition | Homebrew | `anki` |
 | [CleanShot X](https://cleanshot.com/) | Screenshot tool | SetApp | - |
