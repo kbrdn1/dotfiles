@@ -64,56 +64,81 @@ AeroSpace (window manager) → skhd (Alt droite) → Karabiner (désactive dans 
 
 ### CLI Tools 🛠
 
-Our essential command-line tools:
+Our essential command-line tools (managed by Nix):
 
 - **Package Management**
-  - [Homebrew](https://brew.sh/): The missing package manager for macOS
-  - [Asdf](https://asdf-vm.com/): Multi-language version manager
+  - [Nix](https://nixos.org/): Declarative package manager
+  - [Home Manager](https://github.com/nix-community/home-manager): User environment management
+  - [Homebrew](https://brew.sh/): GUI apps and system tools (complementary)
 
-- **Core Utilities**
-  - [Coreutils](https://www.gnu.org/software/coreutils/): GNU core utilities
-  - [Curl](https://curl.se/): Data transfer tool
-  - [Git](https://git-scm.com/): Version control system
-  - [OpenSSL](https://www.openssl.org/): SSL/TLS toolkit
-  - [Bison](https://www.gnu.org/software/bison/): Parser generator
+- **Programming Languages & Runtimes** (via Nix)
+  - [Node.js](https://nodejs.org/) 24.11.0
+  - [Python](https://www.python.org/) 3.13.8
+  - [PHP](https://www.php.net/) 8.4.14 (with pcov, redis extensions)
+  - [Go](https://golang.org/) 1.25.2
+  - [Rust](https://www.rust-lang.org/) 1.89.0
+  - [Bun](https://bun.sh/) 1.3.1
+  - [Deno](https://deno.land/) 2.5.6
+  - [pnpm](https://pnpm.io/) 10.20.0
+  - [Symfony CLI](https://symfony.com/download) 5.15.1
 
-- **Shell & Terminal**
+- **Kubernetes Tools** (via Nix)
+  - [kubectl](https://kubernetes.io/) 1.34.1
+  - [Helm](https://helm.sh/)
+  - [Minikube](https://minikube.sigs.k8s.io/) 1.37.0
+  - [ArgoCD](https://argoproj.github.io/cd/)
+  - [k9s](https://k9scli.io/)
+  - [kubectx](https://github.com/ahmetb/kubectx) 0.9.5
+  - [stern](https://github.com/stern/stern) 1.33.0
+  - [kustomize](https://kustomize.io/) 5.7.1
+  - [kubecolor](https://github.com/hidetatz/kubecolor) 0.5.2
+  - [dive](https://github.com/wagoodman/dive) 0.13.1
+  - [popeye](https://popeyecli.io/) 0.22.1
+
+- **Development Tools** (via Nix)
+  - [Git](https://git-scm.com/)
+  - [GitHub CLI](https://cli.github.com/)
+  - [Lazygit](https://github.com/jesseduffield/lazygit)
+  - [Lazydocker](https://github.com/jesseduffield/lazydocker)
+  - [Redis](https://redis.io/) 8.2.2
+  - [Pandoc](https://pandoc.org/) 3.7.0.2
+  - [Neovim](https://neovim.io/) 0.11.5
+
+- **Shell & Terminal** (via Nix)
   - [Oh My Zsh](https://ohmyz.sh/): Zsh configuration framework
   - [Powerlevel10k](https://github.com/romkatv/powerlevel10k): Zsh theme
   - [Bat](https://github.com/sharkdp/bat): Enhanced cat command
   - [Eza](https://eza.rocks/): Modern ls replacement
   - [Yazi](https://github.com/sxyazi/yazi): Terminal file manager
   - [Tmux](https://github.com/tmux/tmux): Terminal multiplexer
-
-- **Development Tools**
-  - [PHP](https://www.php.net/) & [Composer](https://getcomposer.org/): PHP ecosystem
-  - [Python](https://www.python.org/): Programming language
-  - [Symfony CLI](https://symfony.com/download): Symfony framework tools
-  - [Node.js](https://nodejs.org/): JavaScript runtime
-  - [Rust](https://www.rust-lang.org/): Systems programming language
-  - [Go](https://golang.org/): Programming language
-  - [Bun](https://bun.sh/): JavaScript runtime & toolkit
-  - [Deno](https://deno.land/): JavaScript runtime
-
-- **Productivity Tools**
-  - [GH](https://cli.github.com/): GitHub CLI
-  - [Lazygit](https://github.com/jesseduffield/lazygit): Git TUI
-  - [Lazydocker](https://github.com/jesseduffield/lazydocker): Docker TUI
   - [Fzf](https://github.com/junegunn/fzf): Fuzzy finder
   - [Zoxide](https://github.com/ajeetdsouza/zoxide): Smarter cd
   - [Thefuck](https://github.com/nvbn/thefuck): Command correction
   - [Neofetch](https://github.com/dylanaraps/neofetch): System info tool
-  - [Dashlane CLI](https://cli.dashlane.com/): Password manager CLI
+
+- **Cloud Tools** (via Nix)
+  - [AWS CLI](https://aws.amazon.com/cli/) v2
+  - [Stripe CLI](https://stripe.com/docs/stripe-cli)
+
+- **Homebrew Exclusives** (not in Nix)
+  - [Lazykube](https://github.com/TNK-Studio/lazykube) - Kubernetes TUI
+  - [Dashlane CLI](https://cli.dashlane.com/) - Password manager
+  - [Composer](https://getcomposer.org/) - PHP dependency manager
+
+### Nix Management 📦
+
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `reload-nix` | `nix run home-manager/release-24.11 -- switch --flake ~/nix-config` | Reload Nix configuration |
+| `edit-nix` | `$EDITOR ~/nix-config/home.nix` | Edit Nix configuration |
 
 ### GUI Tools 🖥
 
 Essential graphical tools:
 
 - **Window Management**
-  - [Yabai](https://github.com/koekeishiya/yabai): Tiling window manager
-  - [Skhd](https://github.com/koekeishiya/skhd): Hotkey daemon
+  - [AeroSpace](https://github.com/nikitabobko/AeroSpace): Modern tiling window manager (no SIP required)
   - [JankyBorders](https://github.com/FelixKratz/JankyBorders): Window borders
-  - [SketchyVim](https://github.com/FelixKratz/SketchyVim): Vim input fields
 
 - **UI Enhancement**
   - [Sketchybar](https://github.com/FelixKratz/SketchyBar): Custom menu bar

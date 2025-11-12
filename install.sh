@@ -1,47 +1,72 @@
 #!/bin/zsh
 
-echo "🚀 Starting installation process..."
+echo "🚀 Installation - Nix First Approach"
 
-# Install xCode CLI tools
-echo "📦 Installing Command Line Tools..."
+# 1. Install xCode CLI tools
+echo "📦 Installing xCode CLI tools..."
 xcode-select --install
 
-# Install Homebrew
+# 2. Install Nix (multi-user)
+echo "❄️  Installing Nix package manager..."
+sh <(curl -L https://nixos.org/nix/install) --daemon
+
+# 3. Install Homebrew (for GUI apps and system tools)
 echo "🍺 Installing Homebrew..."
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
 eval "$(/opt/homebrew/bin/brew shellenv)"
 brew analytics off
 
-# Tap required repositories
-echo "🔧 Tapping Homebrew repositories..."
+# 4. Tap Homebrew repositories
+echo "🔧 Tapping Homebrew repos..."
 brew tap homebrew/cask-fonts
 brew tap FelixKratz/formulae
 brew tap koekeishiya/formulae
 brew tap dashlane/tap
 
-# Install CLI tools
-echo "⚙️ Installing CLI tools..."
-brew install coreutils curl git gd bison openssl \
-    chezmoi asdf gh tldr fd fzf thefuck powerlevel10k \
-    bat eza composer zoxide lazygit lazydocker \
-    neofetch dashlane-cli pcov symfony-cli \
-    yq tmux yazi ffmpeg sevenzip jq poppler \
-    ripgrep imagemagick font-symbols-only-nerd-font \
-    blueutil php@8.4 python@3.12
+# 5. Install system dependencies (Homebrew only)
+echo "🛠️  Installing system dependencies..."
+brew install gd bison openssl blueutil
 
-# Install GUI applications
-echo "🖥 Installing GUI applications..."
-brew install --cask arc raycast zed ghostty warp \
-    postman slack discord figma docker whatsapp \
-    obsidian setapp sf-symbols
+# 6. Install GUI applications (Homebrew casks)
+echo "📲 Installing GUI applications..."
+brew install --cask \
+  arc raycast zed ghostty warp postman \
+  slack discord figma docker whatsapp \
+  obsidian setapp sf-symbols
 
-# Install window management tools
+# 7. Install window management tools (Homebrew only)
 echo "🪟 Installing window management tools..."
-brew install sketchybar borders svim koekeishiya/formulae/yabai skhd
+brew install sketchybar borders
 
-# macOS Settings
-echo "⚙️ Configuring macOS settings..."
+# 8. Install Homebrew exclusive tools (not in nixpkgs)
+echo "📦 Installing Homebrew exclusive tools..."
+brew install lazykube dashlane-cli composer
+
+# 9. Install fonts
+echo "🔤 Installing fonts..."
+brew install --cask font-symbols-only-nerd-font
+brew install --cask font-jetbrains-mono-nerd-font
+brew install --cask font-fira-code-nerd-font
+
+# 10. Clone nix-config
+echo "❄️  Cloning nix-config..."
+git clone https://github.com/kbrdn1/nix-config.git ~/nix-config
+
+# 11. Install Oh My Zsh
+echo "🐚 Installing Oh My Zsh..."
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+# 12. Clone and apply dotfiles
+echo "📂 Applying dotfiles..."
+sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply https://github.com/kbrdn1/dotfiles.git
+
+# 13. Install Home Manager and apply Nix configuration
+echo "❄️  Installing Home Manager..."
+nix run home-manager/release-24.11 -- switch --flake ~/nix-config
+
+# 14. macOS System Settings
+echo "⚙️  Configuring macOS settings..."
 
 # Keyboard
 defaults write NSGlobalDomain KeyRepeat -int 1
@@ -53,7 +78,7 @@ defaults write com.apple.screencapture type png
 defaults write com.apple.screencapture disable-shadow -bool true
 killall SystemUIServer
 
-# Menu bar
+# Menu Bar
 defaults write NSGlobalDomain _HIHideMenuBar -bool true
 
 # Dock
@@ -61,34 +86,19 @@ defaults write com.apple.dock autohide -bool true
 defaults write com.apple.dock autohide-time-modifier -float 0.15
 killall Dock
 
-# Install Oh My Zsh
-echo "🛠 Installing Oh My Zsh..."
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-
-# Install ASDF plugins and versions
-echo "📦 Installing ASDF plugins and versions..."
-asdf plugin add neovim && asdf install neovim 0.10.4
-asdf plugin add chezmoi && asdf install chezmoi 2.62.4
-asdf plugin add stripe-cli && asdf install stripe-cli 1.26.1
-asdf plugin add pnpm && asdf install pnpm 10.7.1
-asdf plugin add golang && asdf install golang 1.23.6
-asdf plugin add nodejs && asdf install nodejs 23.9.0
-asdf plugin add rust && asdf install rust 1.84.1
-asdf plugin add bun && asdf install bun 1.2.15
-asdf plugin add deno && asdf install deno 2.3.1
-asdf plugin add awscli && asdf install awscli 2.27.18
-
-# Setup sketchybar
+# 15. Setup sketchybar
 echo "🎨 Setting up sketchybar..."
 chmod +x ~/.config/sketchybar/* ~/.config/sketchybar/plugins/**/* ~/.config/sketchybar/helper/*
 
-# Initialize chezmoi
-echo "🏠 Initializing chezmoi..."
-chezmoi init https://github.com/kbrdn1/dotfiles.git
-chezmoi apply
+# 16. Start services
+echo "🚀 Starting services..."
+brew services start sketchybar
+brew services start borders
 
-echo "✨ Installation complete!"
-echo "⚠️ Don't forget to:"
-echo "1. Configure Yabai permissions (See the wiki on GitHub)"
-echo "2. Install SetApp applications manually"
-echo "3. Restart your computer to apply all changes"
+echo "✅ Installation complete! Please restart your terminal."
+echo ""
+echo "📝 Next steps:"
+echo "1. Restart your terminal: exec zsh"
+echo "2. Check Nix packages: nix profile list"
+echo "3. Configure AeroSpace: aerospace --reload"
+echo "4. Install SetApp applications manually"

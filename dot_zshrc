@@ -49,11 +49,16 @@ VI_MODE_CURSOR_VISUAL=6
 VI_MODE_CURSOR_INSERT=6
 VI_MODE_CURSOR_OPPEND=0
 
+# -------------------------- Nix Configuration --------------------------
+# Nix daemon (multi-user mode)
+if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
+  . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+fi
+
 # -------------------------- Path Configuration --------------------------
-export PATH="/Users/kbrdn1/.bun/bin:$PATH"
+export PATH="/Users/$USER_FOLDER/.bun/bin:$PATH"
 export PATH="/opt/homebrew/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
-export PATH="$ASDF_DATA_DIR/shims:$PATH"
 export PATH="/usr/local/opt/bison/bin:$PATH"
 export PATH="/opt/homebrew/opt/bison/bin:$PATH"
 export PATH="/usr/local/opt/pkg-config/bin:$PATH"
@@ -61,10 +66,6 @@ export PATH="/usr/local/opt/pkg-config/bin:$PATH"
 # -------------------------- Tool Configurations --------------------------
 # Homebrew
 export HOMEBREW_NO_AUTO_UPDATE=1
-
-# ASDF
-export ASDF_DATA_DIR="/opt/homebrew/opt/asdf/"
-export ASDF_PYTHON_PATCH_URL="https://github.com/python/cpython/commit/8ea6353.patch?full_index=1"
 
 # FZF Configuration
 eval "$(fzf --zsh)"
@@ -97,6 +98,10 @@ alias edit-config="$EDITOR $XDG_CONFIG_HOME"
 # ZSH
 alias reload-zsh="source ~/.zshrc"
 alias edit-zsh="$EDITOR ~/.zshrc"
+
+# Nix
+alias reload-nix="nix run home-manager/release-24.11 -- switch --flake ~/nix-config"
+alias edit-nix="$EDITOR ~/nix-config/home.nix"
 
 # Application Tools
 alias py='python3'
