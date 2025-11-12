@@ -1,192 +1,168 @@
 # Dotfiles
 
-Welcome to my dotfiles repository! This repository is managed using [chezmoi](https://www.chezmoi.io/), a tool designed to manage your dotfiles across multiple machines.
+Welcome to my dotfiles repository! This repository is managed using [chezmoi](https://www.chezmoi.io/) and [Nix Home Manager](https://github.com/nix-community/home-manager).
 
 <img width="1512" alt="Preview" src="https://github.com/kbrdn1/dotfiles/blob/main/preview.png">
 
 ## Table of Contents 📚
 
-- [CLI Tools 🛠️](#cli-tools-)
-- [GUI Tools 🖥️](#gui-tools-)
-- [Applications 📦](#applications-)
-- [SetApp Applications 🎯](#setapp-applications-)
+- [Stack Overview 📦](#stack-overview-)
+- [Package Management 🛠️](#package-management-)
+- [CLI Tools 💻](#cli-tools-)
+- [GUI Applications 🖥️](#gui-applications-)
 - [Aliases & Functions 🔧](#aliases--functions-)
-  - [System Aliases 🖥️](#system-aliases)
-  - [Development Aliases 👨‍💻](#development-aliases)
-  - [GitHub Copilot Aliases 🤖](#github-copilot-aliases)
-  - [Window Manager Service Aliases 🪟](#window-manager-service-aliases)
-
-## 🪟 Window Manager Migration (Yabai → AeroSpace) 
-
-> **⚠️ IMPORTANT**: Ce repo a migré de Yabai vers AeroSpace en août 2025 
-
-### Migration complète Yabai → AeroSpace + Karabiner 
-
-**Ancien setup**: 
-- Yabai (window manager avec SIP désactivé) 
-- skhd (raccourcis clavier) 
-
-**Nouveau setup**: 
-- **AeroSpace**: Window manager moderne (pas de SIP requis) 
-- **Karabiner**: Gestion intelligente raccourcis (exclusion IDE) 
-- **skhd**: Raccourcis Alt droite uniquement 
-
-📖 **Documentation complète**: [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md) 
-
-### Architecture unique 
-```
-AeroSpace (window manager) → skhd (Alt droite) → Karabiner (désactive dans IDEs)
-``` 
-
-### Avantages 
-- ✅ Fonctionne avec SIP activé 
-- ✅ Zéro conflit macOS 
-- ✅ Raccourcis IDE préservés 
-- ✅ 10 workspaces (au lieu de 5) 
-- ✅ Documentation complète (1762 lignes) 
-
-
-  - [Tmux Aliases 📟](#tmux-aliases)
-  - [Custom Functions ⚙️](#custom-functions)
+- [Window Manager (AeroSpace) 🪟](#window-manager-aerospace-)
 - [Shortcuts & Keybindings ⌨️](#shortcuts--keybindings-)
-  - [Space & Window Navigation 🔍](#space--window-navigation)
-  - [Window Management 🪟](#window-management)
-  - [Window Stacking & Resizing 📐](#window-stacking--resizing)
-  - [Miscellaneous Controls 🎛️](#miscellaneous-controls)
-  - [Tmux Keybindings 🖥️](#tmux-keybindings-)
 - [Zed Configuration ⚡](#zed-configuration-)
-  - [Keybindings 🎹](#keybindings-)
-  - [Vim-Mode Keybindings 🧙‍♂️](#vim-mode-keybindings-)
-  - [Tasks 🔄](#tasks-)
 - [Installation 📥](#installation-)
 - [Acknowledgments 🙏](#acknowledgments-)
 - [License 📄](#license-)
 
-### CLI Tools 🛠
+## Stack Overview 📦
 
-Our essential command-line tools (managed by Nix):
+| Layer | Tool | Purpose |
+|-------|------|---------|
+| **Package Manager** | Nix + Home Manager 24.11 | Declarative CLI tools (62 packages) |
+| **GUI Apps** | Homebrew Casks | GUI applications and system tools |
+| **Dotfiles** | Chezmoi | Configuration file management |
+| **Shell** | Zsh + Oh-My-Zsh | Interactive shell with plugins |
+| **Theme** | Powerlevel10k | Shell prompt theme |
+| **Window Manager** | AeroSpace | Tiling window manager (no SIP required) |
+| **Menu Bar** | Sketchybar | Custom menu bar replacement |
 
-- **Package Management**
-  - [Nix](https://nixos.org/): Declarative package manager
-  - [Home Manager](https://github.com/nix-community/home-manager): User environment management
-  - [Homebrew](https://brew.sh/): GUI apps and system tools (complementary)
+## Package Management 🛠️
 
-- **Programming Languages & Runtimes** (via Nix)
-  - [Node.js](https://nodejs.org/) 24.11.0
-  - [Python](https://www.python.org/) 3.13.8
-  - [PHP](https://www.php.net/) 8.4.14 (with pcov, redis extensions)
-  - [Go](https://golang.org/) 1.25.2
-  - [Rust](https://www.rust-lang.org/) 1.89.0
-  - [Bun](https://bun.sh/) 1.3.1
-  - [Deno](https://deno.land/) 2.5.6
-  - [pnpm](https://pnpm.io/) 10.20.0
-  - [Symfony CLI](https://symfony.com/download) 5.15.1
+| Tool | Version | Purpose | Packages |
+|------|---------|---------|----------|
+| **Nix** | Multi-user daemon | Declarative package manager | System foundation |
+| **Home Manager** | 24.11 | User environment management | 62 CLI tools |
+| **Homebrew** | Latest | GUI apps & system tools | Complementary to Nix |
+| **Chezmoi** | Latest | Dotfile management | Config sync |
 
-- **Kubernetes Tools** (via Nix)
-  - [kubectl](https://kubernetes.io/) 1.34.1
-  - [Helm](https://helm.sh/)
-  - [Minikube](https://minikube.sigs.k8s.io/) 1.37.0
-  - [ArgoCD](https://argoproj.github.io/cd/)
-  - [k9s](https://k9scli.io/)
-  - [kubectx](https://github.com/ahmetb/kubectx) 0.9.5
-  - [stern](https://github.com/stern/stern) 1.33.0
-  - [kustomize](https://kustomize.io/) 5.7.1
-  - [kubecolor](https://github.com/hidetatz/kubecolor) 0.5.2
-  - [dive](https://github.com/wagoodman/dive) 0.13.1
-  - [popeye](https://popeyecli.io/) 0.22.1
-
-- **Development Tools** (via Nix)
-  - [Git](https://git-scm.com/)
-  - [GitHub CLI](https://cli.github.com/)
-  - [Lazygit](https://github.com/jesseduffield/lazygit)
-  - [Lazydocker](https://github.com/jesseduffield/lazydocker)
-  - [Redis](https://redis.io/) 8.2.2
-  - [Pandoc](https://pandoc.org/) 3.7.0.2
-  - [Neovim](https://neovim.io/) 0.11.5
-
-- **Shell & Terminal** (via Nix)
-  - [Oh My Zsh](https://ohmyz.sh/): Zsh configuration framework
-  - [Powerlevel10k](https://github.com/romkatv/powerlevel10k): Zsh theme
-  - [Bat](https://github.com/sharkdp/bat): Enhanced cat command
-  - [Eza](https://eza.rocks/): Modern ls replacement
-  - [Yazi](https://github.com/sxyazi/yazi): Terminal file manager
-  - [Tmux](https://github.com/tmux/tmux): Terminal multiplexer
-  - [Fzf](https://github.com/junegunn/fzf): Fuzzy finder
-  - [Zoxide](https://github.com/ajeetdsouza/zoxide): Smarter cd
-  - [Thefuck](https://github.com/nvbn/thefuck): Command correction
-  - [Neofetch](https://github.com/dylanaraps/neofetch): System info tool
-
-- **Cloud Tools** (via Nix)
-  - [AWS CLI](https://aws.amazon.com/cli/) v2
-  - [Stripe CLI](https://stripe.com/docs/stripe-cli)
-
-- **Homebrew Exclusives** (not in Nix)
-  - [Lazykube](https://github.com/TNK-Studio/lazykube) - Kubernetes TUI
-  - [Dashlane CLI](https://cli.dashlane.com/) - Password manager
-  - [Composer](https://getcomposer.org/) - PHP dependency manager
-
-### Nix Management 📦
+### Nix Management
 
 | Alias | Command | Description |
 |-------|---------|-------------|
-| `reload-nix` | `nix run home-manager/release-24.11 -- switch --flake ~/nix-config` | Reload Nix configuration |
-| `edit-nix` | `$EDITOR ~/nix-config/home.nix` | Edit Nix configuration |
+| `reload-nix` | `nix run home-manager/release-24.11 -- switch --flake ~/nix-config` | Apply Nix configuration changes |
+| `edit-nix` | `$EDITOR ~/nix-config/home.nix` | Edit Nix configuration file |
 
-### GUI Tools 🖥
+## CLI Tools 💻
 
-Essential graphical tools:
+### Programming Languages & Runtimes
 
-- **Window Management**
-  - [AeroSpace](https://github.com/nikitabobko/AeroSpace): Modern tiling window manager (no SIP required)
-  - [JankyBorders](https://github.com/FelixKratz/JankyBorders): Window borders
+| Tool | Version | Managed By | Notes |
+|------|---------|------------|-------|
+| [Node.js](https://nodejs.org/) | 24.11.0 | Nix | JavaScript runtime |
+| [Python](https://www.python.org/) | 3.13.8 | Nix | Python interpreter |
+| [PHP](https://www.php.net/) | 8.4.14 | Nix | With pcov, redis extensions |
+| [Go](https://golang.org/) | 1.25.2 | Nix | Golang compiler |
+| [Rust](https://www.rust-lang.org/) | 1.89.0 | Nix | Rust toolchain |
+| [Bun](https://bun.sh/) | 1.3.1 | Nix | Fast JavaScript runtime |
+| [Deno](https://deno.land/) | 2.5.6 | Nix | Secure TypeScript runtime |
+| [pnpm](https://pnpm.io/) | 10.20.0 | Nix | Fast package manager |
+| [Symfony CLI](https://symfony.com/download) | 5.15.1 | Nix | Symfony tooling |
+| [Composer](https://getcomposer.org/) | Latest | Homebrew | PHP dependency manager |
 
-- **UI Enhancement**
-  - [Sketchybar](https://github.com/FelixKratz/SketchyBar): Custom menu bar
-  - [SF Symbols](https://developer.apple.com/sf-symbols/): Apple system symbols
-  - [Sketchybar App Font](https://github.com/kvndrsslr/sketchybar-app-font): Icon font
+### Kubernetes & Container Tools
 
-### Applications 📦
+| Tool | Version | Managed By | Purpose |
+|------|---------|------------|---------|
+| [kubectl](https://kubernetes.io/) | 1.34.1 | Nix | Kubernetes CLI |
+| [Helm](https://helm.sh/) | Latest | Nix | Kubernetes package manager |
+| [Minikube](https://minikube.sigs.k8s.io/) | 1.37.0 | Nix | Local Kubernetes |
+| [ArgoCD](https://argoproj.github.io/cd/) | Latest | Nix | GitOps CD tool |
+| [k9s](https://k9scli.io/) | Latest | Nix | Kubernetes TUI |
+| [kubectx](https://github.com/ahmetb/kubectx) | 0.9.5 | Nix | Context switcher |
+| [stern](https://github.com/stern/stern) | 1.33.0 | Nix | Multi-pod logs |
+| [kustomize](https://kustomize.io/) | 5.7.1 | Nix | Kubernetes config |
+| [kubecolor](https://github.com/hidetatz/kubecolor) | 0.5.2 | Nix | Colorized kubectl |
+| [dive](https://github.com/wagoodman/dive) | 0.13.1 | Nix | Docker image explorer |
+| [popeye](https://popeyecli.io/) | 0.22.1 | Nix | Kubernetes scanner |
+| [Lazykube](https://github.com/TNK-Studio/lazykube) | Latest | Homebrew | Kubernetes TUI |
 
-Key applications:
+### Development Tools
 
-- **Development**
-  - [Zed](https://zed.dev/): Modern code editor
-  - [Ghostty](https://ghostty.org/): GPU-accelerated terminal
-  - [Warp](https://warp.dev/): Rust-based terminal
-  - [OrbStack](https://orbstack.dev/): Docker alternative
-  - [Postman](https://www.postman.com/): API platform
+| Tool | Version | Managed By | Purpose |
+|------|---------|------------|---------|
+| [Git](https://git-scm.com/) | Latest | Nix | Version control |
+| [GitHub CLI](https://cli.github.com/) | Latest | Nix | GitHub integration |
+| [Lazygit](https://github.com/jesseduffield/lazygit) | Latest | Nix | Git TUI |
+| [Lazydocker](https://github.com/jesseduffield/lazydocker) | Latest | Nix | Docker TUI |
+| [Redis](https://redis.io/) | 8.2.2 | Nix | In-memory database |
+| [Pandoc](https://pandoc.org/) | 3.7.0.2 | Nix | Document converter |
+| [Neovim](https://neovim.io/) | 0.11.5 | Nix | Text editor |
 
-- **Browsers & Communication**
-  - [Arc](https://arc.net/): Modern browser
-  - [Slack](https://slack.com/): Team communication
-  - [Discord](https://discord.com/): Community platform
-  - [WhatsApp](https://www.whatsapp.com/): Messaging
+### Shell & Terminal
 
-- **Productivity**
-  - [Raycast](https://raycast.com/): Launcher & productivity tool
-  - [Obsidian](https://obsidian.md/): Knowledge base
-  - [Rectangle](https://rectangleapp.com/): Window management
-  - [Dashlane](https://www.dashlane.com/): Password manager
-  - [Figma](https://www.figma.com/): Design tool
+| Tool | Version | Managed By | Purpose |
+|------|---------|------------|---------|
+| [Zsh](https://www.zsh.org/) | Latest | System | Interactive shell |
+| [Oh My Zsh](https://ohmyz.sh/) | Latest | Manual | Zsh framework |
+| [Powerlevel10k](https://github.com/romkatv/powerlevel10k) | Latest | Homebrew | Zsh theme |
+| [Bat](https://github.com/sharkdp/bat) | Latest | Nix | Enhanced cat |
+| [Eza](https://eza.rocks/) | Latest | Nix | Modern ls |
+| [Yazi](https://github.com/sxyazi/yazi) | Latest | Nix | File manager |
+| [Tmux](https://github.com/tmux/tmux) | Latest | Nix | Terminal multiplexer |
+| [Fzf](https://github.com/junegunn/fzf) | Latest | Nix | Fuzzy finder |
+| [Zoxide](https://github.com/ajeetdsouza/zoxide) | Latest | Nix | Smarter cd |
+| [Thefuck](https://github.com/nvbn/thefuck) | Latest | Nix | Command corrector |
+| [Neofetch](https://github.com/dylanaraps/neofetch) | Latest | Nix | System info |
 
-### SetApp Applications 📦
+### Cloud & API Tools
 
-Premium applications via SetApp:
+| Tool | Version | Managed By | Purpose |
+|------|---------|------------|---------|
+| [AWS CLI](https://aws.amazon.com/cli/) | v2 | Nix | Amazon Web Services |
+| [Stripe CLI](https://stripe.com/docs/stripe-cli) | Latest | Nix | Stripe API testing |
+| [Dashlane CLI](https://cli.dashlane.com/) | Latest | Homebrew | Password manager CLI |
 
-- **Development**
-  - [TablePlus](https://tableplus.com/): Database management
+## GUI Applications 🖥️
 
-- **Productivity**
-  - [CleanShot X](https://cleanshot.com/): Screenshot tool
-  - [PixelSnap](https://getpixelsnap.com/): Measurement tool
-  - [Sip](https://sipapp.io/): Color management
-  - [Yoink](https://eternalstorms.at/yoink/mac/): Drag and drop helper
+### Development
 
-- **System Tools**
-  - [CleanMyMac X](https://macpaw.com/cleanmymac): System cleaner
-  - [NotchNook](https://lo.cafe/notchnook): Notch utility
-  - [Canary Mail](https://canarymail.io/): Email client
-  - [Clop](https://setapp.com/apps/clop): Media optimizer
+| Application | Purpose | Managed By |
+|-------------|---------|------------|
+| [Zed](https://zed.dev/) | Modern code editor | Homebrew |
+| [Ghostty](https://ghostty.org/) | GPU-accelerated terminal | Homebrew |
+| [Warp](https://warp.dev/) | Rust-based terminal | Homebrew |
+| [OrbStack](https://orbstack.dev/) | Docker alternative | Homebrew |
+| [Postman](https://www.postman.com/) | API platform | Homebrew |
+| [TablePlus](https://tableplus.com/) | Database management | SetApp |
+
+### Browsers & Communication
+
+| Application | Purpose | Managed By |
+|-------------|---------|------------|
+| [Arc](https://arc.net/) | Modern browser | Homebrew |
+| [Slack](https://slack.com/) | Team communication | Homebrew |
+| [Discord](https://discord.com/) | Community platform | Homebrew |
+| [WhatsApp](https://www.whatsapp.com/) | Messaging | Homebrew |
+
+### Productivity
+
+| Application | Purpose | Managed By |
+|-------------|---------|------------|
+| [Raycast](https://raycast.com/) | Launcher & productivity | Homebrew |
+| [Obsidian](https://obsidian.md/) | Knowledge base | Homebrew |
+| [Dashlane](https://www.dashlane.com/) | Password manager | Homebrew |
+| [Figma](https://www.figma.com/) | Design tool | Homebrew |
+| [CleanShot X](https://cleanshot.com/) | Screenshot tool | SetApp |
+| [PixelSnap](https://getpixelsnap.com/) | Measurement tool | SetApp |
+| [Sip](https://sipapp.io/) | Color picker | SetApp |
+| [Yoink](https://eternalstorms.at/yoink/mac/) | Drag & drop helper | SetApp |
+
+### System Tools
+
+| Application | Purpose | Managed By |
+|-------------|---------|------------|
+| [AeroSpace](https://github.com/nikitabobko/AeroSpace) | Window manager | Homebrew |
+| [Sketchybar](https://github.com/FelixKratz/SketchyBar) | Menu bar | Homebrew |
+| [Borders](https://github.com/FelixKratz/JankyBorders) | Window borders | Homebrew |
+| [SF Symbols](https://developer.apple.com/sf-symbols/) | System icons | Homebrew |
+| [CleanMyMac X](https://macpaw.com/cleanmymac) | System cleaner | SetApp |
+| [NotchNook](https://lo.cafe/notchnook) | Notch utility | SetApp |
+| [Canary Mail](https://canarymail.io/) | Email client | SetApp |
+| [Clop](https://setapp.com/apps/clop) | Media optimizer | SetApp |
 
 ## Aliases & Functions 🔧
 
@@ -219,92 +195,60 @@ Premium applications via SetApp:
 | `gcc` | `gh copilot config` | Configure Copilot |
 | `gca` | `gh copilot alias` | Manage Copilot aliases |
 
-### Window Manager Service Aliases
-
-## 🪟 Window Manager Migration (Yabai → AeroSpace) 
-
-> **⚠️ IMPORTANT**: Ce repo a migré de Yabai vers AeroSpace en août 2025 
-
-### Migration complète Yabai → AeroSpace + Karabiner 
-
-**Ancien setup**: 
-- Yabai (window manager avec SIP désactivé) 
-- skhd (raccourcis clavier) 
-
-**Nouveau setup**: 
-- **AeroSpace**: Window manager moderne (pas de SIP requis) 
-- **Karabiner**: Gestion intelligente raccourcis (exclusion IDE) 
-- **skhd**: Raccourcis Alt droite uniquement 
-
-📖 **Documentation complète**: [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md) 
-
-### Architecture unique 
-```
-AeroSpace (window manager) → skhd (Alt droite) → Karabiner (désactive dans IDEs)
-``` 
-
-### Avantages 
-- ✅ Fonctionne avec SIP activé 
-- ✅ Zéro conflit macOS 
-- ✅ Raccourcis IDE préservés 
-- ✅ 10 workspaces (au lieu de 5) 
-- ✅ Documentation complète (1762 lignes) 
-
+### Window Manager Services
 
 | Alias | Command | Description |
 |-------|---------|-------------|
-| `reload-sketchybar` | `brew services restart sketchybar` | Restart Sketchybar |
-| `edit-sketchybar` | `$EDITOR $XDG_CONFIG_HOME/sketchybar` | Edit Sketchybar config |
-| `reload-borders` | `brew services restart borders` | Restart JankyBorders |
-| `edit-borders` | `$EDITOR $XDG_CONFIG_HOME/borders` | Edit JankyBorders config |
-| `reload-yabai` | `yabai --restart-service` | Restart Yabai |
-| `edit-yabai` | `$EDITOR $XDG_CONFIG_HOME/yabai` | Edit Yabai config |
-| `reload-skhd` | `skhd --restart-service` | Restart SKHD |
-| `edit-skhd` | `$EDITOR $XDG_CONFIG_HOME/skhd/skhdrc` | Edit SKHD config |
+| `reload-sketchybar` | `brew services restart sketchybar` | Restart Sketchybar menu bar |
+| `edit-sketchybar` | `$EDITOR $XDG_CONFIG_HOME/sketchybar` | Edit Sketchybar configuration |
+| `reload-borders` | `brew services restart borders` | Restart window borders |
+| `edit-borders` | `$EDITOR $XDG_CONFIG_HOME/borders` | Edit borders configuration |
 
-### Tmux Aliases
+### Tmux
+
 | Alias | Command | Description |
 |-------|---------|-------------|
 | `t` | `tmux -2` | Launch Tmux with 256 colors |
 | `reload-tmux` | `tmux source-file ~/.tmux.conf` | Reload Tmux configuration |
 | `edit-tmux` | `$EDITOR ~/.tmux.conf` | Edit Tmux configuration |
 
-## Shortcuts & Keybindings ⌨️
+### Custom Functions
+
+| Function | Usage | Description |
+|----------|-------|-------------|
+| `y()` | `y [path]` | Launch Yazi file manager with directory change on exit |
+| `brew()` | `brew [args]` | Homebrew wrapper that triggers Sketchybar updates |
+| `zen()` | `zen [mode]` | Toggle Sketchybar zen mode |
+
+## Window Manager (AeroSpace) 🪟
+
+> Modern tiling window manager (no SIP required) - See [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md)
 
 ### Space & Window Navigation
+
 | Shortcut | Action |
 |----------|--------|
-| <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>5</kbd> | Focus space 1-5 on current display |
-| <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Focus window in direction (west/south/north/east) |
-| <kbd>⌥</kbd> + <kbd>0</kbd> | Focus first window |
-| <kbd>⌥</kbd> + <kbd>$</kbd> | Focus last window |
+| <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>0</kbd> | Focus workspace 1-10 |
+| <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Focus window (left/down/up/right) |
 | <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle float window |
 | <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>f</kbd> | Toggle fullscreen |
-| <kbd>⌥</kbd> + <kbd>f</kbd> | Toggle parent zoom |
 
 ### Window Management
-| Shortcut | Action |
-|----------|--------|
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Move window in direction |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>s</kbd> | Toggle split orientation |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>5</kbd> | Move window to space 1-5 |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>b</kbd>/<kbd>n</kbd> | Move window to prev/next space |
 
-### Window Stacking & Resizing
 | Shortcut | Action |
 |----------|--------|
-| <kbd>⇧</kbd> + <kbd>⌃</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Stack window in direction |
-| <kbd>⇧</kbd> + <kbd>⌃</kbd> + <kbd>b</kbd>/<kbd>p</kbd> | Navigate through stack |
-| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Resize window |
-| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>e</kbd> | Equalize window sizes |
-| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>g</kbd> | Toggle gaps |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Move window (left/down/up/right) |
+| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>0</kbd> | Move window to workspace 1-10 |
+| <kbd>⌥</kbd> + <kbd>-</kbd>/<kbd>_</kbd> | Split horizontal/vertical |
 
-### Miscellaneous Controls
+### UI Controls
+
 | Shortcut | Action |
 |----------|--------|
-| <kbd>⌥</kbd> + <kbd>-</kbd>/<kbd>_</kbd> | Create new window in horizontal/vertical split |
 | <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle Sketchybar visibility |
 | <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>r</kbd> | Reload Sketchybar |
+
+## Shortcuts & Keybindings ⌨️
 
 ### Tmux Keybindings 🖥️
 | Shortcut | Action | Description |
@@ -512,67 +456,93 @@ My Zed editor configuration with custom keybindings and tasks.
 
 ## Installation 📥
 
-### One-Line Installation
+### Automated Installation (Recommended)
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/kbrdn1/dotfiles/main/install.sh)"
 ```
 
+This script performs a complete installation:
+1. Install Xcode Command Line Tools
+2. Install Nix package manager (multi-user daemon)
+3. Install Homebrew (for GUI apps)
+4. Clone nix-config repository
+5. Install Oh My Zsh
+6. Apply dotfiles with Chezmoi
+7. Install Home Manager and apply Nix configuration
+8. Configure macOS system settings
+9. Start services (Sketchybar, Borders)
+
 ### Manual Installation
 
-1. **Install Command Line Tools**
-```bash
-xcode-select --install
-```
+| Step | Command | Description |
+|------|---------|-------------|
+| **1. Xcode CLI** | `xcode-select --install` | Install Apple command line tools |
+| **2. Nix** | `sh <(curl -L https://nixos.org/nix/install) --daemon` | Install Nix (multi-user) |
+| **3. Homebrew** | `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` | Install Homebrew |
+| **4. Nix Config** | `git clone https://github.com/kbrdn1/nix-config.git ~/nix-config` | Clone Nix configuration |
+| **5. Oh My Zsh** | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"` | Install Zsh framework |
+| **6. Dotfiles** | `sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply https://github.com/kbrdn1/dotfiles.git` | Apply dotfiles |
+| **7. Home Manager** | `nix run home-manager/release-24.11 -- switch --flake ~/nix-config` | Install CLI tools (62 packages) |
 
-2. **Install Homebrew**
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
-eval "$(/opt/homebrew/bin/brew shellenv)"
-```
+### macOS System Configuration
 
-3. **Install Oh My Zsh**
 ```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-```
-
-4. **Clone and Apply Dotfiles**
-```bash
-chezmoi init https://github.com/kbrdn1/dotfiles.git
-chezmoi apply
-```
-
-### Post-Installation
-
-1. Configure system preferences:
-```bash
-# Keyboard
+# Keyboard - Fast key repeat
 defaults write NSGlobalDomain KeyRepeat -int 1
 
-# Screenshots
-mkdir ~/Screenshots
+# Screenshots - Custom location and format
+mkdir -p ~/Screenshots
 defaults write com.apple.screencapture location ~/Screenshots
 defaults write com.apple.screencapture type png
 defaults write com.apple.screencapture disable-shadow -bool true
 
-# Menu Bar
+# Menu Bar - Auto-hide
 defaults write NSGlobalDomain _HIHideMenuBar -bool true
 
-# Dock
+# Dock - Auto-hide with fast animation
 defaults write com.apple.dock autohide -bool true
 defaults write com.apple.dock autohide-time-modifier -float 0.15
+
+# Apply changes
+killall SystemUIServer Dock
 ```
 
-2. Set up Yabai permissions
-3. Install SetApp applications manually
-4. Restart your computer
+### Post-Installation Steps
+
+| Step | Action | Command |
+|------|--------|---------|
+| **1. Restart Terminal** | Apply shell changes | `exec zsh` |
+| **2. Verify Nix** | Check installed packages | `nix profile list` |
+| **3. Configure AeroSpace** | Reload window manager | `aerospace --reload` |
+| **4. Install SetApp** | Manual installation | Install from SetApp website |
+| **5. Restart Computer** | Complete setup | Full system restart |
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Nix not found | Restart terminal or run `. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh` |
+| Home Manager fails | Ensure Nix daemon is running: `sudo launchctl load /Library/LaunchDaemons/org.nixos.nix-daemon.plist` |
+| Sketchybar not visible | Run `brew services restart sketchybar` |
+| AeroSpace not working | Check permissions in System Settings → Privacy & Security |
+
+### Migration Documentation
+
+- **Nix Migration**: See [MIGRATION_NIX.md](./MIGRATION_NIX.md) for complete ASDF → Nix migration details
+- **Homebrew Cleanup**: See [MIGRATION_HOMEBREW.md](./MIGRATION_HOMEBREW.md) for removed packages
+- **AeroSpace Setup**: See [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md) for window manager setup
 
 ## Acknowledgments 🙏
 
-Special thanks to:
-- [FelixKratz](https://github.com/FelixKratz) for window management setup inspiration
-- [The Chezmoi team](https://github.com/twpayne/chezmoi) for the dotfiles management tool
+| Project | Author | Contribution |
+|---------|--------|--------------|
+| [AeroSpace](https://github.com/nikitabobko/AeroSpace) | [@nikitabobko](https://github.com/nikitabobko) | Modern tiling window manager |
+| [Sketchybar](https://github.com/FelixKratz/SketchyBar) | [@FelixKratz](https://github.com/FelixKratz) | Custom menu bar and setup inspiration |
+| [JankyBorders](https://github.com/FelixKratz/JankyBorders) | [@FelixKratz](https://github.com/FelixKratz) | Window border visualization |
+| [Chezmoi](https://github.com/twpayne/chezmoi) | [@twpayne](https://github.com/twpayne) | Dotfiles management tool |
+| [Home Manager](https://github.com/nix-community/home-manager) | [Nix Community](https://github.com/nix-community) | Declarative user environment |
+| [Nix](https://nixos.org/) | [NixOS Foundation](https://nixos.org/community/) | Reproducible package management |
 
 ## License 📄
 
