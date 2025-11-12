@@ -185,6 +185,9 @@
 
       # Bat
       export BAT_THEME="Catppuccin Macchiato"
+
+      # Bun
+      export PATH="$HOME/.bun/bin:$PATH"
     '';
 
     # Shell aliases
@@ -241,7 +244,7 @@
     };
 
     # Additional initialization
-    initExtra = ''
+    initContent.text = ''
       # Nix daemon (multi-user mode)
       if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
         . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
