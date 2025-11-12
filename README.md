@@ -116,6 +116,12 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | [AWS CLI](https://aws.amazon.com/cli/) | v2 | Nix | Amazon Web Services |
 | [Stripe CLI](https://stripe.com/docs/stripe-cli) | Latest | Nix | Stripe API testing |
 
+### macOS App Store
+
+| Tool | Version | Managed By | Purpose |
+|------|---------|------------|---------|
+| [mas](https://github.com/mas-cli/mas) | 2.2.2 | Nix | Mac App Store CLI (install App Store apps from terminal) |
+
 ## GUI Applications 🖥️
 
 ### Development

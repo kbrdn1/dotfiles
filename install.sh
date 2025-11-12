@@ -21,8 +21,7 @@ brew analytics off
 echo "🔧 Tapping Homebrew repos..."
 brew tap homebrew/cask-fonts
 brew tap FelixKratz/formulae
-brew tap koekeishiya/formulae
-brew tap dashlane/tap
+brew tap nikitabobko/tap
 
 # 5. Install system dependencies (Homebrew only)
 echo "🛠️  Installing system dependencies..."
@@ -31,17 +30,19 @@ brew install gd bison openssl blueutil
 # 6. Install GUI applications (Homebrew casks)
 echo "📲 Installing GUI applications..."
 brew install --cask \
-  arc raycast zed ghostty warp postman \
-  slack discord figma docker whatsapp \
-  obsidian setapp sf-symbols
+  zed@preview ghostty warp orbstack postman \
+  arc slack discord whatsapp telegram mattermost \
+  raycast obsidian claude figma anki \
+  logi-options+ rectangle steam \
+  setapp sf-symbols
 
 # 7. Install window management tools (Homebrew only)
 echo "🪟 Installing window management tools..."
-brew install sketchybar borders
+brew install aerospace sketchybar borders
 
 # 8. Install Homebrew exclusive tools (not in nixpkgs)
 echo "📦 Installing Homebrew exclusive tools..."
-brew install lazykube dashlane-cli composer
+brew install lazykube composer
 
 # 9. Install fonts
 echo "🔤 Installing fonts..."
@@ -64,6 +65,12 @@ sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply https://github.com/kbrdn1/d
 # 13. Install Home Manager and apply Nix configuration
 echo "❄️  Installing Home Manager..."
 nix run home-manager/release-24.11 -- switch --flake ~/nix-config
+
+# 13.1. Install mas (Mac App Store CLI) via Nix for App Store apps
+echo "🍎 Installing mas for App Store management..."
+# mas is now available in home.nix, just need to use it after HM installation
+# To install Dashlane from App Store, get the App ID with: mas search Dashlane
+# Then install with: mas install <APP_ID>
 
 # 14. macOS System Settings
 echo "⚙️  Configuring macOS settings..."
@@ -100,5 +107,9 @@ echo ""
 echo "📝 Next steps:"
 echo "1. Restart your terminal: exec zsh"
 echo "2. Check Nix packages: nix profile list"
-echo "3. Configure AeroSpace: aerospace --reload"
+echo "3. Configure AeroSpace: aerospace --reload-config"
 echo "4. Install SetApp applications manually"
+echo "5. Install App Store apps (optional):"
+echo "   - Sign in to App Store"
+echo "   - mas search Dashlane  # Get App ID"
+echo "   - mas install <APP_ID> # Install app"
