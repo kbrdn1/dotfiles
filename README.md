@@ -121,49 +121,61 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 ### Development
 
-| Application | Purpose | Managed By |
-|-------------|---------|------------|
-| [Zed](https://zed.dev/) | Modern code editor | Homebrew |
-| [Ghostty](https://ghostty.org/) | GPU-accelerated terminal | Homebrew |
-| [Warp](https://warp.dev/) | Rust-based terminal | Homebrew |
-| [OrbStack](https://orbstack.dev/) | Docker alternative | Homebrew |
-| [Postman](https://www.postman.com/) | API platform | Homebrew |
-| [TablePlus](https://tableplus.com/) | Database management | SetApp |
+| Application | Purpose | Managed By | Cask |
+|-------------|---------|------------|------|
+| [Zed](https://zed.dev/) | Modern code editor | Homebrew | `zed@preview` |
+| [Ghostty](https://ghostty.org/) | GPU-accelerated terminal | Homebrew | `ghostty` |
+| [Warp](https://warp.dev/) | Rust-based terminal | Homebrew | `warp` |
+| [OrbStack](https://orbstack.dev/) | Docker alternative | Homebrew | `orbstack` |
+| [Herd](https://herd.laravel.com/) | PHP development environment | Homebrew | `herd` |
+| [Postman](https://www.postman.com/) | API platform | Homebrew | `postman` |
+| [TablePlus](https://tableplus.com/) | Database management | SetApp | - |
 
 ### Browsers & Communication
 
-| Application | Purpose | Managed By |
-|-------------|---------|------------|
-| [Arc](https://arc.net/) | Modern browser | Homebrew |
-| [Slack](https://slack.com/) | Team communication | Homebrew |
-| [Discord](https://discord.com/) | Community platform | Homebrew |
-| [WhatsApp](https://www.whatsapp.com/) | Messaging | Homebrew |
+| Application | Purpose | Managed By | Cask |
+|-------------|---------|------------|------|
+| [Arc](https://arc.net/) | Modern browser | Homebrew | `arc` |
+| [Slack](https://slack.com/) | Team communication | Homebrew | `slack` |
+| [Discord](https://discord.com/) | Community platform | Homebrew | `discord` |
+| [WhatsApp](https://www.whatsapp.com/) | Messaging | Homebrew | `whatsapp` |
+| [Telegram](https://telegram.org/) | Messaging | Homebrew | `telegram` |
+| [Mattermost](https://mattermost.com/) | Team collaboration | Homebrew | `mattermost` |
 
 ### Productivity
 
-| Application | Purpose | Managed By |
-|-------------|---------|------------|
-| [Raycast](https://raycast.com/) | Launcher & productivity | Homebrew |
-| [Obsidian](https://obsidian.md/) | Knowledge base | Homebrew |
-| [Dashlane](https://www.dashlane.com/) | Password manager | Homebrew |
-| [Figma](https://www.figma.com/) | Design tool | Homebrew |
-| [CleanShot X](https://cleanshot.com/) | Screenshot tool | SetApp |
-| [PixelSnap](https://getpixelsnap.com/) | Measurement tool | SetApp |
-| [Sip](https://sipapp.io/) | Color picker | SetApp |
-| [Yoink](https://eternalstorms.at/yoink/mac/) | Drag & drop helper | SetApp |
+| Application | Purpose | Managed By | Cask |
+|-------------|---------|------------|------|
+| [Raycast](https://raycast.com/) | Launcher & productivity | Homebrew | `raycast` |
+| [Obsidian](https://obsidian.md/) | Knowledge base | Homebrew | `obsidian` |
+| [Claude](https://claude.ai/) | AI assistant | Homebrew | `claude` |
+| [Figma](https://www.figma.com/) | Design tool | Homebrew | `figma` |
+| [Anki](https://apps.ankiweb.net/) | Spaced repetition | Homebrew | `anki` |
+| [CleanShot X](https://cleanshot.com/) | Screenshot tool | SetApp | - |
+| [PixelSnap](https://getpixelsnap.com/) | Measurement tool | SetApp | - |
+| [Sip](https://sipapp.io/) | Color picker | SetApp | - |
+| [Yoink](https://eternalstorms.at/yoink/mac/) | Drag & drop helper | SetApp | - |
 
 ### System Tools
 
-| Application | Purpose | Managed By |
-|-------------|---------|------------|
-| [AeroSpace](https://github.com/nikitabobko/AeroSpace) | Window manager | Homebrew |
-| [Sketchybar](https://github.com/FelixKratz/SketchyBar) | Menu bar | Homebrew |
-| [Borders](https://github.com/FelixKratz/JankyBorders) | Window borders | Homebrew |
-| [SF Symbols](https://developer.apple.com/sf-symbols/) | System icons | Homebrew |
-| [CleanMyMac X](https://macpaw.com/cleanmymac) | System cleaner | SetApp |
-| [NotchNook](https://lo.cafe/notchnook) | Notch utility | SetApp |
-| [Canary Mail](https://canarymail.io/) | Email client | SetApp |
-| [Clop](https://setapp.com/apps/clop) | Media optimizer | SetApp |
+| Application | Purpose | Managed By | Cask |
+|-------------|---------|------------|------|
+| [AeroSpace](https://github.com/nikitabobko/AeroSpace) | Window manager | Homebrew | `nikitabobko/tap/aerospace` |
+| [Sketchybar](https://github.com/FelixKratz/SketchyBar) | Menu bar | Homebrew | `felixkratz/formulae/sketchybar` |
+| [Borders](https://github.com/FelixKratz/JankyBorders) | Window borders | Homebrew | `felixkratz/formulae/borders` |
+| [SF Symbols](https://developer.apple.com/sf-symbols/) | System icons | Homebrew | `sf-symbols` |
+| [Logi Options+](https://www.logitech.com/en-us/software/logi-options-plus.html) | Logitech device manager | Homebrew | `logi-options+` |
+| [Rectangle](https://rectangleapp.com/) | Window management | Homebrew | `rectangle` |
+| [CleanMyMac X](https://macpaw.com/cleanmymac) | System cleaner | SetApp | - |
+| [NotchNook](https://lo.cafe/notchnook) | Notch utility | SetApp | - |
+| [Canary Mail](https://canarymail.io/) | Email client | SetApp | - |
+| [Clop](https://setapp.com/apps/clop) | Media optimizer | SetApp | - |
+
+### Gaming & Entertainment
+
+| Application | Purpose | Managed By | Cask |
+|-------------|---------|------------|------|
+| [Steam](https://store.steampowered.com/) | Gaming platform | Homebrew | `steam` |
 
 ## Aliases & Functions 🔧
 
