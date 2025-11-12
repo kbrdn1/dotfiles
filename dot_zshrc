@@ -1,33 +1,68 @@
-# -------------------------- Core ZSH Configuration --------------------------
-# Enable Powerlevel10k instant prompt
+# ============================================================================
+# ZSH Configuration - Managed by Nix Home Manager & Chezmoi
+# ============================================================================
+
+# -------------------------- Powerlevel10k Instant Prompt --------------------------
+# Enable Powerlevel10k instant prompt (must be at the top)
 if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-		source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
+# -------------------------- Secrets & Environment --------------------------
 # Load secrets if they exist
-  [[ -f ~/.zsh_secrets ]] && source ~/.zsh_secrets
+[[ -f ~/.zsh_secrets ]] && source ~/.zsh_secrets
 
-# Path configurations
+# Core environment variables
 export ZSH="$HOME/.oh-my-zsh"
 export XDG_CONFIG_HOME="$HOME/.config"
 export EDITOR="zed"
 export USER_FOLDER=$(basename $HOME)
 
-# Load Oh-My-Zsh and plugins
-plugins=(macos git git-auto-fetch gh battery zsh-autosuggestions zsh-syntax-highlighting zsh-autosuggestions brew chezmoi composer docker docker-compose alias-finder bun eza fzf history laravel symfony npm perms pip qrcode ssh systemadmin thefuck vi-mode web-search)
+# -------------------------- Nix Configuration --------------------------
+# Nix daemon (multi-user mode) - Must load before PATH modifications
+if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
+  . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+fi
+
+# -------------------------- Path Configuration --------------------------
+export PATH="$HOME/bin:$PATH"
+export PATH="/opt/homebrew/bin:$PATH"
+export PATH="/usr/local/opt/bison/bin:$PATH"
+export PATH="/opt/homebrew/opt/bison/bin:$PATH"
+export PATH="/usr/local/opt/pkg-config/bin:$PATH"
+
+# -------------------------- Tool Configurations --------------------------
+# Homebrew
+export HOMEBREW_NO_AUTO_UPDATE=1
 eval "$(brew shellenv)"
+
+# -------------------------- Oh-My-Zsh Configuration --------------------------
+# Plugins
+plugins=(
+  macos git git-auto-fetch gh battery
+  brew chezmoi composer docker docker-compose
+  alias-finder bun eza fzf history
+  laravel symfony npm perms pip qrcode
+  ssh systemadmin vi-mode web-search
+)
+
+# Load Oh-My-Zsh
 source $ZSH/oh-my-zsh.sh
-source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 
 # -------------------------- History Configuration --------------------------
 HISTFILE=$HOME/.zhistory
-SAVEHIST=1000
-HISTSIZE=999
-setopt share_history
-setopt hist_expire_dups_first
-setopt hist_ignore_dups
-setopt hist_verify
+SAVEHIST=10000
+HISTSIZE=10000
 
+# History options
+setopt SHARE_HISTORY
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+setopt HIST_EXPIRE_DUPS_FIRST
+setopt HIST_VERIFY
+setopt HIST_FCNTL_LOCK
+
+# History search keybindings
 bindkey '^[[A' history-search-backward
 bindkey '^[[B' history-search-forward
 
@@ -49,44 +84,52 @@ VI_MODE_CURSOR_VISUAL=6
 VI_MODE_CURSOR_INSERT=6
 VI_MODE_CURSOR_OPPEND=0
 
-# -------------------------- Nix Configuration --------------------------
-# Nix daemon (multi-user mode)
-if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
-  . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
-fi
-
-# -------------------------- Path Configuration --------------------------
-export PATH="/Users/$USER_FOLDER/.bun/bin:$PATH"
-export PATH="/opt/homebrew/bin:$PATH"
-export PATH="$HOME/bin:$PATH"
-export PATH="/usr/local/opt/bison/bin:$PATH"
-export PATH="/opt/homebrew/opt/bison/bin:$PATH"
-export PATH="/usr/local/opt/pkg-config/bin:$PATH"
-
-# -------------------------- Tool Configurations --------------------------
-# Homebrew
-export HOMEBREW_NO_AUTO_UPDATE=1
-
-# FZF Configuration
+# -------------------------- FZF Configuration --------------------------
 eval "$(fzf --zsh)"
+
+# FZF commands
 export FZF_DEFAULT_COMMAND="fd --hidden --exclude .git"
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 export FZF_ALT_C_COMMAND="fd --type d --hidden --strip-cwd-prefix --exclude .git"
+
+# FZF theme (Catppuccin Macchiato)
 export FZF_DEFAULT_OPTS="--style full \
-    --border-label ' FZF ' --header-label ' File Type ' \
+  --border-label ' FZF ' --header-label ' File Type ' \
   --preview 'bat -n --color=always --line-range :500 {}' \
-    --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' \
-    --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' \
-    --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' \
-    --color 'border:#494d64,label:#cad3f5' \
-    --color 'preview-border:#8aadf4,preview-label:#b7bdf8' \
-    --color 'list-border:#a6da95,list-label:#a6da95' \
-    --color 'input-border:#ed8796,input-label:#f5a9b8' \
-    --color 'header-border:#7dc4e4,header-label:#91d7e3'"
+  --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' \
+  --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' \
+  --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' \
+  --color 'border:#494d64,label:#cad3f5' \
+  --color 'preview-border:#8aadf4,preview-label:#b7bdf8' \
+  --color 'list-border:#a6da95,list-label:#a6da95' \
+  --color 'input-border:#ed8796,input-label:#f5a9b8' \
+  --color 'header-border:#7dc4e4,header-label:#91d7e3'"
+
 export FZF_CTRL_T_OPTS="$FZF_DEFAULT_OPTS"
 export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always {} | head -200'"
 
-# Bat
+# FZF completion functions
+_fzf_compgen_path() {
+  fd --hidden --exclude .git . "$1"
+}
+
+_fzf_compgen_dir() {
+  fd --type d --hidden --exclude .git . "$1"
+}
+
+_fzf_comprun() {
+  local command=$1
+  shift
+
+  case "$command" in
+    cd) fzf --preview 'eza --tree --color=always {} | head -200' "$@" ;;
+    export | unset) fzf --preview "eval 'echo \$' {}" "$@" ;;
+    ssh) fzf --preview 'dig {}' "$@" ;;
+    *) fzf --preview 'bat -n --color=always --line-range :500 {}' "$@" ;;
+  esac
+}
+
+# -------------------------- Bat Configuration --------------------------
 export BAT_THEME="Catppuccin Macchiato"
 
 # -------------------------- Aliases --------------------------
@@ -127,90 +170,59 @@ alias gca='gh copilot alias'
 # Window Manager Services
 alias reload-sketchybar="brew services restart sketchybar"
 alias edit-sketchybar="$EDITOR $XDG_CONFIG_HOME/sketchybar"
-alias reload-jankyborders="brew services restart borders"
 alias reload-borders="brew services restart borders"
-alias edit-jankyborders="$EDITOR $XDG_CONFIG_HOME/borders"
 alias edit-borders="$EDITOR $XDG_CONFIG_HOME/borders"
-alias reload-svim="brew services restart svim"
-alias reload-yabai="yabai --restart-service"
-alias edit-yabai="$EDITOR $XDG_CONFIG_HOME/yabai"
-alias reload-skhd="skhd --restart-service"
-alias edit-skhd="$EDITOR $XDG_CONFIG_HOME/skhd/skhdrc"
 
 # Tmux
 alias t="tmux -2"
 alias reload-tmux="tmux source-file ~/.tmux.conf"
 alias edit-tmux="$EDITOR ~/.tmux.conf"
 
+# Powerlevel10k
+alias edit-p10k="$EDITOR ~/.p10k.zsh"
+
 # -------------------------- Functions --------------------------
-# Yazi
+# Yazi - File manager with directory change
 function y() {
-	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
-	yazi "$@" --cwd-file="$tmp"
-	if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
-		builtin cd -- "$cwd"
-	fi
-	rm -f -- "$tmp"
+  local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+  yazi "$@" --cwd-file="$tmp"
+  if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+    builtin cd -- "$cwd"
+  fi
+  rm -f -- "$tmp"
 }
 
-# FZF Functions
-_fzf_compgen_path() {
-		fd --hidden --exclude .git . "$1"
-}
-
-_fzf_compgen_dir () {
-		fd --type d --hidden --exclude .git . "$1"
-}
-
-_fzf_comprun() {
-		local command=$1
-		shift
-
-		case "$command" in
-				cd) fzf --preview 'eza --tree --color=always {} | head -200' "$@" ;;
-				export | unset) fzf --preview "eval 'echo \$' {}" "$@" ;;
-				ssh) fzf --preview 'dig {}' "$@" ;;
-				*) fzf --preview 'bat -n --color=always --line-range :500 {}' "$@" ;;
-		esac
-}
-
-# Sketchybar Functions
+# Sketchybar - Brew update trigger
 function brew() {
-		command brew "$@" 
-		if [[ $* =~ "upgrade" ]] || [[ $* =~ "update" ]] || [[ $* =~ "outdated" ]]; then
-				sketchybar --trigger brew_update
-		fi
+  command brew "$@"
+  if [[ $* =~ "upgrade" ]] || [[ $* =~ "update" ]] || [[ $* =~ "outdated" ]]; then
+    sketchybar --trigger brew_update
+  fi
 }
 
-function margin () {
-		if [ $1 = "on" ]; then
-				yabai -m config top_padding 20
-				sketchybar --animate sin 30 --bar margin=10 y_offset=10 corner_radius=9
-		else
-				yabai -m config top_padding 10
-				sketchybar --animate sin 30 --bar margin=0 y_offset=0 corner_radius=0
-		fi
-}
-
-function zen () {
-		$XDG_CONFIG_HOME/sketchybar/plugins/zen.sh $1
-}
-
-function suyabai () {
-		SHA256=$(shasum -a 256 /opt/homebrew/bin/yabai | awk "{print \$1;}")
-		sudo sed -i '' -e 's/sha256:[[:alnum:]]*/sha256:'${SHA256}'/' /private/etc/sudoers.d/yabai
+# Sketchybar - Zen mode
+function zen() {
+  $XDG_CONFIG_HOME/sketchybar/plugins/zen.sh $1
 }
 
 # -------------------------- Final Initializations --------------------------
-# Load completions and tools
+# Load tools (Nix-managed)
 eval "$(zoxide init zsh)"
-eval $(thefuck --alias)
-eval $(thefuck --alias fk)
+eval "$(thefuck --alias)"
+eval "$(thefuck --alias fk)"
 
-# Theme
+# Load Powerlevel10k theme
 source $(brew --prefix)/share/powerlevel10k/powerlevel10k.zsh-theme
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
-alias edit-p10k="$EDITOR ~/.p10k.zsh"
 
-# Start
+# Load ZSH plugins (Nix-managed)
+source $(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+source $(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+# Direnv (if installed via Nix)
+if command -v direnv &> /dev/null; then
+  eval "$(direnv hook zsh)"
+fi
+
+# Welcome message
 neofetch
