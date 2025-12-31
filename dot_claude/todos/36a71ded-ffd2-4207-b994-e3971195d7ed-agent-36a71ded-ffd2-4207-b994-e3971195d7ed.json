@@ -1,0 +1,42 @@
+[
+  {
+    "content": "Analyze memory exhaustion error on /v1/search endpoint",
+    "status": "completed",
+    "activeForm": "Analyzing memory exhaustion error on /v1/search endpoint"
+  },
+  {
+    "content": "Investigate SearchService and client search controller",
+    "status": "completed",
+    "activeForm": "Investigating SearchService and client search controller"
+  },
+  {
+    "content": "Identify root cause of memory overflow",
+    "status": "completed",
+    "activeForm": "Identifying root cause of memory overflow"
+  },
+  {
+    "content": "Explain findings to user before applying fix",
+    "status": "completed",
+    "activeForm": "Explaining findings to user before applying fix"
+  },
+  {
+    "content": "Increase PHP memory_limit in flake.nix, containers, and dockerfiles",
+    "status": "in_progress",
+    "activeForm": "Increasing PHP memory_limit in flake.nix, containers, and dockerfiles"
+  },
+  {
+    "content": "Add eager loading to SearchRepository to fix N+1 queries",
+    "status": "pending",
+    "activeForm": "Adding eager loading to SearchRepository to fix N+1 queries"
+  },
+  {
+    "content": "Fix N+1 queries in Item model methods",
+    "status": "pending",
+    "activeForm": "Fixing N+1 queries in Item model methods"
+  },
+  {
+    "content": "Create spec documentation for cache optimization",
+    "status": "pending",
+    "activeForm": "Creating spec documentation for cache optimization"
+  }
+]

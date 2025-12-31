@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Execute all 8 phases of Feature #560 implementation",
+    "status": "completed",
+    "activeForm": "Executing implementation"
+  },
+  {
+    "content": "Update agents and workflows for new documentation structure",
+    "status": "completed",
+    "activeForm": "Updating agents and workflows"
+  },
+  {
+    "content": "Clean up obsolete documentation files",
+    "status": "completed",
+    "activeForm": "Cleaning up documentation"
+  },
+  {
+    "content": "Create final summary and validation report",
+    "status": "in_progress",
+    "activeForm": "Creating summary report"
+  }
+]

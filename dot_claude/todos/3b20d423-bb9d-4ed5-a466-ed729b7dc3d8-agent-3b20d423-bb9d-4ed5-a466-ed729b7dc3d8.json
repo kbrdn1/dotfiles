@@ -1,0 +1,72 @@
+[
+  {
+    "content": "Configurer DNS (enregistrements A)",
+    "status": "completed",
+    "activeForm": "Configuring DNS records"
+  },
+  {
+    "content": "Obtenir certificats SSL avec Certbot",
+    "status": "completed",
+    "activeForm": "Obtaining SSL certificates"
+  },
+  {
+    "content": "Générer les secrets de production",
+    "status": "completed",
+    "activeForm": "Generating production secrets"
+  },
+  {
+    "content": "Configurer .env pour production",
+    "status": "completed",
+    "activeForm": "Configuring production environment"
+  },
+  {
+    "content": "Configurer Nginx pour production",
+    "status": "completed",
+    "activeForm": "Configuring Nginx"
+  },
+  {
+    "content": "Vérifier docker-compose.production.yml",
+    "status": "completed",
+    "activeForm": "Verifying docker-compose production config"
+  },
+  {
+    "content": "Résoudre problème Docker/Podman",
+    "status": "completed",
+    "activeForm": "Fixing Docker/Podman issue"
+  },
+  {
+    "content": "Générer composer.lock pour tous les services",
+    "status": "completed",
+    "activeForm": "Generating composer.lock files"
+  },
+  {
+    "content": "Build des images Docker",
+    "status": "completed",
+    "activeForm": "Building Docker images"
+  },
+  {
+    "content": "Monter les certificats SSL dans Nginx",
+    "status": "completed",
+    "activeForm": "Mounting SSL certificates in Nginx"
+  },
+  {
+    "content": "Démarrer tous les conteneurs",
+    "status": "completed",
+    "activeForm": "Starting all containers"
+  },
+  {
+    "content": "Tester l'accès HTTPS",
+    "status": "in_progress",
+    "activeForm": "Testing HTTPS access"
+  },
+  {
+    "content": "Initialiser les bases de données",
+    "status": "pending",
+    "activeForm": "Initializing databases"
+  },
+  {
+    "content": "Configurer MinIO",
+    "status": "pending",
+    "activeForm": "Configuring MinIO"
+  }
+]

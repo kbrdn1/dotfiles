@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Create AutocompleteResource for consistent API response transformation",
+    "status": "completed",
+    "activeForm": "Creating AutocompleteResource for API responses"
+  },
+  {
+    "content": "Create AutocompleteException for proper error handling",
+    "status": "in_progress",
+    "activeForm": "Creating AutocompleteException class"
+  },
+  {
+    "content": "Refactor AutocompleteController with validation extraction and resource usage",
+    "status": "pending",
+    "activeForm": "Refactoring AutocompleteController"
+  },
+  {
+    "content": "Run formatter to ensure PSR-12 compliance",
+    "status": "pending",
+    "activeForm": "Running Laravel Pint formatter"
+  }
+]

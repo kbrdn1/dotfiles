@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Add .env file loading support to config package",
+    "status": "completed",
+    "activeForm": "Adding .env file loading support"
+  },
+  {
+    "content": "Update go.mod with godotenv dependency",
+    "status": "completed",
+    "activeForm": "Updating go.mod"
+  },
+  {
+    "content": "Test environment variables load correctly",
+    "status": "completed",
+    "activeForm": "Testing environment variables"
+  },
+  {
+    "content": "Run quickstart validation (T104)",
+    "status": "pending",
+    "activeForm": "Running quickstart validation"
+  }
+]

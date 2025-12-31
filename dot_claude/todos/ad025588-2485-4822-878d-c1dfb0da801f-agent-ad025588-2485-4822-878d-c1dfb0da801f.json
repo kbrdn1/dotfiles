@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Vérifier la configuration Stripe et récupérer les plan IDs",
+    "status": "completed",
+    "activeForm": "Vérification de la configuration Stripe"
+  },
+  {
+    "content": "Lister les abonnements annuels récents (30 derniers jours)",
+    "status": "completed",
+    "activeForm": "Recherche des abonnements annuels récents"
+  },
+  {
+    "content": "Vérifier les paiements associés aux abonnements annuels",
+    "status": "completed",
+    "activeForm": "Vérification des paiements annuels"
+  },
+  {
+    "content": "Analyser les webhooks reçus pour ces abonnements",
+    "status": "pending",
+    "activeForm": "Analyse des webhooks Stripe"
+  },
+  {
+    "content": "Comparer avec les données en base de données locale",
+    "status": "in_progress",
+    "activeForm": "Comparaison base de données vs Stripe"
+  },
+  {
+    "content": "Corriger le code du webhook handler",
+    "status": "pending",
+    "activeForm": "Correction du StripeWebHookHandler"
+  }
+]

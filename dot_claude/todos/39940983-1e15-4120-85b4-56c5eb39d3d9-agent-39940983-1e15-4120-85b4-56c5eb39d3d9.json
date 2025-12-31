@@ -1,0 +1,37 @@
+[
+  {
+    "content": "Créer composants pour la page d'accueil (index.vue)",
+    "status": "completed",
+    "activeForm": "Créant les composants pour la page d'accueil"
+  },
+  {
+    "content": "Créer composants pour la page tournoi détail ([id].vue)",
+    "status": "completed",
+    "activeForm": "Créant les composants pour la page tournoi détail"
+  },
+  {
+    "content": "Créer composants pour la page profil (profile.vue)",
+    "status": "completed",
+    "activeForm": "Créant les composants pour la page profil"
+  },
+  {
+    "content": "Créer composants pour la liste des tournois (tournaments/index.vue)",
+    "status": "completed",
+    "activeForm": "Créant les composants pour la liste des tournois"
+  },
+  {
+    "content": "Créer composant partagé AuthBranding pour login/register",
+    "status": "completed",
+    "activeForm": "Créant le composant AuthBranding partagé"
+  },
+  {
+    "content": "Refactoriser les pages pour utiliser les nouveaux composants",
+    "status": "completed",
+    "activeForm": "Refactorisant les pages"
+  },
+  {
+    "content": "Lire CONTRIBUTING.md et préparer les commits",
+    "status": "in_progress",
+    "activeForm": "Préparant les commits"
+  }
+]

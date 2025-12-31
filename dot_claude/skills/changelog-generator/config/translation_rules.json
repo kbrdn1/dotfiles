@@ -1,0 +1,63 @@
+{
+  "scope_patterns": {
+    "auth": "système de connexion",
+    "payment": "paiements",
+    "mandate": "mandats scolaires",
+    "invoice": "factures",
+    "subscription": "abonnements",
+    "user": "utilisateurs",
+    "admin": "administration",
+    "api": "interface de programmation",
+    "database": "base de données",
+    "security": "sécurité",
+    "performance": "performances",
+    "ui": "interface utilisateur"
+  },
+  "action_patterns": {
+    "implement": "Mise en place",
+    "add": "Ajout",
+    "remove": "Suppression",
+    "update": "Mise à jour",
+    "fix": "Correction",
+    "refactor": "Amélioration",
+    "optimize": "Optimisation",
+    "improve": "Amélioration",
+    "enhance": "Amélioration",
+    "delete": "Suppression",
+    "create": "Création",
+    "integrate": "Intégration",
+    "migrate": "Migration",
+    "upgrade": "Mise à niveau"
+  },
+  "technical_terms": {
+    "JWT": "système de sécurité des connexions",
+    "API": "interface de programmation",
+    "webhook": "notification automatique",
+    "middleware": "composant de sécurité",
+    "endpoint": "point d'accès",
+    "CRUD": "gestion des données",
+    "validation": "vérification",
+    "authentication": "connexion sécurisée",
+    "authorization": "gestion des permissions",
+    "OAuth": "connexion via réseaux sociaux",
+    "PDF": "document PDF",
+    "CSV": "fichier Excel",
+    "JSON": "format de données",
+    "database": "base de données",
+    "cache": "mémoire rapide",
+    "queue": "file d'attente",
+    "scheduler": "planificateur",
+    "backup": "sauvegarde",
+    "migration": "mise à jour de la base de données",
+    "seed": "données de test",
+    "deployment": "mise en production"
+  },
+  "example_translations": {
+    "feat(auth): implement JWT refresh token rotation": "Amélioration de la sécurité des connexions avec renouvellement automatique",
+    "fix(payments): validate Stripe webhook signatures": "Correction de la validation des notifications de paiement",
+    "chore(deps): update Laravel to 11.x": "Mise à jour du framework vers la version 11",
+    "refactor(mandate): extract PDF generation to service": "Amélioration de la génération des documents PDF",
+    "perf(api): add Redis caching for queries": "Optimisation des performances avec mise en cache",
+    "feat(ui): responsive design for mobile": "Interface adaptée aux téléphones mobiles"
+  }
+}

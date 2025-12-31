@@ -1,0 +1,37 @@
+[
+  {
+    "content": "Phase 1: Découverte - Comprendre la structure globale du projet",
+    "status": "in_progress",
+    "activeForm": "Analysing project structure and dependencies"
+  },
+  {
+    "content": "Phase 2: Analyse BDD - Documenter les 74 tables et leurs relations",
+    "status": "pending",
+    "activeForm": "Analyzing database schema and relationships"
+  },
+  {
+    "content": "Phase 3: Architecture - Documenter le système modulaire CRUD",
+    "status": "pending",
+    "activeForm": "Documenting modular architecture"
+  },
+  {
+    "content": "Phase 4: Infrastructure - Analyser Docker et AWS",
+    "status": "pending",
+    "activeForm": "Analyzing infrastructure setup"
+  },
+  {
+    "content": "Phase 5: Services Métier - Documenter les 8 services principaux",
+    "status": "pending",
+    "activeForm": "Documenting business services"
+  },
+  {
+    "content": "Phase 6: Documentation - Générer tous les diagrammes et documents",
+    "status": "pending",
+    "activeForm": "Generating documentation and diagrams"
+  },
+  {
+    "content": "Créer SUMMARY.md - Rapport exécutif avec statistiques",
+    "status": "pending",
+    "activeForm": "Creating executive summary"
+  }
+]

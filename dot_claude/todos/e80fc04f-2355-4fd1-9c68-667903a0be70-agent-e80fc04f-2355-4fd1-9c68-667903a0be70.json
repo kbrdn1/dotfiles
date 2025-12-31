@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Vérifier que le mot de passe a été correctement sauvegardé",
+    "status": "in_progress",
+    "activeForm": "Verifying password was saved correctly"
+  },
+  {
+    "content": "Tester Hash::check avec le nouveau mot de passe",
+    "status": "pending",
+    "activeForm": "Testing Hash::check with new password"
+  },
+  {
+    "content": "Vérifier la configuration du guard d'authentification",
+    "status": "pending",
+    "activeForm": "Checking authentication guard configuration"
+  },
+  {
+    "content": "Analyser les logs Laravel pour l'erreur exacte",
+    "status": "pending",
+    "activeForm": "Analyzing Laravel logs for exact error"
+  }
+]

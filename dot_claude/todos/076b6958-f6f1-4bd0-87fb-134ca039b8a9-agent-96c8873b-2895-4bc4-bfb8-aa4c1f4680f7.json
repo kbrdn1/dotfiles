@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Évaluer l'état actuel de la mémoire",
+    "status": "in_progress",
+    "activeForm": "Assessing current memory state"
+  },
+  {
+    "content": "Supprimer les fichiers obsolètes",
+    "status": "pending",
+    "activeForm": "Removing obsolete files"
+  },
+  {
+    "content": "Consolider les doublons",
+    "status": "pending",
+    "activeForm": "Consolidating duplicates"
+  },
+  {
+    "content": "Archiver l'historique résolu",
+    "status": "pending",
+    "activeForm": "Archiving historic content"
+  },
+  {
+    "content": "Optimiser CLAUDE.md",
+    "status": "pending",
+    "activeForm": "Streamlining main docs"
+  },
+  {
+    "content": "Valider et générer le rapport",
+    "status": "pending",
+    "activeForm": "Validating and reporting"
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "content": "Generate SKILL.md with complete instructions",
+    "status": "in_progress",
+    "activeForm": "Generating SKILL.md with complete instructions"
+  },
+  {
+    "content": "Generate Go project structure and main.go",
+    "status": "pending",
+    "activeForm": "Generating Go project structure and main.go"
+  },
+  {
+    "content": "Generate internal packages (git, github, calendar, consolidator, translator, generator)",
+    "status": "pending",
+    "activeForm": "Generating internal packages"
+  },
+  {
+    "content": "Generate templates (client.tmpl, technical.tmpl)",
+    "status": "pending",
+    "activeForm": "Generating templates"
+  },
+  {
+    "content": "Generate configuration files (JSON configs)",
+    "status": "pending",
+    "activeForm": "Generating configuration files"
+  },
+  {
+    "content": "Generate installation and setup scripts",
+    "status": "pending",
+    "activeForm": "Generating installation and setup scripts"
+  },
+  {
+    "content": "Generate test suite and fixtures",
+    "status": "pending",
+    "activeForm": "Generating test suite and fixtures"
+  },
+  {
+    "content": "Generate README and documentation",
+    "status": "pending",
+    "activeForm": "Generating README and documentation"
+  }
+]

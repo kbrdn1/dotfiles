@@ -1,0 +1,12 @@
+[
+  {
+    "content": "Analyser les divergences entre PLAN.md et implémentation actuelle",
+    "status": "in_progress",
+    "activeForm": "Analyse des divergences"
+  },
+  {
+    "content": "Créer rapport complet de l'état de la feature",
+    "status": "pending",
+    "activeForm": "Création du rapport"
+  }
+]

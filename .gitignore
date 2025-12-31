@@ -1,0 +1,6 @@
+# Claude plugins cache and marketplaces (too large, regenerated automatically)
+dot_claude/plugins/cache/
+dot_claude/plugins/marketplaces/
+
+# Claude session logs (contain sensitive data)
+dot_claude/projects/

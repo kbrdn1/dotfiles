@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Analyser les changements majeurs des versions 0.39.0 et 0.38.0",
+    "status": "completed",
+    "activeForm": "Analyzing major changes from versions 0.39.0 and 0.38.0"
+  },
+  {
+    "content": "Mettre à jour full-analysis.md avec les nouvelles features (international schools, demo accounts, school mandates)",
+    "status": "completed",
+    "activeForm": "Updating full-analysis.md with new features"
+  },
+  {
+    "content": "Mettre à jour documentation.yml workflow avec nouveaux services et domaines",
+    "status": "completed",
+    "activeForm": "Updating documentation.yml workflow"
+  },
+  {
+    "content": "Créer la structure de documentation complète selon le plan",
+    "status": "completed",
+    "activeForm": "Creating complete documentation structure"
+  },
+  {
+    "content": "Générer les diagrammes Mermaid pour chaque domaine",
+    "status": "pending",
+    "activeForm": "Generating Mermaid diagrams"
+  },
+  {
+    "content": "Créer le rapport exécutif SUMMARY.md",
+    "status": "completed",
+    "activeForm": "Creating executive summary"
+  }
+]

@@ -1,0 +1,7 @@
+{
+	"statusLine": {
+		"type": "command",
+		"command": "bun x ccusage statusline --visual-burn-rate emoji --cost-source both", 
+		"padding": 0 
+	}
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "content": "Ajouter fuzzy matching au QueryBuilder",
+    "status": "completed",
+    "activeForm": "Ajout fuzzy matching QueryBuilder"
+  },
+  {
+    "content": "Activer fuzzy dans ItemScoringStrategy",
+    "status": "completed",
+    "activeForm": "Activation fuzzy ItemScoringStrategy"
+  },
+  {
+    "content": "Tester le fuzzy matching",
+    "status": "in_progress",
+    "activeForm": "Tests fuzzy matching"
+  }
+]

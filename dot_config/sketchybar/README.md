@@ -1,185 +1,264 @@
-# SketchyBar Configuration with AeroSpace Integration
+# 🎨 SketchyBar Theme System v2.0
 
-A clean, minimal macOS menu bar configuration using SketchyBar with AeroSpace window manager integration.
+> Système de gestion de thèmes complet avec synchronisation automatique JankyBorders
 
-## ✨ Features
+## 🌟 Vue d'Ensemble
 
-- **6 Workspace Icons**: Visual workspace indicators with app-specific icons
-- **Dynamic Selection**: Purple background highlights the active workspace
-- **System Monitoring**: CPU usage, battery status, WiFi connectivity
-- **Clean Design**: Minimal and efficient configuration
-- **AeroSpace Integration**: Seamless window manager integration
+Un système de thèmes unifié qui synchronise automatiquement **SketchyBar** et **JankyBorders** avec vos 6 thèmes Zed Editor préférés.
 
-## 🎯 Workspace Configuration
+### ✨ Fonctionnalités Principales
 
-| Workspace | Key | Icon | Application |
-|-----------|-----|------|-------------|
-| 1 | `1` | `:mail:` | Mail |
-| 2 | `2` | `:postman:` | Postman |
-| 3 | `3` | `:zed:` | Zed Editor |
-| 4 | `Q` | `:arc:` | Arc Browser |
-| 5 | `W` | `:messages:` | Messages/Slack |
-| 6 | `E` | `:orbstack:` | OrbStack/Docker |
+- 🎨 **6 thèmes complets** inspirés de vos configurations Zed
+- 🔄 **Synchronisation automatique** SketchyBar + JankyBorders
+- 🖱️ **Interface GUI** intégrée au menu Apple
+- 📱 **Notifications macOS** natives
+- 💾 **Persistance** des préférences
+- 🎯 **Icône SF Symbols** (􀎔) professionnelle
 
-## 📁 File Structure
+## 📦 Thèmes Disponibles
+
+| Icône | Nom | Couleur Accent | Style |
+|-------|-----|----------------|-------|
+| ⭐ | **Claude Dark** | Orange cuivré `#D4825D` | Chaud, élégant (défaut) |
+| ☀️ | **Claude Light** | Orange saturé `#C15F3C` | Lumineux, doux |
+| 🫐 | **Blueberry Dark** | Vert menthe `#27E8A7` | Frais, moderne |
+| 🎨 | **Catppuccin** | Bleu `#8aadf4` | Pastel, populaire |
+| 🌊 | **DuoTone Dark** | Cyan `#4fb4d7` | Profond, océanique |
+| 💜 | **Periwinkle Ember** | Bleu pervenche `#9AA7FF` | Unique, lavande |
+
+## 🚀 Utilisation Rapide
+
+### Méthode GUI (Recommandée)
+```
+1. Cliquez sur  (Apple logo) en haut à gauche
+2. Sélectionnez "􀎔 Change Theme"
+3. Choisissez votre thème
+4. SketchyBar + Borders se rechargent automatiquement ! 🎉
+```
+
+### Méthode CLI
+```bash
+cd ~/.config/sketchybar
+
+# Interactive
+./change_theme.sh
+
+# Direct
+./settings/theme.sh set claude-dark
+./settings/theme.sh set blueberry-dark
+```
+
+## 📁 Structure des Fichiers
 
 ```
-.config/sketchybar/
-├── sketchybarrc              # Main configuration
-├── manage.sh                 # Management utility
-├── icon_map.sh              # Icon mapping helper
-├── plugins/
-│   ├── spaces/
-│   │   ├── items.sh         # Workspace items setup
-│   │   └── handler.sh       # Event handler
-│   ├── aerospace.sh        # Window state monitor
-│   ├── front_app_aerospace.sh # Current app display
-│   ├── cpu.sh              # CPU usage monitor
-│   ├── apple/              # Apple menu
-│   ├── battery/            # Battery indicator
-│   ├── calendar/           # Date & time
-│   ├── volume/             # Volume control
-│   └── wifi/               # Network status
+~/.config/sketchybar/
 ├── settings/
-│   ├── settings.sh         # Core settings
-│   ├── colors.sh           # Color scheme
-│   └── icons.sh            # Icon definitions
-└── helper/                 # Helper binary
+│   ├── theme.sh              # Gestionnaire de thèmes (6 thèmes)
+│   ├── colors.sh             # Chargeur automatique
+│   └── icons.sh              # Icônes (avec THEME=􀎔)
+├── plugins/
+│   └── apple/
+│       └── item.sh           # Menu Apple avec bouton thème
+├── change_theme.sh           # Interface de changement
+├── preview_theme.sh          # Aperçu couleurs
+├── test_all_themes.sh        # Test visuel 6 thèmes
+├── test_borders_colors.sh    # Test couleurs bordures
+└── docs/
+    ├── THEMES.md             # Documentation complète
+    ├── BORDERS_INTEGRATION.md # Guide intégration borders
+    ├── THEME_INTEGRATION.md   # Guide intégration
+    └── CHANGELOG_THEMES.md    # Historique v2.0
+
+~/.config/borders/
+├── bordersrc                 # Config JankyBorders
+└── colors.sh                 # Couleurs synchronisées
 ```
 
-## 🚀 Installation
+## 🔧 Scripts Disponibles
 
-### Prerequisites
+| Script | Description |
+|--------|-------------|
+| `change_theme.sh` | Dialog macOS pour changer de thème |
+| `preview_theme.sh` | Affiche toutes les couleurs du thème actif |
+| `test_all_themes.sh` | Test visuel des 6 thèmes |
+| `test_borders_colors.sh` | Aperçu des couleurs de bordures |
+| `settings/theme.sh list` | Liste tous les thèmes disponibles |
+| `settings/theme.sh current` | Affiche le thème actuel |
 
-1. **Install SketchyBar**:
+## 🎨 Variables de Couleurs
+
+Chaque thème expose les variables suivantes :
+
+### Couleurs de Base
 ```bash
-brew install sketchybar
-brew services start sketchybar
+$BLACK, $WHITE, $TRANSPARENT
 ```
 
-2. **Install AeroSpace**:
+### Couleurs d'Accent
 ```bash
-brew install --cask aerospace
+$RED, $GREEN, $BLUE, $YELLOW
+$PEACH, $ORANGE, $MAGENTA, $CYAN
 ```
 
-3. **Install App Font**:
+### Couleurs UI
 ```bash
-curl -L https://github.com/kvndrsslr/sketchybar-app-font/releases/download/v2.0.5/sketchybar-app-font.ttf -o ~/Library/Fonts/sketchybar-app-font.ttf
+$GREY, $GREY_DARK, $GREY_DARKER
+$BAR_COLOR, $ICON_COLOR, $LABEL_COLOR
+$BACKGROUND_1, $BACKGROUND_2
+$POPUP_BACKGROUND_COLOR, $POPUP_BORDER_COLOR
 ```
 
-### Setup
-
-1. Clone this configuration:
+### Effets et Bordures
 ```bash
-git clone <your-repo> ~/.config/sketchybar
+$SHADOW_COLOR, $ACCENT_COLOR, $HIGHLIGHT_COLOR
+$BORDER_ACTIVE, $BORDER_INACTIVE
 ```
 
-2. Make scripts executable:
+## 🖼️ Intégration JankyBorders
+
+Les bordures se synchronisent **automatiquement** avec le thème :
+
+- **Bordure Active** : Utilise la couleur accent du thème (100% opacité)
+- **Bordure Inactive** : Gris du thème (46% opacité)
+- **Rechargement** : Automatique via `brew services restart borders`
+
+### Couleurs de Bordures par Thème
+
+| Thème | Active | Inactive |
+|-------|--------|----------|
+| Claude Dark | `#D4825D` | `#5a4a40` (46%) |
+| Claude Light | `#C15F3C` | `#8a7a70` (46%) |
+| Blueberry Dark | `#27E8A7` | `#506477` (46%) |
+| Catppuccin | `#8aadf4` | `#494d64` (46%) |
+| DuoTone Dark | `#4fb4d7` | `#3d4759` (46%) |
+| Periwinkle Ember | `#9AA7FF` | `#6a6a7a` (46%) |
+
+## 📚 Documentation Complète
+
+- **[THEMES.md](THEMES.md)** - Guide complet des 6 thèmes
+- **[BORDERS_INTEGRATION.md](BORDERS_INTEGRATION.md)** - Intégration JankyBorders
+- **[THEME_INTEGRATION.md](THEME_INTEGRATION.md)** - Guide d'intégration
+- **[CHANGELOG_THEMES.md](CHANGELOG_THEMES.md)** - Historique v2.0
+
+## 🧪 Tests et Validation
+
 ```bash
-chmod +x ~/.config/sketchybar/manage.sh
-chmod +x ~/.config/sketchybar/plugins/**/*.sh
+# Tester tous les thèmes
+./test_all_themes.sh
+
+# Tester les couleurs de bordures
+./test_borders_colors.sh
+
+# Prévisualiser le thème actuel
+./preview_theme.sh
+
+# Lister les thèmes
+./settings/theme.sh list
 ```
 
-3. Reload SketchyBar:
+## 🔄 Workflow Complet
+
+```
+Utilisateur clique "Change Theme"
+         ↓
+Dialog macOS avec 6 choix
+         ↓
+Sélection du thème
+         ↓
+theme.sh charge les couleurs
+         ↓
+SketchyBar se recharge
+         ↓
+JankyBorders redémarre
+         ↓
+Notification de succès
+         ↓
+Thème appliqué partout ! ✨
+```
+
+## 💡 Recommandations d'Utilisation
+
+### Par Moment de la Journée
+- **Matin/Jour** : Claude Light, Blueberry Dark
+- **Après-midi** : Claude Dark, Catppuccin
+- **Soir/Nuit** : Claude Dark, DuoTone Dark
+
+### Par Usage
+- **Travail prolongé** : Claude Dark (réduit fatigue)
+- **Productivité** : Blueberry Dark (frais et moderne)
+- **Concentration** : DuoTone Dark (minimaliste)
+- **Originalité** : Periwinkle Ember (unique)
+
+### Par Préférence
+- **Tons chauds** : Claude Dark, Claude Light
+- **Tons froids** : Blueberry, Catppuccin, DuoTone
+- **Tons mixtes** : Periwinkle Ember
+
+## 🐛 Dépannage
+
+### Le thème ne change pas
 ```bash
+# Recharger manuellement
 sketchybar --reload
+brew services restart borders
 ```
 
-## 🛠 Management Commands
-
-Use the included management script for easy control:
-
+### Les couleurs sont incorrectes
 ```bash
-# Check status
-./manage.sh status
+# Vérifier le thème actuel
+./settings/theme.sh current
 
-# Reload configuration
-./manage.sh reload
-
-# Restart SketchyBar
-./manage.sh restart
-
-# Create backup
-./manage.sh backup
-
-# Test workspaces
-./manage.sh test
+# Réappliquer
+./settings/theme.sh apply
 ```
 
-## 🎨 Customization
-
-### Change Workspace Icons
-
-Edit `plugins/spaces/items.sh`:
+### Bordures non synchronisées
 ```bash
-SPACE_ICONS=(":mail:" ":firefox:" ":code:" ":terminal:" ":slack:" ":docker:")
+# Vérifier JankyBorders
+brew services list | grep borders
+
+# Recharger manuellement
+brew services restart borders
 ```
 
-### Adjust Colors
+## 🎯 Fonctionnalités v2.0
 
-Edit workspace selection colors in `plugins/spaces/handler.sh`:
-- Selected background: `0xffc6a0f6` (purple)
-- Selected text: `0xff1e1e2e` (dark)
-- Unselected text: `0xffcad3f5` (light gray)
+### Nouveautés
+✅ 6 thèmes Zed complets  
+✅ Icône SF Symbols (􀎔)  
+✅ Intégration JankyBorders automatique  
+✅ Rechargement intelligent  
+✅ Palettes 100% fidèles à Zed  
+✅ Tests automatisés  
 
-### Modify Bar Appearance
+### Améliorations
+✅ Dialog macOS natif  
+✅ Notifications système  
+✅ Documentation complète  
+✅ Scripts de test visuels  
 
-Edit `sketchybarrc` bar configuration:
-```bash
-sketchybar --bar \
-  height=33 \              # Bar height
-  blur_radius=20 \         # Background blur
-  corner_radius=9 \        # Corner rounding
-  y_offset=5 \             # Distance from top
-  margin=10                # Side margins
-```
+## 🙏 Crédits
 
-## 🔧 Troubleshooting
+**Thèmes Inspirés de :**
+- Claude AI - Design signature
+- Blueberry Dark by peymanslh
+- Catppuccin - Communauté
+- DuoTone - Simurai
+- Periwinkle Ember - Original
 
-### Workspaces not updating
-```bash
-# Restart AeroSpace
-open -a AeroSpace
+**Outils Utilisés :**
+- [SketchyBar](https://github.com/FelixKratz/SketchyBar)
+- [JankyBorders](https://github.com/FelixKratz/JankyBorders)
+- [Zed Editor](https://zed.dev)
 
-# Reload SketchyBar
-sketchybar --reload
-```
+## 📝 Licence
 
-### Icons not displaying correctly
-- Ensure `sketchybar-app-font` is installed in `~/Library/Fonts/`
-- Restart SketchyBar after font installation
+Configuration personnelle - Libre d'utilisation et modification
 
-### Check configuration
-```bash
-# Run status check
-./manage.sh status
+---
 
-# View logs
-tail -f /tmp/sketchybar*.log
-```
+**Version** : 2.0  
+**Date** : 2025-11-08  
+**Auteur** : kbrdn1  
 
-## 📝 Key Files
-
-- **`sketchybarrc`**: Main configuration file
-- **`manage.sh`**: Management and maintenance script
-- **`plugins/spaces/items.sh`**: Workspace configuration
-- **`plugins/spaces/handler.sh`**: Workspace event handling
-- **`settings/colors.sh`**: Color definitions
-
-## 🎯 Design Principles
-
-1. **Minimal**: Only essential items in the menu bar
-2. **Fixed Layout**: Icons don't move when switching workspaces
-3. **Visual Feedback**: Clear indication of active workspace
-4. **Performance**: Efficient event-driven updates
-5. **Clean Code**: Organized and documented configuration
-
-## 📚 Resources
-
-- [SketchyBar Documentation](https://felixkratz.github.io/SketchyBar/)
-- [AeroSpace Documentation](https://github.com/nikitabobko/AeroSpace)
-- [App Font Icons](https://github.com/kvndrsslr/sketchybar-app-font)
-
-## 📄 License
-
-This configuration is provided as-is for personal use.
+✨ **Profitez de vos thèmes synchronisés !** ✨

@@ -12,8 +12,9 @@
   {
     "context": "Workspace",
     "bindings": {
-      "cmd-alt-i": "assistant::ToggleFocus",
       "cmd-shift-t": "task::Spawn",
+      "alt-s": ["task::Spawn", { "task_name": "LazySQL"}],
+      "alt-c": ["task::Spawn", { "task_name": "Claude Code"}],
       "alt-f": ["task::Spawn", { "task_name": "Files: FZF" }],
       "alt-y": ["task::Spawn", { "task_name": "Files: Yazi" }],
       "alt-g": ["task::Spawn", { "task_name": "Git: Lazygit" }],
@@ -36,6 +37,7 @@
   {
     "context": "Editor",
     "bindings": {
+      "ctrl-space": "editor::ShowCompletions",
       "cmd-<": "editor::ToggleInlayHints",
       "alt-shift-f": "editor::Format",
       "cmd-shift-r": "editor::Rename",
@@ -113,6 +115,18 @@
       "space s d": "diagnostics::Deploy",
       "space *": ["vim::MoveToNext", { "partial_word": true }],
       "space ¨": ["vim::MoveToPrevious", { "partial_word": true }]
+    }
+  },
+  {
+    "context": "GitPanel",
+    "bindings": {
+      "alt-shift-p": "git::Push"
+    }
+  },
+  {
+    "context": "GitPanel",
+    "bindings": {
+      "alt-p": "git::Pull"
     }
   }
 ]

@@ -1,0 +1,77 @@
+[
+  {
+    "content": "Create database migrations for banners system",
+    "status": "completed",
+    "activeForm": "Creating database migrations for banners system"
+  },
+  {
+    "content": "Create Banner model with relationships",
+    "status": "in_progress",
+    "activeForm": "Creating Banner model with relationships"
+  },
+  {
+    "content": "Create BannerCondition model with polymorphic support",
+    "status": "pending",
+    "activeForm": "Creating BannerCondition model with polymorphic support"
+  },
+  {
+    "content": "Implement exceptions with Strategy pattern (7 total)",
+    "status": "pending",
+    "activeForm": "Implementing exceptions with Strategy pattern"
+  },
+  {
+    "content": "Create validation rules with Strategy pattern",
+    "status": "pending",
+    "activeForm": "Creating validation rules with Strategy pattern"
+  },
+  {
+    "content": "Implement BannerRepository with filtering",
+    "status": "pending",
+    "activeForm": "Implementing BannerRepository with filtering"
+  },
+  {
+    "content": "Create BannerMatchingService for condition evaluation",
+    "status": "pending",
+    "activeForm": "Creating BannerMatchingService for condition evaluation"
+  },
+  {
+    "content": "Implement Admin CRUD controllers",
+    "status": "pending",
+    "activeForm": "Implementing Admin CRUD controllers"
+  },
+  {
+    "content": "Implement Client API controller",
+    "status": "pending",
+    "activeForm": "Implementing Client API controller"
+  },
+  {
+    "content": "Create API Resources with DepthAware trait",
+    "status": "pending",
+    "activeForm": "Creating API Resources with DepthAware trait"
+  },
+  {
+    "content": "Add translations (FR + EN) for all messages",
+    "status": "pending",
+    "activeForm": "Adding translations for all messages"
+  },
+  {
+    "content": "Update permissions seeder and enums",
+    "status": "pending",
+    "activeForm": "Updating permissions seeder and enums"
+  },
+  {
+    "content": "Create routes (admin + client)",
+    "status": "pending",
+    "activeForm": "Creating routes"
+  },
+  {
+    "content": "Write comprehensive tests (Feature + Unit)",
+    "status": "pending",
+    "activeForm": "Writing comprehensive tests"
+  },
+  {
+    "content": "Create test script for validation",
+    "status": "pending",
+    "activeForm": "Creating test script for validation"
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Trouver la configuration MCP de Claude Code",
+    "status": "completed",
+    "activeForm": "Recherche de la configuration MCP de Claude Code"
+  },
+  {
+    "content": "Vérifier l'état actuel des MCP servers",
+    "status": "completed",
+    "activeForm": "Vérification de l'état des MCP servers"
+  },
+  {
+    "content": "Redémarrer les MCP servers",
+    "status": "in_progress",
+    "activeForm": "Redémarrage des MCP servers"
+  },
+  {
+    "content": "Vérifier la connexion Serena",
+    "status": "pending",
+    "activeForm": "Vérification de la connexion Serena"
+  }
+]

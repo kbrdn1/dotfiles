@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Analyser la configuration Karabiner actuelle",
+    "status": "completed",
+    "activeForm": "Analyse de la configuration Karabiner"
+  },
+  {
+    "content": "Identifier les conflits de touches (alt-gauche + tab, } etc.)",
+    "status": "completed",
+    "activeForm": "Identification des conflits de touches"
+  },
+  {
+    "content": "Corriger le mapping du pipe | qui produit ¶",
+    "status": "completed",
+    "activeForm": "Correction du mapping du pipe"
+  },
+  {
+    "content": "Créer configuration avec Alt-droite comme main key",
+    "status": "completed",
+    "activeForm": "Création configuration Alt-droite"
+  },
+  {
+    "content": "Nettoyer le dossier de configuration Karabiner",
+    "status": "completed",
+    "activeForm": "Nettoyage du dossier Karabiner"
+  },
+  {
+    "content": "Créer documentation et guide de test",
+    "status": "in_progress",
+    "activeForm": "Création documentation et tests"
+  }
+]

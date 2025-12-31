@@ -1,0 +1,58 @@
+# Version {{.Version}} - {{.Date}}
+
+## 📊 Vue d'ensemble
+
+Ce changelog contient **{{.TotalCommits}} modifications** développées sur **{{.Metrics.TotalWorkingDays}} jours ouvrés** ({{.Metrics.CalendarDays}} jours calendaires).
+
+{{$featuresByType := .FeaturesByType}}
+{{if hasFeatures (index $featuresByType "feat")}}
+## ✨ Nouveautés
+
+{{range (index $featuresByType "feat")}}
+- {{.Name}}{{if .Breaking}} ⚠️ **BREAKING CHANGE**{{end}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "fix")}}
+## 🐛 Corrections
+
+{{range (index $featuresByType "fix")}}
+- {{.Name}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "hotfix")}}
+## 🚨 Corrections urgentes
+
+{{range (index $featuresByType "hotfix")}}
+- {{.Name}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "perf")}}
+## ⚡ Améliorations de performance
+
+{{range (index $featuresByType "perf")}}
+- {{.Name}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "refactor")}}
+## 🔧 Améliorations techniques
+
+{{range (index $featuresByType "refactor")}}
+- {{.Name}}
+{{end}}
+{{end}}
+
+{{if hasFeatures .Breaking}}
+---
+
+## ⚠️ Changements importants
+
+Les modifications suivantes peuvent nécessiter des ajustements:
+
+{{range .Breaking}}
+- {{.Name}}
+{{end}}
+{{end}}
