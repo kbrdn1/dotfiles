@@ -60,7 +60,7 @@ The system is already installed and active in your Claude Code configuration:
         "hooks": [
           {
             "type": "command", 
-            "command": "bun /Users/melvynx/.claude/validate-command.js"
+            "command": "bun $HOME/.claude/scripts/validate-command.js"
           }
         ]
       }

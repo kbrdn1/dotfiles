@@ -161,7 +161,7 @@ const SECURITY_RULES = {
 
   // Safe paths where rm -rf is allowed
   SAFE_RM_PATHS: [
-    "/Users/melvynx/Developer/",
+    `${process.env.HOME}/Developer/`,
     "/tmp/",
     "/var/tmp/",
     process.cwd() + "/", // Current working directory
@@ -205,7 +205,8 @@ const SAFE_COMMANDS = [
 
 class CommandValidator {
   constructor() {
-    this.logFile = "/Users/melvynx/.claude/security.log";
+    const homeDir = process.env.HOME || process.env.USERPROFILE || ".";
+    this.logFile = `${homeDir}/.claude/security.log`;
   }
 
   /**

@@ -31,7 +31,7 @@ The validator is configured as a PreToolUse hook in Claude Code settings:
         "hooks": [
           {
             "type": "command",
-            "command": "bun /Users/melvynx/.claude/scripts/command-validator/src/cli.ts"
+            "command": "bun $HOME/.claude/scripts/command-validator/src/cli.ts"
           }
         ]
       }
