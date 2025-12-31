@@ -1,335 +1,40 @@
 {
-    "profiles": [
-        {
-            "complex_modifications": {
-                "rules": [
-                    {
-                        "description": "AeroSpace: Bloquer Alt gauche SEULEMENT hors des IDEs",
-                        "manipulators": [
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "description": "Bloquer Alt gauche + chiffres workspace (hors IDEs)",
-                                "from": {
-                                    "key_code": "1",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "from": {
-                                    "key_code": "2",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "from": {
-                                    "key_code": "3",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "description": "Bloquer Alt gauche + lettres workspace (q,w,e) hors IDEs",
-                                "from": {
-                                    "key_code": "q",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "from": {
-                                    "key_code": "w",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "from": {
-                                    "key_code": "e",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "description": "Bloquer Alt gauche + navigation (h,j,k,l) hors IDEs",
-                                "from": {
-                                    "key_code": "h",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "from": {
-                                    "key_code": "j",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "from": {
-                                    "key_code": "k",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "description": "Bloquer Alt gauche + tab hors IDEs",
-                                "from": {
-                                    "key_code": "tab",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "description": "Bloquer autres raccourcis AeroSpace hors IDEs",
-                                "from": {
-                                    "key_code": "f",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            },
-                            {
-                                "conditions": [
-                                    {
-                                        "bundle_identifiers": [
-                                            "^com\\.microsoft\\.VSCode$",
-                                            "^dev\\.zed\\.Zed$",
-                                            "^dev\\.zed-preview\\.Zed$",
-                                            "^com\\.jetbrains\\..*$",
-                                            "^com\\.apple\\.dt\\.Xcode$",
-                                            "^com\\.sublimetext\\..*$",
-                                            "^com\\.github\\.atom$",
-                                            "^com\\.macromates\\.textmate$"
-                                        ],
-                                        "type": "frontmost_application_unless"
-                                    }
-                                ],
-                                "from": {
-                                    "key_code": "r",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [],
-                                "type": "basic"
-                            }
-                        ]
-                    },
-                    {
-                        "description": "Raccourcis caractères spéciaux: } et |",
-                        "manipulators": [
-                            {
-                                "description": "Alt + D → }",
-                                "from": {
-                                    "key_code": "d",
-                                    "modifiers": { "mandatory": ["left_alt"] }
-                                },
-                                "to": [
-                                    {
-                                        "key_code": "close_bracket",
-                                        "modifiers": ["right_alt"]
-                                    }
-                                ],
-                                "type": "basic"
-                            },
-                            {
-                                "description": "Alt + Shift + L → |",
-                                "from": {
-                                    "key_code": "l",
-                                    "modifiers": { "mandatory": ["left_alt", "shift"] }
-                                },
-                                "to": [
-                                    {
-                                        "key_code": "6",
-                                        "modifiers": ["right_alt"]
-                                    }
-                                ],
-                                "type": "basic"
-                            }
-                        ]
-                    }
+  "global": {
+    "check_for_updates_on_startup": true,
+    "show_in_menu_bar": true,
+    "show_profile_name_in_menu_bar": false
+  },
+  "profiles": [
+    {
+      "name": "Default",
+      "complex_modifications": {
+        "rules": [
+          {
+            "description": "Right Option to Ctrl+Alt",
+            "manipulators": [
+              {
+                "type": "basic",
+                "from": {
+                  "key_code": "right_option"
+                },
+                "to": [
+                  {
+                    "key_code": "left_control",
+                    "modifiers": ["left_option"]
+                  }
                 ]
-            },
-            "name": "AeroSpace + AZERTY Friendly",
-            "selected": true,
-            "virtual_hid_keyboard": {
-                "country_code": 0,
-                "keyboard_type_v2": "iso"
-            }
-        }
-    ]
+              }
+            ]
+          }
+        ]
+      },
+      "devices": [],
+      "fn_function_keys": [],
+      "simple_modifications": [],
+      "virtual_hid_keyboard": {
+        "country_code": 0,
+        "keyboard_type_v2": "ansi"
+      }
+    }
+  ]
 }

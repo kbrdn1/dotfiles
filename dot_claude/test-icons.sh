@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Test different icon styles to see what displays correctly
+
+echo "=== TESTING NERD FONT ICONS ==="
+echo ""
+
+echo "Models:"
+echo " (robot)"
+echo "󰧑 (brain)"
+echo " (sparkle)"
+echo ""
+
+echo "Folders:"
+echo " (folder)"
+echo " (folder-open)"
+echo " (directory)"
+echo ""
+
+echo "Git:"
+echo " (branch)"
+echo " (git-branch)"
+echo " (code-branch)"
+echo ""
+
+echo "Languages:"
+echo " (nodejs)"
+echo " (python)"
+echo " (php)"
+echo " (go)"
+echo " (rust)"
+echo " (ruby)"
+echo " (java)"
+echo ""
+
+echo "Arrows:"
+echo "↓ (down arrow)"
+echo "↑ (up arrow)"
+echo " (arrow-down)"
+echo " (arrow-up)"
+echo " (download)"
+echo " (upload)"
+echo ""
+
+echo "Misc:"
+echo " (clock)"
+echo " (calendar)"
+echo " (fire/flame)"
+echo " (chip)"
+echo " (check)"
+echo " (x/close)"

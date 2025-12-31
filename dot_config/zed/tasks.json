@@ -1,10 +1,54 @@
 [
   {
-    "label": "Git: Generate Git Logs file",
-    "command": "~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 400",
+    "label": "LazySQL",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && lazysql",
+    "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": false,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
+        "args": ["-c"]
+      }
+    }
+  },
+  {
+    "label": "Claude Code",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && claude",
+    "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/zsh",
+        "args": ["-c"]
+      }
+    }
+  },
+  {
+    "label": "Claude Code Usage",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && bun x ccusage blocks",
+    "hide": "on_success",
+    "use_new_terminal": false,
+    "show_summary": true,
+    "allow_concurrent_runs": false,
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/zsh",
+        "args": ["-c"]
+      }
+    }
+  },
+  {
+    "label": "Git: Generate Git Logs file",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && ~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 400",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -15,10 +59,10 @@
   },
   {
     "label": "Git: Generate Git Logs file (All)",
-    "command": "~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 999999",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && ~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 999999",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -29,12 +73,12 @@
   },
   {
     "label": "Git: Lazygit",
-    "command": "lazygit -p $ZED_WORKTREE_ROOT",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && lazygit -p $ZED_WORKTREE_ROOT",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -44,10 +88,10 @@
   },
   {
     "label": "Files: Rename Files (Script)",
-    "command": "~/.config/zed/tasks/rename_files.sh \"${1:Chemin de recherche (ex: app)}\" \"${2:Pattern de fichier (ex: *Ressource.php)}\" \"${3:Motif à remplacer (ex: Ressource\\.php)}\" \"${4:Nouveau motif (ex: Resource\\.php)}\"",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && ~/.config/zed/tasks/rename_files.sh \"${1:Chemin de recherche (ex: app)}\" \"${2:Pattern de fichier (ex: *Ressource.php)}\" \"${3:Motif à remplacer (ex: Ressource\\.php)}\" \"${4:Nouveau motif (ex: Resource\\.php)}\"",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -58,12 +102,12 @@
   },
   {
     "label": "Files: FZF",
-    "command": "cd $ZED_WORKTREE_ROOT && fzf --style full --border-label ' FZF ' --header-label ' File Type ' --preview 'bat -n --color=always --line-range :500 {}' --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' --bind 'enter:execute($EDITOR {})' --color 'border:#494d64,label:#cad3f5' --color 'preview-border:#8aadf4,preview-label:#b7bdf8' --color 'list-border:#a6da95,list-label:#a6da95' --color 'input-border:#ed8796,input-label:#f5a9b8' --color 'header-border:#7dc4e4,header-label:#91d7e3'",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && cd $ZED_WORKTREE_ROOT && fzf --style full --border-label ' FZF ' --header-label ' File Type ' --preview 'bat -n --color=always --line-range :500 {}' --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' --bind 'enter:execute($EDITOR {})' --color 'border:#494d64,label:#cad3f5' --color 'preview-border:#8aadf4,preview-label:#b7bdf8' --color 'list-border:#a6da95,list-label:#a6da95' --color 'input-border:#ed8796,input-label:#f5a9b8' --color 'header-border:#7dc4e4,header-label:#91d7e3'",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -73,12 +117,12 @@
   },
   {
     "label": "Files: Yazi",
-    "command": "cd $ZED_WORKTREE_ROOT && yazi",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && cd $ZED_WORKTREE_ROOT && yazi",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -88,12 +132,12 @@
   },
   {
     "label": "Files: Generate Project Structure file",
-    "command": "cd $ZED_WORKTREE_ROOT && eza --tree --level=5 --git-ignore --ignore-glob=\"vendor|node_modules|.git|storage|bootstrap/cache|*.log\" > project-structure.txt",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && cd $ZED_WORKTREE_ROOT && eza --tree --level=5 --git-ignore --ignore-glob=\"vendor|node_modules|.git|storage|bootstrap/cache|*.log\" > project-structure.txt",
     "use_new_terminal": true,
     "reveal": "no_focus",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -108,7 +152,7 @@
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -123,7 +167,7 @@
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -138,7 +182,7 @@
     "reveal": "no_focus",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -153,7 +197,7 @@
     "reveal": "no_focus",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -163,12 +207,12 @@
   },
   {
     "label": "Docker: Lazydocker",
-    "command": "lazydocker",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && lazydocker",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -178,12 +222,12 @@
   },
   {
     "label": "Kubernetes: Lazykube",
-    "command": "cd $ZED_WORKTREE_ROOT && lazykube",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && cd $ZED_WORKTREE_ROOT && lazykube",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },
@@ -193,12 +237,12 @@
   },
   {
     "label": "Database: Redis CLI",
-    "command": "redis-cli",
+    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && redis-cli",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/bash",
+        "program": "/bin/zsh",
         "args": ["-c"]
       }
     },

@@ -1,0 +1,52 @@
+[
+  {
+    "content": "Configure Podman socket for docker-compose",
+    "status": "completed",
+    "activeForm": "Configuring Podman socket for docker-compose"
+  },
+  {
+    "content": "Clone project to /var/www",
+    "status": "completed",
+    "activeForm": "Cloning project to /var/www"
+  },
+  {
+    "content": "Verify project files and structure",
+    "status": "completed",
+    "activeForm": "Verifying project files and structure"
+  },
+  {
+    "content": "Generate production secrets",
+    "status": "completed",
+    "activeForm": "Generating production secrets"
+  },
+  {
+    "content": "Create and configure .env file",
+    "status": "completed",
+    "activeForm": "Creating and configuring .env file"
+  },
+  {
+    "content": "Configure firewall ports",
+    "status": "in_progress",
+    "activeForm": "Configuring firewall ports"
+  },
+  {
+    "content": "Build Docker images with Podman",
+    "status": "pending",
+    "activeForm": "Building Docker images with Podman"
+  },
+  {
+    "content": "Start all services",
+    "status": "pending",
+    "activeForm": "Starting all services"
+  },
+  {
+    "content": "Run database migrations",
+    "status": "pending",
+    "activeForm": "Running database migrations"
+  },
+  {
+    "content": "Verify deployment",
+    "status": "pending",
+    "activeForm": "Verifying deployment"
+  }
+]

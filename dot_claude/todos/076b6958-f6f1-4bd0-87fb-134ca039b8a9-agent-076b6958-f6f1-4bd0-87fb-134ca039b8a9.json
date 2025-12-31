@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Update full-analysis.md with recent refactorings",
+    "status": "completed",
+    "activeForm": "Updating documentation prompts"
+  },
+  {
+    "content": "Update documentation.yml workflow",
+    "status": "completed",
+    "activeForm": "Updating workflow configuration"
+  },
+  {
+    "content": "Execute full documentation generation",
+    "status": "in_progress",
+    "activeForm": "Generating complete documentation"
+  },
+  {
+    "content": "Validate generated documentation",
+    "status": "pending",
+    "activeForm": "Validating documentation quality"
+  }
+]

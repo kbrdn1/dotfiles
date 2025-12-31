@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Fix statusbar background to #1e1e1e (remove purple)",
+    "status": "completed",
+    "activeForm": "Fixing statusbar background"
+  },
+  {
+    "content": "Disable Vim full statusbar color control",
+    "status": "completed",
+    "activeForm": "Disabling Vim statusbar color control"
+  },
+  {
+    "content": "Add subtle Vim mode indicator badge",
+    "status": "completed",
+    "activeForm": "Adding subtle Vim mode indicator"
+  },
+  {
+    "content": "Verify all requirements are met",
+    "status": "in_progress",
+    "activeForm": "Verifying all requirements"
+  }
+]

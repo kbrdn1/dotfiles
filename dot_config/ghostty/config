@@ -3,7 +3,7 @@
 ####################################
 
 #  Catppuccin Macchiato Theme
-theme = catppuccin-macchiato
+theme = catppuccin-macchiato.conf
 
 # UI
 background-opacity = 0.85
@@ -16,6 +16,7 @@ window-inherit-font-size = false
 
 # Cursor
 mouse-shift-capture = always
+custom-shader = shaders/cursor_smear_fade.glsl
 
 # Window
 window-height = 120

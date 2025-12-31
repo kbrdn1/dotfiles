@@ -1,0 +1,144 @@
+# Version {{.Version}} - {{.Date}}
+
+## Description
+
+{{if .Features}}
+Cette version comprend {{.TotalCommits}} modifications développées sur {{.Metrics.CalendarDays}} jours calendaires ({{.Metrics.TotalWorkingDays}} jours ouvrés). Les principales évolutions incluent {{len (index .FeaturesByType "feat")}} nouvelles fonctionnalités, {{len (index .FeaturesByType "fix")}} corrections de bugs{{if hasFeatures (index .FeaturesByType "hotfix")}}, {{len (index .FeaturesByType "hotfix")}} corrections urgentes{{end}}{{if hasFeatures (index .FeaturesByType "refactor")}} et {{len (index .FeaturesByType "refactor")}} améliorations techniques{{end}}.
+{{else}}
+Version de maintenance avec corrections et améliorations mineures.
+{{end}}
+
+{{$featuresByType := .FeaturesByType}}
+{{if hasFeatures (index $featuresByType "feat")}}
+## Ajouté
+{{range (index $featuresByType "feat")}}
+- **{{.Type}}** : {{if .PRNumbers}}{{range $index, $pr := .PRNumbers}}{{if $index}}, {{end}}{{formatPRLink $pr}}{{end}} {{end}}{{.Name}}{{if .Breaking}} ⚠️ **BREAKING CHANGE**{{end}}{{if .Authors}}
+  > Développeur{{if gt (len .Authors) 1}}s{{end}}: {{range $index, $author := .Authors}}{{if $index}}, {{end}}@{{$author}}{{end}}{{end}}{{if .Commits}}{{$feature := .}}{{range .Commits}}{{if eq . (index $feature.Commits 0)}}
+  > Temps de résolution: {{$feature.WorkingDays}} jours ({{formatDate $feature.StartDate}} - {{formatDate $feature.EndDate}}){{end}}{{end}}{{end}}
+{{end}}
+{{end}}
+
+{{if or (hasFeatures (index $featuresByType "refactor")) (hasFeatures (index $featuresByType "chore")) (hasFeatures (index $featuresByType "perf"))}}
+## Modifié
+
+{{if hasFeatures (index $featuresByType "refactor")}}
+{{range (index $featuresByType "refactor")}}
+- **{{.Type}}** : {{if .PRNumbers}}{{range $index, $pr := .PRNumbers}}{{if $index}}, {{end}}{{formatPRLink $pr}}{{end}} {{end}}{{.Name}}{{if .Authors}}
+  > Développeur{{if gt (len .Authors) 1}}s{{end}}: {{range $index, $author := .Authors}}{{if $index}}, {{end}}@{{$author}}{{end}}{{end}}{{if .Commits}}{{$feature := .}}{{range .Commits}}{{if eq . (index $feature.Commits 0)}}
+  > Temps de résolution: {{$feature.WorkingDays}} jours ({{formatDate $feature.StartDate}} - {{formatDate $feature.EndDate}}){{end}}{{end}}{{end}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "perf")}}
+{{range (index $featuresByType "perf")}}
+- **{{.Type}}** : {{if .PRNumbers}}{{range $index, $pr := .PRNumbers}}{{if $index}}, {{end}}{{formatPRLink $pr}}{{end}} {{end}}{{.Name}}{{if .Authors}}
+  > Développeur{{if gt (len .Authors) 1}}s{{end}}: {{range $index, $author := .Authors}}{{if $index}}, {{end}}@{{$author}}{{end}}{{end}}{{if .Commits}}{{$feature := .}}{{range .Commits}}{{if eq . (index $feature.Commits 0)}}
+  > Temps de résolution: {{$feature.WorkingDays}} jours ({{formatDate $feature.StartDate}} - {{formatDate $feature.EndDate}}){{end}}{{end}}{{end}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "chore")}}
+{{range (index $featuresByType "chore")}}
+- **{{.Type}}** : {{.Name}}
+{{end}}
+{{end}}
+{{end}}
+
+{{if or (hasFeatures (index $featuresByType "fix")) (hasFeatures (index $featuresByType "hotfix"))}}
+## Corrigé
+
+{{if hasFeatures (index $featuresByType "hotfix")}}
+{{range (index $featuresByType "hotfix")}}
+- **{{.Type}}** : {{if .PRNumbers}}{{range $index, $pr := .PRNumbers}}{{if $index}}, {{end}}{{formatPRLink $pr}}{{end}} {{end}}{{.Name}}{{if .Authors}}
+  > Développeur{{if gt (len .Authors) 1}}s{{end}}: {{range $index, $author := .Authors}}{{if $index}}, {{end}}@{{$author}}{{end}}{{end}}{{if .Commits}}{{$feature := .}}{{range .Commits}}{{if eq . (index $feature.Commits 0)}}
+  > Temps de résolution: {{$feature.WorkingDays}} jours ({{formatDate $feature.StartDate}} - {{formatDate $feature.EndDate}}){{end}}{{end}}{{end}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "fix")}}
+{{range (index $featuresByType "fix")}}
+- **{{.Type}}** : {{if .PRNumbers}}{{range $index, $pr := .PRNumbers}}{{if $index}}, {{end}}{{formatPRLink $pr}}{{end}} {{end}}{{.Name}}{{if .Authors}}
+  > Développeur{{if gt (len .Authors) 1}}s{{end}}: {{range $index, $author := .Authors}}{{if $index}}, {{end}}@{{$author}}{{end}}{{end}}{{if .Commits}}{{$feature := .}}{{range .Commits}}{{if eq . (index $feature.Commits 0)}}
+  > Temps de résolution: {{$feature.WorkingDays}} jours ({{formatDate $feature.StartDate}} - {{formatDate $feature.EndDate}}){{end}}{{end}}{{end}}
+{{end}}
+{{end}}
+{{end}}
+
+{{if or (hasFeatures (index $featuresByType "docs")) (hasFeatures (index $featuresByType "style")) (hasFeatures (index $featuresByType "test")) (hasFeatures (index $featuresByType "ci"))}}
+## Autres modifications
+
+{{if hasFeatures (index $featuresByType "docs")}}
+### Documentation
+{{range (index $featuresByType "docs")}}
+- {{.Name}}{{if .Authors}} (@{{index .Authors 0}}){{end}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "style")}}
+### Style
+{{range (index $featuresByType "style")}}
+- {{.Name}}{{if .Authors}} (@{{index .Authors 0}}){{end}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "test")}}
+### Tests
+{{range (index $featuresByType "test")}}
+- {{.Name}}{{if .Authors}} (@{{index .Authors 0}}){{end}}
+{{end}}
+{{end}}
+
+{{if hasFeatures (index $featuresByType "ci")}}
+### CI/CD
+{{range (index $featuresByType "ci")}}
+- {{.Name}}{{if .Authors}} (@{{index .Authors 0}}){{end}}
+{{end}}
+{{end}}
+{{end}}
+
+## Détails de la version
+
+- **Temps total**: {{.Metrics.CalendarDays}} jours calendaires
+- **Temps de développement**: {{.Metrics.TotalWorkingDays}} jours ouvrés ({{.Metrics.WorkingDaysWithCommits}} jours avec commits)
+{{if .Features}}{{$firstFeature := index .Features 0}}{{$lastFeature := index .Features (sub (len .Features) 1)}}
+- **Période**: {{formatDate $firstFeature.StartDate}} - {{formatDate $lastFeature.EndDate}}
+{{end}}
+{{if .Authors}}
+- **Développeur{{if gt (len .Authors) 1}}s{{end}}**: {{range $index, $author := .Authors}}{{if $index}}, {{end}}@{{$author}}{{end}}
+{{end}}
+- **Efficacité**: {{formatEfficiency .Metrics.Efficiency}} ({{formatFloat .Metrics.AverageCommitsPerDay}} commits/jour)
+- **Commits**: {{.TotalCommits}} modifications
+{{if .PRNumbers}}
+- **Pull Requests**: {{len .PRNumbers}} PRs mergés
+{{end}}
+
+{{if hasFeatures (index $featuresByType "feat")}}
+### Principales fonctionnalités
+
+{{range $index, $feature := (index $featuresByType "feat")}}{{if lt $index 5}}
+- {{$feature.Name}} ({{$feature.WorkingDays}} jours)
+{{end}}{{end}}
+{{end}}
+
+{{if hasFeatures .Breaking}}
+---
+
+## ⚠️ BREAKING CHANGES
+
+{{range .Breaking}}
+- **{{.Type}}** {{if .Scope}}({{.Scope}}){{end}} : {{if .PRNumbers}}{{range $index, $pr := .PRNumbers}}{{if $index}}, {{end}}{{formatPRLink $pr}}{{end}} {{end}}{{.Name}}{{if .Authors}}
+  > Développeur{{if gt (len .Authors) 1}}s{{end}}: {{range $index, $author := .Authors}}{{if $index}}, {{end}}@{{$author}}{{end}}{{end}}{{if .Commits}}{{$feature := .}}{{range .Commits}}{{if eq . (index $feature.Commits 0)}}
+  > Temps de résolution: {{$feature.WorkingDays}} jours ({{formatDate $feature.StartDate}} - {{formatDate $feature.EndDate}}){{end}}{{end}}{{end}}{{if .Commits}}{{range .Commits}}{{if .Body}}
+  > {{.Body}}{{end}}{{end}}{{end}}
+{{end}}
+
+### Migration
+
+Pour migrer vers cette version:
+1. Vérifiez les changements breaking ci-dessus
+2. Mettez à jour vos dépendances
+3. Testez l'application en environnement de développement
+4. Consultez la documentation pour les détails de migration
+{{end}}
+
+[{{.Version}}]: https://github.com/FlippadTeam/fiches-pedagogiques-api-rest/compare/{{.PreviousVersion}}...{{.Version}}

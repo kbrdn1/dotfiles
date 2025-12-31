@@ -58,7 +58,25 @@ sketchybar --default "${defaults[@]}"
 # Left
 source "$PLUGIN_DIR/apple/item.sh"
 source "$PLUGIN_DIR/spaces/item.sh"
+source "$PLUGIN_DIR/aerospace/item.sh"
+
+# Separator between aerospace switcher and window status
+sketchybar --add item aerospace_separator left \
+           --set aerospace_separator \
+             icon="$SEPARATOR" \
+             icon.color="$ICON_COLOR" \
+             icon.padding_left=5 \
+             icon.padding_right=5 \
+             background.drawing=off \
+             label.drawing=off
+
 source "$PLUGIN_DIR/front_app.sh"
+
+# Create AeroSpace workspace change event
+sketchybar --add event aerospace_workspace_change
+
+# Start AeroSpace mode monitor in background
+"$PLUGIN_DIR/aerospace/mode_trigger.sh" > /dev/null 2>&1 &
 
 # Right
 source "$PLUGIN_DIR/calendar/item.sh"
@@ -68,12 +86,13 @@ source "$PLUGIN_DIR/wifi/item.sh"
 source "$PLUGIN_DIR/bluetooth/item.sh"
 source "$PLUGIN_DIR/github/item.sh"
 source "$PLUGIN_DIR/volume/item.sh"
+source "$PLUGIN_DIR/music/item.sh"
 source "$PLUGIN_DIR/cpu.sh"
-source "$PLUGIN_DIR/svim/item.sh"
+# source "$PLUGIN_DIR/svim/item.sh"
 
 sketchybar --hotload on
 
 # Forcing all item scripts to run (never do this outside of sketchybarrc)
 sketchybar --update
 
-echo "sketchybar configuation loaded.."
+echo "sketchybar configuation loaded..."

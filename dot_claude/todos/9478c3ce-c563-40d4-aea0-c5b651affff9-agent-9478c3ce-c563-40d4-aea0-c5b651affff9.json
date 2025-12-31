@@ -1,0 +1,12 @@
+[
+  {
+    "content": "Add CSS to force statusbar background #1e1e1e",
+    "status": "completed",
+    "activeForm": "Adding CSS to force statusbar background"
+  },
+  {
+    "content": "User needs to reload Custom UI Style or restart VS Code",
+    "status": "in_progress",
+    "activeForm": "Waiting for user to reload/restart"
+  }
+]

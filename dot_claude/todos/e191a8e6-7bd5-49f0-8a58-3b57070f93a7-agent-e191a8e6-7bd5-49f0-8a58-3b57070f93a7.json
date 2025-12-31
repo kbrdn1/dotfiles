@@ -1,0 +1,37 @@
+[
+  {
+    "content": "Phase 1-6: Système complet avec tests",
+    "status": "completed",
+    "activeForm": "Système complet"
+  },
+  {
+    "content": "Phase 8: Module Client",
+    "status": "completed",
+    "activeForm": "Module Client"
+  },
+  {
+    "content": "Créer templates email Mailgun",
+    "status": "completed",
+    "activeForm": "Création des templates email"
+  },
+  {
+    "content": "Phase 7: Créer documentation complète",
+    "status": "completed",
+    "activeForm": "Création de la documentation"
+  },
+  {
+    "content": "Créer guide Security Best Practices",
+    "status": "completed",
+    "activeForm": "Création du guide sécurité"
+  },
+  {
+    "content": "Créer guide Troubleshooting",
+    "status": "in_progress",
+    "activeForm": "Création du guide dépannage"
+  },
+  {
+    "content": "Créer guide Performance Optimization",
+    "status": "pending",
+    "activeForm": "Création du guide performance"
+  }
+]

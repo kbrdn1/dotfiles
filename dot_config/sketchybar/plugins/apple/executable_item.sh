@@ -34,6 +34,12 @@ apple_lock=(
   click_script="pmset displaysleepnow; $POPUP_OFF"
 )
 
+apple_theme=(
+  icon=$THEME
+  label="Change Theme"
+  click_script="$HOME/.config/sketchybar/change_theme.sh; $POPUP_OFF"
+)
+
 sketchybar --add item apple.logo left                  \
            --set apple.logo "${apple_logo[@]}"         \
            --subscribe apple.logo mouse.clicked        \
@@ -48,4 +54,7 @@ sketchybar --add item apple.logo left                  \
            --set apple.activity "${apple_activity[@]}" \
                                                        \
            --add item apple.lock popup.apple.logo      \
-           --set apple.lock "${apple_lock[@]}"
+           --set apple.lock "${apple_lock[@]}"         \
+                                                       \
+           --add item apple.theme popup.apple.logo     \
+           --set apple.theme "${apple_theme[@]}"

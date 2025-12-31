@@ -1,0 +1,49 @@
+# Rustfmt configuration
+# https://rust-lang.github.io/rustfmt/
+
+edition = "2021"
+
+# Indentation
+hard_tabs = false
+tab_spaces = 2
+indent_style = "Block"
+
+# Line length
+max_width = 100
+use_small_heuristics = "Default"
+
+# Comments
+comment_width = 100
+wrap_comments = true
+format_code_in_doc_comments = true
+normalize_comments = true
+normalize_doc_attributes = true
+
+# Imports
+reorder_imports = true
+reorder_modules = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+
+# Formatting
+newline_style = "Unix"
+remove_nested_parens = true
+use_field_init_shorthand = true
+use_try_shorthand = true
+force_explicit_abi = true
+condense_wildcard_suffixes = true
+
+# Chains
+chain_width = 60
+single_line_if_else_max_width = 50
+
+# Functions
+fn_args_layout = "Tall"
+brace_style = "SameLineWhere"
+control_brace_style = "AlwaysSameLine"
+trailing_semicolon = true
+trailing_comma = "Vertical"
+match_arm_trailing_comma = true
+
+# Strings
+format_strings = true

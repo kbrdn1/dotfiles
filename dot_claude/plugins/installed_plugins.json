@@ -1,0 +1,136 @@
+{
+  "version": 2,
+  "plugins": {
+    "git-workflow@claude-code-templates": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-templates/git-workflow/unknown",
+        "version": "unknown",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "d6dbf76a9488815cb4300e58a23f5c771fc777db",
+        "isLocal": true
+      }
+    ],
+    "testing-suite@claude-code-templates": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-templates/testing-suite/unknown",
+        "version": "unknown",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "d6dbf76a9488815cb4300e58a23f5c771fc777db",
+        "isLocal": true
+      }
+    ],
+    "security-pro@claude-code-templates": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-templates/security-pro/unknown",
+        "version": "unknown",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "d6dbf76a9488815cb4300e58a23f5c771fc777db",
+        "isLocal": true
+      }
+    ],
+    "ai-ml-toolkit@claude-code-templates": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-templates/ai-ml-toolkit/unknown",
+        "version": "unknown",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "d6dbf76a9488815cb4300e58a23f5c771fc777db",
+        "isLocal": true
+      }
+    ],
+    "devops-automation@claude-code-templates": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-templates/devops-automation/unknown",
+        "version": "unknown",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "d6dbf76a9488815cb4300e58a23f5c771fc777db",
+        "isLocal": true
+      }
+    ],
+    "documentation-generator@claude-code-templates": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-templates/documentation-generator/unknown",
+        "version": "unknown",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "d6dbf76a9488815cb4300e58a23f5c771fc777db",
+        "isLocal": true
+      }
+    ],
+    "performance-optimizer@claude-code-templates": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-templates/performance-optimizer/unknown",
+        "version": "unknown",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "d6dbf76a9488815cb4300e58a23f5c771fc777db",
+        "isLocal": true
+      }
+    ],
+    "project-management-suite@claude-code-templates": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-templates/project-management-suite/unknown",
+        "version": "unknown",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "d6dbf76a9488815cb4300e58a23f5c771fc777db",
+        "isLocal": true
+      }
+    ],
+    "docker-mcp-toolkit@docker": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/docker/docker-mcp-toolkit/1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2025-10-24T08:52:06.948Z",
+        "lastUpdated": "2025-10-24T08:52:06.948Z",
+        "gitCommitSha": "5e4345bb20eec58f2e2518d31f817be8be75a8fa",
+        "isLocal": true
+      }
+    ],
+    "mgrep@Mixedbread-Grep": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/Mixedbread-Grep/mgrep/0.0.0",
+        "version": "0.0.0",
+        "installedAt": "2025-12-03T17:07:25.207Z",
+        "lastUpdated": "2025-12-03T17:07:25.207Z",
+        "gitCommitSha": "14691ae8e00987cd5d4c3ab5868c0a838891fc25",
+        "isLocal": true
+      }
+    ],
+    "frontend-design@claude-code-plugins": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-code-plugins/frontend-design/1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2025-12-03T17:07:25.207Z",
+        "lastUpdated": "2025-12-03T17:07:25.207Z",
+        "gitCommitSha": "56a3ef77c5cf9f2f931831d641325de8a566662c",
+        "isLocal": true
+      }
+    ],
+    "lua-lsp@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "/Users/kbrdn1/.claude/plugins/cache/claude-plugins-official/lua-lsp/1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2025-12-31T12:25:36.251Z",
+        "lastUpdated": "2025-12-31T12:25:36.251Z",
+        "isLocal": true
+      }
+    ]
+  }
+}

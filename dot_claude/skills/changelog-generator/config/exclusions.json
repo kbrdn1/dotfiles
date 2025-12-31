@@ -1,0 +1,36 @@
+{
+  "country": "FR",
+  "course_weeks": [
+    {
+      "start": "2025-06-16",
+      "end": "2025-06-20",
+      "description": "Formation juin 2025"
+    },
+    {
+      "start": "2025-05-12",
+      "end": "2025-05-16",
+      "description": "Formation mai 2025"
+    },
+    {
+      "start": "2025-04-07",
+      "end": "2025-04-11",
+      "description": "Formation avril 2025"
+    },
+    {
+      "start": "2025-03-17",
+      "end": "2025-03-21",
+      "description": "Formation mars 2025"
+    },
+    {
+      "start": "2025-02-17",
+      "end": "2025-02-21",
+      "description": "Formation février 2025"
+    },
+    {
+      "start": "2025-01-20",
+      "end": "2025-01-24",
+      "description": "Formation janvier 2025"
+    }
+  ],
+  "custom_holidays": []
+}

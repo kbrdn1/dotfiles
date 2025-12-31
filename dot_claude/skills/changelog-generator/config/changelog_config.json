@@ -1,0 +1,31 @@
+{
+  "branches": {
+    "default_base": "main",
+    "default_compare": "dev"
+  },
+  "output": {
+    "dir": "./changelogs",
+    "client_subdir": "client"
+  },
+  "metadata": {
+    "include_prs": true,
+    "include_issues": true,
+    "include_contributors": true,
+    "include_metrics": {
+      "working_days": true,
+      "efficiency": true,
+      "loc_changes": false
+    }
+  },
+  "consolidation": {
+    "enabled": true,
+    "time_threshold_days": 3,
+    "scope_matching": true
+  },
+  "github": {
+    "enabled": true,
+    "token_env_var": "GITHUB_TOKEN",
+    "organization": "FlippadTeam",
+    "repository": "fiches-pedagogiques-api-rest"
+  }
+}

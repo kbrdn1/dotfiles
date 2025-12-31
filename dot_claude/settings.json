@@ -1,0 +1,150 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__serena__find_symbol",
+      "Bash(go build:*)",
+      "mcp__serena__list_dir",
+      "Bash(./lazycurl)",
+      "Bash(git checkout:*)",
+      "Bash(git fetch:*)",
+      "Bash(bash:*)",
+      "Bash(.specify/scripts/bash/check-prerequisites.sh:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(go test:*)",
+      "WebFetch(domain:pkg.go.dev)",
+      "WebSearch",
+      "Bash(make build:*)",
+      "Bash(make test:*)",
+      "Bash(xargs cat:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\n🎉 chore: initial project setup\n\n- Initialize Go module with Bubble Tea dependencies\n- Add Makefile with build, test, and dev commands\n- Configure .gitignore for Go project and LazyCurl specifics\nEOF\n)\")",
+      "Bash(git commit:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(git reset:*)",
+      "Bash(git restore:*)",
+      "mcp__serena__get_symbols_overview",
+      "Bash(cat:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(gh label list:*)",
+      "Bash(gh pr create:*)",
+      "Bash(xxd:*)",
+      "Bash(awk:*)",
+      "Bash(git rebase -i HEAD~4 --exec 'git log -1 --format=\"\"%B\"\" | head -n -4 > /tmp/msg.txt && if [ -s /tmp/msg.txt ]; then git commit --amend -F /tmp/msg.txt --no-edit 2>/dev/null || true; fi')",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue create:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr view:*)",
+      "Bash(git rebase:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(gh label create:*)",
+      "Bash(go install:*)",
+      "Bash(echo:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git branch:*)",
+      "SlashCommand(/speckit.specify)",
+      "Bash(ls:*)",
+      "Bash(.specify/scripts/bash/create-new-feature.sh:*)",
+      "Bash(mkdir:*)",
+      "Bash(.specify/scripts/bash/update-agent-context.sh:*)",
+      "mcp__serena__find_file",
+      "Bash(go run:*)",
+      "Bash(make fmt:*)",
+      "Bash(make lint:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh config:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh api:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(goimports:*)",
+      "Bash(misspell:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(grep:*)",
+      "Bash(true ls -d specs/[0-9]*-console-tab)",
+      "Bash(set +e)",
+      "Bash(find:*)",
+      "Bash(.specify/scripts/bash/setup-plan.sh:*)",
+      "mcp__serena__activate_project",
+      "Bash(go get:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go vet:*)",
+      "Bash(xargs -I {} sh -c 'echo \"\"\"\"=== {} ===\"\"\"\" && cat \"\"\"\"{}\"\"\"\" | head -50')",
+      "Bash(gosec:*)",
+      "Bash(go version:*)",
+      "Bash(make test-coverage:*)",
+      "Bash(go tool cover:*)",
+      "Bash(gofmt:*)",
+      "Bash(pre-commit install:*)",
+      "Bash(pip install:*)",
+      "Bash(brew install:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(git rm:*)",
+      "WebFetch(domain:learning.postman.com)"
+    ],
+    "deny": [],
+    "ask": [],
+    "defaultMode": "acceptEdits"
+  },
+  "model": "opus",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /Users/kbrdn1/.claude/scripts/validate-command.js"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/finish.mp3"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/need-human.mp3"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bunx -y ccstatusline@latest",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "git-workflow@claude-code-templates": true,
+    "testing-suite@claude-code-templates": true,
+    "security-pro@claude-code-templates": true,
+    "ai-ml-toolkit@claude-code-templates": true,
+    "devops-automation@claude-code-templates": true,
+    "documentation-generator@claude-code-templates": true,
+    "performance-optimizer@claude-code-templates": true,
+    "project-management-suite@claude-code-templates": true,
+    "docker-mcp-toolkit@docker": true,
+    "mgrep@Mixedbread-Grep": true,
+    "frontend-design@claude-code-plugins": true,
+    "lua-lsp@claude-plugins-official": true
+  }
+}

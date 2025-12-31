@@ -1,0 +1,142 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  
+  // Model configuration
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "small_model": "anthropic/claude-3-5-haiku-20241022",
+  
+  // Auto-update
+  "autoupdate": true,
+  
+  // Instructions from SuperClaude framework
+  "instructions": [
+    "CLAUDE.md",
+    "RULES.md",
+    "FLAGS.md",
+    "PRINCIPLES.md",
+    "BUSINESS_SYMBOLS.md",
+    "BUSINESS_PANEL_EXAMPLES.md",
+    "MODE_*.md",
+    "MCP_*.md",
+    "AGENTS.md"
+  ],
+  
+  // Custom agents from SuperClaude
+  "agent": {
+    "backend-architect": {
+      "description": "Backend architecture and API design expert",
+      "prompt": "agents/backend-architect.md"
+    },
+    "frontend-architect": {
+      "description": "Frontend architecture and UI expert",
+      "prompt": "agents/frontend-architect.md"
+    },
+    "security-engineer": {
+      "description": "Security analysis and best practices",
+      "prompt": "agents/security-engineer.md"
+    },
+    "performance-engineer": {
+      "description": "Performance optimization expert",
+      "prompt": "agents/performance-engineer.md"
+    },
+    "quality-engineer": {
+      "description": "Code quality and testing expert",
+      "prompt": "agents/quality-engineer.md"
+    },
+    "devops-architect": {
+      "description": "DevOps and infrastructure expert",
+      "prompt": "agents/devops-architect.md"
+    },
+    "refactoring-expert": {
+      "description": "Code refactoring and improvement",
+      "prompt": "agents/refactoring-expert.md"
+    },
+    "root-cause-analyst": {
+      "description": "Debug and root cause analysis",
+      "prompt": "agents/root-cause-analyst.md"
+    },
+    "requirements-analyst": {
+      "description": "Requirements elicitation and analysis",
+      "prompt": "agents/requirements-analyst.md"
+    },
+    "technical-writer": {
+      "description": "Documentation and technical writing",
+      "prompt": "agents/technical-writer.md"
+    },
+    "business-panel": {
+      "description": "Multi-perspective business analysis",
+      "prompt": "agents/business-panel-experts.md"
+    },
+    "explore-codebase": {
+      "description": "Codebase exploration and analysis",
+      "prompt": "agents/explore-codebase.md"
+    },
+    "explore-docs": {
+      "description": "Documentation exploration",
+      "prompt": "agents/explore-docs.md"
+    }
+  },
+  
+  // Custom commands
+  "command": {
+    "brainstorm": {
+      "template": "Activate brainstorming mode --brainstorm to explore: $ARGUMENTS",
+      "description": "Collaborative idea exploration"
+    },
+    "think": {
+      "template": "Deep analysis with --think: $ARGUMENTS",
+      "description": "Standard structured analysis"
+    },
+    "think-hard": {
+      "template": "Very deep analysis with --think-hard: $ARGUMENTS",
+      "description": "Deep architectural analysis"
+    },
+    "ultrathink": {
+      "template": "Maximum depth analysis with --ultrathink: $ARGUMENTS",
+      "description": "Critical system analysis"
+    },
+    "panel": {
+      "template": "Multi-expert business panel analysis of: $ARGUMENTS",
+      "description": "Business panel discussion",
+      "agent": "business-panel"
+    },
+    "security": {
+      "template": "Security analysis and audit: $ARGUMENTS",
+      "description": "Security review",
+      "agent": "security-engineer"
+    },
+    "perf": {
+      "template": "Performance analysis and optimization: $ARGUMENTS",
+      "description": "Performance optimization",
+      "agent": "performance-engineer"
+    }
+  },
+  
+  // Permissions - security validation via script
+  "permission": {
+    "bash": "ask"
+  },
+  
+  // Tools configuration
+  "tools": {
+    "write": true,
+    "edit": true,
+    "bash": true,
+    "read": true
+  },
+  
+  // MCP servers configuration placeholder
+  "mcp": {
+    // Add your MCP servers here
+    // "context7": { ... },
+    // "sequential-thinking": { ... },
+    // "magic": { ... },
+    // etc.
+  },
+  
+  // Sharing configuration
+  "share": "manual",
+  
+  // Theme
+  "theme": "opencode"
+}

@@ -1,0 +1,27 @@
+[
+  {
+    "content": "Identify root cause of CSS not applying",
+    "status": "completed",
+    "activeForm": "Identifying root cause of CSS not applying"
+  },
+  {
+    "content": "Perform FULL VS Code quit and restart (Cmd+Q)",
+    "status": "pending",
+    "activeForm": "Performing FULL VS Code quit and restart"
+  },
+  {
+    "content": "Verify titles are hidden after full restart",
+    "status": "pending",
+    "activeForm": "Verifying titles are hidden after full restart"
+  },
+  {
+    "content": "If still not working, check Developer Console for errors",
+    "status": "pending",
+    "activeForm": "Checking Developer Console for errors if needed"
+  },
+  {
+    "content": "Try inline CSS fallback if external file doesn't work",
+    "status": "pending",
+    "activeForm": "Trying inline CSS fallback if needed"
+  }
+]

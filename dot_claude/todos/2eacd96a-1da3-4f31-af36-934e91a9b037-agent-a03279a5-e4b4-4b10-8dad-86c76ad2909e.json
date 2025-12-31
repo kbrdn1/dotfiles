@@ -1,0 +1,27 @@
+[
+  {
+    "content": "Translate 01-database-relationships.md to French",
+    "status": "pending",
+    "activeForm": "Translating database relationships documentation"
+  },
+  {
+    "content": "Translate auth-service-database.md to French",
+    "status": "pending",
+    "activeForm": "Translating auth service database documentation"
+  },
+  {
+    "content": "Translate products-service-database.md to French",
+    "status": "pending",
+    "activeForm": "Translating products service database documentation"
+  },
+  {
+    "content": "Translate baskets-service-database.md to French",
+    "status": "pending",
+    "activeForm": "Translating baskets service database documentation"
+  },
+  {
+    "content": "Translate orders-service-database.md to French",
+    "status": "pending",
+    "activeForm": "Translating orders service database documentation"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Identify all Feature test files to review (66 files found)",
+    "status": "completed",
+    "activeForm": "Identified all Feature test files"
+  },
+  {
+    "content": "Test modified files with -M flag (26 files)",
+    "status": "completed",
+    "activeForm": "Tested - 0 timeouts, 9 passing"
+  },
+  {
+    "content": "Fix depth initialization in CRUDController",
+    "status": "completed",
+    "activeForm": "Fixed ROOT CAUSE - committed"
+  },
+  {
+    "content": "Fix AuthorTest obsolete image field",
+    "status": "completed",
+    "activeForm": "Fixed and committed"
+  },
+  {
+    "content": "Fix SanitizedHtmlTest language issues",
+    "status": "completed",
+    "activeForm": "Fixed French messages - 18/20 passing"
+  },
+  {
+    "content": "Create summary document of all fixes",
+    "status": "in_progress",
+    "activeForm": "Creating comprehensive fix summary"
+  }
+]

@@ -1,0 +1,42 @@
+{
+  "claude-code-templates": {
+    "source": {
+      "source": "git",
+      "url": "https://github.com/davila7/claude-code-templates.git"
+    },
+    "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/claude-code-templates",
+    "lastUpdated": "2025-12-16T13:25:26.371Z"
+  },
+  "docker": {
+    "source": {
+      "source": "github",
+      "repo": "docker/claude-plugins"
+    },
+    "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/docker",
+    "lastUpdated": "2025-12-16T11:48:02.965Z"
+  },
+  "Mixedbread-Grep": {
+    "source": {
+      "source": "github",
+      "repo": "mixedbread-ai/mgrep"
+    },
+    "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/Mixedbread-Grep",
+    "lastUpdated": "2025-12-16T15:00:33.215Z"
+  },
+  "claude-code-plugins": {
+    "source": {
+      "source": "github",
+      "repo": "anthropics/claude-code"
+    },
+    "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/claude-code-plugins",
+    "lastUpdated": "2025-12-17T16:01:11.315Z"
+  },
+  "claude-plugins-official": {
+    "source": {
+      "source": "github",
+      "repo": "anthropics/claude-plugins-official"
+    },
+    "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/claude-plugins-official",
+    "lastUpdated": "2025-12-31T15:43:34.064Z"
+  }
+}

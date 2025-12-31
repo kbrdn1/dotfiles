@@ -1,62 +1,99 @@
 #!/bin/bash
-source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
-source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
-source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
+source "$HOME/.config/sketchybar/settings/settings.sh"
+source "$SETTINGS_DIR/colors.sh"
+source "$SETTINGS_DIR/icons.sh"
 
-SPACE_ICONS=("1" "2" "3" "4" "5" "6" "7" "8" "9" "10" "11" "12" "13" "14" "15")
+# Configuration AeroSpace avec icônes des apps (sketchybar-app-font)
+SPACE_ICONS=(
+  "􀉉"         # 1: Calendar
+  ":postman:"   # 2: Postman
+  ":zed:"       # 3: Zed
+  ":arc:"       # 4: Arc Browser
+  "􀌤"         # 5: Slack/Discord
+  "􀢾"         # 6: TablePlus/Docker
+  ":obsidian:"  # 7: Obsidian
+  ":claude:"    # 8: Claude AI
+)
 
-# Destroy space on right click, focus space on left click.
-# New space by left clicking separator (>)
+SPACE_LABELS=(
+  "Mail"
+  "API"
+  "Code"
+  "Arc"
+  "Chat"
+  "DB"
+  "Obsidian"
+  "Claude"
+)
+
+# Couleurs thématiques par workspace
+SPACE_COLORS=(
+  "0xff4a90e2"  # Bleu Mail
+  "0xffff6b35"  # Orange Postman
+  "0xff00d084"  # Vert Code
+  "0xffb362ff"  # Violet Arc
+  "0xffe91e63"  # Rose Communication
+  "0xffffb700"  # Jaune Database
+  "0xff9b59b6"  # Mauve Obsidian
+  "0xffff9d5c"  # Orange doux Claude AI
+)
 
 sid=0
-spaces=()
 for i in "${!SPACE_ICONS[@]}"
 do
   sid=$(($i+1))
 
   space=(
-    associated_space=$sid
-    icon=${SPACE_ICONS[i]}
-    icon.padding_left=10
-    icon.padding_right=15
-    padding_left=2
-    padding_right=2
-    label.padding_right=20
-    icon.highlight_color=$MAGENTA
-    label.font="sketchybar-app-font:Regular:16.0"
-    label.background.height=26
-    label.background.drawing=on
-    label.background.color=$BACKGROUND_2
-    label.background.corner_radius=8
-    label.drawing=off
+    icon="${SPACE_ICONS[i]}"
+    icon.font="sketchybar-app-font:Regular:14.0"
+    icon.padding_left=8
+    icon.padding_right=8
+    icon.color=$ICON_COLOR
+    icon.highlight_color="${SPACE_COLORS[i]}"
+
+    label="${SPACE_LABELS[i]}"
+    label.font="$FONT:Semibold:10.0"
+    label.padding_left=8
+    label.padding_right=8
+    label.color=$LABEL_COLOR
+    label.background.height=24
+    label.background.color="${SPACE_COLORS[i]}"
+    label.background.corner_radius=7
+    label.background.y_offset=0
+    label.background.drawing=off
+    label.width=0
+    label.y_offset=0
+
+    background.color=$TRANSPARENT
+    background.corner_radius=7
+    background.height=24
+    background.drawing=off
+
+    padding_left=1
+    padding_right=1
+
     script="$PLUGIN_DIR/spaces/spaces.sh"
   )
 
-  sketchybar --add space space.$sid left    \
-             --set space.$sid "${space[@]}" \
-             --subscribe space.$sid mouse.clicked
+  sketchybar --add item space.$sid left \
+             --set space.$sid "${space[@]}" update_freq=1 \
+             --subscribe space.$sid \
+               mouse.entered \
+               mouse.exited \
+               mouse.clicked
 done
 
-spaces=(
+# Bracket englobant tous les workspaces
+spaces_bracket=(
   background.color=$BACKGROUND_1
   background.border_color=$BACKGROUND_2
   background.border_width=2
+  background.corner_radius=9
+  background.height=28
   background.drawing=on
-)
-
-separator=(
-  icon=$SEPARATOR
-  icon.font="$FONT:Heavy:16.0"
-  padding_left=15
-  padding_right=15
-  label.drawing=off
-  associated_display=active
-  click_script='yabai -m space --create && sketchybar --trigger space_change'
-  icon.color=$WHITE
+  background.padding_left=4
+  background.padding_right=4
 )
 
 sketchybar --add bracket spaces '/space\..*/' \
-           --set spaces "${spaces[@]}"        \
-                                              \
-           --add item separator left          \
-           --set separator "${separator[@]}"
+           --set spaces "${spaces_bracket[@]}"
