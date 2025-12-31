@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Remove external CSS file reference from settings.json",
+    "status": "completed",
+    "activeForm": "Removing external CSS file reference from settings.json"
+  },
+  {
+    "content": "Add inline CSS styles directly in settings.json",
+    "status": "completed",
+    "activeForm": "Adding inline CSS styles directly in settings.json"
+  },
+  {
+    "content": "Full restart VS Code",
+    "status": "in_progress",
+    "activeForm": "Full restarting VS Code"
+  },
+  {
+    "content": "Verify titles are hidden",
+    "status": "pending",
+    "activeForm": "Verifying titles are hidden"
+  }
+]

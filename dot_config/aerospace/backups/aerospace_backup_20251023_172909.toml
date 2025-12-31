@@ -1,0 +1,536 @@
+# ╭─────────────────────────────────────────────────────────────╮
+# │                    AeroSpace Configuration                  │
+# │              Configuration Workflow Développeur             │
+# │                   Alt Droite Exclusif                       │
+# ╰─────────────────────────────────────────────────────────────╯
+
+# Place ce fichier dans ~/.config/aerospace/aerospace.toml
+# Configuration optimisée pour workflow de développement avec 6 workspaces spécialisés
+
+# ═══════════════════════════════════════════════════════════════
+# PARAMÈTRES GÉNÉRAUX
+# ═══════════════════════════════════════════════════════════════
+
+# Démarrer AeroSpace au login
+start-at-login = true
+
+# Normalisation des containers (recommandé)
+enable-normalization-flatten-containers = true
+enable-normalization-opposite-orientation-for-nested-containers = true
+
+# Padding pour layout accordion (cascade)
+accordion-padding = 25
+
+# Layout par défaut : tiles pour les splits
+default-root-container-layout = 'tiles'
+
+# Orientation automatique selon la forme du monitor
+default-root-container-orientation = 'auto'
+
+# Réactiver automatiquement les apps cachées par cmd-h
+automatically-unhide-macos-hidden-apps = true
+
+# ═══════════════════════════════════════════════════════════════
+# CALLBACKS ET INTÉGRATIONS
+# ═══════════════════════════════════════════════════════════════
+
+# Souris suit le focus entre moniteurs
+on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
+
+# Intégration Sketchybar - notification changements workspace
+exec-on-workspace-change = [
+    '/bin/bash', '-c',
+    'sketchybar --trigger aerospace_workspace_change'
+]
+
+# Commandes après démarrage
+after-startup-command = [
+    # Optionnel: lancer des apps au démarrage
+    # 'exec-and-forget open -a "Arc"',
+    # 'exec-and-forget open -a "Mail"'
+]
+
+# ═══════════════════════════════════════════════════════════════
+# CONFIGURATION CLAVIER
+# ═══════════════════════════════════════════════════════════════
+
+[key-mapping]
+preset = 'qwerty'
+
+# IMPORTANT: Configuration AZERTY avec Alt droite EXCLUSIF
+# 
+# AeroSpace ne supporte que qwerty/dvorak/colemak (pas azerty natif)
+# Sur AZERTY, Alt gauche (AltGr) est ESSENTIEL pour : { } [ ] @ # | \ etc.
+# Il faut garder Alt gauche pour le code mais désactiver UNIQUEMENT pour AeroSpace !
+#
+# SOLUTION KARABINER-ELEMENTS (obligatoire pour AZERTY) :
+# 1. Installer: brew install --cask karabiner-elements
+# 2. Importer le fichier: ~/.config/karabiner/aerospace-azerty.json
+# 3. Activer les règles dans Karabiner-Elements > Complex Modifications
+# 4. Cela bloque Alt gauche UNIQUEMENT pour les raccourcis AeroSpace
+# 5. Alt gauche reste fonctionnel pour tous les caractères spéciaux AZERTY
+#
+# Résultat: Alt DROITE = AeroSpace, Alt GAUCHE = caractères spéciaux
+
+# ═══════════════════════════════════════════════════════════════
+# ESPACES ENTRE FENÊTRES
+# ═══════════════════════════════════════════════════════════════
+
+[gaps]
+inner.horizontal = 8
+inner.vertical = 8
+outer.left = 8
+outer.bottom = 8
+outer.top = 8
+outer.right = 8
+
+# ═══════════════════════════════════════════════════════════════
+# RACCOURCIS PRINCIPAUX
+# ═══════════════════════════════════════════════════════════════
+
+[mode.main.binding]
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                    NAVIGATION WORKSPACES                    │
+# └─────────────────────────────────────────────────────────────┘
+
+# Workspaces optimisés AZERTY (préserve { } [ ] | \ @ ` pour le code)
+alt-1 = 'workspace 1'    # Mail/Calendar
+alt-2 = 'workspace 2'    # Postman  
+alt-3 = 'workspace 3'    # Code Editors
+alt-q = 'workspace 4'    # Arc Browser (Q proche de A=Arc)
+alt-w = 'workspace 5'    # Communication/Web (W=Web)
+alt-e = 'workspace 6'    # Database/Docker (E=Environment)
+
+# Navigation rapide
+alt-tab = 'workspace-back-and-forth'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                   DÉPLACER VERS WORKSPACES                  │
+# └─────────────────────────────────────────────────────────────┘
+
+# Déplacer fenêtre active vers workspace
+alt-shift-1 = 'move-node-to-workspace 1'
+alt-shift-2 = 'move-node-to-workspace 2'
+alt-shift-3 = 'move-node-to-workspace 3'
+alt-shift-q = 'move-node-to-workspace 4'
+alt-shift-w = 'move-node-to-workspace 5'
+alt-shift-e = 'move-node-to-workspace 6'
+
+# Déplacer ET suivre
+alt-ctrl-shift-1 = ['move-node-to-workspace 1', 'workspace 1']
+alt-ctrl-shift-2 = ['move-node-to-workspace 2', 'workspace 2']
+alt-ctrl-shift-3 = ['move-node-to-workspace 3', 'workspace 3']
+alt-ctrl-shift-q = ['move-node-to-workspace 4', 'workspace 4']
+alt-ctrl-shift-w = ['move-node-to-workspace 5', 'workspace 5']
+alt-ctrl-shift-e = ['move-node-to-workspace 6', 'workspace 6']
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                      FOCUS FENÊTRES                         │
+# └─────────────────────────────────────────────────────────────┘
+
+# Navigation vim-style
+alt-h = 'focus left'
+alt-j = 'focus down'
+alt-k = 'focus up'
+alt-l = 'focus right'
+
+# Navigation flèches
+alt-left = 'focus left'
+alt-down = 'focus down'
+alt-up = 'focus up'
+alt-right = 'focus right'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                    DÉPLACER FENÊTRES                        │
+# └─────────────────────────────────────────────────────────────┘
+
+# Déplacer fenêtres vim-style
+alt-shift-h = 'move left'
+alt-shift-j = 'move down'
+alt-shift-k = 'move up'
+alt-shift-l = 'move right'
+
+# Déplacer fenêtres avec flèches
+alt-shift-left = 'move left'
+alt-shift-down = 'move down'
+alt-shift-up = 'move up'
+alt-shift-right = 'move right'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                       LAYOUTS                               │
+# └─────────────────────────────────────────────────────────────┘
+
+# Basculer entre tiles et accordion (cascade)
+alt-slash = 'layout tiles horizontal vertical'
+alt-comma = 'layout accordion horizontal vertical'
+
+# Toggle floating
+alt-shift-space = 'layout floating tiling'
+
+# Fullscreen toggle
+alt-f = 'fullscreen'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                      REDIMENSIONNER                         │
+# └─────────────────────────────────────────────────────────────┘
+
+# Redimensionner intelligemment
+alt-minus = 'resize smart -50'
+alt-equal = 'resize smart +50'
+
+# Mode resize dédié
+alt-r = 'mode resize'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                       UTILITAIRES                           │
+# └─────────────────────────────────────────────────────────────┘
+
+# Mode service pour actions avancées
+alt-shift-semicolon = 'mode service'
+
+# Reload config
+alt-shift-r = 'reload-config'
+
+# Fermer fenêtre
+alt-shift-x = 'close'
+
+# Balance automatique
+alt-shift-equal = 'balance-sizes'
+
+# Ouvrir terminal (Ghostty)
+alt-enter = '''exec-and-forget osascript -e '
+tell application "Ghostty"
+    activate
+end tell'
+'''
+
+# ═══════════════════════════════════════════════════════════════
+# MODE SERVICE (Actions Avancées)
+# ═══════════════════════════════════════════════════════════════
+
+[mode.service.binding]
+# Sortir du mode service
+esc = ['reload-config', 'mode main']
+
+# Reset layout
+r = ['flatten-workspace-tree', 'mode main']
+
+# Toggle floating/tiling
+f = ['layout floating tiling', 'mode main']
+
+# Fermer toutes les autres fenêtres
+backspace = ['close-all-windows-but-current', 'mode main']
+
+# Layouts spécialisés
+h = ['layout tiles horizontal', 'mode main']    # Horizontal split
+v = ['layout tiles vertical', 'mode main']      # Vertical split
+s = ['layout accordion vertical', 'mode main']  # Stack (cascade vertical)
+w = ['layout accordion horizontal', 'mode main'] # Wide tabs (cascade horizontal)
+t = ['layout tiles', 'mode main']               # Tiles auto
+
+# Join containers
+alt-shift-h = ['join-with left', 'mode main']
+alt-shift-j = ['join-with down', 'mode main']
+alt-shift-k = ['join-with up', 'mode main']
+alt-shift-l = ['join-with right', 'mode main']
+
+# Contrôle volume (bonus)
+down = 'volume down'
+up = 'volume up'
+shift-down = ['volume set 0', 'mode main']
+
+# ═══════════════════════════════════════════════════════════════
+# MODE RESIZE
+# ═══════════════════════════════════════════════════════════════
+
+[mode.resize.binding]
+# Navigation pour resize
+h = 'resize width -50'
+j = 'resize height +50'
+k = 'resize height -50'
+l = 'resize width +50'
+
+# Resize plus fin
+shift-h = 'resize width -10'
+shift-j = 'resize height +10'
+shift-k = 'resize height -10'
+shift-l = 'resize width +10'
+
+# Smart resize
+minus = 'resize smart -50'
+equal = 'resize smart +50'
+shift-minus = 'resize smart -10'
+shift-equal = 'resize smart +10'
+
+# Sortir du mode resize
+enter = 'mode main'
+esc = 'mode main'
+
+# ═══════════════════════════════════════════════════════════════
+# RÈGLES AUTOMATIQUES PAR APPLICATION
+# ═══════════════════════════════════════════════════════════════
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                    WORKSPACE 1: COMMUNICATION               │
+# │                   (Mail, Calendar + Arc flottant)           │
+# └─────────────────────────────────────────────────────────────┘
+
+[[on-window-detected]]
+if.app-id = 'com.apple.mail'
+run = 'move-node-to-workspace 1'
+
+[[on-window-detected]]
+if.app-id = 'com.microsoft.Outlook'
+run = 'move-node-to-workspace 1'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.iCal'
+run = 'move-node-to-workspace 1'
+
+[[on-window-detected]]
+if.app-id = 'com.microsoft.Calendar'
+run = 'move-node-to-workspace 1'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                    WORKSPACE 2: API & TESTS                 │
+# │                     (Postman + Arc flottant)                │
+# └─────────────────────────────────────────────────────────────┘
+
+[[on-window-detected]]
+if.app-id = 'com.postmanlabs.mac'
+run = 'move-node-to-workspace 2'
+
+[[on-window-detected]]
+if.app-id = 'com.getinsomnia.app'
+run = 'move-node-to-workspace 2'
+
+[[on-window-detected]]
+if.app-id = 'rest.insomnia.Insomnia'
+run = 'move-node-to-workspace 2'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                 WORKSPACE 3: DÉVELOPPEMENT                  │
+# │              (Zed, VSCode, IDEs + Arc flottant)             │
+# └─────────────────────────────────────────────────────────────┘
+
+[[on-window-detected]]
+if.app-id = 'dev.zed.Zed'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.microsoft.VSCode'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.jetbrains.intellij'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.jetbrains.WebStorm'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.jetbrains.PhpStorm'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.dt.Xcode'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.sublimetext.4'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.panic.Nova'
+run = 'move-node-to-workspace 3'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                 WORKSPACE 4: NAVIGATION WEB                 │
+# │                    (Arc principal + flottant)               │
+# └─────────────────────────────────────────────────────────────┘
+
+[[on-window-detected]]
+if.app-id = 'company.thebrowser.Browser'
+run = 'move-node-to-workspace 4'
+
+# Chrome/Safari en backup sur workspace 4 si pas d'Arc
+[[on-window-detected]]
+if.app-id = 'com.google.Chrome'
+run = 'move-node-to-workspace 4'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.Safari'
+run = 'move-node-to-workspace 4'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │               WORKSPACE 5: COMMUNICATION ÉQUIPE             │
+# │              (Slack, Discord, Messages + Arc flottant)      │
+# └─────────────────────────────────────────────────────────────┘
+
+[[on-window-detected]]
+if.app-id = 'com.tinyspeck.slackmacgap'
+run = 'move-node-to-workspace 5'
+
+[[on-window-detected]]
+if.app-id = 'com.hnc.Discord'
+run = 'move-node-to-workspace 5'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.MobileSMS'
+run = 'move-node-to-workspace 5'
+
+[[on-window-detected]]
+if.app-id = 'com.microsoft.teams2'
+run = 'move-node-to-workspace 5'
+
+[[on-window-detected]]
+if.app-id = 'us.zoom.xos'
+run = 'move-node-to-workspace 5'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                WORKSPACE 6: OUTILS SERVEUR                  │
+# │              (TablePlus top, OrbStack bottom)               │
+# └─────────────────────────────────────────────────────────────┘
+
+[[on-window-detected]]
+if.app-id = 'com.tinyapp.TablePlus'
+run = 'move-node-to-workspace 6'
+
+[[on-window-detected]]
+if.app-id = 'com.docker.orbstack'
+run = 'move-node-to-workspace 6'
+
+# Alternatives base de données
+[[on-window-detected]]
+if.app-id = 'sequel-pro'
+run = 'move-node-to-workspace 6'
+
+[[on-window-detected]]
+if.app-id = 'com.sequelpro.SequelPro'
+run = 'move-node-to-workspace 6'
+
+# Docker Desktop en backup
+[[on-window-detected]]
+if.app-id = 'com.docker.docker'
+run = 'move-node-to-workspace 6'
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                    FENÊTRES FLOTTANTES                      │
+# │                  (Toujours en floating)                     │
+# └─────────────────────────────────────────────────────────────┘
+
+# Applications système
+[[on-window-detected]]
+if.app-id = 'com.apple.systempreferences'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.SystemPreferences'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.calculator'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.ActivityMonitor'
+run = 'layout floating'
+
+# Outils productivité
+[[on-window-detected]]
+if.app-id = 'com.runningwithcrayons.Alfred'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'com.raycast.macos'
+run = 'layout floating'
+
+[[on-window-detected]]
+if.app-id = 'com.1password.1password-macos'
+run = 'layout floating'
+
+# Finder (certaines fenêtres)
+[[on-window-detected]]
+if.app-id = 'com.apple.finder'
+if.window-title-regex-substring = '(Copy|Move|Info|Connect|Pref)'
+run = 'layout floating'
+
+# Arc : Fenêtres flottantes possibles sur tous les workspaces
+# (Les fenêtres Arc normales vont sur workspace 4, mais elles peuvent être
+# mises en flottant manuellement avec alt-shift-space sur n'importe quel workspace)
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                 CONFIGURATION SPÉCIALISÉE                   │
+# └─────────────────────────────────────────────────────────────┘
+
+# Terminaux : workspace 3 avec développement par défaut
+[[on-window-detected]]
+if.app-id = 'com.mitchellh.ghostty'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.googlecode.iterm2'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.Terminal'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'org.alacritty'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.github.wez.wezterm'
+run = 'move-node-to-workspace 3'
+
+# Fenêtres spéciales Arc (Picture in Picture, etc.)
+[[on-window-detected]]
+if.app-id = 'company.thebrowser.Browser'
+if.window-title-regex-substring = '(Picture|PiP|Mini|Float)'
+run = 'layout floating'
+
+# ═══════════════════════════════════════════════════════════════
+# NOTES D'UTILISATION
+# ═══════════════════════════════════════════════════════════════
+
+# WORKSPACE 1 (Mail/Calendar) : Layout tiles vertical par défaut
+#   - Mail en haut, Calendar en bas (ou côte à côte)
+#   - Arc peut être mis en flottant avec alt-shift-space
+
+# WORKSPACE 2 (Postman) : Layout tiles vertical par défaut  
+#   - Postman principal, possibilité de split si besoin
+#   - Arc peut être mis en flottant avec alt-shift-space
+
+# WORKSPACE 3 (Code) : Layout accordion (cascade) recommandé
+#   - Utilisez alt-comma pour passer en mode cascade
+#   - Perfect pour basculer entre plusieurs éditeurs
+#   - Arc peut être mis en flottant avec alt-shift-space
+
+# Workspace 4 (Arc) : Layout accordion (cascade) recommandé
+#   - Alt-comma pour mode cascade entre onglets/fenêtres
+#   - Alt-shift-space pour mettre certaines fenêtres en flottant
+
+# Workspace 5 (Communication) : Layout tiles vertical par défaut
+#   - Slack à gauche, Discord à droite (ou arrangés verticalement)
+#   - Arc peut être mis en flottant avec alt-shift-space
+
+# Workspace 6 (Database/Docker) : Layout automatiquement en split horizontal
+#   - TablePlus en haut, OrbStack en bas
+#   - Parfait pour monitoring base + containers
+
+# RACCOURCIS IMPORTANTS (Alt DROITE optimisé AZERTY) :
+#   alt-1,2,3,Q,W,E : Navigation workspaces (préserve caractères code)
+#   alt-slash : tiles (splits)
+#   alt-comma : accordion (cascade)  
+#   alt-shift-space : toggle floating
+#   alt-f : fullscreen
+#   alt-tab : workspace précédent  
+#   alt-shift-semicolon : mode service (actions avancées)
+#   alt-enter : ouvrir Ghostty
+#
+# AZERTY PRÉSERVÉ pour le code : Alt gauche + 4,5,6,7,8,0 = { } [ ] | \ @ `
+# 1=Mail, 2=Postman, 3=Code, Q=Arc, W=Communication, E=Database
+# Compromis optimal : 1,2,3,9 perdus mais caractères critiques préservés!

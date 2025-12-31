@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Commit performance fixes for search and recently-consulted",
+    "status": "completed",
+    "activeForm": "Committing performance fixes"
+  },
+  {
+    "content": "Deploy to pre-production",
+    "status": "in_progress",
+    "activeForm": "Deploying to pre-production"
+  },
+  {
+    "content": "Test endpoints on pre-prod after deployment",
+    "status": "pending",
+    "activeForm": "Testing endpoints on pre-prod"
+  },
+  {
+    "content": "Warm media cache on pre-prod",
+    "status": "pending",
+    "activeForm": "Warming media cache on pre-prod"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "content": "Add proper debug logging to PermissionsHelper",
+    "status": "completed",
+    "activeForm": "Adding proper debug logging to PermissionsHelper"
+  },
+  {
+    "content": "Test signin endpoint and check logs",
+    "status": "in_progress",
+    "activeForm": "Testing signin endpoint and checking logs"
+  },
+  {
+    "content": "Identify and fix root cause of empty permissions",
+    "status": "pending",
+    "activeForm": "Identifying and fixing root cause of empty permissions"
+  }
+]

@@ -40,3 +40,6 @@
 # Project conversation histories are machine-specific and very large
 .claude/projects/**/*.jsonl
 .claude/projects/**/
+dot_claude/plugins/marketplaces/
+dot_claude/plugins/marketplaces/
+dot_claude/plugins/cache/

@@ -1,0 +1,37 @@
+[
+  {
+    "content": "Fix SchoolInvitationClientTest by adding required seeders",
+    "status": "completed",
+    "activeForm": "Fixing SchoolInvitationClientTest by adding required seeders"
+  },
+  {
+    "content": "Test SchoolInvitationClientTest to verify all fixes work",
+    "status": "completed",
+    "activeForm": "Testing SchoolInvitationClientTest to verify all fixes work"
+  },
+  {
+    "content": "Identify all other Feature tests using School::factory() that might need similar fixes",
+    "status": "completed",
+    "activeForm": "Identifying all other Feature tests using School::factory()"
+  },
+  {
+    "content": "Fix SchoolManagementClientTest (RoleDoesNotExist - same issue as SchoolInvitationClientTest)",
+    "status": "pending",
+    "activeForm": "Fixing SchoolManagementClientTest"
+  },
+  {
+    "content": "Fix Stripe/SchoolMandateWebhookTest (missing seeders)",
+    "status": "pending",
+    "activeForm": "Fixing Stripe/SchoolMandateWebhookTest"
+  },
+  {
+    "content": "Fix SchoolMandateWorkflowTest (missing seeders)",
+    "status": "pending",
+    "activeForm": "Fixing SchoolMandateWorkflowTest"
+  },
+  {
+    "content": "Investigate and fix remaining tests with BindingResolutionException and OverflowException",
+    "status": "pending",
+    "activeForm": "Investigating and fixing remaining tests"
+  }
+]

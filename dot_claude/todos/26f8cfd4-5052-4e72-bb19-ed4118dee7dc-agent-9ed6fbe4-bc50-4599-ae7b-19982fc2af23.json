@@ -1,0 +1,57 @@
+[
+  {
+    "content": "Analyser tous les tests échoués et leurs causes d'échec",
+    "status": "completed",
+    "activeForm": "Analyzing all failed tests and their failure causes"
+  },
+  {
+    "content": "Corriger les imports manquants dans les tests (ModulesEnum, SocialMediaUsername)",
+    "status": "completed",
+    "activeForm": "Fixing missing imports in tests"
+  },
+  {
+    "content": "Ajouter les seeders requis dans les méthodes setUp() des tests",
+    "status": "completed",
+    "activeForm": "Adding required seeders in test setUp() methods"
+  },
+  {
+    "content": "Corriger les attributs invalides dans les tests (product_id, type_name, is_active)",
+    "status": "completed",
+    "activeForm": "Fixing invalid attributes in tests"
+  },
+  {
+    "content": "Corriger SocialMediaUsernameResource (->value pour relations OneTo)",
+    "status": "completed",
+    "activeForm": "Fixed SocialMediaUsernameResource to use ->value for OneTo relations"
+  },
+  {
+    "content": "Corriger RelationStrategyContext pour passer depth à strategy",
+    "status": "completed",
+    "activeForm": "Fixed RelationStrategyContext to pass depth to strategy"
+  },
+  {
+    "content": "Corriger Resource.php pour passer previous exception",
+    "status": "completed",
+    "activeForm": "Fixed Resource.php to pass previous exception"
+  },
+  {
+    "content": "Corriger ShopResource pour éviter référence circulaire (currentDepth === 0)",
+    "status": "completed",
+    "activeForm": "Fixed ShopResource to prevent circular reference using currentDepth === 0"
+  },
+  {
+    "content": "Corriger RelationStrategy.php pour passer previous exception",
+    "status": "completed",
+    "activeForm": "Fixed RelationStrategy.php to pass previous exception"
+  },
+  {
+    "content": "Corriger SocialMedia relation naming (usernames → socialMediaUsernames)",
+    "status": "completed",
+    "activeForm": "Fixed SocialMedia relation naming from usernames to socialMediaUsernames"
+  },
+  {
+    "content": "Investiguer l'exception réelle causant l'échec du test",
+    "status": "in_progress",
+    "activeForm": "Investigating the actual exception causing test failure"
+  }
+]

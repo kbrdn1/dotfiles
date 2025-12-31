@@ -1,0 +1,17 @@
+[
+  {
+    "content": "Move user/extensions/settings icons to titlebar top-right",
+    "status": "completed",
+    "activeForm": "Moving user/extensions/settings icons to titlebar top-right"
+  },
+  {
+    "content": "Add colored Vim mode badges in statusbar",
+    "status": "completed",
+    "activeForm": "Adding colored Vim mode badges in statusbar"
+  },
+  {
+    "content": "Full restart VS Code to apply new changes",
+    "status": "in_progress",
+    "activeForm": "Full restarting VS Code to apply new changes"
+  }
+]

@@ -1,0 +1,27 @@
+[
+  {
+    "content": "Commit performance fixes for search and recently-consulted",
+    "status": "completed",
+    "activeForm": "Committing performance fixes"
+  },
+  {
+    "content": "Deploy to pre-production",
+    "status": "completed",
+    "activeForm": "Deploying to pre-production"
+  },
+  {
+    "content": "Add files.fileType to ItemResource additional eager loads",
+    "status": "completed",
+    "activeForm": "Adding fileType eager load"
+  },
+  {
+    "content": "Re-deploy latest changes to pre-prod (commit 09207573)",
+    "status": "in_progress",
+    "activeForm": "Re-deploying to pre-prod"
+  },
+  {
+    "content": "Warm media cache on pre-prod",
+    "status": "pending",
+    "activeForm": "Warming media cache on pre-prod"
+  }
+]
