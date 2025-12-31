@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Create branch bonus/#011-docker",
+    "status": "completed",
+    "activeForm": "Creating branch bonus/#011-docker"
+  },
+  {
+    "content": "Create docker-compose.local.yml with API and Web services",
+    "status": "completed",
+    "activeForm": "Creating docker-compose.local.yml"
+  },
+  {
+    "content": "Create Dockerfile.local for API and Web",
+    "status": "completed",
+    "activeForm": "Creating Dockerfiles"
+  },
+  {
+    "content": "Update Makefile with Docker commands",
+    "status": "completed",
+    "activeForm": "Updating Makefile"
+  },
+  {
+    "content": "Test Docker setup",
+    "status": "completed",
+    "activeForm": "Testing Docker setup"
+  },
+  {
+    "content": "Commit and push",
+    "status": "in_progress",
+    "activeForm": "Committing and pushing"
+  }
+]

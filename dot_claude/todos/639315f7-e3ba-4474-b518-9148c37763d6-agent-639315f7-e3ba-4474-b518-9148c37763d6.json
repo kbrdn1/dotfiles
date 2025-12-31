@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Install and configure Custom UI Style extension",
+    "status": "completed",
+    "activeForm": "Installing and configuring Custom UI Style extension"
+  },
+  {
+    "content": "Wait for VS Code reload after Custom UI Style activation",
+    "status": "completed",
+    "activeForm": "Waiting for VS Code reload after Custom UI Style activation"
+  },
+  {
+    "content": "Open DevTools to inspect elements",
+    "status": "completed",
+    "activeForm": "Opening DevTools to inspect elements"
+  },
+  {
+    "content": "Inspect EXPLORER title to find CSS classes",
+    "status": "completed",
+    "activeForm": "Inspecting EXPLORER title to find CSS classes"
+  },
+  {
+    "content": "Update CSS with correct 2024 selectors for auxiliarybar",
+    "status": "completed",
+    "activeForm": "Updating CSS with correct 2024 selectors for auxiliarybar"
+  },
+  {
+    "content": "Reload VS Code and verify fix",
+    "status": "in_progress",
+    "activeForm": "Reloading VS Code and verifying fix"
+  }
+]

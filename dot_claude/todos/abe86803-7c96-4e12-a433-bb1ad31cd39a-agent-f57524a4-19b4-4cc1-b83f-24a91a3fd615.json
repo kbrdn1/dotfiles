@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Translate deliveries-service-database.md to French",
+    "status": "completed",
+    "activeForm": "Translating deliveries-service-database.md to French"
+  },
+  {
+    "content": "Translate newsletters-service-database.md to French",
+    "status": "in_progress",
+    "activeForm": "Translating newsletters-service-database.md to French"
+  },
+  {
+    "content": "Translate sav-service-database.md to French",
+    "status": "pending",
+    "activeForm": "Translating sav-service-database.md to French"
+  },
+  {
+    "content": "Translate contacts-service-database.md to French",
+    "status": "pending",
+    "activeForm": "Translating contacts-service-database.md to French"
+  },
+  {
+    "content": "Translate questions-service-database.md to French",
+    "status": "pending",
+    "activeForm": "Translating questions-service-database.md to French"
+  },
+  {
+    "content": "Translate websites-service-database.md to French",
+    "status": "pending",
+    "activeForm": "Translating websites-service-database.md to French"
+  }
+]

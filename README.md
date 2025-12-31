@@ -7,6 +7,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 ## Table of Contents 📚
 
 - [Stack Overview 📦](#stack-overview-)
+- [Sketchybar Themes 🎨](#sketchybar-themes-)
 - [Package Management 🛠️](#package-management-)
 - [CLI Tools 💻](#cli-tools-)
 - [GUI Applications 🖥️](#gui-applications-)
@@ -28,7 +29,25 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | **Shell** | Zsh + Oh-My-Zsh | Interactive shell with plugins |
 | **Theme** | Powerlevel10k | Shell prompt theme |
 | **Window Manager** | AeroSpace | Tiling window manager (no SIP required) |
-| **Menu Bar** | Sketchybar | Custom menu bar replacement |
+| **Menu Bar** | Sketchybar | Custom menu bar with 6 themes |
+
+## Sketchybar Themes 🎨
+
+| Theme | Style | Accent Color | Description |
+|-------|-------|--------------|-------------|
+| **Claude Dark** ⭐ | Dark | `#D4825D` (copper) | Warm, elegant theme (default) |
+| **Claude Light** | Light | `#C15F3C` (copper) | Light version for bright environments |
+| **Blueberry Dark** | Dark | `#27E8A7` (mint) | Fresh blue/violet palette |
+| **Catppuccin** | Dark | Pastel | Modern pastel theme |
+| **Tokyo Night** | Dark | Blue | Popular VS Code theme port |
+| **Nord** | Dark | Cyan | Arctic, bluish color palette |
+
+### Theme Commands
+
+| Command | Description |
+|---------|-------------|
+| `~/.config/sketchybar/change_theme.sh <theme>` | Change to specified theme |
+| `~/.config/sketchybar/preview_theme.sh` | Preview all available themes |
 
 ## Package Management 🛠️
 
@@ -296,7 +315,8 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 ### Tmux Keybindings 🖥️
 
-> **Prefix**: <kbd>⌃</kbd> + <kbd>S</kbd> (replaces default <kbd>⌃</kbd> + <kbd>B</kbd>)
+> **Prefix**: <kbd>⌃</kbd> + <kbd>A</kbd> (replaces default <kbd>⌃</kbd> + <kbd>B</kbd>)
+> **Theme**: Claude Dark with copper accent (`#D4825D`)
 
 #### Session Management
 
@@ -310,10 +330,10 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 | Shortcut | Action |
 |----------|--------|
-| <kbd>prefix</kbd> + <kbd>C</kbd> | Create new window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>H</kbd> | Previous window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>L</kbd> | Next window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>X</kbd> | Close window |
+| <kbd>prefix</kbd> + <kbd>C</kbd> | Create new window (in current path) |
+| <kbd>prefix</kbd> + <kbd>B</kbd> | Previous window |
+| <kbd>prefix</kbd> + <kbd>N</kbd> | Next window |
+| <kbd>prefix</kbd> + <kbd>X</kbd> | Close window |
 
 #### Pane Management
 
@@ -324,8 +344,8 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | <kbd>prefix</kbd> + <kbd>K</kbd> | Focus up pane |
 | <kbd>prefix</kbd> + <kbd>L</kbd> | Focus right pane |
 | <kbd>prefix</kbd> + <kbd>X</kbd> | Close pane |
-| <kbd>prefix</kbd> + <kbd>-</kbd> | Split horizontally |
-| <kbd>prefix</kbd> + <kbd>_</kbd> | Split vertically |
+| <kbd>prefix</kbd> + <kbd>V</kbd> | Split horizontally (in current path) |
+| <kbd>prefix</kbd> + <kbd>S</kbd> | Split vertically (in current path) |
 
 #### Plugins
 
@@ -334,7 +354,9 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | tmux-sessionx | <kbd>prefix</kbd> + <kbd>O</kbd> | Session manager |
 | tmux-which-key | <kbd>prefix</kbd> + <kbd>Space</kbd> | Keybinding helper |
 | vim-tmux-navigator | <kbd>⌃</kbd> + <kbd>h/j/k/l</kbd> | Seamless vim/tmux navigation |
-| catppuccin/tmux | - | Catppuccin Macchiato theme |
+| catppuccin/tmux | - | Claude Dark theme (custom colors) |
+| tmux-cpu | - | CPU usage in status bar |
+| tmux-battery | - | Battery status (laptops) |
 
 ## Zed Configuration ⚡
 

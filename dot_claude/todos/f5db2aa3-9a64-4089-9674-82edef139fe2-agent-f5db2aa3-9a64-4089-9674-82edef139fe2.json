@@ -1,0 +1,62 @@
+[
+  {
+    "content": "Fix sections.go - add abbreviation field to INSERT",
+    "status": "completed",
+    "activeForm": "Fixing sections.go"
+  },
+  {
+    "content": "Fix users.go - remove deleted_at, adjust column names",
+    "status": "completed",
+    "activeForm": "Fixing users.go"
+  },
+  {
+    "content": "Fix addresses.go - remove address_complement, adjust column names",
+    "status": "completed",
+    "activeForm": "Fixing addresses.go"
+  },
+  {
+    "content": "Fix schools.go - use 'school' table, adjust column names",
+    "status": "completed",
+    "activeForm": "Fixing schools.go"
+  },
+  {
+    "content": "Fix sub_school_domains.go - use 'title' instead of 'name'",
+    "status": "completed",
+    "activeForm": "Fixing sub_school_domains.go"
+  },
+  {
+    "content": "Fix items.go - remove thumbnail, adjust column mapping",
+    "status": "completed",
+    "activeForm": "Fixing items.go"
+  },
+  {
+    "content": "Fix authors.go - legacy uses first_name/last_name, new uses firstname/lastname",
+    "status": "completed",
+    "activeForm": "Fixing authors.go"
+  },
+  {
+    "content": "Fix editors.go - remove timestamps from legacy query, add published",
+    "status": "completed",
+    "activeForm": "Fixing editors.go"
+  },
+  {
+    "content": "Fix books.go - isbn_number, link_url→url, add published",
+    "status": "completed",
+    "activeForm": "Fixing books.go"
+  },
+  {
+    "content": "Fix links.go - legacy uses title→name, infer type from URL",
+    "status": "completed",
+    "activeForm": "Fixing links.go"
+  },
+  {
+    "content": "Handle skills - no legacy table exists, extract from item.skills only",
+    "status": "completed",
+    "activeForm": "Handling skills migration"
+  },
+  {
+    "content": "Build and test full migration pipeline",
+    "status": "in_progress",
+    "activeForm": "Building and testing migration"
+  }
+]

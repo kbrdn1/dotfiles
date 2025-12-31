@@ -1,0 +1,17 @@
+[
+  {
+    "content": "Corriger les définitions de couleurs dans statusline-p10k.sh",
+    "status": "completed",
+    "activeForm": "Correction des définitions de couleurs dans statusline-p10k.sh"
+  },
+  {
+    "content": "Mettre à jour test-colors.sh avec la bonne syntaxe",
+    "status": "in_progress",
+    "activeForm": "Mise à jour de test-colors.sh avec la bonne syntaxe"
+  },
+  {
+    "content": "Tester que les couleurs s'affichent correctement",
+    "status": "pending",
+    "activeForm": "Test de l'affichage correct des couleurs"
+  }
+]

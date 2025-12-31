@@ -1,0 +1,17 @@
+[
+  {
+    "content": "Fix address_id mapping for schools migration",
+    "status": "completed",
+    "activeForm": "Fixing address_id mapping for schools migration"
+  },
+  {
+    "content": "Fix NULL handling for NOT NULL fields (phone_number, email, name)",
+    "status": "completed",
+    "activeForm": "Fixing NULL handling for NOT NULL fields"
+  },
+  {
+    "content": "Test full migration after fixes",
+    "status": "pending",
+    "activeForm": "Testing full migration after fixes"
+  }
+]

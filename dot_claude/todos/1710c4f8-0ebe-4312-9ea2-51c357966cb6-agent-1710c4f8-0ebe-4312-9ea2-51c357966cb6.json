@@ -1,0 +1,42 @@
+[
+  {
+    "content": "Fix ModulesEnum import errors in exception classes",
+    "status": "in_progress",
+    "activeForm": "Fixing ModulesEnum import errors in exception classes"
+  },
+  {
+    "content": "Fix FileFactory null pointer on $fileType->extension",
+    "status": "pending",
+    "activeForm": "Fixing FileFactory null pointer on $fileType->extension"
+  },
+  {
+    "content": "Fix SchoolFactory seeding requirements",
+    "status": "pending",
+    "activeForm": "Fixing SchoolFactory seeding requirements"
+  },
+  {
+    "content": "Fix ItemFactory Theme seeding requirement",
+    "status": "pending",
+    "activeForm": "Fixing ItemFactory Theme seeding requirement"
+  },
+  {
+    "content": "Fix search route 404 errors",
+    "status": "pending",
+    "activeForm": "Fixing search route 404 errors"
+  },
+  {
+    "content": "Fix validation errors in Section and Shop tests",
+    "status": "pending",
+    "activeForm": "Fixing validation errors in Section and Shop tests"
+  },
+  {
+    "content": "Fix SocialMediaUsername import errors",
+    "status": "pending",
+    "activeForm": "Fixing SocialMediaUsername import errors"
+  },
+  {
+    "content": "Run complete test suite validation",
+    "status": "pending",
+    "activeForm": "Running complete test suite validation"
+  }
+]

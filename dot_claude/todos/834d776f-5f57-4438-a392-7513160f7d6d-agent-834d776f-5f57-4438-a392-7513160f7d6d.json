@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Sync sketchybar config to chezmoi",
+    "status": "completed",
+    "activeForm": "Syncing sketchybar config"
+  },
+  {
+    "content": "Sync aerospace config to chezmoi",
+    "status": "completed",
+    "activeForm": "Syncing aerospace config"
+  },
+  {
+    "content": "Sync zshrc to chezmoi",
+    "status": "in_progress",
+    "activeForm": "Syncing zshrc"
+  },
+  {
+    "content": "Sync tmux custom modules",
+    "status": "pending",
+    "activeForm": "Syncing tmux modules"
+  },
+  {
+    "content": "Update documentation",
+    "status": "pending",
+    "activeForm": "Updating documentation"
+  },
+  {
+    "content": "Commit all changes",
+    "status": "pending",
+    "activeForm": "Committing changes"
+  }
+]

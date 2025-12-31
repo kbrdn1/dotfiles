@@ -1,0 +1,22 @@
+[
+  {
+    "content": "Update git remote to sejora repo",
+    "status": "completed",
+    "activeForm": "Updating git remote"
+  },
+  {
+    "content": "Replace all 'slotly' references with 'sejora'",
+    "status": "in_progress",
+    "activeForm": "Replacing slotly references"
+  },
+  {
+    "content": "Update CLAUDE.md with new project name",
+    "status": "pending",
+    "activeForm": "Updating CLAUDE.md"
+  },
+  {
+    "content": "Commit and push changes",
+    "status": "pending",
+    "activeForm": "Committing and pushing changes"
+  }
+]

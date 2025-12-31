@@ -1,0 +1,27 @@
+[
+  {
+    "content": "Create batch insert infrastructure with worker pool",
+    "status": "completed",
+    "activeForm": "Creating batch insert infrastructure"
+  },
+  {
+    "content": "Optimize users.go with parallel batch inserts",
+    "status": "completed",
+    "activeForm": "Optimizing users.go"
+  },
+  {
+    "content": "Optimize addresses.go with parallel batch inserts",
+    "status": "in_progress",
+    "activeForm": "Optimizing addresses.go"
+  },
+  {
+    "content": "Optimize items.go with parallel batch inserts",
+    "status": "pending",
+    "activeForm": "Optimizing items.go"
+  },
+  {
+    "content": "Add transaction batching and index management",
+    "status": "pending",
+    "activeForm": "Adding transaction batching"
+  }
+]
