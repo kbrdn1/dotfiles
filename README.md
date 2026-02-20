@@ -14,6 +14,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 - [Aliases & Functions 🔧](#aliases--functions-)
 - [Window Manager (AeroSpace) 🪟](#window-manager-aerospace-)
 - [Shortcuts & Keybindings ⌨️](#shortcuts--keybindings-)
+- [Neovim Configuration 📝](#neovim-configuration-)
 - [Zed Configuration ⚡](#zed-configuration-)
 - [Installation 📥](#installation-)
 - [Acknowledgments 🙏](#acknowledgments-)
@@ -23,13 +24,16 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 | Layer | Tool | Purpose |
 |-------|------|---------|
-| **Package Manager** | Nix + Home Manager 24.11 | Declarative CLI tools (63 packages) |
+| **Package Manager** | Nix + Home Manager 24.11 | Declarative CLI tools (64+ packages) |
 | **GUI Apps** | Homebrew Casks | GUI applications and system tools |
 | **Dotfiles** | Chezmoi | Configuration file management |
 | **Shell** | Zsh + Oh-My-Zsh | Interactive shell with plugins |
 | **Theme** | Powerlevel10k | Shell prompt theme |
+| **Editor** | Neovim + LazyVim | Primary editor with LSP, Claude Code integration |
+| **Terminal** | Ghostty + Tmux | GPU terminal with multiplexer (Claude Dark theme) |
 | **Window Manager** | AeroSpace | Tiling window manager (no SIP required) |
 | **Menu Bar** | Sketchybar | Custom menu bar with 6 themes |
+| **File Manager** | Yazi + Superfile | Terminal file managers |
 
 ## Sketchybar Themes 🎨
 
@@ -108,9 +112,14 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | [GitHub CLI](https://cli.github.com/) | Latest | Nix | GitHub integration |
 | [Lazygit](https://github.com/jesseduffield/lazygit) | Latest | Nix | Git TUI |
 | [Lazydocker](https://github.com/jesseduffield/lazydocker) | Latest | Nix | Docker TUI |
+| [Lazysql](https://github.com/jorgerojas26/lazysql) | Latest | Nix | SQL TUI client |
 | [Redis](https://redis.io/) | 8.2.2 | Nix | In-memory database |
 | [Pandoc](https://pandoc.org/) | 3.7.0.2 | Nix | Document converter |
-| [Neovim](https://neovim.io/) | 0.11.5 | Nix | Text editor |
+| [Neovim](https://neovim.io/) | 0.11.5 | Nix | Primary editor (LazyVim) |
+| [Sesh](https://github.com/joshmedeski/sesh) | Latest | Nix | Tmux session manager |
+| [PlantUML](https://plantuml.com/) | Latest | Nix | Diagram generation |
+| [D2](https://d2lang.com/) | Latest | Nix | Modern diagram scripting |
+| [Rust Analyzer](https://rust-analyzer.github.io/) | Latest | Nix | Rust LSP server |
 
 ### Shell & Terminal
 
@@ -122,6 +131,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | [Bat](https://github.com/sharkdp/bat) | Latest | Nix | Enhanced cat |
 | [Eza](https://eza.rocks/) | Latest | Nix | Modern ls |
 | [Yazi](https://github.com/sxyazi/yazi) | Latest | Nix | File manager |
+| [Superfile](https://github.com/yorukot/superfile) | Latest | Homebrew | File manager TUI |
 | [Tmux](https://github.com/tmux/tmux) | Latest | Nix | Terminal multiplexer |
 | [Fzf](https://github.com/junegunn/fzf) | Latest | Nix | Fuzzy finder |
 | [Zoxide](https://github.com/ajeetdsouza/zoxide) | Latest | Nix | Smarter cd |
@@ -323,8 +333,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | Shortcut | Action | Description |
 |----------|--------|-------------|
 | <kbd>prefix</kbd> + <kbd>R</kbd> | `source-file ~/.tmux.conf` | Reload configuration |
-| <kbd>prefix</kbd> + <kbd>O</kbd> | Sessionx | Open session manager plugin |
-| <kbd>prefix</kbd> + <kbd>Space</kbd> | Which-key | Show available keybindings |
+| <kbd>prefix</kbd> + <kbd>T</kbd> | Sesh | Open session manager (sesh) |
 
 #### Window Management
 
@@ -351,16 +360,47 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 | Plugin | Trigger | Purpose |
 |--------|---------|---------|
-| tmux-sessionx | <kbd>prefix</kbd> + <kbd>O</kbd> | Session manager |
-| tmux-which-key | <kbd>prefix</kbd> + <kbd>Space</kbd> | Keybinding helper |
-| vim-tmux-navigator | <kbd>⌃</kbd> + <kbd>h/j/k/l</kbd> | Seamless vim/tmux navigation |
-| catppuccin/tmux | - | Claude Dark theme (custom colors) |
+| [sesh](https://github.com/joshmedeski/sesh) | <kbd>prefix</kbd> + <kbd>T</kbd> | Smart session manager |
+| [tmux.nvim](https://github.com/aserowy/tmux.nvim) | <kbd>⌃</kbd> + <kbd>h/j/k/l</kbd> | Seamless nvim/tmux navigation |
+| [fzf-url](https://github.com/wfxr/tmux-fzf-url) | <kbd>prefix</kbd> + <kbd>U</kbd> | URL picker with fzf |
+| claude-dark | - | Custom Claude Dark theme (copper accent `#D4825D`) |
 | tmux-cpu | - | CPU usage in status bar |
 | tmux-battery | - | Battery status (laptops) |
 
+## Neovim Configuration 📝
+
+Primary editor using [LazyVim](https://www.lazyvim.org/) with custom plugins and Claude Dark colorscheme.
+
+### Key Features
+
+| Feature | Plugin/Config | Description |
+|---------|--------------|-------------|
+| **Colorscheme** | `claude-dark` (custom) | Warm copper theme matching terminal setup |
+| **AI Integration** | `claude-code.nvim` | Claude Code integration in editor |
+| **Git Worktrees** | `git-worktree.nvim` | Manage git worktrees with telescope |
+| **File Manager** | `neo-tree.nvim` | File tree with icons |
+| **Docker** | `lazydocker.nvim` | Docker TUI integration |
+| **Task Runner** | `overseer.nvim` | Run Zed-compatible tasks from nvim |
+| **Tmux** | `tmux.nvim` | Seamless nvim/tmux pane navigation |
+| **PHP** | Laravel/PHP extras | PHP development support |
+| **Rust** | `rust-analyzer` + extras | Rust development support |
+| **Markdown** | `render-markdown.nvim` | Rendered markdown preview |
+| **Multi-cursor** | `vim-visual-multi` | Multiple cursor editing |
+| **Autosave** | `auto-save.nvim` | Automatic file saving |
+
+### Plugin Structure
+
+```
+~/.config/nvim/lua/
+├── config/           # Core config (keymaps, options, autocmds, lazy)
+├── plugins/          # Plugin specs (one file per plugin/group)
+├── claude-dark/      # Custom colorscheme
+└── overseer/         # Task templates (Zed tasks compat)
+```
+
 ## Zed Configuration ⚡
 
-My Zed editor configuration with custom keybindings and tasks.
+Secondary editor with custom keybindings and tasks.
 
 ### Keybindings 🎹
 
@@ -557,7 +597,7 @@ This script performs a complete installation:
 | **4. Nix Config** | `git clone https://github.com/kbrdn1/nix-config.git ~/nix-config` | Clone Nix configuration |
 | **5. Oh My Zsh** | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"` | Install Zsh framework |
 | **6. Dotfiles** | `sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply https://github.com/kbrdn1/dotfiles.git` | Apply dotfiles |
-| **7. Home Manager** | `nix run home-manager/release-24.11 -- switch --flake ~/nix-config` | Install CLI tools (62 packages) |
+| **7. Home Manager** | `nix run home-manager/release-24.11 -- switch --flake ~/nix-config` | Install CLI tools (64+ packages) |
 
 ### macOS System Configuration
 
