@@ -5,12 +5,17 @@ source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
 
 # Setting up and starting the helper process
 HELPER=git.felix.helper
-killall helper
-cd $HOME/.config/sketchybar/helper && make
-$HOME/.config/sketchybar/helper/helper $HELPER > /dev/null 2>&1 &
+killall helper 2>/dev/null
+HELPER_DIR="$HOME/.config/sketchybar/helper"
+if [ "$HELPER_DIR/helper.c" -nt "$HELPER_DIR/helper" ] || \
+   [ "$HELPER_DIR/cpu.h" -nt "$HELPER_DIR/helper" ] || \
+   [ ! -f "$HELPER_DIR/helper" ]; then
+  cd "$HELPER_DIR" && make
+fi
+"$HELPER_DIR/helper" $HELPER > /dev/null 2>&1 &
 
-# Unload the macOS on screen indicator overlay for volume change
-launchctl unload -F /System/Library/LaunchAgents/com.apple.OSDUIHelper.plist > /dev/null 2>&1 &
+# Unload the macOS on screen indicator overlay for volume change (idempotent)
+launchctl unload -F /System/Library/LaunchAgents/com.apple.OSDUIHelper.plist 2>/dev/null &
 
 # Setting up the general bar appearance of the bar
 bar=(
@@ -55,6 +60,11 @@ defaults=(
 
 sketchybar --default "${defaults[@]}"
 
+# Create custom events (once, before items subscribe to them)
+sketchybar --add event aerospace_workspace_change \
+           --add event window_focus \
+           --add event aerospace_mode_change
+
 # Left
 source "$PLUGIN_DIR/apple/item.sh"
 source "$PLUGIN_DIR/spaces/item.sh"
@@ -72,9 +82,6 @@ sketchybar --add item aerospace_separator left \
 
 source "$PLUGIN_DIR/front_app.sh"
 
-# Create AeroSpace workspace change event
-sketchybar --add event aerospace_workspace_change
-
 # Start AeroSpace mode monitor in background
 "$PLUGIN_DIR/aerospace/mode_trigger.sh" > /dev/null 2>&1 &
 
@@ -88,11 +95,10 @@ source "$PLUGIN_DIR/github/item.sh"
 source "$PLUGIN_DIR/volume/item.sh"
 source "$PLUGIN_DIR/music/item.sh"
 source "$PLUGIN_DIR/cpu.sh"
-# source "$PLUGIN_DIR/svim/item.sh"
 
 sketchybar --hotload on
 
 # Forcing all item scripts to run (never do this outside of sketchybarrc)
 sketchybar --update
 
-echo "sketchybar configuation loaded..."
+echo "sketchybar configuration loaded..."
