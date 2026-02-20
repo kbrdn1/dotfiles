@@ -1,0 +1,67 @@
+ConfigFile = '/Users/kbrdn1/.config/lazysql/config.toml'
+
+[application]
+DefaultPageSize = 300
+DisableSidebar = false
+SidebarOverlay = false
+MaxQueryHistoryPerConnection = 100
+
+[[database]]
+Name = 'FP Local'
+URL = 'mysql://sail:password@127.0.0.1:3306/laravel-fp'
+Provider = 'mysql'
+Username = ''
+Password = ''
+Hostname = ''
+Port = ''
+DBName = 'laravel-fp'
+URLParams = ''
+Commands = []
+
+[[database]]
+Name = 'RDS FP PREPROD (Restore)'
+URL = 'mysql://USER:PASSWORD@HOST:3306/fp-pre-prod'
+Provider = 'mysql'
+Username = ''
+Password = ''
+Hostname = ''
+Port = ''
+DBName = 'fp-pre-prod'
+URLParams = ''
+Commands = []
+
+[[database]]
+Name = 'FP Backup'
+URL = 'mysql://root:root@localhost:3309/backup-fp'
+Provider = 'mysql'
+Username = ''
+Password = ''
+Hostname = ''
+Port = ''
+DBName = 'backup-fp'
+URLParams = ''
+Commands = []
+
+[[database]]
+Name = 'Poduim'
+URL = 'mysql://poduim:password@localhost:3306/poduim'
+Provider = 'mysql'
+Username = ''
+Password = ''
+Hostname = ''
+Port = ''
+DBName = 'poduim'
+URLParams = ''
+Commands = []
+
+[[database]]
+Name = 'Assmat Facile PROD'
+URL = 'mysql://USER:PASSWORD@HOST:3306/primary_app_db'
+Provider = 'mysql'
+Username = ''
+Password = ''
+Hostname = ''
+Port = ''
+DBName = 'primary_app_db'
+URLParams = ''
+Commands = []
