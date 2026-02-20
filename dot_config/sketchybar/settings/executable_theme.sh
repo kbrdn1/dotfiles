@@ -298,6 +298,43 @@ load_periwinkle_ember_theme() {
   export BORDER_INACTIVE=0x776a6a7a
 }
 
+# Generate flat cache file with all color exports for fast loading
+generate_cache() {
+  local cache_file="$THEME_DIR/.theme_cache.sh"
+  cat > "$cache_file" << CACHE
+#!/bin/bash
+# Auto-generated theme cache -- do not edit manually
+# Theme: $CURRENT_THEME
+# Generated: $(date)
+export BLACK=$BLACK
+export WHITE=$WHITE
+export TRANSPARENT=$TRANSPARENT
+export RED=$RED
+export GREEN=$GREEN
+export BLUE=$BLUE
+export YELLOW=$YELLOW
+export PEACH=$PEACH
+export ORANGE=$ORANGE
+export MAGENTA=$MAGENTA
+export CYAN=$CYAN
+export GREY=$GREY
+export GREY_DARK=$GREY_DARK
+export GREY_DARKER=$GREY_DARKER
+export BAR_COLOR=$BAR_COLOR
+export ICON_COLOR=$ICON_COLOR
+export LABEL_COLOR=$LABEL_COLOR
+export BACKGROUND_1=$BACKGROUND_1
+export BACKGROUND_2=$BACKGROUND_2
+export POPUP_BACKGROUND_COLOR=$POPUP_BACKGROUND_COLOR
+export POPUP_BORDER_COLOR=$POPUP_BORDER_COLOR
+export SHADOW_COLOR=$SHADOW_COLOR
+export ACCENT_COLOR=$ACCENT_COLOR
+export HIGHLIGHT_COLOR=$HIGHLIGHT_COLOR
+export BORDER_ACTIVE=$BORDER_ACTIVE
+export BORDER_INACTIVE=$BORDER_INACTIVE
+CACHE
+}
+
 # Apply theme colors to SketchyBar and Borders
 apply_theme() {
   # Reload SketchyBar with new colors
@@ -342,6 +379,7 @@ case "${1:-load}" in
     fi
     load_theme "$2"
     save_theme_preference "$2"
+    generate_cache
     apply_theme
     echo "Theme changed to: $2"
     ;;
@@ -364,6 +402,11 @@ case "${1:-load}" in
   "current")
     load_theme_preference
     echo "$CURRENT_THEME"
+    ;;
+  "_generate_cache")
+    load_theme_preference
+    load_theme "$CURRENT_THEME"
+    generate_cache
     ;;
   *)
     echo "SketchyBar Theme Manager"
