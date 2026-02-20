@@ -1,0 +1,47 @@
+# Claude Dark Theme for Ghostty
+# Ported from Zed's Claude Dark (Pure) theme - darker variant
+# Using Pure Dark colors for better contrast
+
+# Background and foreground (Pure Dark variant)
+background = 1a1a1a
+foreground = e0e0e0
+
+# Cursor (keeping orange accent)
+cursor-color = d4825d
+cursor-text = 1a1a1a
+
+# Selection (Pure Dark)
+selection-background = 3a3a3a
+selection-foreground = e0e0e0
+
+# Normal colors (0-7) - updated for Pure Dark
+palette = 0=#3a3a3a
+palette = 1=#ff7a7a
+palette = 2=#86e89a
+palette = 3=#ffdf61
+palette = 4=#7ab8ff
+palette = 5=#c79bff
+palette = 6=#8abfb8
+palette = 7=#e0e0e0
+
+# Bright colors (8-15) - Pure Dark
+palette = 8=#999999
+palette = 9=#ff7a7a
+palette = 10=#86e89a
+palette = 11=#ffdf61
+palette = 12=#7ab8ff
+palette = 13=#c79bff
+palette = 14=#8abfb8
+palette = 15=#ffffff
+
+# Extended colors (16-255) - Pure Dark backgrounds with orange accents
+palette = 16=#e07a47
+palette = 17=#d4825d
+palette = 18=#c15f3c
+palette = 19=#f4c895
+palette = 20=#86e89a
+palette = 21=#ffdf61
+palette = 22=#ff7a7a
+palette = 23=#242424
+palette = 24=#2a2a2a
+palette = 25=#555555

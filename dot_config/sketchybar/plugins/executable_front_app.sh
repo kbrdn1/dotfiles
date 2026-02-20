@@ -48,13 +48,10 @@ aerospace_mode=(
   padding_left=8
   padding_right=0
   background.drawing=off
-  update_freq=1
   associated_display=active
 )
 
-sketchybar --add event window_focus \
-           --add event aerospace_mode_change \
-           --add item aerospace_icon left \
+sketchybar --add item aerospace_icon left \
            --set aerospace_icon "${aerospace_icon[@]}" \
            --subscribe aerospace_icon window_focus aerospace_workspace_change \
            \

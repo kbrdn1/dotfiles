@@ -8,8 +8,70 @@
 // from the command palette or from `Zed` application menu.
 {
   // Theme & Appearance
+  "redact_private_values": false,
+  "ui_font_family": "Monaspace Argon Var",
+  "agent_servers": {
+    "claude": {
+      "favorite_models": [
+        "opus"
+      ]
+    },
+    "your_agent": {
+      "type": "custom",
+      "command": "path_to_executable",
+      "args": [],
+      "env": {}
+    }
+  },
+  "git_panel": {
+    "sort_by_path": true
+  },
+  "debugger": {
+    "dock": "left"
+  },
+  "context_servers": {
+    "mcp-server-sequential-thinking": {
+      "enabled": true,
+      "settings": {}
+    },
+    "mcp-server-exa-search": {
+      "enabled": false,
+      "settings": {}
+    },
+    "prisma-mcp": {
+      "enabled": false,
+      "settings": {}
+    },
+    "github-activity-summarizer": {
+      "enabled": false,
+      "settings": {}
+    },
+    "mcp-server-context7": {
+      "enabled": false,
+      "settings": {
+        "context7_api_key": "CTX7_PERSONAL_ACCESS_TOKEN"
+      }
+    },
+    "mcp-server-github": {
+      "enabled": false,
+      "settings": {
+        "github_personal_access_token": "GITHUB_PERSONAL_ACCESS_TOKEN"
+      }
+    },
+    "browser-tools-context-server": {
+      "enabled": true,
+      "settings": {}
+    },
+    "serena-context-server": {
+      "enabled": true,
+      "settings": {
+        "python_executable": "/usr/bin/python3"
+      }
+    }
+  },
+  "current_line_highlight": "all",
   "bottom_dock_layout": "contained",
-  "theme": "Catppuccin Macchiato Darker (Blur)",
+  "theme": "Claude Dark (Pure)",
   "icon_theme": "Catppuccin Macchiato",
   "experimental.theme_overrides": {
     "background.appearance": "blurred"
@@ -18,12 +80,16 @@
   // Editor Behavior
   "vim_mode": true,
   "base_keymap": "VSCode",
+  "active_pane_modifiers": {
+    "border_size": 0.4,
+    "inactive_opacity": 0.45
+  },
   // "enable_experimental_live_diffs": true,
   "tab_size": 2,
   "minimap": {
     "show": "auto"
   },
-  "relative_line_numbers": true,
+  "relative_line_numbers": "enabled",
   "preferred_line_length": 100,
   "soft_wrap": "preferred_line_length",
   "show_whitespaces": "selection",
@@ -38,19 +104,18 @@
   },
   // Font Settings
   // "ui_font_family": "Monaspace Argon Var",
-  "ui_font_size": 13.55,
+  "ui_font_size": 12.55,
   "ui_font_features": {
     "liga": true // www
   },
-  "ui_font_weight": 300,
-
-  "buffer_font_family": "Monaspace Neon Frozen",
-  "buffer_font_size": 14,
+  "ui_font_weight": 400.0,
+  "buffer_font_family": "OperatorMono Nerd Font",
+  "buffer_font_size": 13.0,
   "buffer_font_fallbacks": ["CaskaydiaCove Nerd Font"],
   "buffer_line_height": {
     "custom": 1.4
   },
-  // "buffer_font_weight": 300,
+  "buffer_font_weight": 320,
   "buffer_font_features": {
     "liga": true, // www /// !! ;;
     "zero": true, // 0
@@ -170,10 +235,12 @@
 
   // AI Assistance
   "agent": {
+    "use_modifier_to_send": true,
+    "play_sound_when_agent_done": true,
     "dock": "left",
     "inline_assistant_model": {
-      "provider": "zed.dev",
-      "model": "claude-3-7-sonnet-thinking-latest"
+      "provider": "copilot_chat",
+      "model": "claude-haiku-4.5"
     },
     "profiles": {
       "development": {
@@ -285,11 +352,16 @@
     "default_profile": "development",
     "always_allow_tool_actions": true,
     "default_model": {
-      "provider": "zed.dev",
-      "model": "claude-3-7-sonnet-thinking-latest"
-    },
+      "provider": "copilot_chat",
+      "model": "claude-opus-4.5"
+    }
   },
   "edit_predictions": {
+    "codestral": {
+      "api_url": "https://codestral.mistral.ai",
+      "model": "codestral-latest",
+      "max_tokens": 1000
+    },
     "disabled_globs": [],
     "mode": "subtle",
     "copilot": {
@@ -453,63 +525,91 @@
       }
     },
     "JSON": {
-      "formatter": {
-        "external": {
-          "command": "prettier",
-          "arguments": ["--stdin-filepath", "{buffer_path}"]
+      "formatter": [
+        {
+          "code_action": "source.fixAll"
+        },
+        {
+          "external": {
+            "command": "prettier",
+            "arguments": [
+              "--stdin-filepath",
+              "{buffer_path}"
+            ]
+          }
         }
-      },
-      "code_actions_on_format": {
-        "source.fixAll": true
-      }
+      ]
     },
     "PHP": {
-      "language_servers": ["intelephense", "!phpactor", "..."],
       "code_actions_on_format": {
-        "source.fixAll": true,
-        "source.organizeImports": true
-      }
+        "source.organizeImports": true,
+        "source.fixAll": true
+      },
+      "language_servers": ["intelephense", "!phpactor", "..."]
     },
     "TypeScript": {
-      "formatter": {
-        "external": {
-          "command": "prettier",
-          "arguments": ["--stdin-filepath", "{buffer_path}"]
+      "formatter": [
+        {
+          "code_action": "source.organizeImports"
+        },
+        {
+          "code_action": "source.fixAll"
+        },
+        {
+          "external": {
+            "command": "prettier",
+            "arguments": [
+              "--stdin-filepath",
+              "{buffer_path}"
+            ]
+          }
         }
-      },
-      "code_actions_on_format": {
-        "source.organizeImports": true,
-        "source.fixAll": true
-      }
+      ]
     },
     "TSX": {
-      "formatter": {
-        "external": {
-          "command": "prettier",
-          "arguments": ["--stdin-filepath", "{buffer_path}"]
+      "formatter": [
+        {
+          "code_action": "source.organizeImports"
+        },
+        {
+          "code_action": "source.fixAll"
+        },
+        {
+          "external": {
+            "command": "prettier",
+            "arguments": [
+              "--stdin-filepath",
+              "{buffer_path}"
+            ]
+          }
         }
-      },
-      "code_actions_on_format": {
-        "source.organizeImports": true,
-        "source.fixAll": true
-      }
+      ]
     },
     "JavaScript": {
-      "formatter": {
-        "external": {
-          "command": "prettier",
-          "arguments": ["--stdin-filepath", "{buffer_path}"]
+      "formatter": [
+        {
+          "code_action": "source.fixAll.eslint"
+        },
+        {
+          "code_action": "source.organizeImports"
+        },
+        {
+          "external": {
+            "command": "prettier",
+            "arguments": [
+              "--stdin-filepath",
+              "{buffer_path}"
+            ]
+          }
         }
-      },
-      "code_actions_on_format": {
-        "source.fixAll.eslint": true,
-        "source.organizeImports": true
-      }
+      ]
     }
   },
 
   // Terminal Settings
   "terminal": {
+    "font_weight": 400.0,
+    "dock": "bottom",
     "copy_on_select": true,
     "detect_venv": {
       "on": {
@@ -519,7 +619,7 @@
     },
     "blinking": "on",
     // "font_family": "CaskaydiaCove Nerd Font",
-    "font_family": "Monaspace Neon Frozen",
+    "font_family": "Monaspace Krypton Frozen",
     "font_fallbacks": ["CaskaydiaCove Nerd Font"],
     "font_size": 14,
     // "font_weight": 300,

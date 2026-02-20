@@ -1,6 +1,11 @@
 # Home Manager Configuration - Complete CLI Tools
 # User: kbrdn1
 # Phase 4: CLI Tools Migration
+#
+# NOTE: Ghostty terminal configuration is NOT managed by home-manager.
+# Config location: ~/.config/ghostty/config
+# Key setting: macos-option-as-alt = false (preserves special characters)
+# Resize handled by tmux: prefix + H/J/K/L (repeatable)
 
 { config, pkgs, ... }:
 
@@ -18,10 +23,9 @@
   # Allow unfree packages (required for VS Code)
   nixpkgs.config.allowUnfree = true;
 
-  # Add npm global bin to PATH
-  home.sessionPath = [
-    "$HOME/.npm-global/bin"
-  ];
+  # NOTE: home.sessionPath doesn't work reliably with ZSH (bug #2991)
+  # PATH is set via programs.zsh.profileExtra instead
+  # home.sessionPath = [ "$HOME/.npm-global/bin" "$HOME/.cargo/bin" "$HOME/.local/bin" ];
 
   # -------------------------- Core Packages --------------------------
   home.packages = with pkgs; [
@@ -41,6 +45,7 @@
     # Search & Navigation
     fzf
     zoxide
+    sesh
 
     # Git Tools
     git
@@ -85,6 +90,11 @@
     bottom
     pandoc
 
+    # Diagram Tools (for nvim diagram.nvim)
+    plantuml
+    d2
+    gnuplot
+
     # Programming Languages & Runtimes
     nodejs_24
     bun
@@ -93,12 +103,16 @@
     go
     rustc
     cargo
+    rust-analyzer
+    clippy
+    rustfmt
     python313
     (php84.withExtensions ({ all, ... }: with all; [ pcov redis ]))
     symfony-cli
 
     # Editors
     neovim
+    chezmoi
 
     # Multimedia Tools
     ffmpeg
@@ -110,6 +124,10 @@
     wget
     httpie
     dogdns
+
+    # Music
+    rmpc
+    mpc
 
     # Cloud Tools
     awscli2
@@ -242,6 +260,22 @@
   programs.zsh = {
     enable = true;
 
+    # Fix home.sessionPath not working with ZSH (loaded too early in .zshenv)
+    # See: https://github.com/nix-community/home-manager/issues/2991
+    profileExtra = ''
+      # Tool bins
+      export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:$HOME/go/bin:$PATH"
+
+      # JetBrains Toolbox
+      export PATH="$PATH:$HOME/Library/Application Support/JetBrains/Toolbox/scripts"
+
+      # Homebrew
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+
+      # OrbStack
+      source ~/.orbstack/shell/init.zsh 2>/dev/null || :
+    '';
+
     # Oh My Zsh
     oh-my-zsh = {
       enable = true;
@@ -296,7 +330,8 @@
     # Environment variables
     envExtra = ''
       export XDG_CONFIG_HOME="$HOME/.config"
-      export EDITOR="zed"
+      export EDITOR="nvim"
+      export RUST_SRC_PATH="${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}"
       export USER_FOLDER=$(basename $HOME)
 
       # Homebrew
@@ -308,13 +343,9 @@
       export FZF_ALT_C_COMMAND="fd --type d --hidden --strip-cwd-prefix --exclude .git"
 
       # Bat
-      export BAT_THEME="Catppuccin Macchiato"
+      export BAT_THEME="Claude Dark"
 
-      # Bun
-      export PATH="$HOME/.bun/bin:$PATH"
-      
-      # Python pip global packages
-      export PATH="/Users/kbrdn1/.local/bin:$PATH"
+      # NOTE: PATH exports moved to profileExtra (fixes ZSH bug #2991)
     '';
 
     # Shell aliases
@@ -365,6 +396,9 @@
       reload-tmux = "tmux source-file ~/.tmux.conf";
       edit-tmux = "$EDITOR ~/.tmux.conf";
 
+      # Agent Deck - bypass nested tmux detection
+      ad = "TMUX=\"\" agent-deck";
+
       # Powerlevel10k
       edit-p10k = "$EDITOR ~/.p10k.zsh";
     };
@@ -408,7 +442,7 @@
       VI_MODE_CURSOR_INSERT=6
       VI_MODE_CURSOR_OPPEND=0
 
-      # FZF Configuration
+      # FZF Configuration - Claude Dark Theme
       eval "$(fzf --zsh)"
       export FZF_DEFAULT_OPTS="--style full \
         --border-label ' FZF ' --header-label ' File Type ' \
@@ -416,11 +450,15 @@
         --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' \
         --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' \
         --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' \
-        --color 'border:#494d64,label:#cad3f5' \
-        --color 'preview-border:#8aadf4,preview-label:#b7bdf8' \
-        --color 'list-border:#a6da95,list-label:#a6da95' \
-        --color 'input-border:#ed8796,input-label:#f5a9b8' \
-        --color 'header-border:#7dc4e4,header-label:#91d7e3'"
+        --color 'fg:#e0e0e0,bg:#1a1a1a,hl:#D4825D' \
+        --color 'fg+:#e0e0e0,bg+:#3a3a3a,hl+:#D4825D' \
+        --color 'info:#7AB8FF,prompt:#D4825D,pointer:#D4825D' \
+        --color 'marker:#86E89A,spinner:#C79BFF,header:#999999' \
+        --color 'border:#3a3a3a,label:#D4825D' \
+        --color 'preview-border:#D4825D,preview-label:#e0e0e0' \
+        --color 'list-border:#3a3a3a,list-label:#86E89A' \
+        --color 'input-border:#D4825D,input-label:#e0e0e0' \
+        --color 'header-border:#3a3a3a,header-label:#999999'"
       export FZF_CTRL_T_OPTS="$FZF_DEFAULT_OPTS"
       export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always {} | head -200'"
 
@@ -521,7 +559,7 @@
   programs.bat = {
     enable = true;
     config = {
-      theme = "Catppuccin-macchiato";
+      theme = "Claude Dark";
     };
   };
 
@@ -538,7 +576,7 @@
     prefix = "C-a";
     baseIndex = 1;
     escapeTime = 0;
-    historyLimit = 10000;
+    historyLimit = 5000;
     mouse = true;
     keyMode = "vi";
 
@@ -548,11 +586,18 @@
       # =============================================
       set-environment -gF TMUX_PLUGIN_MANAGER_PATH '#{HOME}/.local/share/tmux/plugins/'
 
-      if 'test ! -d "$${TMUX_PLUGIN_MANAGER_PATH}/tpm"' {
-        run 'mkdir -p "$${TMUX_PLUGIN_MANAGER_PATH}"'
-        run 'git clone https://github.com/tmux-plugins/tpm "$${TMUX_PLUGIN_MANAGER_PATH}/tpm"'
-        run '$${TMUX_PLUGIN_MANAGER_PATH}/tpm/bin/install_plugins'
+      if 'test ! -d "#{TMUX_PLUGIN_MANAGER_PATH}tpm"' {
+        run 'mkdir -p "#{TMUX_PLUGIN_MANAGER_PATH}"'
+        run 'git clone https://github.com/tmux-plugins/tpm "#{TMUX_PLUGIN_MANAGER_PATH}tpm"'
+        run '"#{TMUX_PLUGIN_MANAGER_PATH}tpm/bin/install_plugins"'
       }
+
+      # =============================================
+      # Terminal & Alt/Meta Support
+      # =============================================
+      set -g xterm-keys on
+      set -s extended-keys on
+      set -as terminal-features 'xterm*:extkeys'
 
       # =============================================
       # Keybindings (New)
@@ -566,7 +611,7 @@
       bind-key b previous-window
       bind-key n next-window
 
-      # Pane navigation with vim keys
+      # Pane navigation with vim keys (prefix)
       bind-key h select-pane -L
       bind-key j select-pane -D
       bind-key k select-pane -U
@@ -584,107 +629,97 @@
       bind-key X kill-window
 
       # =============================================
-      # Plugins
+      # tmux.nvim Integration (replaces vim-tmux-navigator)
+      # =============================================
+      is_vim="ps -o state= -o comm= -t '#{pane_tty}' | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?\\.?(view|n?vim?x?)(-wrapped)?(diff)?$'"
+      bind-key -n 'C-h' if-shell "$is_vim" 'send-keys C-h' 'select-pane -L'
+      bind-key -n 'C-j' if-shell "$is_vim" 'send-keys C-j' 'select-pane -D'
+      bind-key -n 'C-k' if-shell "$is_vim" 'send-keys C-k' 'select-pane -U'
+      bind-key -n 'C-l' if-shell "$is_vim" 'send-keys C-l' 'select-pane -R'
+
+      # Resize with prefix + Shift + h/j/k/l (repeatable)
+      bind -r H resize-pane -L 5
+      bind -r J resize-pane -D 5
+      bind -r K resize-pane -U 5
+      bind -r L resize-pane -R 5
+
+      # Copy mode (C-a V to enter, Escape/Enter to exit)
+      bind-key V copy-mode
+      bind-key -T copy-mode-vi Escape send-keys -X cancel
+      bind-key -T copy-mode-vi Enter send-keys -X copy-selection-and-cancel
+
+      # Copy-mode bindings for tmux.nvim
+      bind-key -T copy-mode-vi 'C-h' select-pane -L
+      bind-key -T copy-mode-vi 'C-j' select-pane -D
+      bind-key -T copy-mode-vi 'C-k' select-pane -U
+      bind-key -T copy-mode-vi 'C-l' select-pane -R
+
+      # =============================================
+      # Sesh - Smart Session Manager
+      # =============================================
+      set -g detach-on-destroy off  # Don't detach when destroying session
+
+      # Main sesh picker (prefix + T) - Tmux sessions only by default
+      bind-key "T" run-shell "sesh connect \"$(
+        sesh list -t --icons | fzf-tmux -p 80%,70% \
+          --no-sort --ansi --border-label ' sesh ' --prompt '🪟 ' \
+          --header ' ^a all ^t tmux ^g configs ^x zoxide ^d kill ^f find' \
+          --bind 'tab:down,btab:up' \
+          --bind 'ctrl-a:change-prompt(⚡ )+reload(sesh list --icons)' \
+          --bind 'ctrl-t:change-prompt(🪟 )+reload(sesh list -t --icons)' \
+          --bind 'ctrl-g:change-prompt(⚙️ )+reload(sesh list -c --icons)' \
+          --bind 'ctrl-x:change-prompt(📁 )+reload(sesh list -z --icons)' \
+          --bind 'ctrl-f:change-prompt(🔎 )+reload(fd -H -d 2 -t d -E .Trash . ~)' \
+          --bind 'ctrl-d:execute(tmux kill-session -t {2..})+change-prompt(🪟 )+reload(sesh list -t --icons)' \
+          --preview-window 'right:55%' \
+          --preview 'sesh preview {}'
+      )\""
+
+      # Quick switch to last session (prefix + L)
+      bind-key L run-shell "sesh last"
+
+      # =============================================
+      # Plugins (TPM managed)
       # =============================================
       set -g @plugin 'tmux-plugins/tpm'
       set -g @plugin 'tmux-plugins/tmux-yank'
       set -g @plugin 'tmux-plugins/tmux-sensible'
-      set -g @plugin 'christoomey/vim-tmux-navigator'
-      set -g @plugin 'catppuccin/tmux'
-      set -g @plugin 'tmux-plugins/tmux-online-status'
-      set -g @plugin 'joshmedeski/tmux-nerd-font-window-name'
-      set -g @plugin 'alexwforsythe/tmux-which-key'
-      set -g @plugin 'omerxx/tmux-sessionx'
       set -g @plugin 'tmux-plugins/tmux-cpu'
       set -g @plugin 'tmux-plugins/tmux-battery'
+      set -g @plugin 'wfxr/tmux-fzf-url'
 
       # =============================================
-      # Catppuccin with Claude Dark Colors Override
+      # FZF URL Configuration
       # =============================================
-      set -g @catppuccin_flavor 'macchiato'
-
-      # Override Catppuccin colors with Claude Dark palette
-      set -g @thm_bg "#1a1a1a"
-      set -g @thm_fg "#e0e0e0"
-      set -g @thm_rosewater "#D4825D"
-      set -g @thm_flamingo "#D4825D"
-      set -g @thm_pink "#C15F3C"
-      set -g @thm_mauve "#C15F3C"
-      set -g @thm_red "#c15f3c"
-      set -g @thm_maroon "#a85a45"
-      set -g @thm_peach "#D4825D"
-      set -g @thm_yellow "#e8b87a"
-      set -g @thm_green "#7cb88a"
-      set -g @thm_teal "#6ba3a3"
-      set -g @thm_sky "#6ba3a3"
-      set -g @thm_sapphire "#6b8fa3"
-      set -g @thm_blue "#6b8fa3"
-      set -g @thm_lavender "#a38f6b"
-      set -g @thm_text "#e0e0e0"
-      set -g @thm_subtext1 "#c0c0c0"
-      set -g @thm_subtext0 "#a0a0a0"
-      set -g @thm_overlay2 "#808080"
-      set -g @thm_overlay1 "#606060"
-      set -g @thm_overlay0 "#505050"
-      set -g @thm_surface2 "#404040"
-      set -g @thm_surface1 "#353535"
-      set -g @thm_surface0 "#2a2520"
-      set -g @thm_mantle "#1a1a1a"
-      set -g @thm_crust "#151515"
-
-      # Catppuccin window configuration
-      set -g @catppuccin_status_background "#{E:@thm_mantle}"
-      set -g @catppuccin_window_status_style 'rounded'
-      set -g @catppuccin_window_number_position 'right'
-      set -g @catppuccin_window_status 'no'
-      set -g @catppuccin_window_text '#W'
-      set -g @catppuccin_window_default_text '#W'
-      set -g @catppuccin_window_current_fill 'number'
-      set -g @catppuccin_window_current_text '#W'
-      set -g @catppuccin_window_current_color '#{E:@thm_peach}'
-      set -g @catppuccin_date_time_text ' %Y/%m/%d | %H:%M'
-      set -g @catppuccin_status_module_text_bg '#{E:@thm_mantle}'
-      set -g status-justify "absolute-centre"
-
-      # Source catppuccin plugin
-      run '#{TMUX_PLUGIN_MANAGER_PATH}catppuccin/catppuccin.tmux'
-
-      # Load custom modules
-      source -F '#{HOME}/tmux_custom_modules/ctp_cpu.conf'
-      source -F '#{HOME}/tmux_custom_modules/ctp_memory.conf'
+      set -g @fzf-url-bind 'u'
+      set -g @fzf-url-history-limit '10000'
+      set -g @fzf-url-fzf-options '--tmux center,80%,50% --multi --no-preview'
 
       # =============================================
-      # Status Bar
+      # Claude Dark Theme (Standalone)
       # =============================================
-      set -g status-position bottom
-      set -g status-interval 5
-      set -g status-left-length 100
-      set -g status-right-length 100
-      set -g status-right ""
-      set -g status-left '#{E:@catppuccin_status_session} '
-      set -agF status-right '#{E:@catppuccin_status_ctp_cpu}'
-      set -agF status-right '#{E:@catppuccin_status_ctp_memory}'
-      if 'test -r /sys/class/power_supply/BAT*' {
-        set -agF status-right '#{E:@catppuccin_status_battery}'
-      }
-      set -ag status-right '#{E:@catppuccin_status_date_time}'
+      run '#{HOME}/.config/tmux/plugins/claude-dark/claude-dark.tmux'
 
       # =============================================
-      # Window Settings
+      # Window Settings (managed by Claude Dark theme)
       # =============================================
-      set -g renumber-windows on
-      set -g allow-rename off
-      set -wg automatic-rename on
-      set -g automatic-rename-format "-"
+      # Note: Window naming settings are in theme.conf
 
       # =============================================
-      # Terminal Colors
+      # Terminal Colors & Graphics
       # =============================================
       set -g default-terminal "tmux-256color"
       set -ag terminal-overrides ',xterm-256color*:RGB'
 
+      # Enable Kitty graphics protocol passthrough (for image.nvim in Ghostty)
+      set -gq allow-passthrough on
+      set -g visual-activity off
+
       # Initialize TPM (must be at the end)
-      run '~/.local/share/tmux/plugins/tpm/tpm'
+      run '#{TMUX_PLUGIN_MANAGER_PATH}tpm/tpm'
+
+      # Load fzf-url explicitly (fix TPM loading)
+      run '#{TMUX_PLUGIN_MANAGER_PATH}tmux-fzf-url/fzf-url.tmux'
     '';
   };
 
@@ -834,5 +869,44 @@
         # Note: Install via VS Code marketplace as it's not in nixpkgs
       ];
     };
+  };
+
+  # MPD - Music Player Daemon
+  services.mpd = {
+    enable = true;
+    musicDirectory = "${config.home.homeDirectory}/Music";
+    playlistDirectory = "${config.home.homeDirectory}/.config/mpd/playlists";
+    dataDir = "${config.home.homeDirectory}/.config/mpd";
+    network = {
+      listenAddress = "127.0.0.1";
+      port = 6600;
+    };
+    extraConfig = ''
+      # Audio output (macOS CoreAudio)
+      audio_output {
+        type    "osx"
+        name    "CoreAudio"
+        mixer_type "software"
+      }
+
+      # Visualizer output for ncmpcpp/cava
+      audio_output {
+        type    "fifo"
+        name    "Visualizer"
+        path    "/tmp/mpd.fifo"
+        format  "44100:16:2"
+      }
+
+      # Database
+      auto_update         "yes"
+      auto_update_depth   "3"
+
+      # Playback
+      restore_paused      "yes"
+
+      # Buffer settings
+      audio_buffer_size   "4096"
+      buffer_before_play  "30%"
+    '';
   };
 }

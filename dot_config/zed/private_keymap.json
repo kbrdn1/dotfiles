@@ -13,6 +13,7 @@
     "context": "Workspace",
     "bindings": {
       "cmd-shift-t": "task::Spawn",
+      "alt-h": ["task::Spawn", { "task_name": "LazyCurl"}],
       "alt-s": ["task::Spawn", { "task_name": "LazySQL"}],
       "alt-c": ["task::Spawn", { "task_name": "Claude Code"}],
       "alt-f": ["task::Spawn", { "task_name": "Files: FZF" }],
@@ -127,6 +128,30 @@
     "context": "GitPanel",
     "bindings": {
       "alt-p": "git::Pull"
+    }
+  },
+  {
+    "context": "Editor",
+      "bindings": {
+      "ctrl-shift-k": "pane::SplitAndMoveUp"
+    }
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      "ctrl-shift-j": "pane::SplitAndMoveDown"
+    }
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      "ctrl-shift-h": "pane::SplitAndMoveLeft"
+    }
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      "ctrl-shift-l": "pane::SplitAndMoveRight"
     }
   }
 ]
