@@ -40,13 +40,13 @@ load_theme() {
   esac
 }
 
-# Claude Dark Theme (Warm, elegant)
+# Claude Dark Theme (Pure dark surfaces, warm accents)
 load_claude_dark_theme() {
-  # Base Colors
-  export BLACK=0xff2a2520
+  # Base Colors (pure dark from palette surfaces)
+  export BLACK=0xff1a1a1a
   export WHITE=0xffD4C4B8
   export TRANSPARENT=0x00000000
-  
+
   # Accent Colors
   export RED=0xffFF7A7A
   export GREEN=0xff86E89A
@@ -56,74 +56,74 @@ load_claude_dark_theme() {
   export ORANGE=0xffD4825D
   export MAGENTA=0xffC79BFF
   export CYAN=0xff8ABFB8
-  
+
   # UI Element Colors
   export GREY=0xff8a7a70
-  export GREY_DARK=0xff4a3f35
-  export GREY_DARKER=0xff5a4a40
-  
+  export GREY_DARK=0xff383838
+  export GREY_DARKER=0xff444444
+
   # General bar colors
-  export BAR_COLOR=0xcc2d2622
+  export BAR_COLOR=0xcc1a1a1a
   export ICON_COLOR=$WHITE
   export LABEL_COLOR=$WHITE
-  export BACKGROUND_1=0xcc4a3f35
-  export BACKGROUND_2=0xcc5a4a40
-  
+  export BACKGROUND_1=0xcc2a2a2a
+  export BACKGROUND_2=0xcc383838
+
   # Popup colors
-  export POPUP_BACKGROUND_COLOR=0xf02d2622
+  export POPUP_BACKGROUND_COLOR=0xf01a1a1a
   export POPUP_BORDER_COLOR=$ORANGE
-  
+
   # Effects
   export SHADOW_COLOR=$BLACK
   export ACCENT_COLOR=$ORANGE
   export HIGHLIGHT_COLOR=0x4dD4825D
-  
+
   # Borders (JankyBorders)
   export BORDER_ACTIVE=$ORANGE
-  export BORDER_INACTIVE=0x775a4a40
+  export BORDER_INACTIVE=0x77444444
 }
 
-# Claude Light Theme
+# Claude Light Theme (Warm cream surfaces, dark text, saturated accents)
 load_claude_light_theme() {
   # Base Colors
-  export BLACK=0xff2a2520
-  export WHITE=0xff342e29
+  export BLACK=0xffF5EDE5
+  export WHITE=0xff2a2520
   export TRANSPARENT=0x00000000
-  
-  # Accent Colors
-  export RED=0xffE85D5D
-  export GREEN=0xff5DC66A
-  export BLUE=0xff5D9FE8
-  export YELLOW=0xffE8C75D
-  export PEACH=0xffE8A05D
+
+  # Accent Colors (slightly deeper for contrast on light bg)
+  export RED=0xffD04040
+  export GREEN=0xff3DA653
+  export BLUE=0xff4080D0
+  export YELLOW=0xffC9A030
+  export PEACH=0xffD08040
   export ORANGE=0xffC15F3C
-  export MAGENTA=0xffA87BE8
-  export CYAN=0xff5D9F99
-  
+  export MAGENTA=0xff8B5DC0
+  export CYAN=0xff3D8A80
+
   # UI Element Colors
-  export GREY=0xff6a5a50
-  export GREY_DARK=0xffa09080
-  export GREY_DARKER=0xff8a7a70
-  
+  export GREY=0xff8a7a70
+  export GREY_DARK=0xffC4B8AC
+  export GREY_DARKER=0xffB0A498
+
   # General bar colors
   export BAR_COLOR=0xccF5EDE5
   export ICON_COLOR=$WHITE
   export LABEL_COLOR=$WHITE
   export BACKGROUND_1=0xccE8DDD0
   export BACKGROUND_2=0xccD4C4B8
-  
+
   # Popup colors
   export POPUP_BACKGROUND_COLOR=0xf0F5EDE5
   export POPUP_BORDER_COLOR=$ORANGE
-  
+
   # Effects
-  export SHADOW_COLOR=0x40000000
+  export SHADOW_COLOR=0x20000000
   export ACCENT_COLOR=$ORANGE
   export HIGHLIGHT_COLOR=0x4dC15F3C
-  
+
   # Borders (JankyBorders)
   export BORDER_ACTIVE=$ORANGE
-  export BORDER_INACTIVE=0x778a7a70
+  export BORDER_INACTIVE=0x55B0A498
 }
 
 # Blueberry Dark Theme (Cool blues/purples)
@@ -340,11 +340,12 @@ apply_theme() {
   # Reload SketchyBar with new colors
   sketchybar --bar \
     color="$BAR_COLOR" \
+    border_color="$HIGHLIGHT_COLOR" \
     shadow.color="$SHADOW_COLOR"
-  
+
   # Update all items
   sketchybar --update
-  
+
   # Update JankyBorders with new colors (live update without restart)
   if command -v borders &> /dev/null; then
     borders active_color="$BORDER_ACTIVE" inactive_color="$BORDER_INACTIVE" &> /dev/null
