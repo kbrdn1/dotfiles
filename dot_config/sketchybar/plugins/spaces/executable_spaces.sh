@@ -2,32 +2,27 @@
 
 source "$HOME/.config/sketchybar/settings/colors.sh"
 
-# Couleurs thématiques par workspace (doit correspondre à item.sh)
+# -- Claude Dark theme (Zed port style) --
+# Couleurs par workspace (meme ordre que item.sh)
 SPACE_COLORS=(
-  "0xff4a90e2"  # Bleu Mail
-  "0xffff6b35"  # Orange Postman
-  "0xff00d084"  # Vert Code
-  "0xffb362ff"  # Violet Arc
-  "0xffe91e63"  # Rose Communication
-  "0xffffb700"  # Jaune Database
-  "0xff9b59b6"  # Mauve Obsidian
-  "0xffff9d5c"  # Orange doux Claude AI
+  "$BLUE"       # 1: Home
+  "$RED"        # 2: Music
+  "$GREEN"      # 3: Zed
+  "$MAGENTA"    # 4: Helium
+  "$PEACH"      # 5: Chat
+  "$YELLOW"     # 6: DB
+  "$CYAN"       # 7: Obsidian
+  "$ORANGE"     # 8: Claude
 )
 
 update() {
-  # Get current focused workspace from AeroSpace
-  FOCUSED=$(aerospace list-workspaces --focused 2>/dev/null)
-
-  # Extract workspace number from NAME (format: space.1, space.2, etc.)
+  FOCUSED="${FOCUSED_WORKSPACE:-$(aerospace list-workspaces --focused 2>/dev/null)}"
   WORKSPACE_ID="${NAME#*.}"
-
-  # Get the color for this workspace
   WORKSPACE_COLOR="${SPACE_COLORS[$((WORKSPACE_ID-1))]}"
+  # bg subtil a 20% opacite
   WORKSPACE_BG="0x33${WORKSPACE_COLOR:4}"
 
-  # Check if this workspace is focused
   if [ "$FOCUSED" = "$WORKSPACE_ID" ]; then
-    # Animation workspace actif - rapide et fluide
     sketchybar --animate sin 8 \
                --set "$NAME" \
                icon.highlight=on \
@@ -37,11 +32,10 @@ update() {
                label.width=0 \
                label.drawing=off
   else
-    # Animation workspace inactif - rapide et fluide
     sketchybar --animate sin 8 \
                --set "$NAME" \
                icon.highlight=off \
-               icon.color="$ICON_COLOR" \
+               icon.color=$GREY \
                background.drawing=off \
                label.width=0 \
                label.drawing=off
@@ -49,18 +43,18 @@ update() {
 }
 
 mouse_entered() {
-  # Get current focused workspace
   FOCUSED=$(aerospace list-workspaces --focused 2>/dev/null)
   WORKSPACE_ID="${NAME#*.}"
 
-  # Effet hover : afficher le label seulement si pas actif
   if [ "$FOCUSED" != "$WORKSPACE_ID" ]; then
     WORKSPACE_COLOR="${SPACE_COLORS[$((WORKSPACE_ID-1))]}"
     WORKSPACE_BG="0x22${WORKSPACE_COLOR:4}"
 
     sketchybar --set "$NAME" \
                label.drawing=on \
+               label.color=$BLACK \
                label.background.drawing=on \
+               label.background.color="$WORKSPACE_COLOR" \
                background.drawing=on \
                background.color="$WORKSPACE_BG" \
                --animate sin 10 --set "$NAME" label.width=dynamic
@@ -68,33 +62,30 @@ mouse_entered() {
 }
 
 mouse_exited() {
-  # Get current focused workspace
-  FOCUSED=$(aerospace list-workspaces --focused 2>/dev/null)
   WORKSPACE_ID="${NAME#*.}"
+  FOCUSED="${FOCUSED_WORKSPACE:-$(aerospace list-workspaces --focused 2>/dev/null)}"
 
-  # Retirer le hover seulement si pas actif
+  sketchybar --animate sin 10 --set "$NAME" label.width=0 \
+             --set "$NAME" \
+             label.drawing=off \
+             label.background.drawing=off
+
   if [ "$FOCUSED" != "$WORKSPACE_ID" ]; then
-    sketchybar --animate sin 10 --set "$NAME" label.width=0 \
-               --set "$NAME" \
-               label.drawing=off \
-               label.background.drawing=off \
-               background.drawing=off
+    sketchybar --set "$NAME" background.drawing=off label.color=$WHITE
   fi
 }
 
 mouse_clicked() {
-  # Extract workspace number from NAME
   WORKSPACE_ID="${NAME#*.}"
 
-  # Switching avec AeroSpace
   case "$BUTTON" in
     "left")
-      # Focus workspace
       aerospace workspace "$WORKSPACE_ID"
+      sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE="$WORKSPACE_ID"
       ;;
     "right")
-      # Retour au workspace précédent
       aerospace workspace-back-and-forth
+      sketchybar --trigger aerospace_workspace_change
       ;;
   esac
 }

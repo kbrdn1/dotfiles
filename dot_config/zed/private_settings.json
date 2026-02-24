@@ -7,115 +7,35 @@
 // custom settings, run the `open default settings` command
 // from the command palette or from `Zed` application menu.
 {
+  // ══════════════════════════════════════════════════════════════════════
   // Theme & Appearance
-  "redact_private_values": false,
-  "ui_font_family": "Monaspace Argon Var",
-  "agent_servers": {
-    "claude": {
-      "favorite_models": [
-        "opus"
-      ]
-    },
-    "your_agent": {
-      "type": "custom",
-      "command": "path_to_executable",
-      "args": [],
-      "env": {}
-    }
-  },
-  "git_panel": {
-    "sort_by_path": true
-  },
-  "debugger": {
-    "dock": "left"
-  },
-  "context_servers": {
-    "mcp-server-sequential-thinking": {
-      "enabled": true,
-      "settings": {}
-    },
-    "mcp-server-exa-search": {
-      "enabled": false,
-      "settings": {}
-    },
-    "prisma-mcp": {
-      "enabled": false,
-      "settings": {}
-    },
-    "github-activity-summarizer": {
-      "enabled": false,
-      "settings": {}
-    },
-    "mcp-server-context7": {
-      "enabled": false,
-      "settings": {
-        "context7_api_key": "CTX7_PERSONAL_ACCESS_TOKEN"
-      }
-    },
-    "mcp-server-github": {
-      "enabled": false,
-      "settings": {
-        "github_personal_access_token": "GITHUB_PERSONAL_ACCESS_TOKEN"
-      }
-    },
-    "browser-tools-context-server": {
-      "enabled": true,
-      "settings": {}
-    },
-    "serena-context-server": {
-      "enabled": true,
-      "settings": {
-        "python_executable": "/usr/bin/python3"
-      }
-    }
-  },
-  "current_line_highlight": "all",
-  "bottom_dock_layout": "contained",
+  // ══════════════════════════════════════════════════════════════════════
   "theme": "Claude Dark (Pure)",
   "icon_theme": "Catppuccin Macchiato",
   "experimental.theme_overrides": {
-    "background.appearance": "blurred"
+    "background.appearance": "blurred",
   },
+  "redact_private_values": true,
+  "current_line_highlight": "all",
+  "bottom_dock_layout": "contained",
 
-  // Editor Behavior
-  "vim_mode": true,
-  "base_keymap": "VSCode",
-  "active_pane_modifiers": {
-    "border_size": 0.4,
-    "inactive_opacity": 0.45
-  },
-  // "enable_experimental_live_diffs": true,
-  "tab_size": 2,
-  "minimap": {
-    "show": "auto"
-  },
-  "relative_line_numbers": "enabled",
-  "preferred_line_length": 100,
-  "soft_wrap": "preferred_line_length",
-  "show_whitespaces": "selection",
-  "ensure_final_newline_on_save": false,
-  "remove_trailing_whitespace_on_save": true,
-  "format_on_save": "off",
-  "formatter": "prettier",
-  "autosave": {
-    "after_delay": {
-      "milliseconds": 300
-    }
-  },
+  // ══════════════════════════════════════════════════════════════════════
   // Font Settings
+  // ══════════════════════════════════════════════════════════════════════
   // "ui_font_family": "Monaspace Argon Var",
-  "ui_font_size": 12.55,
+  "ui_font_family": "OperatorMonoLig Nerd Font",
+  "ui_font_size": 14.75,
   "ui_font_features": {
-    "liga": true // www
+    "liga": true, // www
   },
-  "ui_font_weight": 400.0,
-  "buffer_font_family": "OperatorMono Nerd Font",
-  "buffer_font_size": 13.0,
+  "ui_font_weight": 400,
+  "buffer_font_family": "OperatorMonoLig Nerd Font",
+  "buffer_font_size": 14.0,
   "buffer_font_fallbacks": ["CaskaydiaCove Nerd Font"],
+  "buffer_font_weight": 400,
   "buffer_line_height": {
-    "custom": 1.4
+    "custom": 1.825,
   },
-  "buffer_font_weight": 320,
   "buffer_font_features": {
     "liga": true, // www /// !! ;;
     "zero": true, // 0
@@ -136,26 +56,90 @@
     "ordn": false, // No. 1st 2nd
     "clig": true, // _|_
     "salt": false, // Stylistic Alternates
-    "calt": true // Contextual Alternates (fi -> ﬁ)
+    "calt": true, // Contextual Alternates (fi -> ﬁ)
   },
+  "agent_buffer_font_size": 13.0,
+  "agent_ui_font_size": 13.75,
 
+  // ══════════════════════════════════════════════════════════════════════
+  // Editor Behavior
+  // ══════════════════════════════════════════════════════════════════════
+  "vim_mode": true,
+  "base_keymap": "VSCode",
+  "active_pane_modifiers": {
+    "border_size": 0.4,
+    "inactive_opacity": 0.45,
+  },
+  // "enable_experimental_live_diffs": true,
+  "tab_size": 2,
+  "minimap": {
+    "show": "auto",
+  },
+  "relative_line_numbers": "enabled",
+  "preferred_line_length": 100,
+  "soft_wrap": "preferred_line_length",
+  "show_whitespaces": "selection",
+  "ensure_final_newline_on_save": false,
+  "remove_trailing_whitespace_on_save": true,
+  "format_on_save": "off",
+  "formatter": "prettier",
+  "autosave": {
+    "after_delay": {
+      "milliseconds": 1000,
+    },
+  },
+  "line_indicator_format": "long",
+  "expand_excerpt_lines": 8,
+  "excerpt_context_lines": 8,
+  "colorize_brackets": true,
+  "centered_layout": {
+    "left_padding": 0.075,
+    "right_padding": 0.075,
+    // "left_padding": 0.004,
+    // "right_padding": 0.004,
+  },
+  "diff_view_style": "unified",
+  "horizontal_scroll_margin": 3,
+  "load_direnv": "direct",
+  "sticky_scroll": {
+    "enabled": true,
+  },
+  "which_key": {
+    "enabled": true,
+    "delay_ms": 0,
+  },
+  "hide_mouse": "on_typing_and_movement",
+  "whitespace_map": {
+    "space": "·",
+    "tab": "→",
+  },
+  "document_symbols": "on",
+
+  // ══════════════════════════════════════════════════════════════════════
   // UI Elements
+  // ══════════════════════════════════════════════════════════════════════
   "tab_bar": {
-    "show": true
+    "show": true,
   },
   "title_bar": {
     "show_branch_icon": true,
     "show_branch_name": true,
     "show_onboarding_banner": true,
     "show_project_items": true,
-    "show_user_picture": true
+    "show_user_picture": true,
+  },
+  "status_bar": {
+    "active_encoding_button": "non_utf8",
+    "active_language_button": true,
+    "cursor_position_button": true,
+    "experimental.show": true,
   },
   "search": {
     "button": true,
     "case_sensitive": false,
     "whole_word": false,
     "regex": false,
-    "include_ignored": false
+    "include_ignored": false,
   },
   "tabs": {
     "close_position": "right",
@@ -163,24 +147,38 @@
     "git_status": true,
     "activate_on_close": "history",
     "show_close_button": "hover",
-    "show_diagnostics": "all"
+    "show_diagnostics": "all",
   },
   "toolbar": {
     "selections_menu": true,
     "breadcrumbs": true,
-    "quick_actions": true
+    "quick_actions": true,
   },
   "file_finder": {
-    // "max_modal_width": "xlarge",
-    // "modal_width": "xlarge"
+    "modal_max_width": "medium",
   },
   "preview_tabs": {
     "enabled": true,
+    "enable_preview_file_from_code_navigation": true,
     "enable_preview_from_file_finder": true,
-    "enable_preview_from_code_navigation": true
+    "enable_keep_preview_on_code_navigation": true,
+    "enable_preview_from_multibuffer": true,
+    "enable_preview_from_project_panel": true,
+    "enable_preview_multibuffer_from_code_navigation": true,
   },
   "project_panel": {
+    "default_width": 300,
     "dock": "right",
+    "auto_open": {
+      "on_paste": false,
+      "on_create": false,
+    },
+    "bold_folder_labels": true,
+    "drag_and_drop": true,
+    "hide_gitignore": false,
+    "hide_hidden": false,
+    "hide_root": false,
+    "sort_mode": "files_first",
     "entry_spacing": "standard",
     "indent_size": 15,
     "git_status": true,
@@ -190,12 +188,51 @@
     "file_icons": true,
     "folder_icons": true,
     "show_diagnostics": "all",
+    "scrollbar": {
+      "show": "auto",
+    },
     "indent_guides": {
-      "show": "always"
-    }
+      "show": "always",
+    },
+  },
+  "outline_panel": {
+    "auto_fold_dirs": true,
+    "auto_reveal_entries": true,
+    "button": true,
+    "default_width": 300,
+    "dock": "left",
+    "expand_outlines_with_depth": 2,
+    "file_icons": true,
+    "folder_icons": true,
+    "git_status": true,
+    "indent_guides": {
+      "show": "always",
+    },
+    "indent_size": 2,
+    "scrollbar": {
+      "show": "auto",
+    },
+  },
+  "git_panel": {
+    "tree_view": true,
+    "sort_by_path": true,
+    "button": true,
+    "collapse_untracked_diff": true,
+    "default_width": 300,
+    "dock": "left",
+    "fallback_branch_name": "dev",
+    "scrollbar": {
+      "show": "auto",
+    },
+    "status_style": "icon",
+  },
+  "debugger": {
+    "dock": "left",
   },
 
+  // ══════════════════════════════════════════════════════════════════════
   // Code Intelligence
+  // ══════════════════════════════════════════════════════════════════════
   // "semantic_index": {
   //   "enabled": true
   // },
@@ -209,39 +246,51 @@
     "edit_debounce_ms": 0,
     "toggle_on_modifiers_press": {
       "platform": true,
-      "function": true
-    }
+      "function": true,
+    },
   },
   "diagnostics": {
     "include_warnings": true,
     "inline": {
       "enabled": true,
-      "update_debounce_ms": 0,
+      "update_debounce_ms": 300,
       "padding": 2,
       "min_column": 0,
-      "max_severity": null
-    }
-    // "update_with_cursor": true,
-    // "use_rendered": true
+      "max_severity": null,
+    },
+    "button": true,
+    "lsp_pull_diagnostics": {
+      "debounce_ms": 300,
+      "enabled": true,
+    },
   },
   "indent_guides": {
     "enabled": true,
     "coloring": "indent_aware",
-    "indent_size": 2,
     "background_coloring": "disabled",
     "line_width": 1,
-    "active_line_width": 2
+    "active_line_width": 2,
   },
 
+  // ══════════════════════════════════════════════════════════════════════
   // AI Assistance
+  // ══════════════════════════════════════════════════════════════════════
   "agent": {
-    "use_modifier_to_send": true,
-    "play_sound_when_agent_done": true,
     "dock": "left",
+    "default_model": {
+      "provider": "copilot_chat",
+      "model": "claude-haiku-4.5",
+    },
     "inline_assistant_model": {
       "provider": "copilot_chat",
-      "model": "claude-haiku-4.5"
+      "model": "claude-haiku-4.5",
     },
+    "default_profile": "development",
+    "tool_permissions": {
+      "default": "allow",
+    },
+    "use_modifier_to_send": true,
+    "play_sound_when_agent_done": true,
     "profiles": {
       "development": {
         "name": "Development",
@@ -268,24 +317,24 @@
           "copy_path": true,
           "code_symbols": true,
           "batch_tool": true,
-          "terminal": true
+          "terminal": true,
         },
         "enable_all_context_servers": false,
         "context_servers": {
           "mcp-server-sequential-thinking": {
             "tools": {
-              "sequentialthinking": true
+              "sequentialthinking": true,
             },
-            "mcp-server-github": {
-              "tools": {
-                "github": true
-              },
-              "settings": {
-                "github_personal_access_token": ""
-              }
-            }
-          }
-        }
+          },
+          "mcp-server-github": {
+            "tools": {
+              "github": true,
+            },
+            "settings": {
+              "github_personal_access_token": "",
+            },
+          },
+        },
       },
       "write": {
         "name": "Write",
@@ -307,16 +356,16 @@
           "grep": true,
           "symbol_info": true,
           "thinking": true,
-          "create_directory": false
+          "create_directory": false,
         },
         "enable_all_context_servers": true,
         "context_servers": {
           "mcp-server-sequential-thinking": {
             "tools": {
-              "sequentialthinking": true
-            }
-          }
-        }
+              "sequentialthinking": true,
+            },
+          },
+        },
       },
       "ask": {
         "name": "Ask",
@@ -337,45 +386,102 @@
           "read_file": true,
           "grep": true,
           "thinking": true,
-          "terminal": false
+          "terminal": false,
         },
         "enable_all_context_servers": false,
         "context_servers": {
           "mcp-server-sequential-thinking": {
             "tools": {
-              "sequentialthinking": true
-            }
-          }
-        }
-      }
+              "sequentialthinking": true,
+            },
+          },
+        },
+      },
     },
-    "default_profile": "development",
-    "always_allow_tool_actions": true,
-    "default_model": {
-      "provider": "copilot_chat",
-      "model": "claude-opus-4.5"
-    }
+  },
+  "agent_servers": {
+    "mistral-vibe": {
+      "type": "registry",
+    },
+    "opencode": {
+      "type": "registry",
+    },
+    "github-copilot": {
+      "type": "registry",
+    },
+    "claude": {
+      "favorite_config_option_values": {
+        "model": ["default"],
+      },
+      "favorite_models": ["opus"],
+    },
+    "your_agent": {
+      "type": "custom",
+      "command": "path_to_executable",
+      "args": [],
+      "env": {},
+    },
+  },
+  "context_servers": {
+    "mcp-server-sequential-thinking": {
+      "enabled": true,
+      "settings": {},
+    },
+    "mcp-server-exa-search": {
+      "enabled": false,
+      "settings": {},
+    },
+    "prisma-mcp": {
+      "enabled": false,
+      "settings": {},
+    },
+    "github-activity-summarizer": {
+      "enabled": false,
+      "settings": {},
+    },
+    "mcp-server-context7": {
+      "enabled": false,
+      "settings": {
+        "context7_api_key": "CTX7_PERSONAL_ACCESS_TOKEN",
+      },
+    },
+    "mcp-server-github": {
+      "enabled": false,
+      "settings": {
+        "github_personal_access_token": "GITHUB_PERSONAL_ACCESS_TOKEN",
+      },
+    },
+    "browser-tools-context-server": {
+      "enabled": true,
+      "settings": {},
+    },
+    "serena-context-server": {
+      "enabled": true,
+      "settings": {
+        "python_executable": "/usr/bin/python3",
+      },
+    },
   },
   "edit_predictions": {
+    "provider": "copilot",
+    "mode": "subtle",
+    "disabled_globs": [],
+    "enabled_in_text_threads": true,
+    "copilot": {
+      "proxy": null,
+      "proxy_no_verify": null,
+    },
     "codestral": {
       "api_url": "https://codestral.mistral.ai",
       "model": "codestral-latest",
-      "max_tokens": 1000
+      "max_tokens": 1000,
     },
-    "disabled_globs": [],
-    "mode": "subtle",
-    "copilot": {
-      "proxy": null,
-      "proxy_no_verify": null
-    },
-    "enabled_in_text_threads": true
   },
   "show_edit_predictions": true,
-  "features": {
-    "edit_prediction_provider": "copilot"
-  },
 
+  // ══════════════════════════════════════════════════════════════════════
   // File Handling
+  // ══════════════════════════════════════════════════════════════════════
   "file_types": {
     "Dockerfile": ["Dockerfile", "Dockerfile.*"],
     "JSON": ["json", "jsonc", "*.code-snippets"],
@@ -393,8 +499,8 @@
       "fish.*",
       "ksh.*",
       "csh.*",
-      "tcsh.*"
-    ]
+      "tcsh.*",
+    ],
   },
   "file_scan_exclusions": [
     "**/.git",
@@ -421,23 +527,31 @@
     "**/.storybook",
     "**/.tap",
     "**/.nyc_output",
-    "**/report"
+    "**/report",
   ],
 
+  // ══════════════════════════════════════════════════════════════════════
   // Git Integration
+  // ══════════════════════════════════════════════════════════════════════
   "git": {
     "git_gutter": "tracked_files",
     "hunk_style": "staged_hollow",
     "inline_blame": {
       "enabled": true,
+      "padding": 0,
       "min_column": 100,
       "show_commit_summary": true,
-      "delay_ms": 0
+      "delay_ms": 0,
     },
-    "gutter_debounce": 0
+    "gutter_debounce": 0,
+  },
+  "gutter": {
+    "min_line_number_digits": 0,
   },
 
+  // ══════════════════════════════════════════════════════════════════════
   // Language & LSP Settings
+  // ══════════════════════════════════════════════════════════════════════
   "use_smartcase_search": true,
   "lsp": {
     "discord_presence": {
@@ -459,30 +573,29 @@
         // Rules - disable presence in some workspaces
         "rules": {
           "mode": "blacklist", // or whitelist
-          "paths": ["absolute path"]
+          "paths": ["absolute path"],
         },
 
-        "git_integration": true
+        "git_integration": true,
       },
-      "enabled": true
     },
     "eslint": {
       "settings": {
         "codeActionOnSave": {
-          "rules": ["import/order"]
-        }
+          "rules": ["import/order"],
+        },
       },
       "initialization_options": {
         "autoFix": true,
-        "format": true
-      }
+        "format": true,
+      },
     },
     "rust-analyzer": {
       "initialization_options": {
         "check": {
-          "command": "clippy" // rust-analyzer.check.command (default: "check")
-        }
-      }
+          "command": "clippy", // rust-analyzer.check.command (default: "check")
+        },
+      },
     },
     "typescript-language-server": {
       "initialization_options": {
@@ -494,137 +607,122 @@
           "includeInlayVariableTypeHintsWhenTypeMatchesName": false,
           "includeInlayPropertyDeclarationTypeHints": true,
           "includeInlayFunctionLikeReturnTypeHints": true,
-          "includeInlayEnumMemberValueHints": true
-        }
-      }
-    }
+          "includeInlayEnumMemberValueHints": true,
+        },
+      },
+    },
   },
   "languages": {
     "Rust": {
       "formatter": {
         "external": {
           "command": "rustfmt",
-          "arguments": ["--emit=stdout"]
-        }
-      }
+          "arguments": ["--emit=stdout"],
+        },
+      },
     },
     "Python": {
       "formatter": {
         "external": {
           "command": "black",
-          "arguments": ["-"]
-        }
-      }
+          "arguments": ["-"],
+        },
+      },
     },
     "Markdown": {
       "formatter": {
         "external": {
           "command": "prettier",
-          "arguments": ["--stdin-filepath", "{buffer_path}"]
-        }
-      }
+          "arguments": ["--stdin-filepath", "{buffer_path}"],
+        },
+      },
     },
     "JSON": {
       "formatter": [
         {
-          "code_action": "source.fixAll"
+          "code_action": "source.fixAll",
         },
         {
           "external": {
             "command": "prettier",
-            "arguments": [
-              "--stdin-filepath",
-              "{buffer_path}"
-            ]
-          }
-        }
-      ]
+            "arguments": ["--stdin-filepath", "{buffer_path}"],
+          },
+        },
+      ],
     },
     "PHP": {
       "code_actions_on_format": {
         "source.organizeImports": true,
-        "source.fixAll": true
+        "source.fixAll": true,
       },
-      "language_servers": ["intelephense", "!phpactor", "..."]
+      "language_servers": ["intelephense", "!phpactor", "..."],
     },
     "TypeScript": {
       "formatter": [
         {
-          "code_action": "source.organizeImports"
+          "code_action": "source.organizeImports",
         },
         {
-          "code_action": "source.fixAll"
+          "code_action": "source.fixAll",
         },
         {
           "external": {
             "command": "prettier",
-            "arguments": [
-              "--stdin-filepath",
-              "{buffer_path}"
-            ]
-          }
-        }
-      ]
+            "arguments": ["--stdin-filepath", "{buffer_path}"],
+          },
+        },
+      ],
     },
     "TSX": {
       "formatter": [
         {
-          "code_action": "source.organizeImports"
+          "code_action": "source.organizeImports",
         },
         {
-          "code_action": "source.fixAll"
+          "code_action": "source.fixAll",
         },
         {
           "external": {
             "command": "prettier",
-            "arguments": [
-              "--stdin-filepath",
-              "{buffer_path}"
-            ]
-          }
-        }
-      ]
+            "arguments": ["--stdin-filepath", "{buffer_path}"],
+          },
+        },
+      ],
     },
     "JavaScript": {
       "formatter": [
         {
-          "code_action": "source.fixAll.eslint"
+          "code_action": "source.fixAll.eslint",
         },
         {
-          "code_action": "source.organizeImports"
+          "code_action": "source.organizeImports",
         },
         {
           "external": {
             "command": "prettier",
-            "arguments": [
-              "--stdin-filepath",
-              "{buffer_path}"
-            ]
-          }
-        }
-      ]
-    }
+            "arguments": ["--stdin-filepath", "{buffer_path}"],
+          },
+        },
+      ],
+    },
   },
 
+  // ══════════════════════════════════════════════════════════════════════
   // Terminal Settings
+  // ══════════════════════════════════════════════════════════════════════
   "terminal": {
-    "font_weight": 400.0,
     "dock": "bottom",
-    "copy_on_select": true,
-    "detect_venv": {
-      "on": {
-        "directories": [".env", ".venv", "venv", "env", "envs"],
-        "activate_script": "default"
-      }
-    },
-    "blinking": "on",
+    "default_height": 325,
+    "button": true,
     // "font_family": "CaskaydiaCove Nerd Font",
-    "font_family": "Monaspace Krypton Frozen",
+    // "font_family": "Monaspace Krypton Frozen",
+    "font_family": "OperatorMonoLig Nerd Font",
     "font_fallbacks": ["CaskaydiaCove Nerd Font"],
     "font_size": 14,
+    "font_weight": 320.0,
     // "font_weight": 300,
     "line_height": {
-      "custom": 1.2
+      "custom": 1.2,
     },
     "font_features": {
       "liga": true, // www /// !! ;;
@@ -646,28 +744,37 @@
       "ordn": false, // No. 1st 2nd
       "clig": true, // _|_
       "salt": false, // Stylistic Alternates
-      "calt": true // Contextual Alternates (fi -> ﬁ)
+      "calt": true, // Contextual Alternates (fi -> ﬁ)
     },
+    "blinking": "on",
+    "copy_on_select": true,
     "shell": {
-      "program": "zsh"
+      "program": "zsh",
     },
     "toolbar": {
-      "breadcrumbs": true
+      "breadcrumbs": true,
     },
     "working_directory": "current_project_directory",
-    "button": true
+    "detect_venv": {
+      "on": {
+        "directories": [".env", ".venv", "venv", "env", "envs"],
+        "activate_script": "default",
+      },
+    },
   },
 
+  // ══════════════════════════════════════════════════════════════════════
   // Other Settings
+  // ══════════════════════════════════════════════════════════════════════
   "journal": {
     "path": "~",
-    "hour_format": "hour24"
+    "hour_format": "hour24",
   },
   "jupyter": {
     "kernel_selections": {
       "typescript": "deno",
       "javascript": "deno",
-      "python": "python3"
-    }
-  }
+      "python": "python3",
+    },
+  },
 }
