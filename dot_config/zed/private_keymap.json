@@ -384,7 +384,7 @@
       "space t s": ["task::Spawn", { "task_name": "LazySQL" }],
       "space t S": ["task::Spawn", { "task_name": "LazySSH" }],
       "space t c": ["task::Spawn", { "task_name": "LazyCurl" }],
-      "space t ": ["task::Spawn", { "task_name": "Documentaion: Ekphos" }],
+      "space t e": ["task::Spawn", { "task_name": "Documentaion: Ekphos" }],
       "space t E": ["task::Spawn", { "task_name": "Documentaion: Ekphos file (FZF)" }],
       "space t m": ["task::Spawn", { "task_name": "Lazymake" }],
 
