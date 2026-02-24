@@ -49,7 +49,8 @@ automatically-unhide-macos-hidden-apps = true
 on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
 
 # Intégration Sketchybar - notification changements workspace
-exec-on-workspace-change = ['/bin/bash', '/Users/kbrdn1/.config/sketchybar/plugins/spaces/aerospace_trigger.sh']
+# Note: broken in v0.20-Beta, triggers are in keybindings as workaround
+exec-on-workspace-change = ['exec-and-forget sketchybar --trigger aerospace_workspace_change']
 
 # Commandes après démarrage
 after-startup-command = [
@@ -89,8 +90,8 @@ inner.horizontal = 8
 inner.vertical = 8
 outer.left = 8
 outer.bottom = 8
-outer.top = 8
-# outer.top = 44
+# outer.top = 8
+outer.top = 44
 outer.right = 8
 
 # ═══════════════════════════════════════════════════════════════
@@ -104,31 +105,32 @@ outer.right = 8
 # └─────────────────────────────────────────────────────────────┘
 
 # Workspaces optimisés AZERTY (préserve { } [ ] | \ @ ` pour le code)
-ctrl-alt-1 = 'workspace 1'    # Mail/Calendar (Home)
-ctrl-alt-2 = 'workspace 2'    # Postman
-ctrl-alt-3 = 'workspace 3'    # Code Editors
-ctrl-alt-q = 'workspace 4'    # Arc Browser (A=Arc)
-ctrl-alt-w = 'workspace 5'    # Communication/Web (W=Web)
-ctrl-alt-e = 'workspace 6'    # Database/Docker (E=Environment)
-ctrl-alt-o = 'workspace 7'    # Obsidian (O=Obsidian)
-ctrl-alt-c = 'workspace 8'    # Claude (C=Claude)
+# Chaque binding trigger aussi sketchybar pour maj de la barre
+ctrl-alt-1 = ['workspace 1', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=1']
+ctrl-alt-2 = ['workspace 2', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=2']
+ctrl-alt-3 = ['workspace 3', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=3']
+ctrl-alt-q = ['workspace 4', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=4']
+ctrl-alt-w = ['workspace 5', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=5']
+ctrl-alt-e = ['workspace 6', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=6']
+ctrl-alt-o = ['workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=7']
+ctrl-alt-c = ['workspace 8', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=8']
 
 # Navigation rapide
-ctrl-alt-tab = 'workspace-back-and-forth'
+ctrl-alt-tab = ['workspace-back-and-forth', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                   DÉPLACER VERS WORKSPACES                  │
 # └─────────────────────────────────────────────────────────────┘
 
 # Déplacer fenêtre active vers workspace
-ctrl-alt-shift-1 = 'move-node-to-workspace 1'
-ctrl-alt-shift-2 = 'move-node-to-workspace 2'
-ctrl-alt-shift-3 = 'move-node-to-workspace 3'
-ctrl-alt-shift-q = 'move-node-to-workspace 4'
-ctrl-alt-shift-w = 'move-node-to-workspace 5'
-ctrl-alt-shift-e = 'move-node-to-workspace 6'
-ctrl-alt-shift-o = 'move-node-to-workspace 7'
-ctrl-alt-shift-c = 'move-node-to-workspace 8'
+ctrl-alt-shift-1 = ['move-node-to-workspace 1', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
+ctrl-alt-shift-2 = ['move-node-to-workspace 2', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
+ctrl-alt-shift-3 = ['move-node-to-workspace 3', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
+ctrl-alt-shift-q = ['move-node-to-workspace 4', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
+ctrl-alt-shift-w = ['move-node-to-workspace 5', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
+ctrl-alt-shift-e = ['move-node-to-workspace 6', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
+ctrl-alt-shift-o = ['move-node-to-workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
+ctrl-alt-shift-c = ['move-node-to-workspace 8', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
 
 # Déplacer ET suivre
 
@@ -275,8 +277,8 @@ esc = 'mode main'
 # ═══════════════════════════════════════════════════════════════
 
 # ┌─────────────────────────────────────────────────────────────┐
-# │                    WORKSPACE 1: COMMUNICATION               │
-# │                   (Mail, Calendar + Arc flottant)           │
+# │                    WORKSPACE 1: HOME                        │
+# │                   (Mail, Calendar + Helium flottant)        │
 # └─────────────────────────────────────────────────────────────┘
 
 [[on-window-detected]]
@@ -300,27 +302,41 @@ if.app-id = 'com.mailrtech.canarymail'
 run = 'move-node-to-workspace 1'
 
 # ┌─────────────────────────────────────────────────────────────┐
-# │                    WORKSPACE 2: API & TESTS                 │
-# │                     (Postman + Arc flottant)                │
+# │                    WORKSPACE 2: MUSIQUE                     │
+# │                  (Music, Spotify + Arc flottant)            │
 # └─────────────────────────────────────────────────────────────┘
 
 [[on-window-detected]]
-if.app-id = 'com.postmanlabs.mac'
+if.app-id = 'com.apple.Music'
 run = 'move-node-to-workspace 2'
 
 [[on-window-detected]]
-if.app-id = 'com.getinsomnia.app'
+if.app-id = 'com.spotify.client'
 run = 'move-node-to-workspace 2'
 
 [[on-window-detected]]
-if.app-id = 'rest.insomnia.Insomnia'
+if.app-id = 'com.tidal.desktop'
 run = 'move-node-to-workspace 2'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                 WORKSPACE 3: DÉVELOPPEMENT                  │
-# │              (Zed, VSCode, IDEs + Arc flottant)             │
+# │     (Zed Preview, Terminals, IDEs, Postman + Helium)        │
 # └─────────────────────────────────────────────────────────────┘
 
+# Postman (API testing)
+[[on-window-detected]]
+if.app-id = 'com.postmanlabs.mac'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.getinsomnia.app'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'rest.insomnia.Insomnia'
+run = 'move-node-to-workspace 3'
+
+# IDEs
 [[on-window-detected]]
 if.app-id = 'dev.zed.Zed'
 run = 'move-node-to-workspace 3'
@@ -357,10 +373,36 @@ run = 'move-node-to-workspace 3'
 if.app-id = 'com.panic.Nova'
 run = 'move-node-to-workspace 3'
 
+# Terminals (for Neovim)
+[[on-window-detected]]
+if.app-id = 'com.mitchellh.ghostty'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.googlecode.iterm2'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.apple.Terminal'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'org.alacritty'
+run = 'move-node-to-workspace 3'
+
+[[on-window-detected]]
+if.app-id = 'com.github.wez.wezterm'
+run = 'move-node-to-workspace 3'
+
 # ┌─────────────────────────────────────────────────────────────┐
 # │                 WORKSPACE 4: NAVIGATION WEB                 │
-# │               (Dia + Arc principal + flottant)              │
+# │             (Helium principal + autres navigateurs)         │
 # └─────────────────────────────────────────────────────────────┘
+
+# Helium - navigateur principal
+[[on-window-detected]]
+if.app-id = 'net.imput.helium'
+run = 'move-node-to-workspace 4'
 
 [[on-window-detected]]
 if.app-id = 'company.thebrowser.dia'
@@ -370,7 +412,7 @@ run = 'move-node-to-workspace 4'
 if.app-id = 'company.thebrowser.Browser'
 run = 'move-node-to-workspace 4'
 
-# Chrome/Safari en backup sur workspace 4 si pas d'Arc
+# Chrome/Safari en backup
 [[on-window-detected]]
 if.app-id = 'com.google.Chrome'
 run = 'move-node-to-workspace 4'
@@ -490,34 +532,13 @@ if.app-id = 'com.apple.finder'
 if.window-title-regex-substring = '(Copy|Move|Info|Connect|Pref)'
 run = 'layout floating'
 
-# Arc : Fenêtres flottantes possibles sur tous les workspaces
-# (Les fenêtres Arc normales vont sur workspace 4, mais elles peuvent être
-# mises en flottant manuellement avec alt-shift-space sur n'importe quel workspace)
+# Navigateurs : Fenêtres flottantes possibles sur tous les workspaces
+# (Helium/Arc/Dia vont sur workspace 4, mais peuvent être mises en flottant
+# manuellement avec ctrl-alt-shift-space sur n'importe quel workspace)
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                 CONFIGURATION SPÉCIALISÉE                   │
 # └─────────────────────────────────────────────────────────────┘
-
-# Terminaux : workspace 3 avec développement par défaut
-[[on-window-detected]]
-if.app-id = 'com.mitchellh.ghostty'
-run = 'move-node-to-workspace 3'
-
-[[on-window-detected]]
-if.app-id = 'com.googlecode.iterm2'
-run = 'move-node-to-workspace 3'
-
-[[on-window-detected]]
-if.app-id = 'com.apple.Terminal'
-run = 'move-node-to-workspace 3'
-
-[[on-window-detected]]
-if.app-id = 'org.alacritty'
-run = 'move-node-to-workspace 3'
-
-[[on-window-detected]]
-if.app-id = 'com.github.wez.wezterm'
-run = 'move-node-to-workspace 3'
 
 # Fenêtres spéciales Arc (Picture in Picture, etc.)
 [[on-window-detected]]
@@ -529,20 +550,21 @@ run = 'layout floating'
 # NOTES D'UTILISATION
 # ═══════════════════════════════════════════════════════════════
 
-# WORKSPACE 1 (Mail/Calendar) : Layout tiles vertical par défaut
+# WORKSPACE 1 (Home) : Layout tiles vertical par défaut
 #   - Mail en haut, Calendar en bas (ou côte à côte)
 #   - Arc peut être mis en flottant avec alt-shift-space
 
-# WORKSPACE 2 (Postman) : Layout tiles vertical par défaut  
-#   - Postman principal, possibilité de split si besoin
+# WORKSPACE 2 (Music) : Layout tiles vertical par défaut
+#   - Music/Spotify principal, possibilité de split si besoin
 #   - Arc peut être mis en flottant avec alt-shift-space
 
-# WORKSPACE 3 (Code) : Layout accordion (cascade) recommandé
+# WORKSPACE 3 (Zed) : Layout accordion (cascade) recommandé
 #   - Utilisez alt-comma pour passer en mode cascade
-#   - Perfect pour basculer entre plusieurs éditeurs
+#   - Perfect pour basculer entre plusieurs terminaux Neovim
 #   - Arc peut être mis en flottant avec alt-shift-space
 
-# Workspace 4 (Arc) : Layout accordion (cascade) recommandé
+# Workspace 4 (Helium) : Layout accordion (cascade) recommandé
+#   - Helium comme navigateur principal
 #   - Alt-comma pour mode cascade entre onglets/fenêtres
 #   - Alt-shift-space pour mettre certaines fenêtres en flottant
 
@@ -569,5 +591,5 @@ run = 'layout floating'
 #   alt-enter : ouvrir Ghostty
 #
 # AZERTY PRÉSERVÉ pour le code : Alt gauche + 4,5,6,7,8,0 = { } [ ] | \ @ `
-# 1=Mail, 2=Postman, 3=Code, A=Arc, W=Communication, E=Database, O=Obsidian
+# 1=Mail, 2=Music, 3=Neovim, Q=Helium, W=Communication, E=Database, O=Obsidian
 # Compromis optimal : 1,2,3,9 perdus mais caractères critiques préservés!

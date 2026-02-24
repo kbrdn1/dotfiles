@@ -21,6 +21,8 @@ launchctl unload -F /System/Library/LaunchAgents/com.apple.OSDUIHelper.plist 2>/
 bar=(
   height=$BAR_HEIGHT
   color=$BAR_COLOR
+  border_color=$HIGHLIGHT_COLOR
+  border_width=1
   shadow=on
   position=$BAR_POSITION
   sticky=on
@@ -74,7 +76,7 @@ source "$PLUGIN_DIR/aerospace/item.sh"
 sketchybar --add item aerospace_separator left \
            --set aerospace_separator \
              icon="$SEPARATOR" \
-             icon.color="$ICON_COLOR" \
+             icon.color="$GREY" \
              icon.padding_left=5 \
              icon.padding_right=5 \
              background.drawing=off \
@@ -88,13 +90,26 @@ source "$PLUGIN_DIR/front_app.sh"
 # Right
 source "$PLUGIN_DIR/calendar/item.sh"
 source "$PLUGIN_DIR/brew/item.sh"
+source "$PLUGIN_DIR/nix/item.sh"
 source "$PLUGIN_DIR/battery/item.sh"
 source "$PLUGIN_DIR/wifi/item.sh"
 source "$PLUGIN_DIR/bluetooth/item.sh"
 source "$PLUGIN_DIR/github/item.sh"
 source "$PLUGIN_DIR/volume/item.sh"
 source "$PLUGIN_DIR/music/item.sh"
+
+# Status bracket (all right-side items in one box)
+source "$SETTINGS_DIR/colors.sh"
+sketchybar --add bracket status music_prev music_play music_next music nix brew github.bell bluetooth volume_icon \
+           --set status \
+             background.color=$BAR_COLOR \
+             background.border_color=$HIGHLIGHT_COLOR \
+             background.border_width=1
+
+source "$PLUGIN_DIR/codexbar.sh"
+source "$PLUGIN_DIR/ram.sh"
 source "$PLUGIN_DIR/cpu.sh"
+
 
 sketchybar --hotload on
 
