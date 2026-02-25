@@ -1,6 +1,6 @@
 # Migration Homebrew - Nettoyage des Doublons
 
-**Date de nettoyage** : Novembre 2025
+**Date de nettoyage** : Novembre 2025 (mis à jour Février 2026)
 **Contexte** : Migration ASDF → Nix
 **Packages désinstallés** : 51 doublons
 **Espace libéré** : 2.2 GB
@@ -465,7 +465,7 @@ Purpose: CLI + Dev Environment
 └─────────────────────────────────────┘
 
 ┌─────────────────────────────────────┐
-│            Nix (62 pkg)             │
+│           Nix (70+ pkg)             │
 │  ┌───────────────────────────────┐  │
 │  │    CLI Tools                  │  │
 │  │    (fd, fzf, bat, ripgrep)    │  │
@@ -682,7 +682,7 @@ Impact:
 
 ---
 
-**Dernière mise à jour** : Novembre 2025
+**Dernière mise à jour** : Février 2026
 **Homebrew Packages** : 199 (optimisé)
 **Nix Packages** : 70+ (complet)
 **Doublons** : 0

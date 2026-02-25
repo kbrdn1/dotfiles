@@ -32,7 +32,7 @@ Welcome to my dotfiles repository! This repository is managed using [Chezmoi](ht
 | **Primary Editor** | Zed | Modern code editor with AI integration |
 | **Secondary Editor** | Neovim + LazyVim | Terminal editor with LSP, Claude Code integration |
 | **Terminal** | Ghostty + Kitty + Tmux | GPU terminals with multiplexer (Claude Dark theme) |
-| **Window Manager** | AeroSpace + Karabiner | Tiling window manager (no SIP required) |
+| **Window Manager** | AeroSpace + Karabiner-Elements | Tiling window manager (no SIP required) |
 | **Menu Bar** | Sketchybar | Custom menu bar with 6 themes |
 | **File Manager** | Yazi + Superfile | Terminal file managers |
 | **Music** | MPD + rmpc | Music player daemon with TUI client |
@@ -73,6 +73,8 @@ Welcome to my dotfiles repository! This repository is managed using [Chezmoi](ht
 
 ## CLI Tools 💻
 
+> **Note**: All Nix-managed tools have their versions pinned via `flake.lock` (nixpkgs 24.11 channel). Specific version numbers are listed where explicitly configured in `home.nix`; otherwise versions follow the nixpkgs pin.
+
 ### Programming Languages & Runtimes
 
 | Tool | Version | Managed By | Notes |
@@ -80,107 +82,107 @@ Welcome to my dotfiles repository! This repository is managed using [Chezmoi](ht
 | [Node.js](https://nodejs.org/) | 24.x | Nix | JavaScript runtime |
 | [Python](https://www.python.org/) | 3.13.x | Nix | Python interpreter |
 | [PHP](https://www.php.net/) | 8.4.x | Nix | With pcov, redis extensions |
-| [Go](https://golang.org/) | Latest | Nix | Golang compiler |
-| [Rust](https://www.rust-lang.org/) | Latest | Nix | Rust toolchain (rustc, cargo, clippy, rustfmt) |
-| [Rust Analyzer](https://rust-analyzer.github.io/) | Latest | Nix | Rust LSP server |
-| [Bun](https://bun.sh/) | Latest | Nix | Fast JavaScript runtime |
-| [Deno](https://deno.land/) | Latest | Nix | Secure TypeScript runtime |
-| [pnpm](https://pnpm.io/) | Latest | Nix | Fast package manager |
-| [Symfony CLI](https://symfony.com/download) | Latest | Nix | Symfony tooling |
+| [Go](https://golang.org/) | - | Nix | Golang compiler |
+| [Rust](https://www.rust-lang.org/) | - | Nix | Rust toolchain (rustc, cargo, clippy, rustfmt) |
+| [Rust Analyzer](https://rust-analyzer.github.io/) | - | Nix | Rust LSP server |
+| [Bun](https://bun.sh/) | - | Nix | Fast JavaScript runtime |
+| [Deno](https://deno.land/) | - | Nix | Secure TypeScript runtime |
+| [pnpm](https://pnpm.io/) | - | Nix | Fast package manager |
+| [Symfony CLI](https://symfony.com/download) | - | Nix | Symfony tooling |
 | [Composer](https://getcomposer.org/) | Latest | Homebrew | PHP dependency manager |
 
 ### Kubernetes & Container Tools
 
 | Tool | Version | Managed By | Purpose |
 |------|---------|------------|---------|
-| [kubectl](https://kubernetes.io/) | Latest | Nix | Kubernetes CLI |
-| [Helm](https://helm.sh/) | Latest | Nix | Kubernetes package manager |
-| [Minikube](https://minikube.sigs.k8s.io/) | Latest | Nix | Local Kubernetes |
-| [ArgoCD](https://argoproj.github.io/cd/) | Latest | Nix | GitOps CD tool |
-| [k9s](https://k9scli.io/) | Latest | Nix | Kubernetes TUI |
-| [kubectx](https://github.com/ahmetb/kubectx) | Latest | Nix | Context switcher |
-| [stern](https://github.com/stern/stern) | Latest | Nix | Multi-pod logs |
-| [kustomize](https://kustomize.io/) | Latest | Nix | Kubernetes config |
-| [kubecolor](https://github.com/hidetatz/kubecolor) | Latest | Nix | Colorized kubectl |
-| [dive](https://github.com/wagoodman/dive) | Latest | Nix | Docker image explorer |
-| [popeye](https://popeyecli.io/) | Latest | Nix | Kubernetes scanner |
+| [kubectl](https://kubernetes.io/) | - | Nix | Kubernetes CLI |
+| [Helm](https://helm.sh/) | - | Nix | Kubernetes package manager |
+| [Minikube](https://minikube.sigs.k8s.io/) | - | Nix | Local Kubernetes |
+| [ArgoCD](https://argoproj.github.io/cd/) | - | Nix | GitOps CD tool |
+| [k9s](https://k9scli.io/) | - | Nix | Kubernetes TUI |
+| [kubectx](https://github.com/ahmetb/kubectx) | - | Nix | Context switcher |
+| [stern](https://github.com/stern/stern) | - | Nix | Multi-pod logs |
+| [kustomize](https://kustomize.io/) | - | Nix | Kubernetes config |
+| [kubecolor](https://github.com/hidetatz/kubecolor) | - | Nix | Colorized kubectl |
+| [dive](https://github.com/wagoodman/dive) | - | Nix | Docker image explorer |
+| [popeye](https://popeyecli.io/) | - | Nix | Kubernetes scanner |
 | [Lazykube](https://github.com/TNK-Studio/lazykube) | Latest | Homebrew | Kubernetes TUI |
 
 ### Development Tools
 
 | Tool | Version | Managed By | Purpose |
 |------|---------|------------|---------|
-| [Git](https://git-scm.com/) | Latest | Nix | Version control |
-| [GitHub CLI](https://cli.github.com/) | Latest | Nix | GitHub integration |
-| [Lazygit](https://github.com/jesseduffield/lazygit) | Latest | Nix | Git TUI |
-| [Lazydocker](https://github.com/jesseduffield/lazydocker) | Latest | Nix | Docker TUI |
-| [Lazysql](https://github.com/jorgerojas26/lazysql) | Latest | Nix | SQL TUI client |
-| [Redis](https://redis.io/) | Latest | Nix | In-memory database |
-| [Pandoc](https://pandoc.org/) | Latest | Nix | Document converter |
-| [Neovim](https://neovim.io/) | Latest | Nix | Secondary editor (LazyVim) |
-| [Sesh](https://github.com/joshmedeski/sesh) | Latest | Nix | Tmux session manager |
-| [PlantUML](https://plantuml.com/) | Latest | Nix | Diagram generation |
-| [D2](https://d2lang.com/) | Latest | Nix | Modern diagram scripting |
-| [Gnuplot](http://www.gnuplot.info/) | Latest | Nix | Graph generation |
-| [Just](https://github.com/casey/just) | Latest | Nix | Task runner |
-| [Tokei](https://github.com/XAMPPRocky/tokei) | Latest | Nix | Code statistics |
-| [Hyperfine](https://github.com/sharkdp/hyperfine) | Latest | Nix | Benchmarking |
-| [Chezmoi](https://www.chezmoi.io/) | Latest | Nix | Dotfiles management |
-| [Direnv](https://direnv.net/) | Latest | Nix | Directory-level environments |
+| [Git](https://git-scm.com/) | - | Nix | Version control |
+| [GitHub CLI](https://cli.github.com/) | - | Nix | GitHub integration |
+| [Lazygit](https://github.com/jesseduffield/lazygit) | - | Nix | Git TUI |
+| [Lazydocker](https://github.com/jesseduffield/lazydocker) | - | Nix | Docker TUI |
+| [Lazysql](https://github.com/jorgerojas26/lazysql) | - | Nix | SQL TUI client |
+| [Redis](https://redis.io/) | - | Nix | In-memory database |
+| [Pandoc](https://pandoc.org/) | - | Nix | Document converter |
+| [Neovim](https://neovim.io/) | - | Nix | Secondary editor (LazyVim) |
+| [Sesh](https://github.com/joshmedeski/sesh) | - | Nix | Tmux session manager |
+| [PlantUML](https://plantuml.com/) | - | Nix | Diagram generation |
+| [D2](https://d2lang.com/) | - | Nix | Modern diagram scripting |
+| [Gnuplot](http://www.gnuplot.info/) | - | Nix | Graph generation |
+| [Just](https://github.com/casey/just) | - | Nix | Task runner |
+| [Tokei](https://github.com/XAMPPRocky/tokei) | - | Nix | Code statistics |
+| [Hyperfine](https://github.com/sharkdp/hyperfine) | - | Nix | Benchmarking |
+| [Chezmoi](https://www.chezmoi.io/) | - | Nix | Dotfiles management |
+| [Direnv](https://direnv.net/) | - | Nix | Directory-level environments |
 
 ### Shell & Terminal
 
 | Tool | Version | Managed By | Purpose |
 |------|---------|------------|---------|
-| [Zsh](https://www.zsh.org/) | Latest | Nix | Interactive shell |
-| [Oh My Zsh](https://ohmyz.sh/) | Latest | Nix | Zsh framework |
-| [Powerlevel10k](https://github.com/romkatv/powerlevel10k) | Latest | Nix | Zsh theme |
-| [Bat](https://github.com/sharkdp/bat) | Latest | Nix | Enhanced cat (Claude Dark theme) |
-| [Eza](https://eza.rocks/) | Latest | Nix | Modern ls |
-| [Yazi](https://github.com/sxyazi/yazi) | Latest | Nix | File manager |
+| [Zsh](https://www.zsh.org/) | - | Nix | Interactive shell |
+| [Oh My Zsh](https://ohmyz.sh/) | Latest | Manual (install.sh) | Zsh framework |
+| [Powerlevel10k](https://github.com/romkatv/powerlevel10k) | Latest | Manual (install.sh) | Zsh theme |
+| [Bat](https://github.com/sharkdp/bat) | - | Nix | Enhanced cat (Claude Dark theme) |
+| [Eza](https://eza.rocks/) | - | Nix | Modern ls |
+| [Yazi](https://github.com/sxyazi/yazi) | - | Nix | File manager |
 | [Superfile](https://github.com/yorukot/superfile) | Latest | Homebrew | File manager TUI |
-| [Tmux](https://github.com/tmux/tmux) | Latest | Nix | Terminal multiplexer |
-| [Fzf](https://github.com/junegunn/fzf) | Latest | Nix | Fuzzy finder (Claude Dark theme) |
-| [Zoxide](https://github.com/ajeetdsouza/zoxide) | Latest | Nix | Smarter cd (`z` command) |
-| [Neofetch](https://github.com/dylanaraps/neofetch) | Latest | Nix | System info |
+| [Tmux](https://github.com/tmux/tmux) | - | Nix | Terminal multiplexer |
+| [Fzf](https://github.com/junegunn/fzf) | - | Nix | Fuzzy finder (Claude Dark theme) |
+| [Zoxide](https://github.com/ajeetdsouza/zoxide) | - | Nix | Smarter cd (`z` command) |
+| [Neofetch](https://github.com/dylanaraps/neofetch) | - | Nix | System info |
 
 ### System & Network Tools
 
 | Tool | Version | Managed By | Purpose |
 |------|---------|------------|---------|
-| [coreutils](https://www.gnu.org/software/coreutils/) | Latest | Nix | GNU core utilities |
-| [findutils](https://www.gnu.org/software/findutils/) | Latest | Nix | GNU find utilities |
-| [gnused](https://www.gnu.org/software/sed/) | Latest | Nix | GNU sed |
-| [gnugrep](https://www.gnu.org/software/grep/) | Latest | Nix | GNU grep |
-| [Tree](https://mama.indstate.edu/users/ice/tree/) | Latest | Nix | Directory listing |
-| [fd](https://github.com/sharkdp/fd) | Latest | Nix | Find alternative |
-| [ripgrep](https://github.com/BurntSushi/ripgrep) | Latest | Nix | Grep alternative |
-| [htop](https://htop.dev/) | Latest | Nix | Process viewer |
-| [duf](https://github.com/muesli/duf) | Latest | Nix | Disk usage |
-| [bottom](https://github.com/ClementTsang/bottom) | Latest | Nix | System monitor |
-| [jq](https://jqlang.github.io/jq/) | Latest | Nix | JSON processor |
-| [yq](https://github.com/mikefarah/yq) | Latest | Nix | YAML processor |
-| [curl](https://curl.se/) | Latest | Nix | URL transfer |
-| [wget](https://www.gnu.org/software/wget/) | Latest | Nix | Web downloader |
-| [HTTPie](https://httpie.io/) | Latest | Nix | HTTP client |
-| [dogdns](https://github.com/ogham/dog) | Latest | Nix | DNS client |
+| [coreutils](https://www.gnu.org/software/coreutils/) | - | Nix | GNU core utilities |
+| [findutils](https://www.gnu.org/software/findutils/) | - | Nix | GNU find utilities |
+| [gnused](https://www.gnu.org/software/sed/) | - | Nix | GNU sed |
+| [gnugrep](https://www.gnu.org/software/grep/) | - | Nix | GNU grep |
+| [Tree](https://mama.indstate.edu/users/ice/tree/) | - | Nix | Directory listing |
+| [fd](https://github.com/sharkdp/fd) | - | Nix | Find alternative |
+| [ripgrep](https://github.com/BurntSushi/ripgrep) | - | Nix | Grep alternative |
+| [htop](https://htop.dev/) | - | Nix | Process viewer |
+| [duf](https://github.com/muesli/duf) | - | Nix | Disk usage |
+| [bottom](https://github.com/ClementTsang/bottom) | - | Nix | System monitor |
+| [jq](https://jqlang.github.io/jq/) | - | Nix | JSON processor |
+| [yq](https://github.com/mikefarah/yq) | - | Nix | YAML processor |
+| [curl](https://curl.se/) | - | Nix | URL transfer |
+| [wget](https://www.gnu.org/software/wget/) | - | Nix | Web downloader |
+| [HTTPie](https://httpie.io/) | - | Nix | HTTP client |
+| [dogdns](https://github.com/ogham/dog) | - | Nix | DNS client |
 
 ### Multimedia & Music
 
 | Tool | Version | Managed By | Purpose |
 |------|---------|------------|---------|
-| [ffmpeg](https://ffmpeg.org/) | Latest | Nix | Video/audio processing |
-| [ImageMagick](https://imagemagick.org/) | Latest | Nix | Image processing |
-| [Poppler](https://poppler.freedesktop.org/) | Latest | Nix | PDF tools |
-| [rmpc](https://github.com/mierak/rmpc) | Latest | Nix | MPD client TUI |
-| [mpc](https://www.musicpd.org/clients/mpc/) | Latest | Nix | MPD CLI client |
+| [ffmpeg](https://ffmpeg.org/) | - | Nix | Video/audio processing |
+| [ImageMagick](https://imagemagick.org/) | - | Nix | Image processing |
+| [Poppler](https://poppler.freedesktop.org/) | - | Nix | PDF tools |
+| [rmpc](https://github.com/mierak/rmpc) | - | Nix | MPD client TUI |
+| [mpc](https://www.musicpd.org/clients/mpc/) | - | Nix | MPD CLI client |
 
 ### Cloud & API Tools
 
 | Tool | Version | Managed By | Purpose |
 |------|---------|------------|---------|
 | [AWS CLI](https://aws.amazon.com/cli/) | v2 | Nix | Amazon Web Services |
-| [Stripe CLI](https://stripe.com/docs/stripe-cli) | Latest | Nix | Stripe API testing |
+| [Stripe CLI](https://stripe.com/docs/stripe-cli) | - | Nix | Stripe API testing |
 
 ## GUI Applications 🖥️
 
