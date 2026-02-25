@@ -229,9 +229,8 @@ Outils spécifiques macOS ou non disponibles dans Nix.
 Window_Management:
   - sketchybar         # Custom menu bar
   - borders            # JankyBorders
-  - koekeishiya/formulae/yabai
-  - skhd               # Hotkey daemon
   - aerospace          # Window manager
+  - karabiner-elements # Key remapping (Option droite → Ctrl+Alt)
 
 System_Libraries:
   - gd                 # Graphics library
@@ -254,7 +253,7 @@ Exclusives:
   - lazykube           # K8s TUI (pas dans nixpkgs)
   - dashlane-cli       # Password manager CLI
   - composer           # PHP (meilleur via Homebrew)
-  - chezmoi            # Dotfile manager
+  - superfile          # File manager TUI
 
 Fonts:
   - font-jetbrains-mono-nerd-font
@@ -421,8 +420,8 @@ Total_Freed: 2.2 GB
 ```yaml
 Homebrew_Role:
   - GUI Applications (Arc, Zed, Raycast, Obsidian, etc.)
-  - System Tools (sketchybar, borders, aerospace, skhd)
-  - Homebrew Exclusives (lazykube, dashlane-cli, composer)
+  - System Tools (sketchybar, borders, aerospace, karabiner-elements)
+  - Homebrew Exclusives (lazykube, dashlane-cli, composer, superfile)
   - Build Dependencies (gd, bison, openssl, blueutil)
   - Fonts (Nerd Fonts, Sketchybar Font)
 
@@ -441,7 +440,7 @@ Nix_Role:
   - ALL Development Tools (git, gh, lazygit, redis, etc.)
   - ALL Shell Enhancements (oh-my-zsh, plugins, tmux)
 
-Total_Packages: 62 packages
+Total_Packages: 70+ packages
 Nix_Store_Size: ~3.5 GB
 Purpose: CLI + Dev Environment
 ```
@@ -625,7 +624,7 @@ Monitoring:
 
 - [MIGRATION_NIX.md](./MIGRATION_NIX.md) : Migration ASDF → Nix complète
 - [README.md](./README.md) : Stack tools mis à jour
-- [PLAN_MIGRATION_NIX.md](./PLAN_MIGRATION_NIX.md) : Plan détaillé migration
+- [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md) : Migration window manager
 
 ### Commandes Utiles
 
@@ -685,5 +684,5 @@ Impact:
 
 **Dernière mise à jour** : Novembre 2025
 **Homebrew Packages** : 199 (optimisé)
-**Nix Packages** : 62 (complet)
-**Doublons** : 0 ✅
+**Nix Packages** : 70+ (complet)
+**Doublons** : 0
