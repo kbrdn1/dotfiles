@@ -1,6 +1,6 @@
 # Dotfiles
 
-Welcome to my dotfiles repository! This repository is managed using [chezmoi](https://www.chezmoi.io/) and [Nix Home Manager](https://github.com/nix-community/home-manager).
+Welcome to my dotfiles repository! This repository is managed using [Chezmoi](https://www.chezmoi.io/) and [Nix Home Manager](https://github.com/nix-community/home-manager).
 
 <img width="1512" alt="Preview" src="https://github.com/kbrdn1/dotfiles/blob/main/preview.png">
 
@@ -24,16 +24,18 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 | Layer | Tool | Purpose |
 |-------|------|---------|
-| **Package Manager** | Nix + Home Manager 24.11 | Declarative CLI tools (64+ packages) |
+| **Package Manager** | Nix + Home Manager 24.11 | Declarative CLI tools (70+ packages) |
 | **GUI Apps** | Homebrew Casks | GUI applications and system tools |
 | **Dotfiles** | Chezmoi | Configuration file management |
 | **Shell** | Zsh + Oh-My-Zsh | Interactive shell with plugins |
 | **Theme** | Powerlevel10k | Shell prompt theme |
-| **Editor** | Neovim + LazyVim | Primary editor with LSP, Claude Code integration |
-| **Terminal** | Ghostty + Tmux | GPU terminal with multiplexer (Claude Dark theme) |
-| **Window Manager** | AeroSpace | Tiling window manager (no SIP required) |
+| **Primary Editor** | Zed | Modern code editor with AI integration |
+| **Secondary Editor** | Neovim + LazyVim | Terminal editor with LSP, Claude Code integration |
+| **Terminal** | Ghostty + Kitty + Tmux | GPU terminals with multiplexer (Claude Dark theme) |
+| **Window Manager** | AeroSpace + Karabiner | Tiling window manager (no SIP required) |
 | **Menu Bar** | Sketchybar | Custom menu bar with 6 themes |
 | **File Manager** | Yazi + Superfile | Terminal file managers |
+| **Music** | MPD + rmpc | Music player daemon with TUI client |
 
 ## Sketchybar Themes 🎨
 
@@ -75,33 +77,33 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 | Tool | Version | Managed By | Notes |
 |------|---------|------------|-------|
-| [Node.js](https://nodejs.org/) | 24.11.0 | Nix | JavaScript runtime |
-| [Python](https://www.python.org/) | 3.13.8 | Nix | Python interpreter |
-| [uv](https://docs.astral.sh/uv/) | 0.8.23 | Nix | Fast Python package manager |
-| [PHP](https://www.php.net/) | 8.4.14 | Nix | With pcov, redis extensions |
-| [Go](https://golang.org/) | 1.25.2 | Nix | Golang compiler |
-| [Rust](https://www.rust-lang.org/) | 1.89.0 | Nix | Rust toolchain |
-| [Bun](https://bun.sh/) | 1.3.1 | Nix | Fast JavaScript runtime |
-| [Deno](https://deno.land/) | 2.5.6 | Nix | Secure TypeScript runtime |
-| [pnpm](https://pnpm.io/) | 10.20.0 | Nix | Fast package manager |
-| [Symfony CLI](https://symfony.com/download) | 5.15.1 | Nix | Symfony tooling |
+| [Node.js](https://nodejs.org/) | 24.x | Nix | JavaScript runtime |
+| [Python](https://www.python.org/) | 3.13.x | Nix | Python interpreter |
+| [PHP](https://www.php.net/) | 8.4.x | Nix | With pcov, redis extensions |
+| [Go](https://golang.org/) | Latest | Nix | Golang compiler |
+| [Rust](https://www.rust-lang.org/) | Latest | Nix | Rust toolchain (rustc, cargo, clippy, rustfmt) |
+| [Rust Analyzer](https://rust-analyzer.github.io/) | Latest | Nix | Rust LSP server |
+| [Bun](https://bun.sh/) | Latest | Nix | Fast JavaScript runtime |
+| [Deno](https://deno.land/) | Latest | Nix | Secure TypeScript runtime |
+| [pnpm](https://pnpm.io/) | Latest | Nix | Fast package manager |
+| [Symfony CLI](https://symfony.com/download) | Latest | Nix | Symfony tooling |
 | [Composer](https://getcomposer.org/) | Latest | Homebrew | PHP dependency manager |
 
 ### Kubernetes & Container Tools
 
 | Tool | Version | Managed By | Purpose |
 |------|---------|------------|---------|
-| [kubectl](https://kubernetes.io/) | 1.34.1 | Nix | Kubernetes CLI |
+| [kubectl](https://kubernetes.io/) | Latest | Nix | Kubernetes CLI |
 | [Helm](https://helm.sh/) | Latest | Nix | Kubernetes package manager |
-| [Minikube](https://minikube.sigs.k8s.io/) | 1.37.0 | Nix | Local Kubernetes |
+| [Minikube](https://minikube.sigs.k8s.io/) | Latest | Nix | Local Kubernetes |
 | [ArgoCD](https://argoproj.github.io/cd/) | Latest | Nix | GitOps CD tool |
 | [k9s](https://k9scli.io/) | Latest | Nix | Kubernetes TUI |
-| [kubectx](https://github.com/ahmetb/kubectx) | 0.9.5 | Nix | Context switcher |
-| [stern](https://github.com/stern/stern) | 1.33.0 | Nix | Multi-pod logs |
-| [kustomize](https://kustomize.io/) | 5.7.1 | Nix | Kubernetes config |
-| [kubecolor](https://github.com/hidetatz/kubecolor) | 0.5.2 | Nix | Colorized kubectl |
-| [dive](https://github.com/wagoodman/dive) | 0.13.1 | Nix | Docker image explorer |
-| [popeye](https://popeyecli.io/) | 0.22.1 | Nix | Kubernetes scanner |
+| [kubectx](https://github.com/ahmetb/kubectx) | Latest | Nix | Context switcher |
+| [stern](https://github.com/stern/stern) | Latest | Nix | Multi-pod logs |
+| [kustomize](https://kustomize.io/) | Latest | Nix | Kubernetes config |
+| [kubecolor](https://github.com/hidetatz/kubecolor) | Latest | Nix | Colorized kubectl |
+| [dive](https://github.com/wagoodman/dive) | Latest | Nix | Docker image explorer |
+| [popeye](https://popeyecli.io/) | Latest | Nix | Kubernetes scanner |
 | [Lazykube](https://github.com/TNK-Studio/lazykube) | Latest | Homebrew | Kubernetes TUI |
 
 ### Development Tools
@@ -113,30 +115,65 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | [Lazygit](https://github.com/jesseduffield/lazygit) | Latest | Nix | Git TUI |
 | [Lazydocker](https://github.com/jesseduffield/lazydocker) | Latest | Nix | Docker TUI |
 | [Lazysql](https://github.com/jorgerojas26/lazysql) | Latest | Nix | SQL TUI client |
-| [Redis](https://redis.io/) | 8.2.2 | Nix | In-memory database |
-| [Pandoc](https://pandoc.org/) | 3.7.0.2 | Nix | Document converter |
-| [Neovim](https://neovim.io/) | 0.11.5 | Nix | Primary editor (LazyVim) |
+| [Redis](https://redis.io/) | Latest | Nix | In-memory database |
+| [Pandoc](https://pandoc.org/) | Latest | Nix | Document converter |
+| [Neovim](https://neovim.io/) | Latest | Nix | Secondary editor (LazyVim) |
 | [Sesh](https://github.com/joshmedeski/sesh) | Latest | Nix | Tmux session manager |
 | [PlantUML](https://plantuml.com/) | Latest | Nix | Diagram generation |
 | [D2](https://d2lang.com/) | Latest | Nix | Modern diagram scripting |
-| [Rust Analyzer](https://rust-analyzer.github.io/) | Latest | Nix | Rust LSP server |
+| [Gnuplot](http://www.gnuplot.info/) | Latest | Nix | Graph generation |
+| [Just](https://github.com/casey/just) | Latest | Nix | Task runner |
+| [Tokei](https://github.com/XAMPPRocky/tokei) | Latest | Nix | Code statistics |
+| [Hyperfine](https://github.com/sharkdp/hyperfine) | Latest | Nix | Benchmarking |
+| [Chezmoi](https://www.chezmoi.io/) | Latest | Nix | Dotfiles management |
+| [Direnv](https://direnv.net/) | Latest | Nix | Directory-level environments |
 
 ### Shell & Terminal
 
 | Tool | Version | Managed By | Purpose |
 |------|---------|------------|---------|
-| [Zsh](https://www.zsh.org/) | Latest | System | Interactive shell |
-| [Oh My Zsh](https://ohmyz.sh/) | Latest | Manual | Zsh framework |
-| [Powerlevel10k](https://github.com/romkatv/powerlevel10k) | Latest | Homebrew | Zsh theme |
-| [Bat](https://github.com/sharkdp/bat) | Latest | Nix | Enhanced cat |
+| [Zsh](https://www.zsh.org/) | Latest | Nix | Interactive shell |
+| [Oh My Zsh](https://ohmyz.sh/) | Latest | Nix | Zsh framework |
+| [Powerlevel10k](https://github.com/romkatv/powerlevel10k) | Latest | Nix | Zsh theme |
+| [Bat](https://github.com/sharkdp/bat) | Latest | Nix | Enhanced cat (Claude Dark theme) |
 | [Eza](https://eza.rocks/) | Latest | Nix | Modern ls |
 | [Yazi](https://github.com/sxyazi/yazi) | Latest | Nix | File manager |
 | [Superfile](https://github.com/yorukot/superfile) | Latest | Homebrew | File manager TUI |
 | [Tmux](https://github.com/tmux/tmux) | Latest | Nix | Terminal multiplexer |
-| [Fzf](https://github.com/junegunn/fzf) | Latest | Nix | Fuzzy finder |
-| [Zoxide](https://github.com/ajeetdsouza/zoxide) | Latest | Nix | Smarter cd |
-| [Thefuck](https://github.com/nvbn/thefuck) | Latest | Nix | Command corrector |
+| [Fzf](https://github.com/junegunn/fzf) | Latest | Nix | Fuzzy finder (Claude Dark theme) |
+| [Zoxide](https://github.com/ajeetdsouza/zoxide) | Latest | Nix | Smarter cd (`z` command) |
 | [Neofetch](https://github.com/dylanaraps/neofetch) | Latest | Nix | System info |
+
+### System & Network Tools
+
+| Tool | Version | Managed By | Purpose |
+|------|---------|------------|---------|
+| [coreutils](https://www.gnu.org/software/coreutils/) | Latest | Nix | GNU core utilities |
+| [findutils](https://www.gnu.org/software/findutils/) | Latest | Nix | GNU find utilities |
+| [gnused](https://www.gnu.org/software/sed/) | Latest | Nix | GNU sed |
+| [gnugrep](https://www.gnu.org/software/grep/) | Latest | Nix | GNU grep |
+| [Tree](https://mama.indstate.edu/users/ice/tree/) | Latest | Nix | Directory listing |
+| [fd](https://github.com/sharkdp/fd) | Latest | Nix | Find alternative |
+| [ripgrep](https://github.com/BurntSushi/ripgrep) | Latest | Nix | Grep alternative |
+| [htop](https://htop.dev/) | Latest | Nix | Process viewer |
+| [duf](https://github.com/muesli/duf) | Latest | Nix | Disk usage |
+| [bottom](https://github.com/ClementTsang/bottom) | Latest | Nix | System monitor |
+| [jq](https://jqlang.github.io/jq/) | Latest | Nix | JSON processor |
+| [yq](https://github.com/mikefarah/yq) | Latest | Nix | YAML processor |
+| [curl](https://curl.se/) | Latest | Nix | URL transfer |
+| [wget](https://www.gnu.org/software/wget/) | Latest | Nix | Web downloader |
+| [HTTPie](https://httpie.io/) | Latest | Nix | HTTP client |
+| [dogdns](https://github.com/ogham/dog) | Latest | Nix | DNS client |
+
+### Multimedia & Music
+
+| Tool | Version | Managed By | Purpose |
+|------|---------|------------|---------|
+| [ffmpeg](https://ffmpeg.org/) | Latest | Nix | Video/audio processing |
+| [ImageMagick](https://imagemagick.org/) | Latest | Nix | Image processing |
+| [Poppler](https://poppler.freedesktop.org/) | Latest | Nix | PDF tools |
+| [rmpc](https://github.com/mierak/rmpc) | Latest | Nix | MPD client TUI |
+| [mpc](https://www.musicpd.org/clients/mpc/) | Latest | Nix | MPD CLI client |
 
 ### Cloud & API Tools
 
@@ -144,12 +181,6 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 |------|---------|------------|---------|
 | [AWS CLI](https://aws.amazon.com/cli/) | v2 | Nix | Amazon Web Services |
 | [Stripe CLI](https://stripe.com/docs/stripe-cli) | Latest | Nix | Stripe API testing |
-
-### macOS App Store
-
-| Tool | Version | Managed By | Purpose |
-|------|---------|------------|---------|
-| [mas](https://github.com/mas-cli/mas) | 2.2.2 | Nix | Mac App Store CLI (install App Store apps from terminal) |
 
 ## GUI Applications 🖥️
 
@@ -221,18 +252,20 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | `edit-config` | `$EDITOR $XDG_CONFIG_HOME` | Edit config directory |
 | `reload-zsh` | `source ~/.zshrc` | Reload ZSH configuration |
 | `edit-zsh` | `$EDITOR ~/.zshrc` | Edit ZSH configuration |
+| `edit-p10k` | `$EDITOR ~/.p10k.zsh` | Edit Powerlevel10k configuration |
 
 ### Development Aliases
 | Alias | Command | Description |
 |-------|---------|-------------|
 | `py`, `python` | `/usr/bin/python3` | Python 3 |
-| `pa` | `php artisan` | PHP Artisan CLI |
+| `pa`, `laravel` | `php artisan` | PHP Artisan CLI |
 | `a`, `adonis` | `node ace` | Adonis Ace CLI |
 | `ls` | `eza --color=always --long --git --no-filesize --icons=always --no-time --no-user --no-permissions --group-directories-first` | Enhanced listing |
-| `cd` | `zoxide` | Enhanced directory navigation |
+| `z` | `zoxide` | Smart directory navigation (replaces `cd` for frequent dirs) |
 | `lg` | `lazygit` | Terminal UI for Git |
 | `lzd` | `lazydocker` | Terminal UI for Docker |
 | `f` | `fzf --tmux top,50%` | Fuzzy finder in Tmux fixed on top with 50% height |
+| `ad` | `agent-deck` | Launch Agent Deck (bypasses nested tmux detection) |
 
 ### GitHub Copilot Aliases
 | Alias | Command | Description |
@@ -241,6 +274,12 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | `gce` | `gh copilot explain` | Explain commands |
 | `gcc` | `gh copilot config` | Configure Copilot |
 | `gca` | `gh copilot alias` | Manage Copilot aliases |
+
+### Web Search Aliases
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `gg` | `google` | Google search from terminal |
+| `yt` | `youtube` | YouTube search from terminal |
 
 ### Window Manager Services
 
@@ -271,55 +310,62 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 > Modern tiling window manager (no SIP required) - See [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md)
 
+> [!NOTE]
+> **Karabiner-Elements** maps the **right Option key** (`⌥→`) to `Ctrl+Alt`, which is the modifier used in AeroSpace bindings.
+> This preserves the left Option key for AZERTY special characters (`{ } [ ] @ # | \`).
+> In the tables below, <kbd>⌥→</kbd> represents physically pressing the **right Option key**.
+
 ### Workspace Navigation
 
-| Shortcut | Action | Workspace |
-|----------|--------|-----------|
-| <kbd>⌥</kbd> + <kbd>1</kbd> | Focus workspace 1 | Mail/Calendar |
-| <kbd>⌥</kbd> + <kbd>2</kbd> | Focus workspace 2 | Postman |
-| <kbd>⌥</kbd> + <kbd>3</kbd> | Focus workspace 3 | Code Editors |
-| <kbd>⌥</kbd> + <kbd>Q</kbd> | Focus workspace 4 | Arc Browser |
-| <kbd>⌥</kbd> + <kbd>W</kbd> | Focus workspace 5 | Communication/Web |
-| <kbd>⌥</kbd> + <kbd>E</kbd> | Focus workspace 6 | Database/Docker |
-| <kbd>⌥</kbd> + <kbd>Tab</kbd> | Back and forth | Previous workspace |
+| Shortcut | AeroSpace Binding | Workspace | Applications |
+|----------|-------------------|-----------|-------------|
+| <kbd>⌥→</kbd> + <kbd>1</kbd> | `ctrl-alt-1` | 1 - Home | Mail, Calendar, Canary Mail |
+| <kbd>⌥→</kbd> + <kbd>2</kbd> | `ctrl-alt-2` | 2 - Music | Apple Music, Spotify, Tidal |
+| <kbd>⌥→</kbd> + <kbd>3</kbd> | `ctrl-alt-3` | 3 - Development | Zed, Ghostty, VS Code, JetBrains, Postman |
+| <kbd>⌥→</kbd> + <kbd>Q</kbd> | `ctrl-alt-q` | 4 - Web | Helium, Dia/Arc, Chrome, Safari |
+| <kbd>⌥→</kbd> + <kbd>W</kbd> | `ctrl-alt-w` | 5 - Communication | Slack, Discord, Messages, Teams, Zoom |
+| <kbd>⌥→</kbd> + <kbd>E</kbd> | `ctrl-alt-e` | 6 - Server Tools | TablePlus, OrbStack, Docker |
+| <kbd>⌥→</kbd> + <kbd>O</kbd> | `ctrl-alt-o` | 7 - Notes | Obsidian |
+| <kbd>⌥→</kbd> + <kbd>C</kbd> | `ctrl-alt-c` | 8 - Claude AI | Claude |
+| <kbd>⌥→</kbd> + <kbd>Tab</kbd> | `ctrl-alt-tab` | Back and forth | Previous workspace |
 
 ### Window Focus
 
-| Shortcut | Action |
-|----------|--------|
-| <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Focus window (left/down/up/right) |
-| <kbd>⌥</kbd> + <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | Focus window (arrows) |
+| Shortcut | AeroSpace Binding | Action |
+|----------|-------------------|--------|
+| <kbd>⌥→</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `ctrl-alt-h/j/k/l` | Focus window (left/down/up/right) |
+| <kbd>⌥→</kbd> + <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | `ctrl-alt-arrows` | Focus window (arrows) |
 
 ### Window Movement
 
-| Shortcut | Action |
-|----------|--------|
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Move window (left/down/up/right) |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | Move window (arrows) |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> | Move to workspace 1/2/3 |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd> | Move to workspace 4/5/6 |
-| <kbd>⌃</kbd> + <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1-6</kbd> | Move to workspace and follow |
+| Shortcut | AeroSpace Binding | Action |
+|----------|-------------------|--------|
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `ctrl-alt-shift-h/j/k/l` | Move window (left/down/up/right) |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | `ctrl-alt-shift-arrows` | Move window (arrows) |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> | `ctrl-alt-shift-1/2/3` | Move to workspace 1/2/3 |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd> | `ctrl-alt-shift-q/w/e` | Move to workspace 4/5/6 |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>O</kbd>/<kbd>C</kbd> | `ctrl-alt-shift-o/c` | Move to workspace 7/8 |
 
 ### Layout & Display
 
-| Shortcut | Action |
-|----------|--------|
-| <kbd>⌥</kbd> + <kbd>/</kbd> | Toggle tiles layout (horizontal/vertical) |
-| <kbd>⌥</kbd> + <kbd>,</kbd> | Toggle accordion layout (cascade) |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle floating/tiling |
-| <kbd>⌥</kbd> + <kbd>F</kbd> | Toggle fullscreen |
-| <kbd>⌥</kbd> + <kbd>-</kbd>/<kbd>=</kbd> | Resize window (smart -50/+50) |
-| <kbd>⌥</kbd> + <kbd>R</kbd> | Enter resize mode |
+| Shortcut | AeroSpace Binding | Action |
+|----------|-------------------|--------|
+| <kbd>⌥→</kbd> + <kbd>/</kbd> | `ctrl-alt-slash` | Toggle tiles layout (horizontal/vertical) |
+| <kbd>⌥→</kbd> + <kbd>,</kbd> | `ctrl-alt-comma` | Toggle accordion layout (cascade) |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>Space</kbd> | `ctrl-alt-shift-space` | Toggle floating/tiling |
+| <kbd>⌥→</kbd> + <kbd>F</kbd> | `ctrl-alt-f` | Toggle fullscreen |
+| <kbd>⌥→</kbd> + <kbd>-</kbd>/<kbd>=</kbd> | `ctrl-alt-minus/equal` | Resize window (smart -50/+50) |
+| <kbd>⌥→</kbd> + <kbd>R</kbd> | `ctrl-alt-r` | Enter resize mode |
 
 ### Utilities
 
-| Shortcut | Action |
-|----------|--------|
-| <kbd>⌥</kbd> + <kbd>Enter</kbd> | Open Ghostty terminal |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>X</kbd> | Close window |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>=</kbd> | Balance window sizes |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>R</kbd> | Reload AeroSpace config |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>;</kbd> | Enter service mode |
+| Shortcut | AeroSpace Binding | Action |
+|----------|-------------------|--------|
+| <kbd>⌥→</kbd> + <kbd>Enter</kbd> | `ctrl-alt-enter` | Open Ghostty terminal |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>X</kbd> | `ctrl-alt-shift-x` | Close window |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>=</kbd> | `ctrl-alt-shift-equal` | Balance window sizes |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>R</kbd> | `ctrl-alt-shift-r` | Reload AeroSpace config |
+| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>;</kbd> | `ctrl-alt-shift-semicolon` | Enter service mode |
 
 ## Shortcuts & Keybindings ⌨️
 
@@ -327,13 +373,15 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 > **Prefix**: <kbd>⌃</kbd> + <kbd>A</kbd> (replaces default <kbd>⌃</kbd> + <kbd>B</kbd>)
 > **Theme**: Claude Dark with copper accent (`#D4825D`)
+> **Config source**: `home.nix` (Nix Home Manager)
 
 #### Session Management
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
 | <kbd>prefix</kbd> + <kbd>R</kbd> | `source-file ~/.tmux.conf` | Reload configuration |
-| <kbd>prefix</kbd> + <kbd>T</kbd> | Sesh | Open session manager (sesh) |
+| <kbd>prefix</kbd> + <kbd>T</kbd> | Sesh picker | Open session manager (fzf-based, with multi-source: tmux, configs, zoxide, find) |
+| <kbd>prefix</kbd> + <kbd>L</kbd> | Sesh last | Switch to last session |
 
 #### Window Management
 
@@ -342,7 +390,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | <kbd>prefix</kbd> + <kbd>C</kbd> | Create new window (in current path) |
 | <kbd>prefix</kbd> + <kbd>B</kbd> | Previous window |
 | <kbd>prefix</kbd> + <kbd>N</kbd> | Next window |
-| <kbd>prefix</kbd> + <kbd>X</kbd> | Close window |
+| <kbd>prefix</kbd> + <kbd>X</kbd> (uppercase) | Close window |
 
 #### Pane Management
 
@@ -352,24 +400,40 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 | <kbd>prefix</kbd> + <kbd>J</kbd> | Focus down pane |
 | <kbd>prefix</kbd> + <kbd>K</kbd> | Focus up pane |
 | <kbd>prefix</kbd> + <kbd>L</kbd> | Focus right pane |
-| <kbd>prefix</kbd> + <kbd>X</kbd> | Close pane |
+| <kbd>prefix</kbd> + <kbd>x</kbd> (lowercase) | Close pane |
 | <kbd>prefix</kbd> + <kbd>V</kbd> | Split horizontally (in current path) |
 | <kbd>prefix</kbd> + <kbd>S</kbd> | Split vertically (in current path) |
+| <kbd>prefix</kbd> + <kbd>⇧</kbd> + <kbd>H/J/K/L</kbd> | Resize pane (repeatable, ±5) |
+
+#### Navigation (no prefix)
+
+| Shortcut | Action |
+|----------|--------|
+| <kbd>⌃</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Seamless navigation between tmux panes and nvim splits (tmux.nvim) |
+
+#### Copy Mode
+
+| Shortcut | Action |
+|----------|--------|
+| <kbd>prefix</kbd> + <kbd>V</kbd> | Enter copy mode |
+| <kbd>Escape</kbd> | Cancel copy mode |
+| <kbd>Enter</kbd> | Copy selection and exit |
 
 #### Plugins
 
 | Plugin | Trigger | Purpose |
 |--------|---------|---------|
-| [sesh](https://github.com/joshmedeski/sesh) | <kbd>prefix</kbd> + <kbd>T</kbd> | Smart session manager |
+| [sesh](https://github.com/joshmedeski/sesh) | <kbd>prefix</kbd> + <kbd>T</kbd> | Smart session manager with fzf |
 | [tmux.nvim](https://github.com/aserowy/tmux.nvim) | <kbd>⌃</kbd> + <kbd>h/j/k/l</kbd> | Seamless nvim/tmux navigation |
 | [fzf-url](https://github.com/wfxr/tmux-fzf-url) | <kbd>prefix</kbd> + <kbd>U</kbd> | URL picker with fzf |
+| [tmux-yank](https://github.com/tmux-plugins/tmux-yank) | - | System clipboard integration |
 | claude-dark | - | Custom Claude Dark theme (copper accent `#D4825D`) |
 | tmux-cpu | - | CPU usage in status bar |
 | tmux-battery | - | Battery status (laptops) |
 
 ## Neovim Configuration 📝
 
-Primary editor using [LazyVim](https://www.lazyvim.org/) with custom plugins and Claude Dark colorscheme.
+Secondary editor using [LazyVim](https://www.lazyvim.org/) with custom plugins and Claude Dark colorscheme.
 
 ### Key Features
 
@@ -400,172 +464,284 @@ Primary editor using [LazyVim](https://www.lazyvim.org/) with custom plugins and
 
 ## Zed Configuration ⚡
 
-Secondary editor with custom keybindings and tasks.
+Primary editor with custom Vim-mode keybindings, task integrations, and Claude Dark theme.
 
 ### Keybindings 🎹
 
-#### General Navigation
+#### Global Navigation
 
-| Shortcut | Context | Action | Description |
-|----------|---------|--------|-------------|
-| <kbd>⌃</kbd> + <kbd>h</kbd> | Editor | `workspace::ActivatePaneLeft` | Focus left pane |
-| <kbd>⌃</kbd> + <kbd>j</kbd> | Editor | `workspace::ActivatePaneDown` | Focus down pane |
-| <kbd>⌃</kbd> + <kbd>k</kbd> | Editor | `workspace::ActivatePaneUp` | Focus up pane |
-| <kbd>⌃</kbd> + <kbd>l</kbd> | Editor | `workspace::ActivatePaneRight` | Focus right pane |
-| <kbd>⌘</kbd> + <kbd>@</kbd> | Editor | `editor::RestartLanguageServer` | Restart language server |
-| <kbd>⌘</kbd> + <kbd>ù</kbd> | Editor | `git_panel::ToggleFocus` | Toggle Git panel |
-| <kbd>⌘</kbd> + <kbd><</kbd> | Editor | `editor::ToggleInlayHints` | Toggle inlay hints |
-| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>k</kbd> | Editor | `editor::DeleteLine` | Delete current line |
-| <kbd>⌘</kbd> + <kbd>g</kbd> | Editor | `editor::SelectLargerSyntaxNode` | Select larger syntax node |
-| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>g</kbd> | Editor | `editor::SelectSmallerSyntaxNode` | Select smaller syntax node |
-| <kbd>⌘</kbd> + <kbd>i</kbd> | Editor | `assistant::InlineAssist` | Inline AI assist |
-| <kbd>⌘</kbd> + <kbd>;</kbd> | Editor | `go_to_line::Toggle` | Toggle go to line |
-| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>r</kbd> | Editor | `editor::Rename` | Rename symbol |
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>⌃</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `workspace::ActivatePane*` | Focus pane (left/down/up/right) |
+| <kbd>⌃</kbd> + <kbd>⇧</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `pane::SplitAndMove*` | Split pane and move (left/down/up/right) |
+| <kbd>⌘</kbd> + <kbd>@</kbd> | `editor::RestartLanguageServer` | Restart language server |
+| <kbd>⌘</kbd> + <kbd>ù</kbd> | `git_panel::ToggleFocus` | Toggle Git panel |
 
-#### Formatting and Movement
-| Shortcut | Context | Action | Description |
-|----------|---------|--------|-------------|
-| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>f</kbd> | Editor | `editor::Format` | Format current file |
-| <kbd>⌥</kbd> + <kbd>k</kbd> | Editor | `editor::MoveLineUp` | Move line up |
-| <kbd>⌥</kbd> + <kbd>j</kbd> | Editor | `editor::MoveLineDown` | Move line down |
-| <kbd>⌥</kbd> + <kbd>↑</kbd> | Editor | `editor::MoveLineUp` | Move line up |
-| <kbd>⌥</kbd> + <kbd>↓</kbd> | Editor | `editor::MoveLineDown` | Move line down |
-| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>p</kbd> | Editor | `markdown::OpenPreview` | Open markdown preview |
+#### Editor
 
-#### Task Shortcuts
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>⌃</kbd> + <kbd>Space</kbd> | `editor::ShowCompletions` | Show completions |
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>f</kbd> | `editor::Format` | Format current file |
+| <kbd>⌥</kbd> + <kbd>k</kbd>/<kbd>j</kbd> | `editor::MoveLineUp/Down` | Move line up/down |
+| <kbd>⌥</kbd> + <kbd>↑</kbd>/<kbd>↓</kbd> | `editor::MoveLineUp/Down` | Move line up/down (arrows) |
+| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>r</kbd> | `editor::Rename` | Rename symbol |
+| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>k</kbd> | `editor::DeleteLine` | Delete current line |
+| <kbd>⌘</kbd> + <kbd>g</kbd> | `editor::SelectLargerSyntaxNode` | Select larger syntax node |
+| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>g</kbd> | `editor::SelectSmallerSyntaxNode` | Select smaller syntax node |
+| <kbd>⌘</kbd> + <kbd><</kbd> | `editor::ToggleInlayHints` | Toggle inlay hints |
+| <kbd>⌘</kbd> + <kbd>;</kbd> | `go_to_line::Toggle` | Go to line |
+| <kbd>⌘</kbd> + <kbd>i</kbd> | `assistant::InlineAssist` | Inline AI assist |
+| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>p</kbd> | `markdown::OpenPreview` | Open markdown preview |
 
-| Shortcut | Context | Action | Description |
-|----------|---------|--------|-------------|
-| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn` | Open task launcher |
-| <kbd>⌥</kbd> + <kbd>f</kbd> | Workspace | `task::Spawn "Files: FZF"` | Open FZF file finder |
-| <kbd>⌥</kbd> + <kbd>y</kbd> | Workspace | `task::Spawn "Files: Yazi"` | Open Yazi file manager |
-| <kbd>⌥</kbd> + <kbd>g</kbd> | Workspace | `task::Spawn "Git: Lazygit"` | Open Lazygit |
-| <kbd>⌥</kbd> + <kbd>r</kbd> | Workspace | `task::Spawn "Files: Rename Files (Script)"` | Run file rename script |
-| <kbd>⌥</kbd> + <kbd>d</kbd> | Workspace | `task::Spawn "Database: Redis CLI"` | Open Redis CLI |
-| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>d</kbd> | Workspace | `task::Spawn "Docker: Lazydocker"` | Open Lazydocker |
-| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>k</kbd> | Workspace | `task::Spawn "Kubernetes: Lazykube"` | Open Lazykube |
-| <kbd>⌥</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn "Laravel: Test"` | Run Laravel tests |
-| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> | Workspace | `task::Spawn "Laravel: Test (coverage)"` | Run Laravel tests with coverage |
-| <kbd>⌥</kbd> + <kbd>⇧</kbd> + <kbd>m</kbd> | Workspace | `task::Spawn "Laravel: Migrate (fresh and seed)"` | Run Laravel migration fresh with seed |
-| <kbd>⌥</kbd> + <kbd>p</kbd> | Workspace | `task::Spawn "Files: Generate Project Structure file"` | Generate project structure file |
+#### Alt Shortcuts (Workspace + Terminal)
 
-#### AI and Terminal
+> These shortcuts work globally and in terminal context for quick access to tools.
 
-| Shortcut | Context | Action | Description |
-|----------|---------|--------|-------------|
-| <kbd>⌘</kbd> + <kbd>⌥</kbd> + <kbd>i</kbd> | Workspace | `assistant::ToggleFocus` | Toggle AI assistant |
-| <kbd>⌃</kbd> + <kbd>Esc</kbd> | Terminal | `terminal::ToggleViMode` | Toggle Vi mode in terminal |
+| Shortcut | Task | Description |
+|----------|------|-------------|
+| <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> | `task::Spawn` | Open task launcher |
+| <kbd>⌥</kbd> + <kbd>C</kbd> | Claude Code | Open Claude Code |
+| <kbd>⌥</kbd> + <kbd>f</kbd> | Files: FZF | FZF file finder |
+| <kbd>⌥</kbd> + <kbd>y</kbd> | Files: Yazi | Yazi file manager |
+| <kbd>⌥</kbd> + <kbd>R</kbd> | Files: Rename Files (FZF) | Batch rename files |
+| <kbd>⌥</kbd> + <kbd>g</kbd> | Git: Lazygit | Open Lazygit |
+| <kbd>⌥</kbd> + <kbd>r</kbd> | Database: Redis CLI | Open Redis CLI |
+| <kbd>⌥</kbd> + <kbd>s</kbd> | LazySQL | SQL TUI client |
+| <kbd>⌥</kbd> + <kbd>c</kbd> | LazyCurl | HTTP client TUI |
+| <kbd>⌥</kbd> + <kbd>S</kbd> | LazySSH | SSH manager TUI |
+| <kbd>⌥</kbd> + <kbd>d</kbd> | Docker: Lazydocker | Docker TUI |
+| <kbd>⌥</kbd> + <kbd>k</kbd> | Kubernetes: Lazykube | Kubernetes TUI |
+| <kbd>⌥</kbd> + <kbd>p</kbd> | Files: Generate Project Structure | Generate project tree |
 
-> [!NOTE]
-> See the [Zed Keybindings Documentation](https://zed.dev/docs/key-bindings) for more information.
+#### Terminal
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>⌃</kbd> + <kbd>Esc</kbd> | `terminal::ToggleViMode` | Toggle Vi mode |
+| <kbd>⌃</kbd> + <kbd>n</kbd>/<kbd>b</kbd> | Next/Previous tab | Tab navigation |
+| <kbd>⌃</kbd> + <kbd>x</kbd> | Close tab | Close active tab |
+| <kbd>⌃</kbd> + <kbd>v</kbd>/<kbd>s</kbd> | Split right/down | Split pane |
 
 ### Vim-Mode Keybindings 🧙‍♂️
 
-#### Editor Navigation
+#### Quick Navigation (Ctrl)
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| <kbd>z</kbd> + <kbd>a</kbd> | `editor::ToggleFold` | Toggle fold at cursor |
-| <kbd>z</kbd> + <kbd>l</kbd> | `editor::Fold` | Fold at cursor |
-| <kbd>z</kbd> + <kbd>L</kbd> | `editor::FoldAll` | Fold all regions |
-| <kbd>z</kbd> + <kbd>h</kbd> | `editor::UnfoldLines` | Unfold at cursor |
-| <kbd>z</kbd> + <kbd>H</kbd> | `editor::UnfoldAll` | Unfold all regions |
 | <kbd>⌃</kbd> + <kbd>n</kbd> | `pane::ActivateNextItem` | Next tab/buffer |
 | <kbd>⌃</kbd> + <kbd>b</kbd> | `pane::ActivatePreviousItem` | Previous tab/buffer |
 | <kbd>⌃</kbd> + <kbd>x</kbd> | `pane::CloseActiveItem` | Close active tab/buffer |
-| <kbd>⌃</kbd> + <kbd>-</kbd> | `pane::SplitRight` | Split pane right |
-| <kbd>⌃</kbd> + <kbd>=</kbd> | `pane::SplitDown` | Split pane down |
+| <kbd>⌃</kbd> + <kbd>v</kbd> | `pane::SplitRight` | Split pane right |
+| <kbd>⌃</kbd> + <kbd>s</kbd> | `pane::SplitDown` | Split pane down |
 
-#### Space Leader Commands
+#### Folding (z)
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| <kbd>Space</kbd> + <kbd>;</kbd> | `go_to_line::Toggle` | Toggle go to line |
-| <kbd>Space</kbd> + <kbd>R</kbd> | `editor::Rename` | Rename symbol |
-| <kbd>Space</kbd> + <kbd>@</kbd> | `editor::RestartLanguageServer` | Restart language server |
-| <kbd>Space</kbd> + <kbd>g</kbd> | `editor::SelectLargerSyntaxNode` | Select larger syntax node |
-| <kbd>Space</kbd> + <kbd>G</kbd> | `editor::SelectSmallerSyntaxNode` | Select smaller syntax node |
-| <kbd>Space</kbd> + <kbd>j</kbd> | `terminal_panel::ToggleFocus` | Toggle terminal panel |
-| <kbd>Space</kbd> + <kbd>ù</kbd> | `git_panel::ToggleFocus` | Toggle Git panel |
-| <kbd>Space</kbd> + <kbd>0</kbd> | `vim::StartOfDocument` | Go to start of document |
-| <kbd>Space</kbd> + <kbd>o</kbd> | `editor::Hover` | Show hover information |
-| <kbd>Space</kbd> + <kbd>Tab</kbd> | `pane::ActivateNextItem` | Next tab/buffer |
-| <kbd>Space</kbd> + <kbd>⇧</kbd> + <kbd>Tab</kbd> | `pane::ActivatePreviousItem` | Previous tab/buffer |
-| <kbd>Space</kbd> + <kbd>⇧</kbd> + <kbd>s</kbd> | `project_symbols::Toggle` | Toggle project symbols |
-| <kbd>Space</kbd> + <kbd>.</kbd> | `editor::ToggleCodeActions` | Toggle code actions |
-| <kbd>Space</kbd> + <kbd>⇧</kbd> + <kbd>a</kbd> | `editor::FindAllReferences` | Find all references |
-| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>d</kbd> | `pane::CloseActiveItem` | Close active item |
-| <kbd>Space</kbd> + <kbd>*</kbd> | `vim::MoveToNext` (partial_word) | Move to next occurrence of word |
-| <kbd>Space</kbd> + <kbd>¨</kbd> | `vim::MoveToPrevious` (partial_word) | Move to previous occurrence of word |
+| <kbd>z</kbd> + <kbd>a</kbd> | `editor::ToggleFold` | Toggle fold at cursor |
+| <kbd>z</kbd> + <kbd>h</kbd> | `editor::Fold` | Fold at cursor |
+| <kbd>z</kbd> + <kbd>H</kbd> | `editor::FoldAll` | Fold all regions |
+| <kbd>z</kbd> + <kbd>l</kbd> | `editor::UnfoldLines` | Unfold at cursor |
+| <kbd>z</kbd> + <kbd>L</kbd> | `editor::UnfoldAll` | Unfold all regions |
 
-#### Task Commands
+#### Space Leader - Explorer & Search (space f)
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>r</kbd> | `task::Spawn "Files: Rename Files (Script)"` | Run file rename script |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>f</kbd> | `task::Spawn "Files: FZF"` | Open FZF file finder |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>y</kbd> | `task::Spawn "Files: Yazi"` | Open Yazi file manager |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>d</kbd> | `task::Spawn "Docker: Lazydocker"` | Open Lazydocker |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>k</kbd> | `task::Spawn "Kubernetes: Lazykube"` | Open Lazykube |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>p</kbd> | `task::Spawn "Files: Generate Project Structure file"` | Generate project structure file |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>l</kbd> | `task::Spawn "Git: Generate Git Logs file"` | Generate Git logs file |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>L</kbd> | `task::Spawn "Git: Generate Git Logs file (All)"` | Generate all Git logs file |
-| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>g</kbd> | `task::Spawn "Git: Lazygit"` | Open Lazygit |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>t</kbd> | `task::Spawn "Laravel: Test"` | Run Laravel tests |
-| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>T</kbd> | `task::Spawn "Laravel: Test (coverage)"` | Run Laravel tests with coverage |
-| <kbd>Space</kbd> + <kbd>M</kbd> | `task::Spawn "Laravel: Migrate (fresh and seed)"` | Run Laravel migration fresh with seed |
-
-#### File & Search Operations
-| Shortcut | Action | Description |
-|----------|--------|-------------|
-| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>f</kbd> | `file_finder::Toggle` | Toggle file finder |
-| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>p</kbd> | `projects::OpenRecent` | Open recent project |
-| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>b</kbd> | `vim::Search` | Search in current file |
-| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>s</kbd> | `outline::Toggle` | Toggle outline view |
-| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>r</kbd> | `search::ToggleReplace` | Toggle search & replace |
-| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>l</kbd> | `go_to_line::Toggle` | Toggle go to line |
-| <kbd>Space</kbd> + <kbd>d</kbd> | `editor::SelectAllMatches` | Select all matches |
 | <kbd>Space</kbd> + <kbd>e</kbd> | `project_panel::ToggleFocus` | Toggle project panel |
-| <kbd>Space</kbd> + <kbd>b</kbd> + <kbd>f</kbd> | `editor::Format` | Format current file |
+| <kbd>Space</kbd> + <kbd>Space</kbd> | `file_finder::Toggle` | File finder |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>f</kbd> | `file_finder::Toggle` | File finder |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>g</kbd> | `pane::DeploySearch` | Global search |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>p</kbd> | `projects::OpenRecent` | Open recent project |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>b</kbd> | `vim::Search` | Search in buffer |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>s</kbd> | `outline::Toggle` | Toggle outline view |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>r</kbd> | `search::ToggleReplace` | Search & replace |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>l</kbd> | `go_to_line::Toggle` | Go to line |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>t</kbd> | `terminal_panel::ToggleFocus` | Toggle terminal |
+| <kbd>Space</kbd> + <kbd>f</kbd> + <kbd>T</kbd> | `workspace::NewCenterTerminal` | New center terminal |
+| <kbd>Space</kbd> + <kbd>;</kbd> | `go_to_line::Toggle` | Go to line |
 
-#### AI Assistant
+#### Space Leader - Buffer (space b)
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>b</kbd> + <kbd>n</kbd> | `pane::ActivateNextItem` | Next buffer |
+| <kbd>Space</kbd> + <kbd>b</kbd> + <kbd>b</kbd> | `pane::ActivatePreviousItem` | Previous buffer |
+| <kbd>Space</kbd> + <kbd>b</kbd> + <kbd>d</kbd> | `pane::CloseActiveItem` | Close buffer |
+| <kbd>Space</kbd> + <kbd>b</kbd> + <kbd>o</kbd> | `pane::CloseOtherItems` | Close other buffers |
+| <kbd>Space</kbd> + <kbd>b</kbd> + <kbd>f</kbd> | `editor::Format` | Format buffer |
+| <kbd>Space</kbd> + <kbd>b</kbd> + <kbd>D</kbd> | `editor::DiffClipboardWithSelection` | Diff clipboard |
+| <kbd>Space</kbd> + <kbd>Tab</kbd> | `pane::ActivateNextItem` | Next tab |
+| <kbd>Space</kbd> + <kbd>⇧</kbd> + <kbd>Tab</kbd> | `pane::ActivatePreviousItem` | Previous tab |
+| <kbd>Space</kbd> + <kbd>v</kbd> | `pane::SplitRight` | Split right |
+| <kbd>Space</kbd> + <kbd>s</kbd> | `pane::SplitDown` | Split down |
+| <kbd>Space</kbd> + <kbd>x</kbd> | `pane::CloseActiveItem` | Close item |
+| <kbd>Space</kbd> + <kbd>m</kbd> | `markdown::OpenPreview` | Markdown preview |
+| <kbd>Space</kbd> + <kbd>M</kbd> | `markdown::OpenPreviewToTheSide` | Markdown preview (side) |
+
+#### Space Leader - Window / Split (space w)
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>v</kbd> | `pane::SplitRight` | Split right |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>s</kbd> | `pane::SplitDown` | Split down |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>d</kbd> | `pane::CloseActiveItem` | Close pane |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `workspace::ActivatePane*` | Focus pane |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>n</kbd>/<kbd>b</kbd> | `workspace::ActivateNextPane/PreviousPane` | Next/previous pane |
+
+#### Space Leader - Code / LSP (space c)
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>r</kbd> | `editor::Rename` | Rename symbol |
+| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>a</kbd> | `editor::ToggleCodeActions` | Code actions |
+| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>d</kbd> | `editor::GoToDefinition` | Go to definition |
+| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>D</kbd> | `editor::GoToTypeDefinition` | Go to type definition |
+| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>i</kbd> | `editor::GoToImplementation` | Go to implementation |
+| <kbd>Space</kbd> + <kbd>R</kbd> | `editor::Rename` | Rename symbol |
+| <kbd>Space</kbd> + <kbd>o</kbd> | `editor::Hover` | Show hover info |
+| <kbd>Space</kbd> + <kbd>.</kbd> | `editor::ToggleCodeActions` | Code actions |
+| <kbd>Space</kbd> + <kbd>A</kbd> | `editor::FindAllReferences` | Find all references |
+| <kbd>Space</kbd> + <kbd>@</kbd> | `editor::RestartLanguageServer` | Restart LSP |
+
+#### Space Leader - Git (space g)
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>g</kbd> | `git_panel::ToggleFocus` | Toggle Git panel |
+| <kbd>Space</kbd> + <kbd>G</kbd> + <kbd>G</kbd> | `task::Spawn "Git: Lazygit"` | Open Lazygit |
+| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>b</kbd> | `git::Blame` | Git blame |
+| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>D</kbd> | `task::Spawn "Git: Lumen diff"` | Lumen diff |
+| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>d</kbd> | `git::Diff` | Git diff |
+| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>t</kbd> | `git_panel::ToggleTreeView` | Toggle tree view |
+| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>w</kbd> | `git::Worktree` | Git worktree |
+| <kbd>Space</kbd> + <kbd>g</kbd> + <kbd>v</kbd> | `editor::ToggleSplitDiff` | Toggle split diff |
+
+#### Space Leader - Tools / Tasks (space t)
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>t</kbd> | `task::Spawn` | Open task launcher |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>T</kbd> | `terminal::RerunTask` | Rerun last task |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>n</kbd> | IDE: Neovim | Open Neovim |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>f</kbd> | Files: FZF | FZF file finder |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>y</kbd> | Files: Yazi | Yazi file manager |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>r</kbd> | Files: Rename Files (FZF) | Batch rename |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>d</kbd> | Docker: Lazydocker | Docker TUI |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>k</kbd> | Kubernetes: Lazykube | Kubernetes TUI |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>p</kbd> | Files: Generate Project Structure | Project tree |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>l</kbd> | Git: Generate Git Logs file | Git logs (limited) |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>L</kbd> | Git: Generate Git Logs file (All) | Git logs (all) |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>s</kbd> | LazySQL | SQL TUI |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>S</kbd> | LazySSH | SSH manager |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>c</kbd> | LazyCurl | HTTP client |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>e</kbd> | Ekphos | Documentation generator |
+| <kbd>Space</kbd> + <kbd>t</kbd> + <kbd>m</kbd> | Lazymake | Build system |
+
+#### Space Leader - AI (space a)
 | Shortcut | Action | Description |
 |----------|--------|-------------|
 | <kbd>Space</kbd> + <kbd>i</kbd> | `assistant::InlineAssist` | Inline AI assist |
-| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>c</kbd> + <kbd>o</kbd> | `assistant::ToggleFocus` | Toggle AI assistant |
-| <kbd>Space</kbd> + <kbd>c</kbd> + <kbd>c</kbd> + <kbd>p</kbd> | `assistant::QuoteSelection` | Quote selected text to assistant |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>i</kbd> | `assistant::InlineAssist` | Inline AI assist |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>f</kbd> | `agent::ToggleFocus` | Toggle AI agent panel |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>p</kbd> | `agent::AddSelectionToThread` | Add selection to thread |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>c</kbd> | Claude Code | Open Claude Code |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>C</kbd> | Claude Code (Continue) | Continue Claude session |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>s</kbd> | Claude Code (Skip Perms) | Claude Code (skip permissions) |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>S</kbd> | Claude Code (Continue + Skip) | Continue + skip permissions |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>b</kbd> | Claude Code (Chrome) | Claude Code with Chrome MCP |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>B</kbd> | Claude Code (Continue + Chrome) | Continue with Chrome MCP |
 
-#### Settings & Configuration
+#### Space Leader - Symbols & Diagnostics
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>k</kbd> | `zed::OpenKeymap` | Open keymap settings |
-| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>s</kbd> | `zed::OpenSettings` | Open settings |
-| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>t</kbd> | `zed::OpenTasks` | Open tasks |
-| <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>T</kbd> | `theme_selector::Toggle` | Toggle theme selector |
+| <kbd>Space</kbd> + <kbd>S</kbd> | `project_symbols::Toggle` | Project symbols |
+| <kbd>Space</kbd> + <kbd>G</kbd> | `editor::SelectAllMatches` | Select all matches |
 | <kbd>Space</kbd> + <kbd>s</kbd> + <kbd>d</kbd> | `diagnostics::Deploy` | Deploy diagnostics |
+| <kbd>Space</kbd> + <kbd>d</kbd> | `editor::GoToDiagnostic` | Next diagnostic |
+| <kbd>Space</kbd> + <kbd>D</kbd> | `editor::GoToPreviousDiagnostic` | Previous diagnostic |
 
-> [!NOTE]
-> You can use the default Vim keybindings in Zed by enabling Vim mode in the settings.
-> See the [Zed Vim Documentation](https://zed.dev/docs/vim) for more information.
+#### Space Leader - Settings (space ,)
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>,</kbd> + <kbd>k</kbd> | `zed::OpenKeymapFile` | Edit keymap file |
+| <kbd>Space</kbd> + <kbd>,</kbd> + <kbd>K</kbd> | `zed::OpenKeymap` | Open keymap reference |
+| <kbd>Space</kbd> + <kbd>,</kbd> + <kbd>s</kbd> | `zed::OpenSettingsFile` | Edit settings file |
+| <kbd>Space</kbd> + <kbd>,</kbd> + <kbd>S</kbd> | `zed::OpenSettings` | Open settings reference |
+| <kbd>Space</kbd> + <kbd>,</kbd> + <kbd>t</kbd> | `zed::OpenTasks` | Open tasks |
+| <kbd>Space</kbd> + <kbd>,</kbd> + <kbd>c</kbd> | `theme_selector::Toggle` | Theme selector |
+| <kbd>Space</kbd> + <kbd>,</kbd> + <kbd>C</kbd> | `icon_theme_selector::Toggle` | Icon theme selector |
+| <kbd>Space</kbd> + <kbd>,</kbd> + <kbd>e</kbd> | `zed::Extensions` | Extensions |
+
+#### Space Leader - Navigation
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>Space</kbd> + <kbd>0</kbd> | `vim::StartOfDocument` | Start of document |
+| <kbd>Space</kbd> + <kbd>*</kbd> | `vim::MoveToNext` (partial) | Next word occurrence |
+| <kbd>Space</kbd> + <kbd>¨</kbd> | `vim::MoveToPrevious` (partial) | Previous word occurrence |
+
+### File Explorer (ProjectPanel) 📁
+
+> Vim-style keybindings when the project panel is focused.
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>/</kbd> | `file_finder::Toggle` | File finder |
+| <kbd>f</kbd> + <kbd>g</kbd> | `workspace::NewSearch` | Global search |
+| <kbd>a</kbd> | `project_panel::NewFile` | New file |
+| <kbd>A</kbd> | `project_panel::NewDirectory` | New directory |
+| <kbd>d</kbd> | `project_panel::Delete` | Delete |
+| <kbd>D</kbd> | `project_panel::Duplicate` | Duplicate |
+| <kbd>R</kbd> | `project_panel::Rename` | Rename |
+| <kbd>y</kbd> / <kbd>Y</kbd> | `Copy` / `Cut` | Copy / Cut |
+| <kbd>p</kbd> | `project_panel::Paste` | Paste |
+| <kbd>c</kbd> / <kbd>C</kbd> | Copy relative/absolute path | Copy file path |
+| <kbd>n</kbd> / <kbd>b</kbd> | Next/Previous directory | Directory navigation |
+| <kbd>T</kbd> | `workspace::OpenInTerminal` | Open in terminal |
+| <kbd>⌃</kbd> + <kbd>v</kbd>/<kbd>s</kbd> | Split vertical/horizontal | Open in split |
+
+> All the above also work with `Space` prefix (e.g., `Space a` = new file).
+
+### Git Panel 🔀
+
+> Vim-style keybindings when the Git panel is focused.
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>s</kbd> / <kbd>u</kbd> | `git::StageAll` / `git::UnstageAll` | Stage / Unstage all |
+| <kbd>c</kbd> | `git::Commit` | Commit |
+| <kbd>a</kbd> + <kbd>i</kbd> or <kbd>⌃</kbd> + <kbd>i</kbd> | `git::GenerateCommitMessage` | AI-generate commit message |
+| <kbd>P</kbd> / <kbd>p</kbd> / <kbd>f</kbd> | Push / Pull / Fetch | Remote operations |
+| <kbd>b</kbd> / <kbd>B</kbd> | Branch / Checkout branch | Branch management |
+| <kbd>w</kbd> | `git::Worktree` | Git worktree |
+| <kbd>d</kbd> / <kbd>D</kbd> | Restore file / Diff | Diff & restore |
+| <kbd>v</kbd> / <kbd>V</kbd> / <kbd>A</kbd> | View stash / Stash all / Stash pop | Stash management |
+| <kbd>C</kbd> | `git::CreatePullRequest` | Create pull request |
+| <kbd>I</kbd> | `git::AddToGitignore` | Add to .gitignore |
+| <kbd>i</kbd> | `git::Init` | Git init |
+| <kbd>t</kbd> | `git_panel::ToggleTreeView` | Toggle tree view |
+| <kbd>q</kbd> or <kbd>⌃</kbd> + <kbd>q</kbd> | `git_panel::Close` | Close panel |
 
 ### Tasks 🔄
 
 | Task Name | Command | Description |
 |-----------|---------|-------------|
-| Git: Generate Git Logs file | `~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 400` | Generate Git logs for current branch (limited entries) |
-| Git: Generate Git Logs file (All) | `~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 999999` | Generate Git logs for current branch (all entries) |
+| Claude Code | `claude` | Open Claude Code AI assistant |
+| Claude Code (Continue) | `claude --continue` | Continue previous Claude session |
+| Claude Code Usage | `bun x ccusage blocks` | Check Claude Code usage stats |
 | Git: Lazygit | `lazygit -p $ZED_WORKTREE_ROOT` | Open Lazygit in project root |
-| Files: Rename Files (Script) | `~/.config/zed/tasks/rename_files.sh "${1:Path}" "${2:Pattern}" "${3:Find}" "${4:Replace}"` | Interactive batch file renaming with parameters |
-| Files: FZF | `fzf` with preview and custom bindings | Advanced file finder with preview and syntax highlighting |
-| Files: Yazi | `yazi` | Terminal file manager in project root |
-| Files: Generate Project Structure | `eza --tree --level=5 --git-ignore` | Generate project structure avoiding vendor/node_modules |
-| Laravel: Test | `php artisan test` | Run Laravel tests |
-| Laravel: Test (coverage) | `php artisan test --coverage` | Run Laravel tests with coverage |
-| Laravel: Migrate (fresh and seed) | `php artisan migrate:fresh --seed` | Fresh database migration with seed |
-| Laravel: Migrate (fresh) | `php artisan migrate:fresh` | Fresh database migration without seed |
-| Docker: Lazydocker | `lazydocker` | Terminal UI for Docker |
-| Kubernetes: Lazykube | `lazykube` | Terminal UI for Kubernetes |
+| Git: Generate Git Logs file | `generate_git_log.sh <branch> 400` | Generate Git logs (limited) |
+| Git: Generate Git Logs file (All) | `generate_git_log.sh <branch> 999999` | Generate Git logs (all) |
+| LazySQL | `lazysql` | SQL TUI client |
+| LazyCurl | `lazycurl` | HTTP client TUI |
+| LazySSH | `lazyssh` | SSH manager TUI |
+| Files: FZF | `fzf` with bat preview | Advanced file finder with preview |
+| Files: Yazi | `yazi` | Terminal file manager |
+| Files: Rename Files (FZF) | `rename_files.sh` | Interactive batch file renaming |
+| Files: Generate Project Structure | `eza --tree --level=5 --git-ignore` | Generate project tree file |
+| Docker: Lazydocker | `lazydocker` | Docker TUI |
+| Kubernetes: Lazykube | `lazykube` | Kubernetes TUI |
 | Database: Redis CLI | `redis-cli` | Redis command line interface |
+| Laravel: Test | `php artisan test` | Run Laravel tests |
+| Laravel: Test (coverage) | `php artisan test --coverage` | Run tests with coverage |
+| Laravel: Migrate (fresh and seed) | `php artisan migrate:fresh --seed` | Fresh migration with seed |
+| Laravel: Migrate (fresh) | `php artisan migrate:fresh` | Fresh migration |
 
 > [!NOTE]
-> The tasks are executed in the context of the current workspace. The `ZED_WORKTREE_ROOT` environment variable is set to the root directory of the current workspace.
+> Tasks run in the current workspace context. `$ZED_WORKTREE_ROOT` is set to the project root.
 > See the [Zed Tasks Documentation](https://zed.dev/docs/tasks) for more information.
 
 ## Installation 📥
@@ -597,7 +773,7 @@ This script performs a complete installation:
 | **4. Nix Config** | `git clone https://github.com/kbrdn1/nix-config.git ~/nix-config` | Clone Nix configuration |
 | **5. Oh My Zsh** | `sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"` | Install Zsh framework |
 | **6. Dotfiles** | `sh -c "$(curl -fsLS get.chezmoi.io)" -- init --apply https://github.com/kbrdn1/dotfiles.git` | Apply dotfiles |
-| **7. Home Manager** | `nix run home-manager/release-24.11 -- switch --flake ~/nix-config` | Install CLI tools (64+ packages) |
+| **7. Home Manager** | `nix run home-manager/release-24.11 -- switch --flake ~/nix-config` | Install CLI tools (70+ packages) |
 
 ### macOS System Configuration
 
@@ -644,8 +820,8 @@ killall SystemUIServer Dock
 ### Migration Documentation
 
 - **Nix Migration**: See [MIGRATION_NIX.md](./MIGRATION_NIX.md) for complete ASDF → Nix migration details
-- **Homebrew Cleanup**: See [MIGRATION_HOMEBREW.md](./MIGRATION_HOMEBREW.md) for removed packages
-- **AeroSpace Setup**: See [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md) for window manager setup
+- **Homebrew Cleanup**: See [MIGRATION_HOMEBREW.md](./MIGRATION_HOMEBREW.md) for removed Homebrew packages
+- **AeroSpace Setup**: See [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md) for Yabai → AeroSpace migration
 
 ## Acknowledgments 🙏
 

@@ -101,25 +101,45 @@ Database:
 ```yaml
 File_Management:
   - fd: Alternative à find
-  - fzf: Fuzzy finder
-  - bat: Cat avec coloration
+  - fzf: Fuzzy finder (Claude Dark theme)
+  - bat: Cat avec coloration (Claude Dark theme)
   - eza: Ls moderne
   - ripgrep: Grep rapide
   - yazi: File manager TUI
+  - tree: Directory listing
 
 Development:
   - git, gh: Version control + GitHub CLI
   - lazygit: Git TUI
   - lazydocker: Docker TUI
-  - pandoc 3.7.0.2: Document converter
-  - neovim 0.11.5: Editor (backup de Zed)
+  - lazysql: SQL TUI client
+  - pandoc: Document converter
+  - neovim: Editor secondaire (LazyVim)
+  - just: Task runner
+  - tokei: Code statistics
+  - hyperfine: Benchmarking
+  - chezmoi: Dotfiles management
+  - direnv: Directory environments
+  - plantuml, d2, gnuplot: Diagram tools
 
 Productivity:
-  - zoxide: Smarter cd
-  - thefuck: Command correction
+  - zoxide: Smarter cd (z command)
   - neofetch: System info
-  - tmux: Terminal multiplexer
+  - tmux: Terminal multiplexer (Claude Dark theme)
+  - sesh: Tmux session manager
+
+System & Network:
+  - coreutils, findutils, gnused, gnugrep: GNU core tools
+  - jq, yq: JSON/YAML processors
+  - htop, duf, bottom: System monitoring
+  - curl, wget, httpie, dogdns: Network tools
+
+Multimedia & Music:
+  - ffmpeg, imagemagick, poppler: Media processing
+  - rmpc, mpc: MPD music client
 ```
+
+> **Note**: `thefuck` a été retiré de nixpkgs (projet non maintenu).
 
 ---
 
@@ -134,136 +154,82 @@ Productivity:
 └── flake.lock      # Lockfile des dépendances
 ```
 
-### home.nix - Configuration Complète
+### home.nix - Configuration (extrait)
+
+> Le fichier complet est dans `nix-config/home.nix`. Voici un extrait des sections principales.
 
 ```nix
 { config, pkgs, ... }:
 
 {
-  # Configuration de base
+  home.stateVersion = "24.11";
   home.username = "kbrdn1";
   home.homeDirectory = "/Users/kbrdn1";
-  home.stateVersion = "24.11";
+  programs.home-manager.enable = true;
 
-  # 62 packages organisés par catégories
+  # 70+ packages organisés par catégories
   home.packages = with pkgs; [
-    # Programming Languages (10)
-    nodejs_24
-    python313
-    (php84.withExtensions ({ all, ... }: with all; [ pcov redis ]))
-    go_1_25
-    rustc
-    cargo
-    bun
-    deno
-    pnpm
-    symfony-cli
+    # Core Utilities
+    coreutils findutils gnused gnugrep
+
+    # File Management
+    tree fd ripgrep bat eza fzf zoxide sesh
+
+    # Git Tools
+    git gh lazygit
+
+    # Container & Database Tools
+    lazydocker lazysql redis
+
+    # JSON/YAML Tools
+    jq yq-go
+
+    # System Tools
+    neofetch tmux htop
 
     # Kubernetes Tools (11)
-    kubectl
-    kubernetes-helm
-    minikube
-    argocd
-    k9s
-    kubectx
-    stern
-    kustomize
-    kubecolor
-    dive
-    popeye
+    kubectl kubernetes-helm minikube argocd k9s
+    kubectx stern kustomize kubecolor dive popeye
 
-    # Development Tools (8)
-    git
-    gh
-    lazygit
-    lazydocker
-    just
-    tokei
-    hyperfine
-    pandoc
+    # Development Tools
+    just tokei hyperfine duf bottom pandoc
+    plantuml d2 gnuplot
 
-    # File Management (7)
-    fd
-    fzf
-    bat
-    eza
-    ripgrep
-    yazi
-    zoxide
+    # Programming Languages & Runtimes
+    nodejs_24 bun deno pnpm go rustc cargo
+    rust-analyzer clippy rustfmt
+    python313
+    (php84.withExtensions ({ all, ... }: with all; [ pcov redis ]))
+    symfony-cli
 
-    # Shell Enhancements (6)
-    oh-my-zsh
-    zsh-powerlevel10k
-    zsh-autosuggestions
-    zsh-syntax-highlighting
-    thefuck
-    tmux
+    # Editors
+    neovim chezmoi
 
-    # Database (2)
-    lazysql
-    redis
+    # Multimedia & Music
+    ffmpeg imagemagick poppler rmpc mpc
 
-    # Cloud Tools (2)
-    awscli2
-    stripe-cli
+    # Network Tools
+    curl wget httpie dogdns
 
-    # Multimedia (4)
-    ffmpeg
-    imagemagick
-    poppler_utils
-    yt-dlp
+    # Cloud Tools
+    awscli2 stripe-cli
 
-    # Networking (2)
-    wget
-    gping
-
-    # System Tools (6)
-    tree
-    btop
-    neofetch
-    tldr
-    duf
-    bottom
-
-    # Editor (1)
-    neovim
+    # Fonts
+    nerd-fonts.hack nerd-fonts.symbols-only
   ];
 
-  # Configuration shell
-  programs.zsh = {
-    enable = true;
-    shellAliases = {
-      # Nix
-      reload-nix = "nix run home-manager/release-24.11 -- switch --flake ~/nix-config";
-      edit-nix = "$EDITOR ~/nix-config/home.nix";
+  # Programs with dedicated configuration
+  programs.zsh = { ... };       # Zsh + Oh-My-Zsh + plugins + aliases
+  programs.git = { ... };       # Git config (GPG signing, LFS)
+  programs.fzf = { ... };       # FZF with Zsh integration
+  programs.zoxide = { ... };    # Zoxide (z command)
+  programs.bat = { ... };       # Bat with Claude Dark theme
+  programs.direnv = { ... };    # Direnv with nix-direnv
+  programs.tmux = { ... };      # Tmux with Claude Dark theme, sesh, tmux.nvim
+  programs.kitty = { ... };     # Kitty terminal with Claude Dark theme
 
-      # System
-      ls = "eza --color=always --long --git --no-filesize --icons=always --no-time --no-user --no-permissions --group-directories-first";
-      cd = "z";
-
-      # Development
-      lg = "lazygit";
-      lzd = "lazydocker";
-    };
-  };
-
-  # Git configuration
-  programs.git = {
-    enable = true;
-    userName = "kbrdn1";
-    userEmail = "kbrdn1@users.noreply.github.com";
-  };
-
-  # Bat theme
-  programs.bat = {
-    enable = true;
-    config = {
-      theme = "Catppuccin-macchiato";
-    };
-  };
-
-  # Permettre Home Manager de gérer lui-même
-  programs.home-manager.enable = true;
+  # Services
+  services.mpd = { ... };      # Music Player Daemon
 }
 ```
 
@@ -644,7 +610,7 @@ La migration ASDF → Nix est un succès complet :
 
 ---
 
-**Dernière mise à jour** : Novembre 2025
+**Dernière mise à jour** : Février 2026
 **Version Home Manager** : 24.11
-**Packages Nix** : 62
-**Statut** : Production-Ready ✅
+**Packages Nix** : 70+
+**Statut** : Production-Ready
