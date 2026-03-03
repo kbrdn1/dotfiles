@@ -313,61 +313,75 @@ Welcome to my dotfiles repository! This repository is managed using [Chezmoi](ht
 > Modern tiling window manager (no SIP required) - See [MIGRATION-YABAI-TO-AEROSPACE.md](./MIGRATION-YABAI-TO-AEROSPACE.md)
 
 > [!NOTE]
-> **Karabiner-Elements** maps the **right Option key** (`⌥→`) to `Ctrl+Alt`, which is the modifier used in AeroSpace bindings.
-> This preserves the left Option key for AZERTY special characters (`{ } [ ] @ # | \`).
-> In the tables below, <kbd>⌥→</kbd> represents physically pressing the **right Option key**.
+> **Dual input mode** pour clavier AZERTY - le left Option reste libre pour les caracteres speciaux (`{ } [ ] @ # | \`).
+>
+> | Mode | Methode | Usage |
+> |------|---------|-------|
+> | **Leader key** | <kbd>⌥→</kbd> (F18 via Karabiner) puis touche | Clavier interne (portable) |
+> | **Held modifier** | <kbd>⌥→</kbd> maintenu (Ctrl+Alt via Karabiner) puis touche | Clavier externe (desktop) |
+>
+> Sketchybar affiche un indicateur visuel du mode actif (aero/resize/service).
 
 ### Workspace Navigation
 
-| Shortcut | AeroSpace Binding | Workspace | Applications |
-|----------|-------------------|-----------|-------------|
-| <kbd>⌥→</kbd> + <kbd>1</kbd> | `ctrl-alt-1` | 1 - Home | Mail, Calendar, Canary Mail |
-| <kbd>⌥→</kbd> + <kbd>2</kbd> | `ctrl-alt-2` | 2 - Music | Apple Music, Spotify, Tidal |
-| <kbd>⌥→</kbd> + <kbd>3</kbd> | `ctrl-alt-3` | 3 - Development | Zed, Ghostty, VS Code, JetBrains, Postman |
-| <kbd>⌥→</kbd> + <kbd>Q</kbd> | `ctrl-alt-q` | 4 - Web | Helium, Dia/Arc, Chrome, Safari |
-| <kbd>⌥→</kbd> + <kbd>W</kbd> | `ctrl-alt-w` | 5 - Communication | Slack, Discord, Messages, Teams, Zoom |
-| <kbd>⌥→</kbd> + <kbd>E</kbd> | `ctrl-alt-e` | 6 - Server Tools | TablePlus, OrbStack, Docker |
-| <kbd>⌥→</kbd> + <kbd>O</kbd> | `ctrl-alt-o` | 7 - Notes | Obsidian |
-| <kbd>⌥→</kbd> + <kbd>C</kbd> | `ctrl-alt-c` | 8 - Claude AI | Claude |
-| <kbd>⌥→</kbd> + <kbd>Tab</kbd> | `ctrl-alt-tab` | Back and forth | Previous workspace |
+| Leader key | Held modifier | Workspace | Applications |
+|------------|---------------|-----------|-------------|
+| <kbd>⌥→</kbd> <kbd>1</kbd> | <kbd>⌥→</kbd>+<kbd>1</kbd> | 1 - Home | Mail, Calendar, Canary Mail |
+| <kbd>⌥→</kbd> <kbd>2</kbd> | <kbd>⌥→</kbd>+<kbd>2</kbd> | 2 - Music | Apple Music, Spotify, Tidal |
+| <kbd>⌥→</kbd> <kbd>3</kbd> | <kbd>⌥→</kbd>+<kbd>3</kbd> | 3 - Development | Zed, Ghostty, VS Code, JetBrains, Postman |
+| <kbd>⌥→</kbd> <kbd>Q</kbd> | <kbd>⌥→</kbd>+<kbd>Q</kbd> | 4 - Web | Helium, Dia/Arc, Chrome, Safari |
+| <kbd>⌥→</kbd> <kbd>W</kbd> | <kbd>⌥→</kbd>+<kbd>W</kbd> | 5 - Communication | Slack, Discord, Messages, Teams, Zoom |
+| <kbd>⌥→</kbd> <kbd>E</kbd> | <kbd>⌥→</kbd>+<kbd>E</kbd> | 6 - Server Tools | TablePlus, OrbStack, Docker |
+| <kbd>⌥→</kbd> <kbd>O</kbd> | <kbd>⌥→</kbd>+<kbd>O</kbd> | 7 - Notes | Obsidian |
+| <kbd>⌥→</kbd> <kbd>C</kbd> | <kbd>⌥→</kbd>+<kbd>C</kbd> | 8 - Claude AI | Claude |
+| <kbd>⌥→</kbd> <kbd>Tab</kbd> | <kbd>⌥→</kbd>+<kbd>Tab</kbd> | Back and forth | Previous workspace |
 
 ### Window Focus
 
-| Shortcut | AeroSpace Binding | Action |
-|----------|-------------------|--------|
-| <kbd>⌥→</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `ctrl-alt-h/j/k/l` | Focus window (left/down/up/right) |
-| <kbd>⌥→</kbd> + <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | `ctrl-alt-arrows` | Focus window (arrows) |
+| Leader key | Held modifier | Action |
+|------------|---------------|--------|
+| <kbd>⌥→</kbd> <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | <kbd>⌥→</kbd>+<kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Focus window (vim-style) |
+| <kbd>⌥→</kbd> <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | <kbd>⌥→</kbd>+<kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | Focus window (arrows) |
 
 ### Window Movement
 
-| Shortcut | AeroSpace Binding | Action |
-|----------|-------------------|--------|
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `ctrl-alt-shift-h/j/k/l` | Move window (left/down/up/right) |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>←</kbd>/<kbd>↓</kbd>/<kbd>↑</kbd>/<kbd>→</kbd> | `ctrl-alt-shift-arrows` | Move window (arrows) |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> | `ctrl-alt-shift-1/2/3` | Move to workspace 1/2/3 |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd> | `ctrl-alt-shift-q/w/e` | Move to workspace 4/5/6 |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>O</kbd>/<kbd>C</kbd> | `ctrl-alt-shift-o/c` | Move to workspace 7/8 |
+| Leader key | Held modifier | Action |
+|------------|---------------|--------|
+| <kbd>⌥→</kbd> <kbd>⇧</kbd>+<kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | <kbd>⌥→</kbd>+<kbd>⇧</kbd>+<kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Move window (vim-style) |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd>+<kbd>1</kbd>-<kbd>3</kbd>/<kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd>/<kbd>O</kbd>/<kbd>C</kbd> | <kbd>⌥→</kbd>+<kbd>⇧</kbd>+<kbd>key</kbd> | Move to workspace |
 
 ### Layout & Display
 
-| Shortcut | AeroSpace Binding | Action |
-|----------|-------------------|--------|
-| <kbd>⌥→</kbd> + <kbd>/</kbd> | `ctrl-alt-slash` | Toggle tiles layout (horizontal/vertical) |
-| <kbd>⌥→</kbd> + <kbd>,</kbd> | `ctrl-alt-comma` | Toggle accordion layout (cascade) |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>Space</kbd> | `ctrl-alt-shift-space` | Toggle floating/tiling |
-| <kbd>⌥→</kbd> + <kbd>F</kbd> | `ctrl-alt-f` | Toggle fullscreen |
-| <kbd>⌥→</kbd> + <kbd>-</kbd>/<kbd>=</kbd> | `ctrl-alt-minus/equal` | Resize window (smart -50/+50) |
-| <kbd>⌥→</kbd> + <kbd>R</kbd> | `ctrl-alt-r` | Enter resize mode |
+| Leader key | Held modifier | Action |
+|------------|---------------|--------|
+| <kbd>⌥→</kbd> <kbd>/</kbd> | <kbd>⌥→</kbd>+<kbd>/</kbd> | Toggle tiles layout |
+| <kbd>⌥→</kbd> <kbd>,</kbd> | <kbd>⌥→</kbd>+<kbd>,</kbd> | Toggle accordion layout |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd>+<kbd>Space</kbd> | <kbd>⌥→</kbd>+<kbd>⇧</kbd>+<kbd>Space</kbd> | Toggle floating/tiling |
+| <kbd>⌥→</kbd> <kbd>F</kbd> | <kbd>⌥→</kbd>+<kbd>F</kbd> | Toggle fullscreen |
+| <kbd>⌥→</kbd> <kbd>-</kbd>/<kbd>=</kbd> | <kbd>⌥→</kbd>+<kbd>-</kbd>/<kbd>=</kbd> | Resize window (smart) |
+| <kbd>⌥→</kbd> <kbd>R</kbd> | <kbd>⌥→</kbd>+<kbd>R</kbd> | Enter resize mode |
 
 ### Utilities
 
-| Shortcut | AeroSpace Binding | Action |
-|----------|-------------------|--------|
-| <kbd>⌥→</kbd> + <kbd>Enter</kbd> | `ctrl-alt-enter` | Open Ghostty terminal |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>X</kbd> | `ctrl-alt-shift-x` | Close window |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>=</kbd> | `ctrl-alt-shift-equal` | Balance window sizes |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>R</kbd> | `ctrl-alt-shift-r` | Reload AeroSpace config |
-| <kbd>⌥→</kbd> + <kbd>⇧</kbd> + <kbd>;</kbd> | `ctrl-alt-shift-semicolon` | Enter service mode |
+| Leader key | Held modifier | Action |
+|------------|---------------|--------|
+| <kbd>⌥→</kbd> <kbd>Enter</kbd> | <kbd>⌥→</kbd>+<kbd>Enter</kbd> | Open Ghostty terminal |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd>+<kbd>X</kbd> | <kbd>⌥→</kbd>+<kbd>⇧</kbd>+<kbd>X</kbd> | Close window |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd>+<kbd>=</kbd> | <kbd>⌥→</kbd>+<kbd>⇧</kbd>+<kbd>=</kbd> | Balance window sizes |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd>+<kbd>R</kbd> | <kbd>⌥→</kbd>+<kbd>⇧</kbd>+<kbd>R</kbd> | Reload config |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd>+<kbd>;</kbd> | <kbd>⌥→</kbd>+<kbd>⇧</kbd>+<kbd>;</kbd> | Enter service mode |
+| <kbd>Esc</kbd> | <kbd>Esc</kbd> | Exit current mode |
+
+### SketchyVim (svim)
+
+> Ajoute les modes vim (Normal/Insert/Visual) a tous les champs texte macOS via l'API Accessibility.
+> Indicateur de mode visible dans Sketchybar.
+
+| Config | Description |
+|--------|-------------|
+| `~/.config/svim/svimrc` | Remaps vim (Y, H, L) |
+| `~/.config/svim/blacklist` | Apps exclues (Ghostty, Zed, terminals) |
+| `~/.config/svim/svim.sh` | Hook sketchybar pour indicateur de mode |
 
 ## Shortcuts & Keybindings ⌨️
 

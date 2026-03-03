@@ -68,7 +68,6 @@ IRECENT=􀐫
 
 # Airpods Icons
 AIRPODS=􁄡
-
 # Apple Device Icons
 IPHONE=􀟜
 IPAD=􀟠
@@ -89,5 +88,11 @@ MODE_VISUAL=􀂿
 MODE_CMD=􀂙
 MODE_PENDING=􀈏
 
+# aerospace modes
+AERO_NORMAL=􀂕
+AERO_RESIZE=􀂷
+AERO_SERVICE=􀂹
+
 # Theme
 THEME=􀎔
+
