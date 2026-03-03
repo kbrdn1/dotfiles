@@ -3,10 +3,9 @@ source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
 source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
 source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
 
-IS_VPN=$(/usr/local/bin/piactl get connectionstate)
-CURRENT_WIFI="$(ipconfig getsummary en0)"
-IP_ADDRESS="$(echo "$CURRENT_WIFI" | grep -o "yiaddr = .*" | sed 's/^yiaddr = //')"
-SSID="$(echo "$CURRENT_WIFI" | grep -o "SSID : .*" | sed 's/^SSID : //' | tail -n 1)"
+IS_VPN=$(/usr/local/bin/piactl get connectionstate 2>/dev/null)
+IP_ADDRESS="$(ipconfig getifaddr en0 2>/dev/null)"
+SSID="$(system_profiler SPAirPortDataType 2>/dev/null | awk '/Current Network Information:/{getline; gsub(/^[ \t]+|:$/,""); print; exit}')"
 
 if [[ $IS_VPN == "Connected" ]]; then
   ICON_COLOR=$GREEN

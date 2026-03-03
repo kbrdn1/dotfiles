@@ -3,11 +3,16 @@ source "$HOME/.config/sketchybar/settings/settings.sh"
 source "$SETTINGS_DIR/colors.sh"
 source "$SETTINGS_DIR/icons.sh"
 
+NERD="Liga SFMono Nerd Font"
+BT_ON="󰂯"
+BT_OFF="󰂲"
+
 update() {
-  # Vérifier si blueutil est installé
+  # Verifier si blueutil est installe
   if ! command -v blueutil &> /dev/null; then
     sketchybar --set bluetooth \
-      icon="$BLUETOOTH_OFF" \
+      icon="$BT_OFF" \
+      icon.font="$NERD:Bold:16.0" \
       icon.color=$RED \
       label.drawing=off \
       drawing=off
@@ -18,30 +23,29 @@ update() {
   BLUETOOTH_STATUS=$(blueutil --power)
 
   if [ "$BLUETOOTH_STATUS" = "1" ]; then
-    # Bluetooth activé
     CONNECTED_DEVICES=$(blueutil --connected 2>/dev/null)
     DEVICE_COUNT=$(echo "$CONNECTED_DEVICES" | grep -c "address:" 2>/dev/null || echo "0")
 
     if [ "$DEVICE_COUNT" -gt 0 ]; then
-      # Appareils connectés - icône bleue avec count
       sketchybar --set bluetooth \
-        icon="$BLUETOOTH" \
-        icon.color=$BLUE \
+        icon="$BT_ON" \
+        icon.font="$NERD:Bold:16.0" \
+        icon.color=$ORANGE \
         label="$DEVICE_COUNT" \
         label.drawing=on \
         drawing=on
     else
-      # Bluetooth activé mais aucun appareil connecté
       sketchybar --set bluetooth \
-        icon="$BLUETOOTH" \
+        icon="$BT_ON" \
+        icon.font="$NERD:Bold:16.0" \
         icon.color=$GREY \
         label.drawing=off \
         drawing=on
     fi
   else
-    # Bluetooth désactivé - icône rouge
     sketchybar --set bluetooth \
-      icon="$BLUETOOTH_OFF" \
+      icon="$BT_OFF" \
+      icon.font="$NERD:Bold:16.0" \
       icon.color=$RED \
       label.drawing=off \
       drawing=on

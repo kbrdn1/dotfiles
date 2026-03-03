@@ -1,7 +1,11 @@
 #!/bin/bash
-source "$HOME/.config/sketchybar/settings/settings.sh" # Loads all the settings
-source "$SETTINGS_DIR/colors.sh" # Loads all defined colors
-source "$SETTINGS_DIR/icons.sh" # Loads all defined icons
+source "$HOME/.config/sketchybar/settings/settings.sh"
+source "$SETTINGS_DIR/colors.sh"
+source "$SETTINGS_DIR/icons.sh"
+
+# -- Claude Dark theme (Zed port style) --
+# Bell icon: $GREY muted by default
+# Highlight (notifications): $ORANGE accent
 
 POPUP_CLICK_SCRIPT="sketchybar --set \$NAME popup.drawing=toggle"
 
@@ -9,10 +13,11 @@ github_bell=(
   update_freq=180
   icon.font="$FONT:Bold:15.0"
   icon=$BELL
-  icon.color=$BLUE
+  icon.color=$GREY
   label=$LOADING
-  label.highlight_color=$BLUE
-  popup.align=left
+  label.color=$WHITE
+  label.highlight_color=$ORANGE
+  popup.align=right
   script="$PLUGIN_DIR/github/github.sh"
   click_script="$POPUP_CLICK_SCRIPT"
 )
