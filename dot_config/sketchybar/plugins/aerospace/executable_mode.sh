@@ -1,45 +1,30 @@
 #!/bin/bash
-
-source "$HOME/.config/sketchybar/settings/colors.sh"
-
-# Couleurs par mode
-MODE_COLORS=(
-  ["resize"]="0xffff6b35"    # Orange
-  ["service"]="0xff00d084"   # Vert
-)
+source "$HOME/.config/sketchybar/settings/settings.sh"
+source "$SETTINGS_DIR/colors.sh"
+source "$SETTINGS_DIR/icons.sh"
 
 update() {
-  # Récupérer le mode actuel d'AeroSpace
-  CURRENT_MODE=$(aerospace list-modes 2>/dev/null | grep -v "^main$" | head -1)
+  MODE="${MODE:-main}"
 
-  # Si aucun mode ou mode main, ne rien afficher
-  if [ -z "$CURRENT_MODE" ] || [ "$CURRENT_MODE" = "main" ]; then
-    sketchybar --set "$NAME" \
-               label="" \
-               drawing=off
-    exit 0
+  if [ "$MODE" = "main" ]; then
+    sketchybar --set "$NAME" drawing=off
+    return
   fi
 
-  # Première lettre en majuscule
-  MODE_LETTER=$(echo "${CURRENT_MODE:0:1}" | tr '[:lower:]' '[:upper:]')
+  DRAWING=on
+  case "$MODE" in
+    aero)    ICON="$AERO_NORMAL"  COLOR=$BLUE ;;
+    resize)  ICON="$AERO_RESIZE"  COLOR=$ORANGE ;;
+    service) ICON="$AERO_SERVICE" COLOR=$GREEN ;;
+    *)       ICON="$MODE_PENDING" COLOR=$MAGENTA ;;
+  esac
 
-  # Couleur du mode
-  MODE_COLOR="${MODE_COLORS[$CURRENT_MODE]}"
-  if [ -z "$MODE_COLOR" ]; then
-    MODE_COLOR="0xffb362ff"  # Violet par défaut
-  fi
-
-  # Afficher le mode
   sketchybar --set "$NAME" \
-             label="$MODE_LETTER" \
-             label.color="$WHITE" \
-             label.font="$FONT:Black:14.0" \
-             background.color="$MODE_COLOR" \
-             background.corner_radius=6 \
-             background.height=24 \
-             background.padding_left=8 \
-             background.padding_right=8 \
-             drawing=on
+    drawing=on \
+    icon="$ICON" \
+    icon.drawing=on \
+    icon.color="$COLOR" \
+    label.drawing=off
 }
 
 case "$SENDER" in
