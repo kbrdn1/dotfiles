@@ -1,0 +1,40 @@
+name: Feature
+description: Nouvelle fonctionnalite ou amelioration de config
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Decris la fonctionnalite ou l'amelioration souhaitee
+    validations:
+      required: true
+  - type: textarea
+    id: configs
+    attributes:
+      label: Configs concernees
+      description: Quelles configs sont impactees ?
+      placeholder: |
+        - aerospace
+        - sketchybar
+        - karabiner
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - aerospace
+        - sketchybar
+        - karabiner
+        - zed
+        - ghostty
+        - svim
+        - nix
+        - zsh
+        - tmux
+        - global
+    validations:
+      required: true
