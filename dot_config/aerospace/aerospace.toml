@@ -1,11 +1,16 @@
 # ╭─────────────────────────────────────────────────────────────╮
 # │                    AeroSpace Configuration                  │
 # │              Configuration Workflow Développeur             │
-# │                   Alt Droite Exclusif                       │
+# │           Alt Droite via hidutil + Mode Leader              │
 # ╰─────────────────────────────────────────────────────────────╯
 
 # Place ce fichier dans ~/.config/aerospace/aerospace.toml
-# Configuration optimisée pour workflow de développement avec 6 workspaces spécialisés
+# Configuration optimisée pour workflow de développement avec 8 workspaces spécialisés
+#
+# SETUP (sans Karabiner - workaround bug macOS Tahoe 26.4 beta) :
+#   hidutil remappe right_option → F18 (LaunchAgent: com.local.hidutil-remap)
+#   F18 sert de "leader key" pour entrer en mode aero
+#   Les bindings ctrl-alt sont gardés en fallback (clavier externe + Karabiner)
 
 # ═══════════════════════════════════════════════════════════════
 # PARAMÈTRES GÉNÉRAUX
@@ -66,20 +71,25 @@ after-startup-command = [
 [key-mapping]
 preset = 'qwerty'
 
-# IMPORTANT: Configuration AZERTY avec Alt droite EXCLUSIF
-# 
+# IMPORTANT: Configuration AZERTY avec Alt gauche préservé
+#
 # AeroSpace ne supporte que qwerty/dvorak/colemak (pas azerty natif)
-# Sur AZERTY, Alt gauche (AltGr) est ESSENTIEL pour : { } [ ] @ # | \ etc.
-# Il faut garder Alt gauche pour le code mais désactiver UNIQUEMENT pour AeroSpace !
+# Sur AZERTY, Alt gauche est ESSENTIEL pour : { } [ ] @ # | \ etc.
 #
-# SOLUTION KARABINER-ELEMENTS (obligatoire pour AZERTY) :
-# 1. Installer: brew install --cask karabiner-elements
-# 2. Importer le fichier: ~/.config/karabiner/aerospace-azerty.json
-# 3. Activer les règles dans Karabiner-Elements > Complex Modifications
-# 4. Cela bloque Alt gauche UNIQUEMENT pour les raccourcis AeroSpace
-# 5. Alt gauche reste fonctionnel pour tous les caractères spéciaux AZERTY
+# IMPORTANT: Configuration AZERTY avec Alt droite EXCLUSIF
 #
-# Résultat: Alt DROITE = AeroSpace, Alt GAUCHE = caractères spéciaux
+# AeroSpace ne supporte que qwerty/dvorak/colemak (pas azerty natif)
+# Sur AZERTY, Alt gauche est ESSENTIEL pour : { } [ ] @ # | \ etc.
+#
+# SOLUTION ACTUELLE (hidutil - sans Karabiner) :
+#   hidutil remappe right_option → F18 (persistant via LaunchAgent)
+#   F18 = leader key → entre en mode "aero"
+#   Appui right_option puis touche = action AeroSpace
+#   Alt gauche reste 100% libre pour les caractères spéciaux AZERTY
+#
+# FALLBACK (clavier externe au taf si Karabiner fonctionne) :
+#   Les bindings ctrl-alt-* restent actifs en mode main
+#   Karabiner remappe right_option → ctrl+alt sur clavier externe
 
 # ═══════════════════════════════════════════════════════════════
 # ESPACES ENTRE FENÊTRES
@@ -100,8 +110,11 @@ outer.right = 8
 
 [mode.main.binding]
 
+# Leader key : right_option (remappee en F18 via hidutil)
+f18 = ['mode aero', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=aero']
+
 # ┌─────────────────────────────────────────────────────────────┐
-# │                    NAVIGATION WORKSPACES                    │
+# │              FALLBACK ctrl-alt (clavier externe)            │
 # └─────────────────────────────────────────────────────────────┘
 
 # Workspaces optimisés AZERTY (préserve { } [ ] | \ @ ` pour le code)
@@ -188,15 +201,15 @@ ctrl-alt-f = 'fullscreen'
 ctrl-alt-minus = 'resize smart -50'
 ctrl-alt-equal = 'resize smart +50'
 
-# Mode resize dédié
-ctrl-alt-r = 'mode resize'
+# Mode resize dedie
+ctrl-alt-r = ['mode resize', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=resize']
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                       UTILITAIRES                           │
 # └─────────────────────────────────────────────────────────────┘
 
-# Mode service pour actions avancées
-ctrl-alt-shift-semicolon = 'mode service'
+# Mode service pour actions avancees
+ctrl-alt-shift-semicolon = ['mode service', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=service']
 
 # Reload config
 ctrl-alt-shift-r = 'reload-config'
@@ -211,46 +224,144 @@ ctrl-alt-shift-equal = 'balance-sizes'
 ctrl-alt-enter = 'exec-and-forget open -a Ghostty'
 
 # ═══════════════════════════════════════════════════════════════
+# MODE AERO (Leader Key = right_option → F18)
+# ═══════════════════════════════════════════════════════════════
+# Appuyer right_option → entre ici → taper une touche → retour auto en main
+
+[mode.aero.binding]
+
+# Annuler
+esc = ['exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                    NAVIGATION WORKSPACES                    │
+# └─────────────────────────────────────────────────────────────┘
+
+1 = ['workspace 1', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=1', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+2 = ['workspace 2', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=2', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+3 = ['workspace 3', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=3', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+q = ['workspace 4', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=4', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+w = ['workspace 5', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=5', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+e = ['workspace 6', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=6', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+o = ['workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=7', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+c = ['workspace 8', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=8', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# Navigation rapide
+tab = ['workspace-back-and-forth', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                   DÉPLACER VERS WORKSPACES                  │
+# └─────────────────────────────────────────────────────────────┘
+
+shift-1 = ['move-node-to-workspace 1', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-2 = ['move-node-to-workspace 2', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-3 = ['move-node-to-workspace 3', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-q = ['move-node-to-workspace 4', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-w = ['move-node-to-workspace 5', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-e = ['move-node-to-workspace 6', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-o = ['move-node-to-workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-c = ['move-node-to-workspace 8', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                      FOCUS FENÊTRES                         │
+# └─────────────────────────────────────────────────────────────┘
+
+# vim-style
+h = ['focus left', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+j = ['focus down', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+k = ['focus up', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+l = ['focus right', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# fleches
+left = ['focus left', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+down = ['focus down', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+up = ['focus up', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+right = ['focus right', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                    DÉPLACER FENÊTRES                        │
+# └─────────────────────────────────────────────────────────────┘
+
+# vim-style
+shift-h = ['move left', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-j = ['move down', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-k = ['move up', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-l = ['move right', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# fleches
+shift-left = ['move left', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-down = ['move down', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-up = ['move up', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-right = ['move right', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                       LAYOUTS                               │
+# └─────────────────────────────────────────────────────────────┘
+
+slash = ['layout tiles horizontal vertical', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+comma = ['layout accordion horizontal vertical', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-space = ['layout floating tiling', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+f = ['fullscreen', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                      REDIMENSIONNER                         │
+# └─────────────────────────────────────────────────────────────┘
+
+minus = ['resize smart -50', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+equal = ['resize smart +50', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+r = ['exec-and-forget sketchybar --trigger aerospace_mode_change MODE=resize', 'mode resize']
+
+# ┌─────────────────────────────────────────────────────────────┐
+# │                       UTILITAIRES                           │
+# └─────────────────────────────────────────────────────────────┘
+
+shift-semicolon = ['exec-and-forget sketchybar --trigger aerospace_mode_change MODE=service', 'mode service']
+shift-r = ['reload-config', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-x = ['close', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-equal = ['balance-sizes', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+enter = ['exec-and-forget open -a Ghostty', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+
+# ═══════════════════════════════════════════════════════════════
 # MODE SERVICE (Actions Avancées)
 # ═══════════════════════════════════════════════════════════════
 
 [mode.service.binding]
 # Sortir du mode service
-esc = ['reload-config', 'mode main']
+esc = ['reload-config', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
 # Reset layout
-r = ['flatten-workspace-tree', 'mode main']
+r = ['flatten-workspace-tree', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
 # Toggle floating/tiling
-f = ['layout floating tiling', 'mode main']
+f = ['layout floating tiling', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
 # Fermer toutes les autres fenêtres
-backspace = ['close-all-windows-but-current', 'mode main']
+backspace = ['close-all-windows-but-current', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
-# Layouts spécialisés
-h = ['layout tiles horizontal', 'mode main']    # Horizontal split
-v = ['layout tiles vertical', 'mode main']      # Vertical split
-s = ['layout accordion vertical', 'mode main']  # Stack (cascade vertical)
-w = ['layout accordion horizontal', 'mode main'] # Wide tabs (cascade horizontal)
-t = ['layout tiles', 'mode main']               # Tiles auto
+# Layouts specialises
+h = ['layout tiles horizontal', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+v = ['layout tiles vertical', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+s = ['layout accordion vertical', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+w = ['layout accordion horizontal', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+t = ['layout tiles', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
 # Join containers
-ctrl-alt-shift-h = ['join-with left', 'mode main']
-ctrl-alt-shift-j = ['join-with down', 'mode main']
-ctrl-alt-shift-k = ['join-with up', 'mode main']
-ctrl-alt-shift-l = ['join-with right', 'mode main']
+ctrl-alt-shift-h = ['join-with left', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+ctrl-alt-shift-j = ['join-with down', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+ctrl-alt-shift-k = ['join-with up', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+ctrl-alt-shift-l = ['join-with right', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
-# Contrôle volume (bonus)
+# Controle volume (bonus)
 down = 'volume down'
 up = 'volume up'
-shift-down = ['volume set 0', 'mode main']
+shift-down = ['volume set 0', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
 # ═══════════════════════════════════════════════════════════════
 # MODE RESIZE
 # ═══════════════════════════════════════════════════════════════
 
 [mode.resize.binding]
-# Navigation pour resize
+# Navigation pour resize (pas de retour auto, on reste en mode resize)
 h = 'resize width -50'
 j = 'resize height +50'
 k = 'resize height -50'
@@ -269,8 +380,8 @@ shift-minus = 'resize smart -10'
 shift-equal = 'resize smart +10'
 
 # Sortir du mode resize
-enter = 'mode main'
-esc = 'mode main'
+enter = ['exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+esc = ['exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
 # ═══════════════════════════════════════════════════════════════
 # RÈGLES AUTOMATIQUES PAR APPLICATION

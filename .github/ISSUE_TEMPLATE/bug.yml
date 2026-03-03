@@ -1,0 +1,47 @@
+name: Bug
+description: Probleme avec une configuration
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description du probleme
+      description: Decris le bug rencontre
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
+      description: Que devrait-il se passer ?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environnement
+      description: Version macOS, clavier, etc.
+      placeholder: |
+        - macOS: Tahoe 26.x
+        - Clavier: AZERTY ISO
+        - Interne / Externe
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Config concernee
+      options:
+        - aerospace
+        - sketchybar
+        - karabiner
+        - zed
+        - ghostty
+        - svim
+        - nix
+        - zsh
+        - tmux
+        - global
+    validations:
+      required: true

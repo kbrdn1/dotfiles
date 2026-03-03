@@ -83,6 +83,7 @@ sketchybar --add item aerospace_separator left \
              label.drawing=off
 
 source "$PLUGIN_DIR/front_app.sh"
+source "$PLUGIN_DIR/svim/item.sh"
 
 # Start AeroSpace mode monitor in background
 "$PLUGIN_DIR/aerospace/mode_trigger.sh" > /dev/null 2>&1 &
