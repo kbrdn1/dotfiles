@@ -16,15 +16,18 @@ USED_PAGES=$(( ${PAGES_ACTIVE:-0} + ${PAGES_WIRED:-0} + ${PAGES_COMPRESSED:-0} )
 PCT=$((USED_PAGES * 100 / TOTAL_PAGES))
 [ "$PCT" -gt 100 ] && PCT=100
 
-# Normalized value for graph (0.0 - 1.0)
-GRAPH_VAL=$(awk "BEGIN { printf \"%.2f\", $PCT / 100 }")
+# Normalized values per category (0.0 - 1.0)
+ACTIVE_VAL=$(awk "BEGIN { printf \"%.2f\", ${PAGES_ACTIVE:-0} / $TOTAL_PAGES }")
+WIRED_VAL=$(awk "BEGIN { printf \"%.2f\", ${PAGES_WIRED:-0} / $TOTAL_PAGES }")
+COMPRESSED_VAL=$(awk "BEGIN { printf \"%.2f\", ${PAGES_COMPRESSED:-0} / $TOTAL_PAGES }")
 
-# Color based on usage level
+# Color for percentage label
 if   [ "$PCT" -le 60 ]; then COLOR=$MAGENTA
 elif [ "$PCT" -le 80 ]; then COLOR=$ORANGE
 else                         COLOR=$RED
 fi
 
 sketchybar --set ram.percent label="${PCT}%" \
-           --set ram.graph graph.color="$COLOR" graph.fill_color="$COLOR" \
-           --push ram.graph "$GRAPH_VAL"
+           --push ram.active "$ACTIVE_VAL" \
+           --push ram.wired "$WIRED_VAL" \
+           --push ram.compressed "$COMPRESSED_VAL"
