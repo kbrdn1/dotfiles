@@ -2,8 +2,8 @@
 source "$HOME/.config/sketchybar/settings/settings.sh"
 source "$SETTINGS_DIR/colors.sh"
 
-# -- Claude Dark theme (Zed port style) --
-# Graph style matching CPU module
+# -- RAM module with 3 graphs: active, wired, compressed --
+# Same layout as CPU (sys/user)
 
 ram_top=(
   label.font="$FONT:Semibold:7"
@@ -29,7 +29,29 @@ ram_percent=(
   updates=on
 )
 
-ram_graph=(
+ram_compressed=(
+  width=0
+  graph.color=$BLUE
+  graph.fill_color=$BLUE
+  label.drawing=off
+  icon.drawing=off
+  background.height=20
+  background.drawing=on
+  background.color=$TRANSPARENT
+)
+
+ram_wired=(
+  width=0
+  graph.color=$ORANGE
+  graph.fill_color=$ORANGE
+  label.drawing=off
+  icon.drawing=off
+  background.height=20
+  background.drawing=on
+  background.color=$TRANSPARENT
+)
+
+ram_active=(
   graph.color=$MAGENTA
   graph.fill_color=$MAGENTA
   label.drawing=off
@@ -39,11 +61,17 @@ ram_graph=(
   background.color=$TRANSPARENT
 )
 
-sketchybar --add item ram.top right               \
-           --set ram.top "${ram_top[@]}"           \
-                                                   \
-           --add item ram.percent right            \
-           --set ram.percent "${ram_percent[@]}"   \
-                                                   \
-           --add graph ram.graph right 35          \
-           --set ram.graph "${ram_graph[@]}"
+sketchybar --add item ram.top right                    \
+           --set ram.top "${ram_top[@]}"                \
+                                                        \
+           --add item ram.percent right                 \
+           --set ram.percent "${ram_percent[@]}"        \
+                                                        \
+           --add graph ram.compressed right 50          \
+           --set ram.compressed "${ram_compressed[@]}"  \
+                                                        \
+           --add graph ram.wired right 50               \
+           --set ram.wired "${ram_wired[@]}"            \
+                                                        \
+           --add graph ram.active right 50              \
+           --set ram.active "${ram_active[@]}"
