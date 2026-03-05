@@ -125,7 +125,7 @@
       "ctrl-b": "pane::ActivatePreviousItem",
       "ctrl-x": "pane::CloseActiveItem",
       "ctrl-v": "pane::SplitRight",
-      "ctrl-s": "pane::SplitDown",
+      // "ctrl-s": "pane::SplitDown",
       
       // ── AI ────────────────────────────────────────────────────────────────
       "cmd-i": "assistant::InlineAssist",
@@ -150,95 +150,97 @@
       "alt-p": ["task::Spawn", { "task_name": "Files: Generate Project Structure file" }],
     },
   },
-  // {
-  //   "context": "Terminal && Vimode && !menu",
-  //   "bindings": {
-  //     // ── AI ──────────────────────────────────────────────────────────────────
-  //     "space i": "assistant::InlineAssist",
-  //     "space a i": "assistant::InlineAssist",
-  //     "space a f": "agent::ToggleFocus",
-  //     "space a p": "agent::AddSelectionToThread",
+  {
+    "context": "Terminal && !menu",
+    "bindings": {
+      // ── AI ──────────────────────────────────────────────────────────────────
+      "ctrl-a i": "assistant::InlineAssist",
+      "ctrl-a a i": "assistant::InlineAssist",
+      "ctrl-a a f": "agent::ToggleFocus",
+      "ctrl-a a p": "agent::AddSelectionToThread",
 
-  //     // ── Explorer ───────────────────────────────────────────────────────────
-  //     "space e": "project_panel::ToggleFocus",
-  //     "space space": "file_finder::Toggle",
+      // ── Explorer ───────────────────────────────────────────────────────────
+      "ctrl-a e": "project_panel::ToggleFocus",
+      "ctrl-a space": "file_finder::Toggle",
 
-  //     // ── Find / Search (space f) ────────────────────────────────────────────
-  //     "space f f": "file_finder::Toggle",
-  //     "space f g": "pane::DeploySearch",
-  //     "space f p": "projects::OpenRecent",
-  //     "space f s": "outline::Toggle",
-  //     "space f t": "terminal_panel::ToggleFocus",
-  //     "space f T": "workspace::NewCenterTerminal",
-  //     "space ;": "go_to_line::Toggle",
+      // ── Find / Search (space f) ────────────────────────────────────────────
+      "ctrl-a f f": "file_finder::Toggle",
+      "ctrl-a f g": "pane::DeploySearch",
+      "ctrl-a f p": "projects::OpenRecent",
+      "ctrl-a f s": "outline::Toggle",
+      "ctrl-a f t": "terminal_panel::ToggleFocus",
+      "ctrl-a f T": "workspace::NewCenterTerminal",
+      "ctrl-a e ;": "go_to_line::Toggle",
 
-  //     // ── Buffer (space b) ───────────────────────────────────────────────────
-  //     "space b n": "pane::ActivateNextItem",
-  //     "space b b": "pane::ActivatePreviousItem",
-  //     "space b d": "pane::CloseActiveItem",
-  //     "space b o": "pane::CloseOtherItems",
-  //     "space tab": "pane::ActivateNextItem",
-  //     "space shift-tab": "pane::ActivatePreviousItem",
-  //     "space v": "pane::SplitRight",
-  //     "space s": "pane::SplitDown",
-  //     "space x": "pane::CloseActiveItem",
+      // ── Buffer (space b) ───────────────────────────────────────────────────
+      "ctrl-a b n": "pane::ActivateNextItem",
+      "ctrl-a n": "pane::ActivateNextItem",
+      "ctrl-a b b": "pane::ActivatePreviousItem",
+      "ctrl-a b": "pane::ActivatePreviousItem",
+      "ctrl-a b d": "pane::CloseActiveItem",
+      "ctrl-a b o": "pane::CloseOtherItems",
+      "ctrl-a tab": "pane::ActivateNextItem",
+      "ctrl-a shift-tab": "pane::ActivatePreviousItem",
+      "ctrl-a v": "pane::SplitRight",
+      "ctrl-a s": "pane::SplitDown",
+      "ctrl-a x": "pane::CloseActiveItem",
 
-  //     // ── Window / Split (space w) ───────────────────────────────────────────
-  //     "space w v": "pane::SplitRight",
-  //     "space w s": "pane::SplitDown",
-  //     "space w d": "pane::CloseActiveItem",
-  //     "space w h": "workspace::ActivatePaneLeft",
-  //     "space w j": "workspace::ActivatePaneDown",
-  //     "space w k": "workspace::ActivatePaneUp",
-  //     "space w l": "workspace::ActivatePaneRight",
-  //     "space w n": "workspace::ActivateNextPane",
-  //     "space w b": "workspace::ActivatePreviousPane",
+      // ── Window / Split (space w) ───────────────────────────────────────────
+      "ctrl-a w v": "pane::SplitRight",
+      "ctrl-a w s": "pane::SplitDown",
+      "ctrl-a w d": "pane::CloseActiveItem",
+      "ctrl-a w h": "workspace::ActivatePaneLeft",
+      "ctrl-a w j": "workspace::ActivatePaneDown",
+      "ctrl-a w k": "workspace::ActivatePaneUp",
+      "ctrl-a w l": "workspace::ActivatePaneRight",
+      "ctrl-a w n": "workspace::ActivateNextPane",
+      "ctrl-a w b": "workspace::ActivatePreviousPane",
 
-  //     // ── Git (space g) ──────────────────────────────────────────────────────
-  //     "space g g": "git_panel::ToggleFocus",
-  //     "space G G": ["task::Spawn", { "task_name": "Git: Lazygit" }],
+      // ── Git (space g) ──────────────────────────────────────────────────────
+      "ctrl-a g g": "git_panel::ToggleFocus",
+      "ctrl-a G G": ["task::Spawn", { "task_name": "Git: Lazygit" }],
 
-  //     // ── Terminal (space t) ─────────────────────────────────────────────────
-  //     "space t t": "task::Spawn",
-  //     "space t T": "terminal::RerunTask",
+      // ── Terminal (space t) ─────────────────────────────────────────────────
+      "ctrl-a t t": "task::Spawn",
+      "ctrl-a t T": "terminal::RerunTask",
 
-  //     // ── Tools / Tasks (space t) ────────────────────────────────────────────
-  //     "space t n": ["task::Spawn", { "task_name": "IDE: Neovim" }],
-  //     "space t f": ["task::Spawn", { "task_name": "Files: FZF" }],
-  //     "space t y": ["task::Spawn", { "task_name": "Files: Yazi" }],
-  //     "space t r": ["task::Spawn", { "task_name": "Files: Rename Files (FZF)" }],
-  //     "space t d": ["task::Spawn", { "task_name": "Docker: Lazydocker" }],
-  //     "space t k": ["task::Spawn", { "task_name": "Kubernetes: Lazykube" }],
-  //     "space t p": ["task::Spawn", { "task_name": "Files: Generate Project Structure file" }],
-  //     "space t l": ["task::Spawn", { "task_name": "Git: Generate Git Logs file" }],
-  //     "space t L": ["task::Spawn", { "task_name": "Git: Generate Git Logs file (All)" }],
-  //     "space t s": ["task::Spawn", { "task_name": "LazySQL" }],
-  //     "space t S": ["task::Spawn", { "task_name": "LazySSH" }],
-  //     "space t c": ["task::Spawn", { "task_name": "LazyCurl" }],
-  //     "space t m": ["task::Spawn", { "task_name": "Lazymake" }],
+      // ── Tools / Tasks (space t) ────────────────────────────────────────────
+      "ctrl-a t n": ["task::Spawn", { "task_name": "IDE: Neovim" }],
+      "ctrl-a t f": ["task::Spawn", { "task_name": "Files: FZF" }],
+      "ctrl-a t y": ["task::Spawn", { "task_name": "Files: Yazi" }],
+      "ctrl-a t r": ["task::Spawn", { "task_name": "Files: Rename Files (FZF)" }],
+      "ctrl-a t d": ["task::Spawn", { "task_name": "Docker: Lazydocker" }],
+      "ctrl-a t k": ["task::Spawn", { "task_name": "Kubernetes: Lazykube" }],
+      "ctrl-a t p": ["task::Spawn", { "task_name": "Files: Generate Project Structure file" }],
+      "ctrl-a t l": ["task::Spawn", { "task_name": "Git: Generate Git Logs file" }],
+      "ctrl-a t L": ["task::Spawn", { "task_name": "Git: Generate Git Logs file (All)" }],
+      "ctrl-a t s": ["task::Spawn", { "task_name": "LazySQL" }],
+      "ctrl-a t S": ["task::Spawn", { "task_name": "LazySSH" }],
+      "ctrl-a t c": ["task::Spawn", { "task_name": "LazyCurl" }],
+      "ctrl-a t m": ["task::Spawn", { "task_name": "Lazymake" }],
 
-  //     // ── AI (space a) ──────────────────────────────────────────────────────
-  //     "space a c": ["task::Spawn", { "task_name": "Claude Code" }],
-  //     "space a C": ["task::Spawn", { "task_name": "Claude Code (Continue)" }],
-  //     "space a s": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
-  //     "space a S": [
-  //       "task::Spawn",
-  //       { "task_name": "Claude Code (Continue + Dangerous Skip Permissions)" },
-  //     ],
-  //     "space a b": ["task::Spawn", { "task_name": "Claude Code (Chrome)" }],
-  //     "space a B": ["task::Spawn", { "task_name": "Claude Code (Continue + Chrome)" }],
+      // ── AI (space a) ──────────────────────────────────────────────────────
+      "ctrl-a a c": ["task::Spawn", { "task_name": "Claude Code" }],
+      "ctrl-a a C": ["task::Spawn", { "task_name": "Claude Code (Continue)" }],
+      "ctrl-a a s": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
+      "ctrl-a a S": [
+        "task::Spawn",
+        { "task_name": "Claude Code (Continue + Dangerous Skip Permissions)" },
+      ],
+      "ctrl-a a b": ["task::Spawn", { "task_name": "Claude Code (Chrome)" }],
+      "ctrl-a a B": ["task::Spawn", { "task_name": "Claude Code (Continue + Chrome)" }],
 
-  //     // ── Settings (space ,) ─────────────────────────────────────────────────
-  //     "space , k": "zed::OpenKeymapFile",
-  //     "space , K": "zed::OpenKeymap",
-  //     "space , s": "zed::OpenSettingsFile",
-  //     "space , S": "zed::OpenSettings",
-  //     "space , t": "zed::OpenTasks",
-  //     "space , c": "theme_selector::Toggle",
-  //     "space , C": "icon_theme_selector::Toggle",
-  //     "space , e": "zed::Extensions",
-  //   },
-  // },
+      // ── Settings (space ,) ─────────────────────────────────────────────────
+      "ctrl-a , k": "zed::OpenKeymapFile",
+      "ctrl-a , K": "zed::OpenKeymap",
+      "ctrl-a , s": "zed::OpenSettingsFile",
+      "ctrl-a , S": "zed::OpenSettings",
+      "ctrl-a , t": "zed::OpenTasks",
+      "ctrl-a , c": "theme_selector::Toggle",
+      "ctrl-a , C": "icon_theme_selector::Toggle",
+      "ctrl-a , e": "zed::Extensions",
+    },
+  },
   // ════════════════════════════════════════════════════════════════════════════
   // Editor (all modes, consolidated)
   // ════════════════════════════════════════════════════════════════════════════
@@ -384,7 +386,7 @@
       "space t s": ["task::Spawn", { "task_name": "LazySQL" }],
       "space t S": ["task::Spawn", { "task_name": "LazySSH" }],
       "space t c": ["task::Spawn", { "task_name": "LazyCurl" }],
-      "space t e": ["task::Spawn", { "task_name": "Documentaion: Ekphos" }],
+      "space t ": ["task::Spawn", { "task_name": "Documentaion: Ekphos" }],
       "space t E": ["task::Spawn", { "task_name": "Documentaion: Ekphos file (FZF)" }],
       "space t m": ["task::Spawn", { "task_name": "Lazymake" }],
 

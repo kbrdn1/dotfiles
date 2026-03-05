@@ -15,7 +15,7 @@
   "experimental.theme_overrides": {
     "background.appearance": "blurred",
   },
-  "redact_private_values": true,
+  "redact_private_values": false,
   "current_line_highlight": "all",
   "bottom_dock_layout": "contained",
 
