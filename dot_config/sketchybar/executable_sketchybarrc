@@ -108,6 +108,7 @@ sketchybar --add bracket status music_prev music_play music_next music nix brew 
              background.border_width=1
 
 source "$PLUGIN_DIR/codexbar.sh"
+source "$PLUGIN_DIR/storage.sh"
 source "$PLUGIN_DIR/ram.sh"
 source "$PLUGIN_DIR/cpu.sh"
 
