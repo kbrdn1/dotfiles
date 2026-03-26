@@ -21,7 +21,7 @@
     "bindings": {
       "cmd-shift-t": "task::Spawn",
       // ── AI ────────────────────────────────────────────────────────────────
-      "alt-C": ["task::Spawn", { "task_name": "Claude Code" }],
+      "alt-C": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
       // ── Files ─────────────────────────────────────────────────────────────
       "alt-f": ["task::Spawn", { "task_name": "Files: FZF" }],
       "alt-y": ["task::Spawn", { "task_name": "Files: Yazi" }],
@@ -104,66 +104,74 @@
   },
 
   // ════════════════════════════════════════════════════════════════════════════
-  // Terminal
+  // Terminal (direct bindings — only keys that DON'T conflict with TUI apps)
   // ════════════════════════════════════════════════════════════════════════════
   {
     "context": "Terminal",
     "bindings": {
       "ctrl-escape": "terminal::ToggleViMode",
-      // ── Pane navigation (mirrors Editor ctrl bindings) ────────────────────
-      "ctrl-h": "workspace::ActivatePaneLeft",
-      "ctrl-l": "workspace::ActivatePaneRight",
-      "ctrl-j": "workspace::ActivatePaneDown",
-      "ctrl-k": "workspace::ActivatePaneUp",
-      // ── Pane split & move (mirrors Editor ctrl-shift bindings) ────────────
-      "ctrl-shift-h": "pane::SplitAndMoveLeft",
-      "ctrl-shift-l": "pane::SplitAndMoveRight",
-      "ctrl-shift-k": "pane::SplitAndMoveUp",
-      "ctrl-shift-j": "pane::SplitAndMoveDown",
-      // ── Tab / Buffer navigation ───────────────────────────────────────────
-      "ctrl-n": "pane::ActivateNextItem",
-      "ctrl-b": "pane::ActivatePreviousItem",
-      "ctrl-x": "pane::CloseActiveItem",
-      "ctrl-v": "pane::SplitRight",
-      // "ctrl-s": "pane::SplitDown",
-      
       // ── AI ────────────────────────────────────────────────────────────────
       "cmd-i": "assistant::InlineAssist",
-      // ── Search ────────────────────────────────────────────────────────────
-      "alt-C": ["task::Spawn", { "task_name": "Claude Code" }],
-      // ── Files ─────────────────────────────────────────────────────────────
+      // ── Tools (alt-* passthrough to Zed, never conflict with TUI) ─────────
+      "alt-C": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
       "alt-f": ["task::Spawn", { "task_name": "Files: FZF" }],
       "alt-y": ["task::Spawn", { "task_name": "Files: Yazi" }],
       "alt-R": ["task::Spawn", { "task_name": "Files: Rename Files (FZF)" }],
-      // ── Git ───────────────────────────────────────────────────────────────
       "alt-g": ["task::Spawn", { "task_name": "Git: Lazygit" }],
-      // ── Database ──────────────────────────────────────────────────────────
       "alt-r": ["task::Spawn", { "task_name": "Database: Redis CLI" }],
       "alt-s": ["task::Spawn", { "task_name": "LazySQL" }],
-      // ── Network ───────────────────────────────────────────────────────────
       "alt-c": ["task::Spawn", { "task_name": "LazyCurl" }],
       "alt-S": ["task::Spawn", { "task_name": "LazySSH" }],
-      // ── Infrastructure ────────────────────────────────────────────────────
       "alt-d": ["task::Spawn", { "task_name": "Docker: Lazydocker" }],
       "alt-k": ["task::Spawn", { "task_name": "Kubernetes: Lazykube" }],
-      // ── Project ───────────────────────────────────────────────────────────
       "alt-p": ["task::Spawn", { "task_name": "Files: Generate Project Structure file" }],
     },
   },
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Terminal ctrl-a prefix (tmux-like — no conflict with Claude Code / TUI)
+  // ════════════════════════════════════════════════════════════════════════════
   {
     "context": "Terminal && !menu",
     "bindings": {
-      // ── AI ──────────────────────────────────────────────────────────────────
-      "ctrl-a i": "assistant::InlineAssist",
-      "ctrl-a a i": "assistant::InlineAssist",
-      "ctrl-a a f": "agent::ToggleFocus",
-      "ctrl-a a p": "agent::AddSelectionToThread",
+      // ── Pane navigation ───────────────────────────────────────────────────
+      "ctrl-a h": "workspace::ActivatePaneLeft",
+      "ctrl-a j": "workspace::ActivatePaneDown",
+      "ctrl-a k": "workspace::ActivatePaneUp",
+      "ctrl-a l": "workspace::ActivatePaneRight",
 
-      // ── Explorer ───────────────────────────────────────────────────────────
+      // ── Pane swap ─────────────────────────────────────────────────────────
+      "ctrl-a H": "workspace::SwapPaneLeft",
+      "ctrl-a J": "workspace::SwapPaneDown",
+      "ctrl-a K": "workspace::SwapPaneUp",
+      "ctrl-a L": "workspace::SwapPaneRight",
+
+      // ── Zoom & Dock resize (matches aerospace: -=shrink, ==grow) ────────
+      "ctrl-a z": "workspace::ToggleZoom",
+      "ctrl-a =": "workspace::IncreaseActiveDockSize",
+      "ctrl-a -": "workspace::DecreaseActiveDockSize",
+      "ctrl-a +": "workspace::ResetActiveDockSize",
+
+      // ── Tab / Buffer ──────────────────────────────────────────────────────
+      "ctrl-a n": "pane::ActivateNextItem",
+      "ctrl-a b": "pane::ActivatePreviousItem",
+      "ctrl-a x": "pane::CloseActiveItem",
+      "ctrl-a tab": "pane::ActivateNextItem",
+      "ctrl-a shift-tab": "pane::ActivatePreviousItem",
+      "ctrl-a b n": "pane::ActivateNextItem",
+      "ctrl-a b b": "pane::ActivatePreviousItem",
+      "ctrl-a b d": "pane::CloseActiveItem",
+      "ctrl-a b o": "pane::CloseOtherItems",
+
+      // ── Splits ────────────────────────────────────────────────────────────
+      "ctrl-a v": "pane::SplitRight",
+      "ctrl-a s": "pane::SplitDown",
+
+      // ── Explorer ──────────────────────────────────────────────────────────
       "ctrl-a e": "project_panel::ToggleFocus",
       "ctrl-a space": "file_finder::Toggle",
 
-      // ── Find / Search (space f) ────────────────────────────────────────────
+      // ── Find / Search ─────────────────────────────────────────────────────
       "ctrl-a f f": "file_finder::Toggle",
       "ctrl-a f g": "pane::DeploySearch",
       "ctrl-a f p": "projects::OpenRecent",
@@ -172,39 +180,25 @@
       "ctrl-a f T": "workspace::NewCenterTerminal",
       "ctrl-a e ;": "go_to_line::Toggle",
 
-      // ── Buffer (space b) ───────────────────────────────────────────────────
-      "ctrl-a b n": "pane::ActivateNextItem",
-      "ctrl-a n": "pane::ActivateNextItem",
-      "ctrl-a b b": "pane::ActivatePreviousItem",
-      "ctrl-a b": "pane::ActivatePreviousItem",
-      "ctrl-a b d": "pane::CloseActiveItem",
-      "ctrl-a b o": "pane::CloseOtherItems",
-      "ctrl-a tab": "pane::ActivateNextItem",
-      "ctrl-a shift-tab": "pane::ActivatePreviousItem",
-      "ctrl-a v": "pane::SplitRight",
-      "ctrl-a s": "pane::SplitDown",
-      "ctrl-a x": "pane::CloseActiveItem",
+      // ── AI ────────────────────────────────────────────────────────────────
+      "ctrl-a a i": "assistant::InlineAssist",
+      "ctrl-a a f": "agent::ToggleFocus",
+      "ctrl-a a p": "agent::AddSelectionToThread",
+      "ctrl-a a c": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
+      "ctrl-a a C": [
+        "task::Spawn",
+        { "task_name": "Claude Code (Continue + Dangerous Skip Permissions)" },
+      ],
 
-      // ── Window / Split (space w) ───────────────────────────────────────────
-      "ctrl-a w v": "pane::SplitRight",
-      "ctrl-a w s": "pane::SplitDown",
-      "ctrl-a w d": "pane::CloseActiveItem",
-      "ctrl-a w h": "workspace::ActivatePaneLeft",
-      "ctrl-a w j": "workspace::ActivatePaneDown",
-      "ctrl-a w k": "workspace::ActivatePaneUp",
-      "ctrl-a w l": "workspace::ActivatePaneRight",
-      "ctrl-a w n": "workspace::ActivateNextPane",
-      "ctrl-a w b": "workspace::ActivatePreviousPane",
-
-      // ── Git (space g) ──────────────────────────────────────────────────────
+      // ── Git ───────────────────────────────────────────────────────────────
       "ctrl-a g g": "git_panel::ToggleFocus",
       "ctrl-a G G": ["task::Spawn", { "task_name": "Git: Lazygit" }],
 
-      // ── Terminal (space t) ─────────────────────────────────────────────────
+      // ── Terminal ──────────────────────────────────────────────────────────
       "ctrl-a t t": "task::Spawn",
       "ctrl-a t T": "terminal::RerunTask",
 
-      // ── Tools / Tasks (space t) ────────────────────────────────────────────
+      // ── Tools / Tasks ─────────────────────────────────────────────────────
       "ctrl-a t n": ["task::Spawn", { "task_name": "IDE: Neovim" }],
       "ctrl-a t f": ["task::Spawn", { "task_name": "Files: FZF" }],
       "ctrl-a t y": ["task::Spawn", { "task_name": "Files: Yazi" }],
@@ -219,18 +213,7 @@
       "ctrl-a t c": ["task::Spawn", { "task_name": "LazyCurl" }],
       "ctrl-a t m": ["task::Spawn", { "task_name": "Lazymake" }],
 
-      // ── AI (space a) ──────────────────────────────────────────────────────
-      "ctrl-a a c": ["task::Spawn", { "task_name": "Claude Code" }],
-      "ctrl-a a C": ["task::Spawn", { "task_name": "Claude Code (Continue)" }],
-      "ctrl-a a s": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
-      "ctrl-a a S": [
-        "task::Spawn",
-        { "task_name": "Claude Code (Continue + Dangerous Skip Permissions)" },
-      ],
-      "ctrl-a a b": ["task::Spawn", { "task_name": "Claude Code (Chrome)" }],
-      "ctrl-a a B": ["task::Spawn", { "task_name": "Claude Code (Continue + Chrome)" }],
-
-      // ── Settings (space ,) ─────────────────────────────────────────────────
+      // ── Settings ──────────────────────────────────────────────────────────
       "ctrl-a , k": "zed::OpenKeymapFile",
       "ctrl-a , K": "zed::OpenKeymap",
       "ctrl-a , s": "zed::OpenSettingsFile",
@@ -241,6 +224,7 @@
       "ctrl-a , e": "zed::Extensions",
     },
   },
+
   // ════════════════════════════════════════════════════════════════════════════
   // Editor (all modes, consolidated)
   // ════════════════════════════════════════════════════════════════════════════
@@ -278,7 +262,7 @@
   },
 
   // ════════════════════════════════════════════════════════════════════════════
-  // Vim Normal Mode (space = leader)
+  // Vim Normal Mode (space = leader, ctrl-a = tmux-like prefix)
   // ════════════════════════════════════════════════════════════════════════════
   {
     "context": "Editor && VimControl && !VimWaiting && !menu",
@@ -300,6 +284,98 @@
       "ctrl-x": "pane::CloseActiveItem",
       "ctrl-v": "pane::SplitRight",
       "ctrl-s": "pane::SplitDown",
+
+      // ══════════════════════════════════════════════════════════════════════
+      // CTRL-A PREFIX (tmux-like, mirrors Terminal)
+      // ══════════════════════════════════════════════════════════════════════
+
+      // ── Pane navigation ───────────────────────────────────────────────────
+      "ctrl-a h": "workspace::ActivatePaneLeft",
+      "ctrl-a j": "workspace::ActivatePaneDown",
+      "ctrl-a k": "workspace::ActivatePaneUp",
+      "ctrl-a l": "workspace::ActivatePaneRight",
+
+      // ── Pane swap ─────────────────────────────────────────────────────────
+      "ctrl-a H": "workspace::SwapPaneLeft",
+      "ctrl-a J": "workspace::SwapPaneDown",
+      "ctrl-a K": "workspace::SwapPaneUp",
+      "ctrl-a L": "workspace::SwapPaneRight",
+
+      // ── Zoom & Dock resize (matches aerospace: -=shrink, ==grow) ────────
+      "ctrl-a z": "workspace::ToggleZoom",
+      "ctrl-a =": "workspace::IncreaseActiveDockSize",
+      "ctrl-a -": "workspace::DecreaseActiveDockSize",
+      "ctrl-a +": "workspace::ResetActiveDockSize",
+
+      // ── Tab / Buffer ──────────────────────────────────────────────────────
+      "ctrl-a n": "pane::ActivateNextItem",
+      "ctrl-a b": "pane::ActivatePreviousItem",
+      "ctrl-a x": "pane::CloseActiveItem",
+      "ctrl-a tab": "pane::ActivateNextItem",
+      "ctrl-a shift-tab": "pane::ActivatePreviousItem",
+      "ctrl-a b n": "pane::ActivateNextItem",
+      "ctrl-a b b": "pane::ActivatePreviousItem",
+      "ctrl-a b d": "pane::CloseActiveItem",
+      "ctrl-a b o": "pane::CloseOtherItems",
+
+      // ── Splits ────────────────────────────────────────────────────────────
+      "ctrl-a v": "pane::SplitRight",
+      "ctrl-a s": "pane::SplitDown",
+
+      // ── Explorer ──────────────────────────────────────────────────────────
+      "ctrl-a e": "project_panel::ToggleFocus",
+      "ctrl-a space": "file_finder::Toggle",
+
+      // ── Find / Search ─────────────────────────────────────────────────────
+      "ctrl-a f f": "file_finder::Toggle",
+      "ctrl-a f g": "pane::DeploySearch",
+      "ctrl-a f p": "projects::OpenRecent",
+      "ctrl-a f s": "outline::Toggle",
+      "ctrl-a f t": "terminal_panel::ToggleFocus",
+      "ctrl-a f T": "workspace::NewCenterTerminal",
+
+      // ── AI ────────────────────────────────────────────────────────────────
+      "ctrl-a a i": "assistant::InlineAssist",
+      "ctrl-a a f": "agent::ToggleFocus",
+      "ctrl-a a p": "agent::AddSelectionToThread",
+      "ctrl-a a c": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
+      "ctrl-a a C": [
+        "task::Spawn",
+        { "task_name": "Claude Code (Continue + Dangerous Skip Permissions)" },
+      ],
+
+      // ── Git ───────────────────────────────────────────────────────────────
+      "ctrl-a g g": "git_panel::ToggleFocus",
+      "ctrl-a G G": ["task::Spawn", { "task_name": "Git: Lazygit" }],
+
+      // ── Terminal ──────────────────────────────────────────────────────────
+      "ctrl-a t t": "task::Spawn",
+      "ctrl-a t T": "terminal::RerunTask",
+
+      // ── Tools / Tasks ─────────────────────────────────────────────────────
+      "ctrl-a t n": ["task::Spawn", { "task_name": "IDE: Neovim" }],
+      "ctrl-a t f": ["task::Spawn", { "task_name": "Files: FZF" }],
+      "ctrl-a t y": ["task::Spawn", { "task_name": "Files: Yazi" }],
+      "ctrl-a t r": ["task::Spawn", { "task_name": "Files: Rename Files (FZF)" }],
+      "ctrl-a t d": ["task::Spawn", { "task_name": "Docker: Lazydocker" }],
+      "ctrl-a t k": ["task::Spawn", { "task_name": "Kubernetes: Lazykube" }],
+      "ctrl-a t p": ["task::Spawn", { "task_name": "Files: Generate Project Structure file" }],
+      "ctrl-a t l": ["task::Spawn", { "task_name": "Git: Generate Git Logs file" }],
+      "ctrl-a t L": ["task::Spawn", { "task_name": "Git: Generate Git Logs file (All)" }],
+      "ctrl-a t s": ["task::Spawn", { "task_name": "LazySQL" }],
+      "ctrl-a t S": ["task::Spawn", { "task_name": "LazySSH" }],
+      "ctrl-a t c": ["task::Spawn", { "task_name": "LazyCurl" }],
+      "ctrl-a t m": ["task::Spawn", { "task_name": "Lazymake" }],
+
+      // ── Settings ──────────────────────────────────────────────────────────
+      "ctrl-a , k": "zed::OpenKeymapFile",
+      "ctrl-a , K": "zed::OpenKeymap",
+      "ctrl-a , s": "zed::OpenSettingsFile",
+      "ctrl-a , S": "zed::OpenSettings",
+      "ctrl-a , t": "zed::OpenTasks",
+      "ctrl-a , c": "theme_selector::Toggle",
+      "ctrl-a , C": "icon_theme_selector::Toggle",
+      "ctrl-a , e": "zed::Extensions",
 
       // ══════════════════════════════════════════════════════════════════════
       // LEADER (space) BINDINGS
@@ -330,6 +406,14 @@
       "space w l": "workspace::ActivatePaneRight",
       "space w n": "workspace::ActivateNextPane",
       "space w b": "workspace::ActivatePreviousPane",
+      "space w H": "workspace::SwapPaneLeft",
+      "space w J": "workspace::SwapPaneDown",
+      "space w K": "workspace::SwapPaneUp",
+      "space w L": "workspace::SwapPaneRight",
+      "space w z": "workspace::ToggleZoom",
+      "space w =": "workspace::IncreaseActiveDockSize",
+      "space w -": "workspace::DecreaseActiveDockSize",
+      "space w +": "workspace::ResetActiveDockSize",
 
       // ── Explorer ───────────────────────────────────────────────────────────
       "space e": "project_panel::ToggleFocus",
@@ -386,20 +470,16 @@
       "space t s": ["task::Spawn", { "task_name": "LazySQL" }],
       "space t S": ["task::Spawn", { "task_name": "LazySSH" }],
       "space t c": ["task::Spawn", { "task_name": "LazyCurl" }],
-      "space t ": ["task::Spawn", { "task_name": "Documentaion: Ekphos" }],
+      "space t e": ["task::Spawn", { "task_name": "Documentaion: Ekphos" }],
       "space t E": ["task::Spawn", { "task_name": "Documentaion: Ekphos file (FZF)" }],
       "space t m": ["task::Spawn", { "task_name": "Lazymake" }],
 
       // ── AI (space a) ──────────────────────────────────────────────────────
-      "space a c": ["task::Spawn", { "task_name": "Claude Code" }],
-      "space a C": ["task::Spawn", { "task_name": "Claude Code (Continue)" }],
-      "space a s": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
-      "space a S": [
+      "space a c": ["task::Spawn", { "task_name": "Claude Code (Dangerous Skip Permissions)" }],
+      "space a C": [
         "task::Spawn",
         { "task_name": "Claude Code (Continue + Dangerous Skip Permissions)" },
       ],
-      "space a b": ["task::Spawn", { "task_name": "Claude Code (Chrome)" }],
-      "space a B": ["task::Spawn", { "task_name": "Claude Code (Continue + Chrome)" }],
       "space a i": "assistant::InlineAssist",
       "space a f": "agent::ToggleFocus",
       "space a p": "agent::AddSelectionToThread",
@@ -441,40 +521,43 @@
   },
 
   // ════════════════════════════════════════════════════════════════════════════
-  // Git Panel (consolidated)
+  // Git Panel — lazygit-style keybindings
   // ════════════════════════════════════════════════════════════════════════════
   {
     "context": "(GitPanel && ChangesList)",
     "bindings": {
-      // ── Staging ───────────────────────────────────────────────────────────
-      "s": "git::StageAll",
+      // ── Staging (lazygit: space=toggle, a=all) ────────────────────────────
+      "space": "git::ToggleStaged",
+      "a": "git::StageAll",
       "u": "git::UnstageAll",
-      // ── Commit ────────────────────────────────────────────────────────────
+      // ── Commit (lazygit: c=commit) ────────────────────────────────────────
       "c": "git::Commit",
-      "a i": "git::GenerateCommitMessage",
       "ctrl-i": "git::GenerateCommitMessage",
-      // ── Remote ────────────────────────────────────────────────────────────
+      // ── Remote (lazygit: P=push, p=pull, f=fetch) ─────────────────────────
       "P": "git::Push",
       "p": "git::Pull",
       "f": "git::Fetch",
-      // ── Branch ────────────────────────────────────────────────────────────
+      // ── Branch (lazygit: b=new, B=checkout) ───────────────────────────────
       "b": "git::Branch",
       "B": "git::CheckoutBranch",
       "w": "git::Worktree",
-      // ── Diff & Restore ────────────────────────────────────────────────────
+      // ── Stash (lazygit: s=stash, S=options) ───────────────────────────────
+      "s": "git::StashAll",
+      "S": "git::ViewStash",
+      "A": "git::StashPop",
+      // ── Diff & Discard (lazygit: d=discard, D=diff) ───────────────────────
       "d": "git::RestoreFile",
       "D": "git::Diff",
-      // ── Stash ─────────────────────────────────────────────────────────────
-      "v": "git::ViewStash",
-      "V": "git::StashAll",
-      "A": "git::StashPop",
-      // ── Pull Request ──────────────────────────────────────────────────────
+      // ── PR ────────────────────────────────────────────────────────────────
       "C": "git::CreatePullRequest",
-      // ── Misc ──────────────────────────────────────────────────────────────
-      "I": "git::AddToGitignore",
-      "i": "git::Init",
+      // ── Misc (lazygit: i=ignore, `=tree, q=quit) ──────────────────────────
+      "i": "git::AddToGitignore",
+      "I": "git::Init",
+      "`": "git_panel::ToggleTreeView",
       "t": "git_panel::ToggleTreeView",
       "q": "git_panel::Close",
+      // ── Navigation (lazygit: ]/[=tabs, /=filter) ──────────────────────────
+      "/": "pane::DeploySearch",
     },
   },
   {
@@ -482,7 +565,7 @@
     "bindings": {
       // ── Commit ───────────────────────────────────────────────────────────
       "ctrl-i": "git::GenerateCommitMessage",
-      // Misc
+      // ── Quit (lazygit: q) ────────────────────────────────────────────────
       "ctrl-q": "git_panel::Close",
       "ctrl-x": "git_panel::Close",
     }
@@ -490,9 +573,9 @@
   {
     "context": "CommitEditor > Editor",
     "bindings": {
-      // ── Commit ────────────────────────────────────────────────────────────
+      // ── AI commit message ─────────────────────────────────────────────────
       "ctrl-i": "git::GenerateCommitMessage",
-      // Misc ─────────────────────────────────────────────────────────────────
+      // ── Quit ──────────────────────────────────────────────────────────────
       "ctrl-q": "git_panel::Close",
       "ctrl-x": "git_panel::Close"
     }

@@ -361,6 +361,23 @@ Welcome to my dotfiles repository! This repository is managed using [Chezmoi](ht
 | <kbd>⌥→</kbd> <kbd>-</kbd>/<kbd>=</kbd> | <kbd>⌥→</kbd>+<kbd>-</kbd>/<kbd>=</kbd> | Resize window (smart) |
 | <kbd>⌥→</kbd> <kbd>R</kbd> | <kbd>⌥→</kbd>+<kbd>R</kbd> | Enter resize mode |
 
+### Resize Mode
+
+> Enter with <kbd>⌥→</kbd> <kbd>R</kbd>. Exit with <kbd>Esc</kbd> or <kbd>Enter</kbd>. Stays in resize mode until exit.
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>h</kbd> | `resize width +50` | Grow width (left) |
+| <kbd>j</kbd> | `resize height -50` | Shrink height (down) |
+| <kbd>k</kbd> | `resize height +50` | Grow height (up) |
+| <kbd>l</kbd> | `resize width -50` | Shrink width (right) |
+| <kbd>⇧</kbd>+<kbd>h</kbd> | `resize width -50` | Shrink width (opposite) |
+| <kbd>⇧</kbd>+<kbd>j</kbd> | `resize height +50` | Grow height (opposite) |
+| <kbd>⇧</kbd>+<kbd>k</kbd> | `resize height -50` | Shrink height (opposite) |
+| <kbd>⇧</kbd>+<kbd>l</kbd> | `resize width +50` | Grow width (opposite) |
+| <kbd>-</kbd>/<kbd>=</kbd> | Smart resize ±50 | Resize smart |
+| <kbd>⇧</kbd>+<kbd>-</kbd>/<kbd>=</kbd> | Smart resize ±10 | Fine smart resize |
+
 ### Utilities
 
 | Leader key | Held modifier | Action |
@@ -517,7 +534,7 @@ Primary editor with custom Vim-mode keybindings, task integrations, and Claude D
 | Shortcut | Task | Description |
 |----------|------|-------------|
 | <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> | `task::Spawn` | Open task launcher |
-| <kbd>⌥</kbd> + <kbd>C</kbd> | Claude Code | Open Claude Code |
+| <kbd>⌥</kbd> + <kbd>C</kbd> | Claude Code (skip perms) | Open Claude Code |
 | <kbd>⌥</kbd> + <kbd>f</kbd> | Files: FZF | FZF file finder |
 | <kbd>⌥</kbd> + <kbd>y</kbd> | Files: Yazi | Yazi file manager |
 | <kbd>⌥</kbd> + <kbd>R</kbd> | Files: Rename Files (FZF) | Batch rename files |
@@ -532,16 +549,56 @@ Primary editor with custom Vim-mode keybindings, task integrations, and Claude D
 
 #### Terminal
 
+> **No direct `ctrl-*` bindings** in Terminal context — all navigation uses the `ctrl-a` prefix (tmux-like) to avoid conflicts with Claude Code, lazygit, and other TUI apps.
+
 | Shortcut | Action | Description |
 |----------|--------|-------------|
 | <kbd>⌃</kbd> + <kbd>Esc</kbd> | `terminal::ToggleViMode` | Toggle Vi mode |
-| <kbd>⌃</kbd> + <kbd>n</kbd>/<kbd>b</kbd> | Next/Previous tab | Tab navigation |
-| <kbd>⌃</kbd> + <kbd>x</kbd> | Close tab | Close active tab |
-| <kbd>⌃</kbd> + <kbd>v</kbd>/<kbd>s</kbd> | Split right/down | Split pane |
+
+### Ctrl-A Prefix (tmux-like) 🖥️
+
+> **Available in both Editor (vim mode) and Terminal.** Mirrors tmux prefix workflow — `ctrl-a` replaces `vim::Increment` in editor.
+
+#### Pane Navigation & Management
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>⌃a</kbd> <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `workspace::ActivatePane*` | Focus pane (left/down/up/right) |
+| <kbd>⌃a</kbd> <kbd>H</kbd>/<kbd>J</kbd>/<kbd>K</kbd>/<kbd>L</kbd> | `workspace::SwapPane*` | Swap pane (left/down/up/right) |
+| <kbd>⌃a</kbd> <kbd>z</kbd> | `workspace::ToggleZoom` | Toggle pane zoom |
+| <kbd>⌃a</kbd> <kbd>=</kbd> | `workspace::IncreaseActiveDockSize` | Grow dock (matches aerospace) |
+| <kbd>⌃a</kbd> <kbd>-</kbd> | `workspace::DecreaseActiveDockSize` | Shrink dock (matches aerospace) |
+| <kbd>⌃a</kbd> <kbd>+</kbd> | `workspace::ResetActiveDockSize` | Reset dock size |
+
+#### Tab / Buffer
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>⌃a</kbd> <kbd>n</kbd> | `pane::ActivateNextItem` | Next tab |
+| <kbd>⌃a</kbd> <kbd>b</kbd> | `pane::ActivatePreviousItem` | Previous tab |
+| <kbd>⌃a</kbd> <kbd>x</kbd> | `pane::CloseActiveItem` | Close tab |
+| <kbd>⌃a</kbd> <kbd>v</kbd> | `pane::SplitRight` | Split right |
+| <kbd>⌃a</kbd> <kbd>s</kbd> | `pane::SplitDown` | Split down |
+| <kbd>⌃a</kbd> <kbd>Tab</kbd> | `pane::ActivateNextItem` | Next tab (alt) |
+
+#### Ctrl-A Sub-menus
+
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| <kbd>⌃a</kbd> <kbd>e</kbd> | `project_panel::ToggleFocus` | Toggle explorer |
+| <kbd>⌃a</kbd> <kbd>Space</kbd> | `file_finder::Toggle` | File finder |
+| <kbd>⌃a</kbd> <kbd>f</kbd> <kbd>f</kbd>/<kbd>g</kbd>/<kbd>p</kbd>/<kbd>s</kbd>/<kbd>t</kbd> | Find | File/Grep/Project/Symbols/Terminal |
+| <kbd>⌃a</kbd> <kbd>a</kbd> <kbd>c</kbd> | Claude Code | New session (skip perms) |
+| <kbd>⌃a</kbd> <kbd>a</kbd> <kbd>C</kbd> | Claude Code (Continue) | Continue session (skip perms) |
+| <kbd>⌃a</kbd> <kbd>a</kbd> <kbd>i</kbd>/<kbd>f</kbd>/<kbd>p</kbd> | AI | Inline assist / Agent focus / Add to thread |
+| <kbd>⌃a</kbd> <kbd>g</kbd> <kbd>g</kbd> | `git_panel::ToggleFocus` | Git panel |
+| <kbd>⌃a</kbd> <kbd>G</kbd> <kbd>G</kbd> | Git: Lazygit | Open Lazygit |
+| <kbd>⌃a</kbd> <kbd>t</kbd> <kbd>*</kbd> | Tools | All TUI tools (same as `space t *`) |
+| <kbd>⌃a</kbd> <kbd>,</kbd> <kbd>*</kbd> | Settings | Keymap/Settings/Tasks/Theme/Extensions |
 
 ### Vim-Mode Keybindings 🧙‍♂️
 
-#### Quick Navigation (Ctrl)
+#### Quick Navigation (Ctrl) — Editor only
 | Shortcut | Action | Description |
 |----------|--------|-------------|
 | <kbd>⌃</kbd> + <kbd>n</kbd> | `pane::ActivateNextItem` | Next tab/buffer |
@@ -599,7 +656,11 @@ Primary editor with custom Vim-mode keybindings, task integrations, and Claude D
 | <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>s</kbd> | `pane::SplitDown` | Split down |
 | <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>d</kbd> | `pane::CloseActiveItem` | Close pane |
 | <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `workspace::ActivatePane*` | Focus pane |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>H</kbd>/<kbd>J</kbd>/<kbd>K</kbd>/<kbd>L</kbd> | `workspace::SwapPane*` | Swap/move pane |
 | <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>n</kbd>/<kbd>b</kbd> | `workspace::ActivateNextPane/PreviousPane` | Next/previous pane |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>z</kbd> | `workspace::ToggleZoom` | Toggle pane zoom |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>=</kbd>/<kbd>-</kbd> | Increase/Decrease dock size | Resize dock (matches aerospace) |
+| <kbd>Space</kbd> + <kbd>w</kbd> + <kbd>+</kbd> | Reset dock size | Reset to default |
 
 #### Space Leader - Code / LSP (space c)
 | Shortcut | Action | Description |
@@ -654,12 +715,10 @@ Primary editor with custom Vim-mode keybindings, task integrations, and Claude D
 | <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>i</kbd> | `assistant::InlineAssist` | Inline AI assist |
 | <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>f</kbd> | `agent::ToggleFocus` | Toggle AI agent panel |
 | <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>p</kbd> | `agent::AddSelectionToThread` | Add selection to thread |
-| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>c</kbd> | Claude Code | Open Claude Code |
-| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>C</kbd> | Claude Code (Continue) | Continue Claude session |
-| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>s</kbd> | Claude Code (Skip Perms) | Claude Code (skip permissions) |
-| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>S</kbd> | Claude Code (Continue + Skip) | Continue + skip permissions |
-| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>b</kbd> | Claude Code (Chrome) | Claude Code with Chrome MCP |
-| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>B</kbd> | Claude Code (Continue + Chrome) | Continue with Chrome MCP |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>c</kbd> | Claude Code (skip perms) | New Claude Code session |
+| <kbd>Space</kbd> + <kbd>a</kbd> + <kbd>C</kbd> | Claude Code (continue + skip perms) | Continue previous session |
+
+> All Claude Code shortcuts use `--dangerously-skip-permissions` by default. Other variants (Chrome, Resume) are available via <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>t</kbd> task launcher.
 
 #### Space Leader - Symbols & Diagnostics
 | Shortcut | Action | Description |
@@ -711,25 +770,30 @@ Primary editor with custom Vim-mode keybindings, task integrations, and Claude D
 
 > All the above also work with `Space` prefix (e.g., `Space a` = new file).
 
-### Git Panel 🔀
+### Git Panel 🔀 (lazygit-style)
 
-> Vim-style keybindings when the Git panel is focused.
+> Keybindings mirror [lazygit](https://github.com/jesseduffield/lazygit) for muscle memory consistency.
 
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| <kbd>s</kbd> / <kbd>u</kbd> | `git::StageAll` / `git::UnstageAll` | Stage / Unstage all |
-| <kbd>c</kbd> | `git::Commit` | Commit |
-| <kbd>a</kbd> + <kbd>i</kbd> or <kbd>⌃</kbd> + <kbd>i</kbd> | `git::GenerateCommitMessage` | AI-generate commit message |
-| <kbd>P</kbd> / <kbd>p</kbd> / <kbd>f</kbd> | Push / Pull / Fetch | Remote operations |
-| <kbd>b</kbd> / <kbd>B</kbd> | Branch / Checkout branch | Branch management |
-| <kbd>w</kbd> | `git::Worktree` | Git worktree |
-| <kbd>d</kbd> / <kbd>D</kbd> | Restore file / Diff | Diff & restore |
-| <kbd>v</kbd> / <kbd>V</kbd> / <kbd>A</kbd> | View stash / Stash all / Stash pop | Stash management |
+| <kbd>Space</kbd> | `git::ToggleStaged` | Toggle file staging (lazygit: space) |
+| <kbd>a</kbd> | `git::StageAll` | Stage all files (lazygit: a) |
+| <kbd>u</kbd> | `git::UnstageAll` | Unstage all files |
+| <kbd>c</kbd> | `git::Commit` | Commit (lazygit: c) |
+| <kbd>⌃</kbd> + <kbd>i</kbd> | `git::GenerateCommitMessage` | AI-generate commit message |
+| <kbd>P</kbd> / <kbd>p</kbd> / <kbd>f</kbd> | Push / Pull / Fetch | Remote operations (lazygit: P/p/f) |
+| <kbd>b</kbd> / <kbd>B</kbd> | Branch / Checkout branch | Branch management (lazygit: n/space) |
+| <kbd>w</kbd> | `git::Worktree` | Git worktree (lazygit: w) |
+| <kbd>s</kbd> | `git::StashAll` | Stash all (lazygit: s) |
+| <kbd>S</kbd> | `git::ViewStash` | View stash (lazygit: S) |
+| <kbd>A</kbd> | `git::StashPop` | Pop stash |
+| <kbd>d</kbd> / <kbd>D</kbd> | Restore file / Diff | Discard & diff (lazygit: d) |
 | <kbd>C</kbd> | `git::CreatePullRequest` | Create pull request |
-| <kbd>I</kbd> | `git::AddToGitignore` | Add to .gitignore |
-| <kbd>i</kbd> | `git::Init` | Git init |
-| <kbd>t</kbd> | `git_panel::ToggleTreeView` | Toggle tree view |
-| <kbd>q</kbd> or <kbd>⌃</kbd> + <kbd>q</kbd> | `git_panel::Close` | Close panel |
+| <kbd>i</kbd> | `git::AddToGitignore` | Ignore file (lazygit: i) |
+| <kbd>I</kbd> | `git::Init` | Git init |
+| <kbd>`</kbd> or <kbd>t</kbd> | `git_panel::ToggleTreeView` | Toggle tree view (lazygit: `) |
+| <kbd>/</kbd> | `pane::DeploySearch` | Search (lazygit: /) |
+| <kbd>q</kbd> or <kbd>⌃</kbd> + <kbd>q</kbd> | `git_panel::Close` | Close panel (lazygit: q) |
 
 ### Tasks 🔄
 

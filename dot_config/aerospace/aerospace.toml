@@ -362,16 +362,16 @@ shift-down = ['volume set 0', 'exec-and-forget sketchybar --trigger aerospace_mo
 
 [mode.resize.binding]
 # Navigation pour resize (pas de retour auto, on reste en mode resize)
-h = 'resize width -50'
-j = 'resize height +50'
-k = 'resize height -50'
-l = 'resize width +50'
+h = 'resize width +50'
+j = 'resize height -50'
+k = 'resize height +50'
+l = 'resize width -50'
 
-# Resize plus fin
-shift-h = 'resize width -10'
-shift-j = 'resize height +10'
-shift-k = 'resize height -10'
-shift-l = 'resize width +10'
+# Resize inverse (shift = opposite direction)
+shift-h = 'resize width -50'
+shift-j = 'resize height +50'
+shift-k = 'resize height -50'
+shift-l = 'resize width +50'
 
 # Smart resize
 minus = 'resize smart -50'
