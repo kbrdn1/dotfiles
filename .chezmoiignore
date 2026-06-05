@@ -69,7 +69,8 @@
 .config/superfile/theme/
 .config/superfile/config.toml.bak-*
 
-# Lazysql - runtime data
+# Lazysql - runtime data + DB credentials (NEVER VERSION)
+.config/lazysql/config.toml
 .config/lazysql/history/
 .config/lazysql/saved_queries/
 
