@@ -193,7 +193,7 @@ Ces apps n'existent pas dans Nix ou nécessitent GUI macOS.
 
 ```yaml
 Browsers:
-  - arc                 # Browser moderne
+  - helium              # Browser moderne (install manuel, hors brew)
 
 Development:
   - zed                 # Code editor principal

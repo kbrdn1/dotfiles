@@ -101,7 +101,7 @@ Key applications:
   - [Postman](https://www.postman.com/): API platform
 
 - **Browsers & Communication**
-  - [Arc](https://arc.net/): Modern browser
+  - [Helium](https://helium.computer/): Privacy-first Chromium browser
   - [Slack](https://slack.com/): Team communication
   - [Discord](https://discord.com/): Community platform
   - [WhatsApp](https://www.whatsapp.com/): Messaging

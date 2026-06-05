@@ -60,7 +60,7 @@ exec-on-workspace-change = ['exec-and-forget sketchybar --trigger aerospace_work
 # Commandes après démarrage
 after-startup-command = [
     # Optionnel: lancer des apps au démarrage
-    # 'exec-and-forget open -a "Arc"',
+    # 'exec-and-forget open -a "Helium"',
     # 'exec-and-forget open -a "Mail"'
 ]
 
@@ -414,7 +414,7 @@ run = 'move-node-to-workspace 1'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                    WORKSPACE 2: MUSIQUE                     │
-# │                  (Music, Spotify + Arc flottant)            │
+# │                  (Music, Spotify + Helium flottant)         │
 # └─────────────────────────────────────────────────────────────┘
 
 [[on-window-detected]]
@@ -519,10 +519,6 @@ run = 'move-node-to-workspace 4'
 if.app-id = 'company.thebrowser.dia'
 run = 'move-node-to-workspace 4'
 
-[[on-window-detected]]
-if.app-id = 'company.thebrowser.Browser'
-run = 'move-node-to-workspace 4'
-
 # Chrome/Safari en backup
 [[on-window-detected]]
 if.app-id = 'com.google.Chrome'
@@ -534,7 +530,7 @@ run = 'move-node-to-workspace 4'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │               WORKSPACE 5: COMMUNICATION ÉQUIPE             │
-# │              (Slack, Discord, Messages + Arc flottant)      │
+# │              (Slack, Discord, Messages + Helium flottant)   │
 # └─────────────────────────────────────────────────────────────┘
 
 [[on-window-detected]]
@@ -644,16 +640,16 @@ if.window-title-regex-substring = '(Copy|Move|Info|Connect|Pref)'
 run = 'layout floating'
 
 # Navigateurs : Fenêtres flottantes possibles sur tous les workspaces
-# (Helium/Arc/Dia vont sur workspace 4, mais peuvent être mises en flottant
+# (Helium/Dia vont sur workspace 4, mais peuvent être mises en flottant
 # manuellement avec ctrl-alt-shift-space sur n'importe quel workspace)
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                 CONFIGURATION SPÉCIALISÉE                   │
 # └─────────────────────────────────────────────────────────────┘
 
-# Fenêtres spéciales Arc (Picture in Picture, etc.)
+# Fenêtres spéciales Helium (Picture in Picture, etc.)
 [[on-window-detected]]
-if.app-id = 'company.thebrowser.Browser'
+if.app-id = 'net.imput.helium'
 if.window-title-regex-substring = '(Picture|PiP|Mini|Float)'
 run = 'layout floating'
 
@@ -663,16 +659,16 @@ run = 'layout floating'
 
 # WORKSPACE 1 (Home) : Layout tiles vertical par défaut
 #   - Mail en haut, Calendar en bas (ou côte à côte)
-#   - Arc peut être mis en flottant avec alt-shift-space
+#   - Helium peut être mis en flottant avec alt-shift-space
 
 # WORKSPACE 2 (Music) : Layout tiles vertical par défaut
 #   - Music/Spotify principal, possibilité de split si besoin
-#   - Arc peut être mis en flottant avec alt-shift-space
+#   - Helium peut être mis en flottant avec alt-shift-space
 
 # WORKSPACE 3 (Zed) : Layout accordion (cascade) recommandé
 #   - Utilisez alt-comma pour passer en mode cascade
 #   - Perfect pour basculer entre plusieurs terminaux Neovim
-#   - Arc peut être mis en flottant avec alt-shift-space
+#   - Helium peut être mis en flottant avec alt-shift-space
 
 # Workspace 4 (Helium) : Layout accordion (cascade) recommandé
 #   - Helium comme navigateur principal
@@ -681,7 +677,7 @@ run = 'layout floating'
 
 # Workspace 5 (Communication) : Layout tiles vertical par défaut
 #   - Slack à gauche, Discord à droite (ou arrangés verticalement)
-#   - Arc peut être mis en flottant avec alt-shift-space
+#   - Helium peut être mis en flottant avec alt-shift-space
 
 # Workspace 6 (Database/Docker) : Layout automatiquement en split horizontal
 #   - TablePlus en haut, OrbStack en bas

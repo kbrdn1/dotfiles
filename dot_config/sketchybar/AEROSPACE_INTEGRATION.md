@@ -266,7 +266,7 @@ chmod +x ~/.config/sketchybar/test_aerospace_integration.sh
 3. **App Icons**:
    ```bash
    # Open apps and verify icons appear in workspace indicators
-   open -a Arc
+   open -a Helium
    open -a Terminal
    ```
 
