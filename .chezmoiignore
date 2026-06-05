@@ -95,6 +95,17 @@
 # Opencode - not tracked (node_modules)
 .config/opencode/
 
+# Zed - prompts library runtime DB (binary, changes every session)
+.config/zed/prompts/prompts-library-db.0.mdb/
+.config/zed/prompts/index.json
+
+# ===================================================================
+# Managed by nix home-manager (source of truth: nix-config/home.nix)
+# Don't let chezmoi re-capture the generated nix-store output.
+# ===================================================================
+.zshrc
+.tmux.conf
+
 # General
 **/.DS_Store
 **/*.bak
