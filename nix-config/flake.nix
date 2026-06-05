@@ -11,9 +11,14 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    google-workspace-cli = {
+      url = "github:googleworkspace/cli";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager, ... }:
+  outputs = { self, nixpkgs, home-manager, google-workspace-cli, ... }:
     let
       # system = "x86_64-darwin"; # macOS Intel
       system = "aarch64-darwin"; # macOS Apple Silicon (M1/M2/M3)
@@ -28,6 +33,10 @@
           modules = [
             ./home.nix
           ];
+
+          extraSpecialArgs = {
+            inherit google-workspace-cli;
+          };
         };
       };
     };

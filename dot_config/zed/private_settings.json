@@ -10,8 +10,32 @@
   // ══════════════════════════════════════════════════════════════════════
   // Theme & Appearance
   // ══════════════════════════════════════════════════════════════════════
-  "theme": "Claude Dark (Pure)",
-  "icon_theme": "Catppuccin Macchiato",
+  "ssh_connections": [
+    {
+      "host": "main-vps",
+      "args": [],
+      "projects": [
+        {
+          "paths": [
+            "/root"
+          ]
+        }
+      ]
+    }
+  ],
+  "collaboration_panel": {
+    "dock": "right"
+  },
+  "theme": {
+    "mode": "system",
+    "light": "One Light",
+    "dark": "Claude Dark (Pure Blur)"
+  },
+  "icon_theme": {
+    "mode": "light",
+    "light": "Catppuccin Macchiato",
+    "dark": "Catppuccin Macchiato"
+  },
   "experimental.theme_overrides": {
     "background.appearance": "blurred",
   },
@@ -28,13 +52,13 @@
   "ui_font_features": {
     "liga": true, // www
   },
-  "ui_font_weight": 400,
-  "buffer_font_family": "OperatorMonoLig Nerd Font",
+  "ui_font_weight": 400.0,
+  "buffer_font_family": "OperatorMono Nerd Font",
   "buffer_font_size": 14.0,
   "buffer_font_fallbacks": ["CaskaydiaCove Nerd Font"],
-  "buffer_font_weight": 400,
+  "buffer_font_weight": 300.0,
   "buffer_line_height": {
-    "custom": 1.825,
+    "custom": 1.899999976158142,
   },
   "buffer_font_features": {
     "liga": true, // www /// !! ;;
@@ -59,7 +83,7 @@
     "calt": true, // Contextual Alternates (fi -> ﬁ)
   },
   "agent_buffer_font_size": 13.0,
-  "agent_ui_font_size": 13.75,
+  "agent_ui_font_size": 14.75,
 
   // ══════════════════════════════════════════════════════════════════════
   // Editor Behavior
@@ -77,7 +101,7 @@
   },
   "relative_line_numbers": "enabled",
   "preferred_line_length": 100,
-  "soft_wrap": "preferred_line_length",
+  "soft_wrap": "prefer_line",
   "show_whitespaces": "selection",
   "ensure_final_newline_on_save": false,
   "remove_trailing_whitespace_on_save": true,
@@ -108,7 +132,7 @@
     "enabled": true,
     "delay_ms": 0,
   },
-  "hide_mouse": "on_typing_and_movement",
+  "hide_mouse": "on_typing_and_action",
   "whitespace_map": {
     "space": "·",
     "tab": "→",
@@ -122,7 +146,7 @@
     "show": true,
   },
   "title_bar": {
-    "show_branch_icon": true,
+    "show_branch_status_icon": true,
     "show_branch_name": true,
     "show_onboarding_banner": true,
     "show_project_items": true,
@@ -200,7 +224,7 @@
     "auto_reveal_entries": true,
     "button": true,
     "default_width": 300,
-    "dock": "left",
+    "dock": "right",
     "expand_outlines_with_depth": 2,
     "file_icons": true,
     "folder_icons": true,
@@ -214,12 +238,13 @@
     },
   },
   "git_panel": {
+    "file_icons": true,
     "tree_view": true,
     "sort_by_path": true,
     "button": true,
     "collapse_untracked_diff": true,
     "default_width": 300,
-    "dock": "left",
+    "dock": "right",
     "fallback_branch_name": "dev",
     "scrollbar": {
       "show": "auto",
@@ -276,26 +301,27 @@
   // AI Assistance
   // ══════════════════════════════════════════════════════════════════════
   "agent": {
+    "new_thread_location": "new_worktree",
     "dock": "left",
     "default_model": {
       "provider": "copilot_chat",
-      "model": "claude-haiku-4.5",
+      "model": "claude-opus-4.6",
     },
     "inline_assistant_model": {
-      "provider": "copilot_chat",
-      "model": "claude-haiku-4.5",
+      "provider": "mistral",
+      "model": "codestral-latest",
     },
     "default_profile": "development",
     "tool_permissions": {
       "default": "allow",
     },
     "use_modifier_to_send": true,
-    "play_sound_when_agent_done": true,
+    "play_sound_when_agent_done": "always",
     "profiles": {
       "development": {
         "name": "Development",
         "tools": {
-          "web_search": true,
+          "search_web": true,
           "rename": true,
           "contents": true,
           "code_actions": true,
@@ -400,6 +426,28 @@
     },
   },
   "agent_servers": {
+    "codex-acp": {
+      "favorite_config_option_values": {
+        "mode": [
+          "full-access"
+        ]
+      },
+      "type": "registry"
+    },
+    "claude-acp": {
+      "type": "registry",
+      "favorite_models": [
+        "opus"
+      ],
+      "favorite_config_option_values": {
+        "mode": [
+          "bypassPermissions"
+        ],
+        "model": [
+          "default"
+        ]
+      }
+    },
     "mistral-vibe": {
       "type": "registry",
     },
@@ -408,12 +456,6 @@
     },
     "github-copilot": {
       "type": "registry",
-    },
-    "claude": {
-      "favorite_config_option_values": {
-        "model": ["default"],
-      },
-      "favorite_models": ["opus"],
     },
     "your_agent": {
       "type": "custom",
@@ -463,10 +505,9 @@
     },
   },
   "edit_predictions": {
-    "provider": "copilot",
+    "provider": "zed",
     "mode": "subtle",
     "disabled_globs": [],
-    "enabled_in_text_threads": true,
     "copilot": {
       "proxy": null,
       "proxy_no_verify": null,
@@ -719,7 +760,7 @@
     "font_family": "OperatorMonoLig Nerd Font",
     "font_fallbacks": ["CaskaydiaCove Nerd Font"],
     "font_size": 14,
-    "font_weight": 320.0,
+    "font_weight": 350.0,
     // "font_weight": 300,
     "line_height": {
       "custom": 1.2,

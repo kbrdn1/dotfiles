@@ -20,14 +20,14 @@ update() {
   args+=(--remove '/github.notification\.*/')
 
   COUNTER=0
-  COLOR=$BLUE
+  COLOR=$GREY
   args+=(--set github.bell icon.color=$COLOR)
 
   while read -r repo url type title 
   do
     COUNTER=$((COUNTER + 1))
     IMPORTANT="$(echo "$title" | egrep -i "(deprecat|break|broke)")"
-    COLOR=$BLUE
+    COLOR=$GREY
     PADDING=0
 
     if [ "${repo}" = "" ] && [ "${title}" = "" ]; then
@@ -37,11 +37,11 @@ update() {
     case "${type}" in
       "'Issue'") COLOR=$GREEN; ICON=$GIT_ISSUE; URL="$(gh api "$(echo "${url}" | sed -e "s/^'//" -e "s/'$//")" | jq .html_url)"
       ;;
-      "'Discussion'") COLOR=$WHITE; ICON=$GIT_DISCUSSION; URL="https://www.github.com/notifications"
+      "'Discussion'") COLOR=$ORANGE; ICON=$GIT_DISCUSSION; URL="https://www.github.com/notifications"
       ;;
       "'PullRequest'") COLOR=$MAGENTA; ICON=$GIT_PULL_REQUEST; URL="$(gh api "$(echo "${url}" | sed -e "s/^'//" -e "s/'$//")" | jq .html_url)"
       ;;
-      "'Commit'") COLOR=$WHITE; ICON=$GIT_COMMIT; URL="$(gh api "$(echo "${url}" | sed -e "s/^'//" -e "s/'$//")" | jq .html_url)"
+      "'Commit'") COLOR=$GREY; ICON=$GIT_COMMIT; URL="$(gh api "$(echo "${url}" | sed -e "s/^'//" -e "s/'$//")" | jq .html_url)"
       ;;
     esac
     

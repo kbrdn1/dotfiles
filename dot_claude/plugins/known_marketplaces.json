@@ -29,7 +29,7 @@
       "repo": "anthropics/claude-code"
     },
     "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/claude-code-plugins",
-    "lastUpdated": "2025-12-17T16:01:11.315Z"
+    "lastUpdated": "2026-06-05T11:42:31.040Z"
   },
   "claude-plugins-official": {
     "source": {
@@ -37,6 +37,30 @@
       "repo": "anthropics/claude-plugins-official"
     },
     "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/claude-plugins-official",
-    "lastUpdated": "2025-12-31T15:43:34.064Z"
+    "lastUpdated": "2026-06-05T11:42:32.023Z"
+  },
+  "claude-hud": {
+    "source": {
+      "source": "github",
+      "repo": "jarrodwatts/claude-hud"
+    },
+    "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/claude-hud",
+    "lastUpdated": "2026-01-06T12:39:56.458Z"
+  },
+  "openai-codex": {
+    "source": {
+      "source": "github",
+      "repo": "openai/codex-plugin-cc"
+    },
+    "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/openai-codex",
+    "lastUpdated": "2026-05-23T02:14:13.817Z"
+  },
+  "morph": {
+    "source": {
+      "source": "github",
+      "repo": "morphllm/morph-claude-code-plugin"
+    },
+    "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/morph",
+    "lastUpdated": "2026-05-29T11:42:57.234Z"
   }
 }

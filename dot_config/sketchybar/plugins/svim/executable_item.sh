@@ -10,6 +10,6 @@ svim=(
 )
 
 sketchybar --add event svim_update \
-           --add item svim right   \
+           --add item svim left    \
            --set svim "${svim[@]}" \
            --subscribe svim svim_update

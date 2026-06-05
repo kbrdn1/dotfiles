@@ -126,7 +126,7 @@ export const SECURITY_RULES: SecurityRules = {
 	],
 
 	SAFE_RM_PATHS: [
-		`${process.env.HOME}/Developer/`,
+		"/Users/melvynx/Developer/",
 		"/tmp/",
 		"/var/tmp/",
 		`${process.cwd()}/`,

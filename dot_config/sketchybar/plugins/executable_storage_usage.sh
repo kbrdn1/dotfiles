@@ -2,9 +2,11 @@
 source "$HOME/.config/sketchybar/settings/colors.sh"
 
 # Get real APFS container usage (df lies on APFS snapshots)
-CONTAINER_INFO=$(diskutil apfs list 2>/dev/null | grep -A5 "Container disk3")
-TOTAL_BYTES=$(echo "$CONTAINER_INFO" | awk '/Size \(Capacity Ceiling\)/{print $4}')
-USED_BYTES=$(echo "$CONTAINER_INFO" | awk '/Capacity In Use By Volumes/{print $6}')
+# Auto-detect the system APFS container (the one backing /)
+BOOT_CONTAINER=$(diskutil info / 2>/dev/null | awk -F: '/Part of Whole/{gsub(/^ +| +$/,"",$2); print $2}')
+CONTAINER_INFO=$(diskutil apfs list 2>/dev/null | grep -A5 "Container ${BOOT_CONTAINER:-disk_notfound}")
+TOTAL_BYTES=$(echo "$CONTAINER_INFO" | awk '/Size \(Capacity Ceiling\)/{print $5}')
+USED_BYTES=$(echo "$CONTAINER_INFO" | awk '/Capacity In Use By Volumes/{print $7}')
 
 # Convert bytes to human readable (GB)
 USED_GB=$(awk "BEGIN { printf \"%.0f\", $USED_BYTES / 1000000000 }")

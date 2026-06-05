@@ -1,150 +1,310 @@
 [
+  // ============================================================================
+  // IDE, Terminal & Shell Tools
+  // ============================================================================
   {
-    "label": "LazySQL",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && lazysql",
-    "hide": "on_success",
-    "reveal_target": "center",
-    "use_new_terminal": false,
-    "show_summary": false,
-    "allow_concurrent_runs": true,
+    "label": "Terminal: Tmux (attach or new)",
+    "command": "tmux new-session -A -s main",
     "shell": {
       "with_arguments": {
         "program": "/bin/zsh",
-        "args": ["-c"]
-      }
-    }
-  },
-  {
-    "label": "Claude Code",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && claude",
+        "args": ["-lic"],
+      },
+    },
     "hide": "on_success",
     "reveal_target": "center",
     "use_new_terminal": true,
     "show_summary": false,
     "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Terminal: Tmux (new session)",
+    "command": "tmux new-session -s \"session-$(date +%Y%m%d-%H%M%S)\"",
     "shell": {
       "with_arguments": {
         "program": "/bin/zsh",
-        "args": ["-c"]
-      }
-    }
+        "args": ["-lic"],
+      },
+    },
+    "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
   },
   {
-    "label": "Claude Code Usage",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && bun x ccusage blocks",
+    "label": "Terminal: Ghostty",
+    "command": "open -a Ghostty",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
     "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Terminal: Kitty",
+    "command": "open -a Kitty",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "IDE: Neovim",
+    "command": "nvim .",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+  {
+    "label": "IDE: Neovim file (FZF)",
+    "command": "cd $ZED_WORKTREE_ROOT && FILE=$(find . -type f | fzf --prompt='Select file to open in Neovim: ' --height=100% --reverse --border) && [ -n \"$FILE\" ] && nvim \"$FILE\"",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+  {
+    "label": "IDE: Neovim folder (FZF)",
+    "command": "cd $ZED_WORKTREE_ROOT && FOLDER=$(find . -type d | fzf --prompt='Select folder to open in Neovim: ' --height=100% --reverse --border) && [ -n \"$FOLDER\" ] && nvim \"$FOLDER\"",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+  {
+    "label": "IDE: Zed",
+    "command": "open -a Zed",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "hide": "on_success",
+    "reveal_target": "center",
     "use_new_terminal": false,
-    "show_summary": true,
-    "allow_concurrent_runs": false,
-    "shell": {
-      "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
-    }
+    "show_summary": false,
+    "allow_concurrent_runs": true,
   },
   {
-    "label": "Git: Generate Git Logs file",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && ~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 400",
+    "label": "IDE: Zed file (FZF)",
+    "command": "cd $ZED_WORKTREE_ROOT && FILE=$(find . -type f | fzf --prompt='Select file to open in Zed: ' --height=100% --reverse --border) && [ -n \"$FILE\" ] && open -a Zed \"$FILE\"",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
-    "use_new_terminal": true,
-    "reveal": "always",
-    "show_summary": true,
-    "allow_concurrent_runs": false
+    "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": false,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
   },
   {
-    "label": "Git: Generate Git Logs file (All)",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && ~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 999999",
+    "label": "IDE: Zed folder (FZF)",
+    "command": "cd $ZED_WORKTREE_ROOT && FOLDER=$(find . -type d | fzf --prompt='Select folder to open in Zed: ' --height=100% --reverse --border) && [ -n \"$FOLDER\" ] && open -a Zed \"$FOLDER\"",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
+    "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": false,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
+  },
+
+  // ============================================================================
+  // File & Explorer Tools
+  // ============================================================================
+  {
+    "label": "Explorer: Superfile",
+    "command": "superfile",
+    "hide": "on_success",
+    "reveal_target": "center",
     "use_new_terminal": true,
-    "reveal": "always",
-    "show_summary": true,
-    "allow_concurrent_runs": false
+    "show_summary": false,
+    "allow_concurrent_runs": true,
   },
   {
-    "label": "Git: Lazygit",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && lazygit -p $ZED_WORKTREE_ROOT",
+    "label": "Explorer: Yazi",
+    "command": "cd $ZED_WORKTREE_ROOT && yazi",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "on_success",
-    "reveal_target": "center"
-  },
-  {
-    "label": "Files: Rename Files (Script)",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && ~/.config/zed/tasks/rename_files.sh \"${1:Chemin de recherche (ex: app)}\" \"${2:Pattern de fichier (ex: *Ressource.php)}\" \"${3:Motif à remplacer (ex: Ressource\\.php)}\" \"${4:Nouveau motif (ex: Resource\\.php)}\"",
-    "shell": {
-      "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
-    },
-    "use_new_terminal": true,
-    "reveal": "always",
-    "show_summary": true,
-    "allow_concurrent_runs": false
+    "reveal_target": "center",
   },
   {
     "label": "Files: FZF",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && cd $ZED_WORKTREE_ROOT && fzf --style full --border-label ' FZF ' --header-label ' File Type ' --preview 'bat -n --color=always --line-range :500 {}' --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' --bind 'enter:execute($EDITOR {})' --color 'border:#494d64,label:#cad3f5' --color 'preview-border:#8aadf4,preview-label:#b7bdf8' --color 'list-border:#a6da95,list-label:#a6da95' --color 'input-border:#ed8796,input-label:#f5a9b8' --color 'header-border:#7dc4e4,header-label:#91d7e3'",
+    "command": "cd $ZED_WORKTREE_ROOT && fzf --style full --border-label ' FZF ' --header-label ' File Type ' --preview 'bat -n --color=always --line-range :500 {}' --bind 'focus:transform-preview-label:[[ -n {} ]] && printf \" [%s] \" {}' --bind 'focus:+transform-header:file --brief {} || echo \"No file selected\"' --bind 'ctrl-r:change-list-label( Reloading the list )+reload(sleep 2; git ls-files)' --bind 'enter:execute($EDITOR {})' --color 'border:#494d64,label:#cad3f5' --color 'preview-border:#8aadf4,preview-label:#b7bdf8' --color 'list-border:#a6da95,list-label:#a6da95' --color 'input-border:#ed8796,input-label:#f5a9b8' --color 'header-border:#7dc4e4,header-label:#91d7e3'; true",
     "use_new_terminal": true,
     "reveal": "always",
+    "hide": "on_success",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
-    "hide": "on_success",
-    "reveal_target": "center"
+    "reveal_target": "center",
   },
   {
-    "label": "Files: Yazi",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && cd $ZED_WORKTREE_ROOT && yazi",
-    "use_new_terminal": true,
-    "reveal": "always",
+    "label": "Files: Rename Files (FZF)",
+    "command": "cd $ZED_WORKTREE_ROOT && FILE=$(find . -type f | fzf --prompt='Select file to rename: ' --height=100% --reverse --border) && [ -n \"$FILE\" ] && echo \"Current file: $FILE\" && echo -n \"$FILE\" | pbcopy && printf 'New name: ' && read -e NEW_NAME && [ -n \"$NEW_NAME\" ] && [ \"$FILE\" != \"$NEW_NAME\" ] && mv \"$FILE\" \"$NEW_NAME\" && echo \"Renamed to: $NEW_NAME\" || echo \"Rename cancelled or failed\"",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
+    "use_new_terminal": true,
+    "reveal": "always",
+    "show_summary": true,
     "allow_concurrent_runs": false,
-    "hide": "on_success",
-    "reveal_target": "center"
   },
   {
     "label": "Files: Generate Project Structure file",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && cd $ZED_WORKTREE_ROOT && eza --tree --level=5 --git-ignore --ignore-glob=\"vendor|node_modules|.git|storage|bootstrap/cache|*.log\" > project-structure.txt",
+    "command": "cd $ZED_WORKTREE_ROOT && eza --tree --level=5 --git-ignore --ignore-glob=\"vendor|node_modules|.git|storage|bootstrap/cache|*.log\" > project-structure.txt",
     "use_new_terminal": true,
     "reveal": "no_focus",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "on_success",
-    "reveal_target": "dock"
+    "reveal_target": "dock",
   },
+
+  // ============================================================================
+  // Git Tools
+  // ============================================================================
+  {
+    "label": "Git: Lazygit",
+    "command": "lazygit -p $ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+  {
+    "label": "Git: gwm-cli",
+    "command": "cd $ZED_WORKTREE_ROOT && gwm",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": true,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+  {
+    "label": "Git: Lumen diff",
+    "command": "cd $ZED_WORKTREE_ROOT && lumen diff",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+  {
+    "label": "Git: Generate Git Logs file",
+    "command": "~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 400",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "use_new_terminal": true,
+    "reveal": "always",
+    "show_summary": true,
+    "allow_concurrent_runs": false,
+  },
+  {
+    "label": "Git: Generate Git Logs file (All)",
+    "command": "~/.config/zed/tasks/generate_git_log.sh $(git rev-parse --abbrev-ref HEAD) 999999",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "use_new_terminal": true,
+    "reveal": "always",
+    "show_summary": true,
+    "allow_concurrent_runs": false,
+  },
+
+  // ============================================================================
+  // Laravel Framework Tools
+  // ============================================================================
   {
     "label": "Laravel: Test",
     "command": "cd $ZED_WORKTREE_ROOT && php artisan test",
@@ -152,13 +312,28 @@
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "never",
-    "reveal_target": "center"
+    "reveal_target": "center",
+  },
+  {
+    "label": "Laravel: Test (parallel)",
+    "command": "cd $ZED_WORKTREE_ROOT && php artisan test --parallel",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "never",
+    "reveal_target": "center",
   },
   {
     "label": "Laravel: Test (coverage)",
@@ -167,13 +342,28 @@
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "never",
-    "reveal_target": "center"
+    "reveal_target": "center",
+  },
+  {
+    "label": "Laravel: Test file (FZF)",
+    "command": "cd $ZED_WORKTREE_ROOT && TEST_FILE=$(find tests -type f -name '*Test.php' | fzf --prompt='Select test file: ' --height=100% --reverse --border) && [ -n \"$TEST_FILE\" ] && php artisan test \"$TEST_FILE\"",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "never",
+    "reveal_target": "dock",
   },
   {
     "label": "Laravel: Migrate (fresh and seed)",
@@ -182,13 +372,13 @@
     "reveal": "no_focus",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "on_success",
-    "reveal_target": "dock"
+    "reveal_target": "dock",
   },
   {
     "label": "Laravel: Migrate (fresh)",
@@ -197,57 +387,308 @@
     "reveal": "no_focus",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "on_success",
-    "reveal_target": "dock"
+    "reveal_target": "dock",
   },
   {
-    "label": "Docker: Lazydocker",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && lazydocker",
+    "label": "Laravel: Seed file (FZF)",
+    "command": "cd $ZED_WORKTREE_ROOT && SEED_FILE=$(find database/seeders -type f -name '*.php' | fzf --prompt='Select seeder file: ' --height=100% --reverse --border) && [ -n \"$SEED_FILE\" ] && php artisan db:seed --class=\"$(basename \"$SEED_FILE\" .php)\"",
+    "use_new_terminal": true,
+    "reveal": "no_focus",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "dock",
+  },
+
+  // ============================================================================
+  // Domentation Tools
+  // ============================================================================
+
+  {
+    "label": "Documentaion: Ekphos",
+    "command": "ekphos $ZED_WORKTREE_ROOT",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "on_success",
-    "reveal_target": "center"
+    "reveal_target": "center",
   },
   {
-    "label": "Kubernetes: Lazykube",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && cd $ZED_WORKTREE_ROOT && lazykube",
+    "label": "Documentaion: Ekphos file (FZF)",
+    "command": "cd $ZED_WORKTREE_ROOT && FILE=$(find . -type f -name '*.md' | fzf --prompt='Select file to document: ' --height=100% --reverse --border) && [ -n \"$FILE\" ] && ekphos \"$FILE\"",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "on_success",
-    "reveal_target": "center"
+    "reveal_target": "center",
+  },
+  {
+    "label": "Documentation: Obisdian",
+    "command": "open -a Obsidian \"$ZED_WORKTREE_ROOT\"",
+    "use_new_terminal": false,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "dock",
+  },
+  // ============================================================================
+  // SSH & Remote Tools
+  // ============================================================================
+  {
+    "label": "LazySSH",
+    "command": "lazyssh",
+    "hide": "on_success",
+    "reveal_target": "dock",
+    "use_new_terminal": false,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
+  },
+
+  // ============================================================================
+  // Database & Data Tools
+  // ============================================================================
+  {
+    "label": "LazySQL",
+    "command": "lazysql",
+    "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": false,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
   },
   {
     "label": "Database: Redis CLI",
-    "command": "export PATH=\"$HOME/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$HOME/.bun/bin:$PATH\" && redis-cli",
+    "command": "redis-cli",
     "use_new_terminal": true,
     "reveal": "always",
     "shell": {
       "with_arguments": {
-        "program": "/bin/zsh",
-        "args": ["-c"]
-      }
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
     },
     "allow_concurrent_runs": false,
     "hide": "on_success",
-    "reveal_target": "center"
-  }
+    "reveal_target": "center",
+  },
+  // ============================================================================
+  // API & HTTP Tools
+  // ============================================================================
+  {
+    "label": "LazyCurl",
+    "command": "cd $ZED_WORKTREE_ROOT && lazycurl",
+    "hide": "on_success",
+    "reveal_target": "center",
+    "use_new_terminal": false,
+    "show_summary": false,
+    "allow_concurrent_runs": true,
+  },
+
+  // ============================================================================
+  // Infrastructure & Deployment Tools
+  // ============================================================================
+  {
+    "label": "Docker: Lazydocker",
+    "command": "lazydocker",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+  {
+    "label": "Kubernetes: Lazykube",
+    "command": "cd $ZED_WORKTREE_ROOT && lazykube",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+  {
+    "label": "Lazymake",
+    "command": "cd $ZED_WORKTREE_ROOT && lazymake",
+    "use_new_terminal": true,
+    "reveal": "always",
+    "shell": {
+      "with_arguments": {
+        "program": "/bin/bash",
+        "args": ["-c"],
+      },
+    },
+    "allow_concurrent_runs": false,
+    "hide": "on_success",
+    "reveal_target": "center",
+  },
+
+  // ============================================================================
+  // AI & Code Assistant Tools
+  // ============================================================================
+  {
+    "label": "AI: Herdr CLI",
+    "command": "cd $ZED_WORKTREE_ROOT && herdr",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code",
+    "command": "cd $ZED_WORKTREE_ROOT && claude",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Resume)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --resume",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Continue)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --continue",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Chrome)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --chrome",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Continue + Chrome)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --continue --chrome",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Dangerous Skip Permissions)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --dangerously-skip-permissions",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Resume + Dangerous Skip Permissions)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --dangerously-skip-permissions --resume",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Continue + Dangerous Skip Permissions)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --continue --dangerously-skip-permissions",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Chrome + Dangerous Skip Permissions)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --chrome --dangerously-skip-permissions",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Resume + Chrome + Dangerous Skip Permissions)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --chrome --dangerously-skip-permissions --resume",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Claude Code (Continue + Chrome + Dangerous Skip Permissions)",
+    "command": "cd $ZED_WORKTREE_ROOT && claude --continue --chrome --dangerously-skip-permissions",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Copilot CLI",
+    "command": "cd $ZED_WORKTREE_ROOT && copilot",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
+  {
+    "label": "Copilot CLI (Continue)",
+    "command": "cd $ZED_WORKTREE_ROOT && copilot --continue",
+    "hide": "never",
+    "reveal_target": "center",
+    "use_new_terminal": true,
+    "show_summary": true,
+    "allow_concurrent_runs": true,
+  },
 ]

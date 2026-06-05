@@ -2,401 +2,404 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
-	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/kbrdn1/changelog-generator/internal/calendar"
-	"github.com/kbrdn1/changelog-generator/internal/consolidator"
-	"github.com/kbrdn1/changelog-generator/internal/generator"
-	"github.com/kbrdn1/changelog-generator/internal/git"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	"github.com/flippad/changelog-generator/internal/calendar"
+	"github.com/flippad/changelog-generator/internal/parser"
+	"github.com/flippad/changelog-generator/internal/splitter"
 )
 
-// Configuration structure
+const (
+	green  = "\033[0;32m"
+	yellow = "\033[0;33m"
+	red    = "\033[0;31m"
+	blue   = "\033[0;34m"
+	bold   = "\033[1m"
+	reset  = "\033[0m"
+)
+
 type Config struct {
-	Branches struct {
-		DefaultBase    string `mapstructure:"default_base"`
-		DefaultCompare string `mapstructure:"default_compare"`
-	}
-	Output struct {
-		Dir          string `mapstructure:"dir"`
-		ClientSubdir string `mapstructure:"client_subdir"`
-	}
-	Metadata struct {
-		IncludePRs         bool `mapstructure:"include_prs"`
-		IncludeIssues      bool `mapstructure:"include_issues"`
-		IncludeContributors bool `mapstructure:"include_contributors"`
-		IncludeMetrics     struct {
-			WorkingDays bool `mapstructure:"working_days"`
-			Efficiency  bool `mapstructure:"efficiency"`
-			LOCChanges  bool `mapstructure:"loc_changes"`
-		} `mapstructure:"include_metrics"`
-	}
-	Consolidation struct {
-		Enabled            bool `mapstructure:"enabled"`
-		TimeThresholdDays  int  `mapstructure:"time_threshold_days"`
-		ScopeMatching      bool `mapstructure:"scope_matching"`
-	}
-	GitHub struct {
-		Enabled      bool   `mapstructure:"enabled"`
-		TokenEnvVar  string `mapstructure:"token_env_var"`
-		Organization string `mapstructure:"organization"`
-		Repository   string `mapstructure:"repository"`
-	}
-}
-
-var (
-	cfgFile string
-	config  Config
-	rootCmd = &cobra.Command{
-		Use:   "changelog-generator",
-		Short: "Generate intelligent changelogs from Git history",
-		Long: `Changelog Generator analyzes Git history to produce comprehensive,
-dual-format changelogs (client-accessible and technical) with working days
-calculation, feature consolidation, and GitHub enrichment.`,
-	}
-
-	generateCmd = &cobra.Command{
-		Use:   "generate",
-		Short: "Generate changelog for a version",
-		Long:  `Generate dual-format changelogs from Git history between branches or tags.`,
-		RunE:  generateChangelog,
-	}
-
-	calculateCmd = &cobra.Command{
-		Use:   "calculate",
-		Short: "Calculate working days only",
-		Long:  `Calculate working days between dates or tags without generating changelog.`,
-		RunE:  calculateWorkingDays,
-	}
-
-	validateCmd = &cobra.Command{
-		Use:   "validate",
-		Short: "Validate configuration files",
-		Long:  `Validate all configuration files and check Git repository state.`,
-		RunE:  validateConfig,
-	}
-)
-
-func init() {
-	cobra.OnInitialize(initConfig)
-
-	// Global flags
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config/changelog_config.json)")
-
-	// Generate command flags
-	generateCmd.Flags().String("version", "", "Version number (e.g., v0.38.0)")
-	generateCmd.Flags().String("base", "", "Base branch (default from config)")
-	generateCmd.Flags().String("compare", "", "Compare branch (default from config)")
-	generateCmd.Flags().String("from-tag", "", "Start tag for range")
-	generateCmd.Flags().String("to-tag", "", "End tag for range")
-	generateCmd.Flags().String("format", "both", "Output format: client, technical, or both")
-	generateCmd.MarkFlagRequired("version")
-
-	// Calculate command flags
-	calculateCmd.Flags().String("from-tag", "", "Start tag")
-	calculateCmd.Flags().String("to-tag", "", "End tag")
-	calculateCmd.Flags().String("from", "", "Start date (YYYY-MM-DD)")
-	calculateCmd.Flags().String("to", "", "End date (YYYY-MM-DD)")
-	calculateCmd.Flags().Bool("show-excluded-dates", false, "Show excluded dates")
-
-	rootCmd.AddCommand(generateCmd, calculateCmd, validateCmd)
-}
-
-func initConfig() {
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-	} else {
-		// Try local config first, then fall back to skill directory
-		viper.AddConfigPath("./config")
-		viper.AddConfigPath(filepath.Join(getSkillDir(), "config"))
-		viper.SetConfigName("changelog_config")
-		viper.SetConfigType("json")
-	}
-
-	viper.AutomaticEnv()
-
-	if err := viper.ReadInConfig(); err != nil {
-		log.Printf("Warning: Could not read config file: %v", err)
-		log.Printf("Using default configuration")
-		// Set defaults
-		config.Branches.DefaultBase = "main"
-		config.Branches.DefaultCompare = "dev"
-		config.Output.Dir = "./changelogs"
-		config.Output.ClientSubdir = "client"
-		config.Consolidation.Enabled = true
-		config.Consolidation.TimeThresholdDays = 3
-		config.Consolidation.ScopeMatching = true
-	} else {
-		if err := viper.Unmarshal(&config); err != nil {
-			log.Fatalf("Unable to decode config: %v", err)
-		}
-	}
-}
-
-func generateChangelog(cmd *cobra.Command, args []string) error {
-	version, _ := cmd.Flags().GetString("version")
-	base, _ := cmd.Flags().GetString("base")
-	compare, _ := cmd.Flags().GetString("compare")
-	fromTag, _ := cmd.Flags().GetString("from-tag")
-	toTag, _ := cmd.Flags().GetString("to-tag")
-	format, _ := cmd.Flags().GetString("format")
-
-	// Use defaults from config if not specified
-	if base == "" {
-		base = config.Branches.DefaultBase
-	}
-	if compare == "" {
-		compare = config.Branches.DefaultCompare
-	}
-
-	fmt.Println("🚀 Generating changelog...")
-	fmt.Printf("   Version: %s\n", version)
-	if fromTag != "" && toTag != "" {
-		fmt.Printf("   Range: %s..%s\n", fromTag, toTag)
-	} else {
-		fmt.Printf("   Comparing: %s ↔ %s\n", base, compare)
-	}
-	fmt.Printf("   Format: %s\n", format)
-
-	// Initialize Git parser
-	gitParser := git.NewParser(".")
-
-	// Fetch commits
-	fmt.Println("   📝 Fetching commits...")
-	var commits []*git.Commit
-	var err error
-
-	if fromTag != "" && toTag != "" {
-		// Use tag range
-		commits, err = gitParser.GetCommitsBetweenRefs(fromTag, toTag)
-	} else {
-		// Use branch comparison
-		commits, err = gitParser.GetCommitsBetweenRefs(base, compare)
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to fetch commits: %w", err)
-	}
-
-	if len(commits) == 0 {
-		fmt.Println("   ⚠️  No commits found in the specified range")
-		return nil
-	}
-
-	fmt.Printf("   ✅ Found %d commits\n", len(commits))
-
-	// Initialize calendar calculator
-	// Try local config first, fall back to skill directory
-	exclusionsPath := filepath.Join("config", "exclusions.json")
-	if _, err := os.Stat(exclusionsPath); os.IsNotExist(err) {
-		exclusionsPath = filepath.Join(getSkillDir(), "config", "exclusions.json")
-	}
-	calCalculator, err := calendar.NewCalculator(exclusionsPath)
-	if err != nil {
-		return fmt.Errorf("failed to initialize calendar: %w", err)
-	}
-
-	// Calculate working days metrics
-	fmt.Println("   📊 Calculating working days...")
-	commitDates := make([]time.Time, len(commits))
-	for i, commit := range commits {
-		commitDates[i] = commit.Date
-	}
-
-	startDate := commits[len(commits)-1].Date // Oldest
-	endDate := commits[0].Date                 // Newest
-	metrics := calCalculator.CalculateMetrics(startDate, endDate, commitDates)
-
-	fmt.Printf("   ✅ Calendar days: %d, Working days: %d\n", metrics.CalendarDays, metrics.TotalWorkingDays)
-
-	// Consolidate features
-	fmt.Println("   🔄 Consolidating features...")
-	consolidatorConfig := &consolidator.Config{
-		Enabled:           config.Consolidation.Enabled,
-		TimeThresholdDays: config.Consolidation.TimeThresholdDays,
-		ScopeMatching:     config.Consolidation.ScopeMatching,
-	}
-	featureConsolidator := consolidator.NewConsolidator(consolidatorConfig)
-	features := featureConsolidator.GroupCommits(commits)
-
-	fmt.Printf("   ✅ Grouped into %d features\n", len(features))
-
-	// Prepare generator config
-	genConfig := &generator.Config{
-		TemplateDir:  filepath.Join(getSkillDir(), "templates"),
-		OutputDir:    config.Output.Dir,
-		ClientSubdir: config.Output.ClientSubdir,
-		IncludePRs:   config.Metadata.IncludePRs,
-		IncludeIssues: config.Metadata.IncludeIssues,
-		IncludeContributors: config.Metadata.IncludeContributors,
-		GithubOrg:    config.GitHub.Organization,
-		GithubRepo:   config.GitHub.Repository,
-	}
-	genConfig.IncludeMetrics.WorkingDays = config.Metadata.IncludeMetrics.WorkingDays
-	genConfig.IncludeMetrics.Efficiency = config.Metadata.IncludeMetrics.Efficiency
-	genConfig.IncludeMetrics.LOCChanges = config.Metadata.IncludeMetrics.LOCChanges
-
-	// Load type labels and emojis from config
-	genConfig.TypeLabels = make(map[string]string)
-	genConfig.TypeEmojis = make(map[string]string)
-
-	// Generate changelogs
-	var clientPath, technicalPath string
-
-	if format == "both" || format == "client" {
-		fmt.Println("   📄 Generating client changelog...")
-		clientGen := generator.NewClientGenerator(genConfig)
-		clientPath, err = clientGen.Generate(version, commits, features, metrics)
-		if err != nil {
-			return fmt.Errorf("failed to generate client changelog: %w", err)
-		}
-		fmt.Printf("   ✅ Client changelog: %s\n", clientPath)
-	}
-
-	if format == "both" || format == "technical" {
-		fmt.Println("   📄 Generating technical changelog...")
-		techGen := generator.NewTechnicalGenerator(genConfig)
-		technicalPath, err = techGen.Generate(version, commits, features, metrics)
-		if err != nil {
-			return fmt.Errorf("failed to generate technical changelog: %w", err)
-		}
-		fmt.Printf("   ✅ Technical changelog: %s\n", technicalPath)
-	}
-
-	// Print summary
-	fmt.Println("\n✅ Changelog generation completed!")
-	result := map[string]interface{}{
-		"status":  "success",
-		"version": version,
-		"files": map[string]string{
-			"client":    clientPath,
-			"technical": technicalPath,
-		},
-		"metrics": map[string]interface{}{
-			"commits":                   len(commits),
-			"features":                  len(features),
-			"working_days":              metrics.TotalWorkingDays,
-			"working_days_with_commits": metrics.WorkingDaysWithCommits,
-			"calendar_days":             metrics.CalendarDays,
-			"efficiency":                fmt.Sprintf("%.1f%%", metrics.Efficiency),
-			"average_commits_per_day":   fmt.Sprintf("%.2f", metrics.AverageCommitsPerDay),
-		},
-	}
-
-	output, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(output))
-
-	return nil
-}
-
-// getSkillDir returns the skill directory path
-func getSkillDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".claude", "skills", "changelog-generator")
-}
-
-func calculateWorkingDays(cmd *cobra.Command, args []string) error {
-	fromTag, _ := cmd.Flags().GetString("from-tag")
-	toTag, _ := cmd.Flags().GetString("to-tag")
-	fromDate, _ := cmd.Flags().GetString("from")
-	toDate, _ := cmd.Flags().GetString("to")
-	showExcluded, _ := cmd.Flags().GetBool("show-excluded-dates")
-
-	fmt.Println("📊 Calculating working days...")
-
-	if fromTag != "" && toTag != "" {
-		fmt.Printf("   Between tags: %s..%s\n", fromTag, toTag)
-	} else if fromDate != "" && toDate != "" {
-		fmt.Printf("   Between dates: %s → %s\n", fromDate, toDate)
-	}
-
-	if showExcluded {
-		fmt.Println("   Showing excluded dates")
-	}
-
-	// TODO: Implement actual calculation
-	// Placeholder result
-	result := map[string]interface{}{
-		"calendar_days": 21,
-		"working_days":  14,
-		"excluded_days": 7,
-		"exclusions": map[string]int{
-			"weekends":     6,
-			"holidays":     0,
-			"course_weeks": 1,
-		},
-		"period": "2024-12-20 - 2025-01-10",
-		"message": "Working days calculation not yet fully implemented.",
-	}
-
-	output, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(output))
-
-	return nil
-}
-
-func validateConfig(cmd *cobra.Command, args []string) error {
-	fmt.Println("🔍 Validating configuration...")
-
-	errors := []string{}
-
-	// Check Git repository
-	if _, err := os.Stat(".git"); os.IsNotExist(err) {
-		errors = append(errors, "GIT001: Git repository not found")
-	} else {
-		fmt.Println("   ✅ Git repository found")
-	}
-
-	// Check config files
-	configFiles := []string{
-		"config/changelog_config.json",
-		"config/exclusions.json",
-		"config/translation_rules.json",
-	}
-
-	for _, file := range configFiles {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			errors = append(errors, fmt.Sprintf("CFG001: Configuration file missing: %s", file))
-		} else {
-			fmt.Printf("   ✅ %s found\n", file)
-		}
-	}
-
-	// Check GitHub token if enabled
-	if config.GitHub.Enabled {
-		token := os.Getenv(config.GitHub.TokenEnvVar)
-		if token == "" {
-			errors = append(errors, fmt.Sprintf("GH001: GitHub token not found in environment variable %s", config.GitHub.TokenEnvVar))
-		} else {
-			fmt.Println("   ✅ GitHub token configured")
-		}
-	}
-
-	// Check output directories
-	if _, err := os.Stat(config.Output.Dir); os.IsNotExist(err) {
-		fmt.Printf("   ⚠️  Output directory %s does not exist (will be created)\n", config.Output.Dir)
-	}
-
-	if len(errors) > 0 {
-		fmt.Println("\n❌ Validation failed:")
-		for _, err := range errors {
-			fmt.Printf("   - %s\n", err)
-		}
-		return fmt.Errorf("validation failed with %d errors", len(errors))
-	}
-
-	fmt.Println("\n✅ All validations passed!")
-	return nil
+	Subcommand  string
+	Version     string
+	Base        string
+	Compare     string
+	Limit       int
+	ConfigFile  string
+	OutputDir   string
+	Format      string
+	ProjectRoot string
+	Changelog   string
+	Clean       bool
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	cfg, err := parseArgs()
+	if err != nil {
+		fatalf("%v", err)
 	}
+	if err := run(cfg); err != nil {
+		fatalf("%v", err)
+	}
+}
+
+func parseArgs() (*Config, error) {
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(0)
+	}
+
+	sub := os.Args[1]
+	if sub == "-h" || sub == "--help" || sub == "help" {
+		printUsage()
+		os.Exit(0)
+	}
+
+	fs := flag.NewFlagSet("changelog-generator", flag.ExitOnError)
+	version := fs.String("version", "", "Version tag (e.g. v1.2.3)")
+	base := fs.String("base", "main", "Base branch")
+	compare := fs.String("compare", "dev", "Compare branch")
+	limit := fs.Int("limit", 400, "Max git log entries")
+	configFile := fs.String("config", "changelog.config.json", "Config file path")
+	outputDir := fs.String("output-dir", "./changelogs", "Output directory")
+	format := fs.String("format", "both", "Format: client, technical, both")
+	changelog := fs.String("changelog", "CHANGELOG.md", "Path to main CHANGELOG.md")
+	clean := fs.Bool("clean", false, "Remove orphaned changelog files")
+
+	if err := fs.Parse(os.Args[2:]); err != nil {
+		return nil, err
+	}
+
+	projectRoot, _ := findProjectRoot()
+	if projectRoot == "" {
+		projectRoot = "."
+	}
+
+	valid := map[string]bool{
+		"extract": true, "split": true, "metrics": true, "generate": true,
+	}
+	if !valid[sub] {
+		return nil, fmt.Errorf("unknown subcommand %q -- run 'changelog-generator help'", sub)
+	}
+
+	return &Config{
+		Subcommand:  sub,
+		Version:     *version,
+		Base:        *base,
+		Compare:     *compare,
+		Limit:       *limit,
+		ConfigFile:  *configFile,
+		OutputDir:   *outputDir,
+		Format:      *format,
+		ProjectRoot: projectRoot,
+		Changelog:   *changelog,
+		Clean:       *clean,
+	}, nil
+}
+
+func run(cfg *Config) error {
+	switch cfg.Subcommand {
+	case "extract":
+		return runExtract(cfg)
+	case "split":
+		return runSplit(cfg)
+	case "metrics":
+		return runMetrics(cfg)
+	case "generate":
+		return runGenerate(cfg)
+	}
+	return nil
+}
+
+// -- extract: git log to file ------------------------------------------------
+
+func runExtract(cfg *Config) error {
+	infof("extracting git log: %s..%s (limit: %d)", cfg.Base, cfg.Compare, cfg.Limit)
+
+	outFile := filepath.Join(cfg.ProjectRoot, "git-log.txt")
+	format := "---COMMIT---%n%H\x1f%ad\x1f%s\x1f%an\x1f%ae\x1f%D"
+	args := []string{
+		"log", fmt.Sprintf("%s..%s", cfg.Base, cfg.Compare),
+		"--pretty=format:" + format,
+		"--date=iso",
+		fmt.Sprintf("-n%d", cfg.Limit),
+	}
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = cfg.ProjectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		// fallback: log all commits on compare branch
+		args = []string{
+			"log", cfg.Compare,
+			"--pretty=format:" + format,
+			"--date=iso",
+			fmt.Sprintf("-n%d", cfg.Limit),
+		}
+		cmd = exec.Command("git", args...)
+		cmd.Dir = cfg.ProjectRoot
+		out, err = cmd.Output()
+		if err != nil {
+			return fmt.Errorf("git log failed: %w", err)
+		}
+	}
+
+	if err := os.WriteFile(outFile, out, 0o644); err != nil {
+		return fmt.Errorf("write git-log.txt: %w", err)
+	}
+
+	successf("git log extracted to %s (%d bytes)", outFile, len(out))
+	return nil
+}
+
+// -- split: CHANGELOG.md -> individual files ---------------------------------
+
+func runSplit(cfg *Config) error {
+	changelogPath := resolveChangelog(cfg)
+	infof("splitting %s into individual files...", changelogPath)
+
+	versions, err := parser.ParseChangelog(changelogPath)
+	if err != nil {
+		return fmt.Errorf("parse changelog: %w", err)
+	}
+
+	infof("found %d versions", len(versions))
+
+	result, err := splitter.Split(versions, splitter.Config{
+		OutputDir:     cfg.OutputDir,
+		PreReleaseDir: "pre-releases",
+		ClientDir:     "client",
+		CleanOrphans:  cfg.Clean,
+	})
+	if err != nil {
+		return fmt.Errorf("split: %w", err)
+	}
+
+	successf("done: %d created, %d updated, %d unchanged",
+		len(result.Created), len(result.Updated), len(result.Unchanged))
+
+	for _, f := range result.Created {
+		fmt.Printf("  %s+%s %s\n", green, reset, f)
+	}
+	for _, f := range result.Updated {
+		fmt.Printf("  %s~%s %s\n", yellow, reset, f)
+	}
+	for _, f := range result.Orphaned {
+		fmt.Printf("  %s-%s %s (removed)\n", red, reset, f)
+	}
+
+	return nil
+}
+
+// -- metrics: working days calculation ---------------------------------------
+
+func runMetrics(cfg *Config) error {
+	changelogPath := resolveChangelog(cfg)
+	infof("calculating metrics from %s...", changelogPath)
+
+	versions, err := parser.ParseChangelog(changelogPath)
+	if err != nil {
+		return fmt.Errorf("parse changelog: %w", err)
+	}
+
+	// load commit dates from git
+	gitLogPath := filepath.Join(cfg.ProjectRoot, "git-log.txt")
+	commits, _ := parser.ParseGitLog(gitLogPath) // ok if missing
+
+	// load config for exclusions
+	calCfg := loadCalendarConfig(cfg)
+	calc := calendar.NewCalculator(calCfg)
+
+	type versionMetrics struct {
+		Version string          `json:"version"`
+		Metrics calendar.Metrics `json:"metrics"`
+	}
+
+	var results []versionMetrics
+
+	for _, v := range versions {
+		// find commits related to this version (by date range heuristic)
+		var commitDates []time.Time
+		for _, c := range commits {
+			commitDates = append(commitDates, c.Date)
+		}
+
+		if v.Date == "" {
+			continue
+		}
+
+		releaseDate, err := time.Parse("2006-01-02", v.Date)
+		if err != nil {
+			continue
+		}
+
+		// estimate start: 30 days before release or previous version date
+		start := releaseDate.AddDate(0, 0, -30)
+		m := calc.Calculate(start, releaseDate, commitDates)
+
+		results = append(results, versionMetrics{
+			Version: v.Number,
+			Metrics: m,
+		})
+
+		fmt.Printf("\n%sv%s%s\n", bold, v.Number, reset)
+		fmt.Printf("  period:       %s\n", m.Period)
+		fmt.Printf("  calendar:     %d days\n", m.CalendarDays)
+		fmt.Printf("  working:      %d days\n", m.WorkingDays)
+		fmt.Printf("  excluded:     %d (weekends: %d, holidays: %d, course: %d)\n",
+			m.ExcludedDays, m.WeekendDays, m.HolidayDays, m.CourseWeekDays)
+		if m.CommitCount > 0 {
+			fmt.Printf("  commits:      %d\n", m.CommitCount)
+			fmt.Printf("  efficiency:   %.1f commits/day\n", m.Efficiency)
+		}
+	}
+
+	// write JSON report
+	reportPath := filepath.Join(cfg.ProjectRoot, "working_days_report.json")
+	data, _ := json.MarshalIndent(results, "", "  ")
+	if err := os.WriteFile(reportPath, data, 0o644); err != nil {
+		return fmt.Errorf("write report: %w", err)
+	}
+
+	successf("report saved to %s", reportPath)
+	return nil
+}
+
+// -- generate: full pipeline -------------------------------------------------
+
+func runGenerate(cfg *Config) error {
+	if cfg.Version == "" {
+		return fmt.Errorf("--version is required for generate")
+	}
+
+	fmt.Printf("\n%s%schangelog-generator%s — version %s\n\n", bold, blue, reset, cfg.Version)
+
+	// step 1: extract
+	infof("[1/3] extracting git log...")
+	if err := runExtract(cfg); err != nil {
+		warnf("extract failed (continuing): %v", err)
+	}
+
+	// step 2: prompt context (print instructions for the user)
+	infof("[2/3] changelog redaction...")
+	changelogPath := resolveChangelog(cfg)
+	fmt.Printf("\n  the git log has been extracted. to generate the changelog content:\n\n")
+	fmt.Printf("  %soption a%s: run the Claude command:\n", bold, reset)
+	fmt.Printf("    /generate_changelog\n\n")
+	fmt.Printf("  %soption b%s: edit %s manually with the git-log.txt as reference\n\n", bold, reset, changelogPath)
+	fmt.Printf("  once CHANGELOG.md is updated, run:\n")
+	fmt.Printf("    changelog-generator split --output-dir %s\n\n", cfg.OutputDir)
+
+	// step 3: split (if changelog exists and has content)
+	infof("[3/3] splitting existing changelog...")
+	if err := runSplit(cfg); err != nil {
+		warnf("split: %v", err)
+	}
+
+	successf("pipeline complete for %s", cfg.Version)
+	return nil
+}
+
+// -- helpers -----------------------------------------------------------------
+
+func resolveChangelog(cfg *Config) string {
+	if filepath.IsAbs(cfg.Changelog) {
+		return cfg.Changelog
+	}
+	return filepath.Join(cfg.ProjectRoot, cfg.Changelog)
+}
+
+func loadCalendarConfig(cfg *Config) calendar.Config {
+	calCfg := calendar.Config{Country: "FR"}
+
+	configPath := filepath.Join(cfg.ProjectRoot, cfg.ConfigFile)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return calCfg
+	}
+
+	var raw struct {
+		Country    string `json:"country"`
+		CourseWeeks []struct {
+			Start string `json:"start"`
+			End   string `json:"end"`
+		} `json:"course_weeks"`
+	}
+
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return calCfg
+	}
+
+	if raw.Country != "" {
+		calCfg.Country = raw.Country
+	}
+
+	for _, w := range raw.CourseWeeks {
+		start, err1 := time.Parse("2006-01-02", w.Start)
+		end, err2 := time.Parse("2006-01-02", w.End)
+		if err1 == nil && err2 == nil {
+			calCfg.CourseWeeks = append(calCfg.CourseWeeks, calendar.DateRange{Start: start, End: end})
+		}
+	}
+
+	return calCfg
+}
+
+func findProjectRoot() (string, error) {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func printUsage() {
+	fmt.Printf(`%s%schangelog-generator%s -- generate structured changelogs from git history
+
+%ssubcommands%s
+  extract    extract git log to git-log.txt
+  split      split CHANGELOG.md into individual version files
+  metrics    calculate working days and productivity metrics
+  generate   full pipeline: extract + prompt + split
+
+%sflags%s
+  --version      version tag (e.g. v1.2.3)         [required for generate]
+  --base         base branch                        (default: main)
+  --compare      compare branch                     (default: dev)
+  --limit        max git log entries                 (default: 400)
+  --changelog    path to CHANGELOG.md               (default: CHANGELOG.md)
+  --output-dir   output directory                    (default: ./changelogs)
+  --config       config file for exclusions          (default: changelog.config.json)
+  --format       output format: client|technical|both (default: both)
+  --clean        remove orphaned changelog files
+
+%sexamples%s
+  changelog-generator generate --version v2.1.0
+  changelog-generator extract --base main --compare dev --limit 200
+  changelog-generator split --output-dir ./releases --clean
+  changelog-generator metrics --changelog CHANGELOG.md
+
+`, bold, blue, reset, bold, reset, bold, reset, bold, reset)
+}
+
+func infof(format string, args ...any) {
+	fmt.Printf("%s->%s %s\n", blue, reset, fmt.Sprintf(format, args...))
+}
+
+func successf(format string, args ...any) {
+	fmt.Printf("%s ok%s %s\n", green, reset, fmt.Sprintf(format, args...))
+}
+
+func warnf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "%s warn%s %s\n", yellow, reset, fmt.Sprintf(format, args...))
+}
+
+func fatalf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "%s error%s %s\n", red, reset, fmt.Sprintf(format, args...))
+	os.Exit(1)
 }

@@ -34,17 +34,9 @@ Behavioral flags for Claude Code to enable specific execution modes and tool sel
 - Trigger: Complex debugging, system design, multi-component analysis
 - Behavior: Enable Sequential for structured multi-step reasoning and hypothesis testing
 
-**--magic**
-- Trigger: UI component requests (/ui, /21), design system queries, frontend development
-- Behavior: Enable Magic for modern UI generation from 21st.dev patterns
-
 **--morph / --morphllm**
 - Trigger: Bulk code transformations, pattern-based edits, style enforcement
 - Behavior: Enable Morphllm for efficient multi-file pattern application
-
-**--serena**
-- Trigger: Symbol operations, project memory needs, large codebase navigation
-- Behavior: Enable Serena for semantic understanding and session persistence
 
 **--play / --playwright**
 - Trigger: Browser testing, E2E scenarios, visual validation, accessibility testing

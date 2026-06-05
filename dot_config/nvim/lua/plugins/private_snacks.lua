@@ -27,25 +27,25 @@ local function get_system_info()
 end
 
 -- Format codexbar JSON into display string
-local function format_codexbar(raw, icon)
-  if not raw or raw == "" then
-    return nil
-  end
-  local ok, data = pcall(vim.fn.json_decode, raw)
-  if not ok or not data or not data[1] or not data[1].usage then
-    return nil
-  end
-  local u = data[1].usage
-  local plan = u.loginMethod or "?"
-  local parts = { plan }
-  if u.primary and type(u.primary) == "table" and u.primary.usedPercent then
-    table.insert(parts, "󰔛 session " .. math.floor(u.primary.usedPercent + 0.5) .. "%")
-  end
-  if u.secondary and type(u.secondary) == "table" and u.secondary.usedPercent then
-    table.insert(parts, "󰨳 weekly " .. math.floor(u.secondary.usedPercent + 0.5) .. "%")
-  end
-  return icon .. " " .. table.concat(parts, " ")
-end
+-- local function format_codexbar(raw, icon)
+--   if not raw or raw == "" then
+--     return nil
+--   end
+--   local ok, data = pcall(vim.fn.json_decode, raw)
+--   if not ok or not data or not data[1] or not data[1].usage then
+--     return nil
+--   end
+--   local u = data[1].usage
+--   local plan = u.loginMethod or "?"
+--   local parts = { plan }
+--   if u.primary and type(u.primary) == "table" and u.primary.usedPercent then
+--     table.insert(parts, "󰔛 session " .. math.floor(u.primary.usedPercent + 0.5) .. "%")
+--   end
+--   if u.secondary and type(u.secondary) == "table" and u.secondary.usedPercent then
+--     table.insert(parts, "󰨳 weekly " .. math.floor(u.secondary.usedPercent + 0.5) .. "%")
+--   end
+--   return icon .. " " .. table.concat(parts, " ")
+-- end
 
 -- ALL dashboard data in ONE shell call (git + tech + codexbar + gh)
 local function get_dashboard_data()
@@ -238,8 +238,8 @@ local function get_dashboard_data()
     git = #git_parts > 0 and table.concat(git_parts, "  ") or nil,
     git_changes = #gc_chunks > 0 and gc_chunks or nil,
     tech = #tech_parts > 0 and table.concat(tech_parts, "  ") or nil,
-    claude = format_codexbar(d.cb_claude, " "),
-    copilot = format_codexbar(d.cb_copilot, "󰚩 "),
+    -- claude = format_codexbar(d.cb_claude, " "),
+    -- copilot = format_codexbar(d.cb_copilot, "󰚩 "),
     gh_issues = d.gh_issues == "1",
     gh_prs = d.gh_prs == "1",
   }

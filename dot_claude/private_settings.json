@@ -1,0 +1,369 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_NEW_INIT": "1",
+    "SLASH_COMMAND_TOOL_CHAR_BUDGET": "30000"
+  },
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:pkg.go.dev)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:support.claude.com)",
+      "WebFetch(domain:manual.raycast.com)",
+      "WebFetch(domain:learning.postman.com)",
+      "WebFetch(domain:scottspence.com)",
+      "WebFetch(domain:blog.fsck.com)",
+      "mcp__serena__find_symbol",
+      "mcp__serena__find_file",
+      "mcp__serena__list_dir",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__activate_project",
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__pencil",
+      "SlashCommand(/speckit.specify)",
+      "Bash(git checkout:*)",
+      "Bash(git fetch:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(git reset:*)",
+      "Bash(git restore:*)",
+      "Bash(git rebase:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git clone:*)",
+      "Bash(git rm:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue create:*)",
+      "Bash(gh label list:*)",
+      "Bash(gh label create:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh config:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh api:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go run:*)",
+      "Bash(go install:*)",
+      "Bash(go get:*)",
+      "Bash(go vet:*)",
+      "Bash(go version:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go tool cover:*)",
+      "Bash(gofmt:*)",
+      "Bash(goimports:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(gosec:*)",
+      "Bash(misspell:*)",
+      "Bash(make build:*)",
+      "Bash(make test:*)",
+      "Bash(make fmt:*)",
+      "Bash(make lint:*)",
+      "Bash(make test-coverage:*)",
+      "Bash(npm install:*)",
+      "Bash(npm config:*)",
+      "Bash(bun install:*)",
+      "Bash(pip install:*)",
+      "Bash(pre-commit install:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(php:*)",
+      "Bash(.specify/scripts/bash/check-prerequisites.sh:*)",
+      "Bash(.specify/scripts/bash/create-new-feature.sh:*)",
+      "Bash(.specify/scripts/bash/update-agent-context.sh:*)",
+      "Bash(.specify/scripts/bash/setup-plan.sh:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(echo:*)",
+      "Bash(mkdir:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(awk:*)",
+      "Bash(xxd:*)",
+      "Bash(tree:*)",
+      "Bash(readlink:*)",
+      "Bash(chmod:*)",
+      "Bash(cp:*)",
+      "Bash(command -v:*)",
+      "Bash(xargs:*)",
+      "Bash(xargs cat:*)",
+      "Bash(xargs dirname:*)",
+      "Bash(bash:*)",
+      "Bash(zsh:*)",
+      "Bash(builtin cd:*)",
+      "Bash(curl:*)",
+      "Bash(open:*)",
+      "Bash(code:*)",
+      "Bash(code --install-extension:*)",
+      "Bash(osascript:*)",
+      "Bash(defaults read:*)",
+      "Bash(claude:*)",
+      "Bash(brew install:*)",
+      "Bash(brew list:*)",
+      "Bash(brew link:*)",
+      "Bash(brew unlink:*)",
+      "Bash(nix-channel --list:*)",
+      "Bash(nix run:*)",
+      "Bash(home-manager switch:*)",
+      "Bash(home-manager generations:*)",
+      "Bash(nix-collect-garbage:*)",
+      "Bash(chezmoi source-path:*)",
+      "Bash(chezmoi status:*)",
+      "Bash(rsync:*)",
+      "Bash(launchctl list:*)",
+      "Bash(hdiutil attach:*)",
+      "Bash(diskutil apfs:*)",
+      "Bash(diskutil info:*)",
+      "Bash(mpc status:*)",
+      "Bash(tmux source-file:*)"
+    ],
+    "deny": [
+      "Read(~/.ssh/**)",
+      "Read(**/*secret*)",
+      "Bash(rm -rf *)"
+    ],
+    "ask": [],
+    "defaultMode": "acceptEdits"
+  },
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/need-human.mp3"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude",
+            "timeout": 86400
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /Users/kbrdn1/.claude/scripts/validate-command.js"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/finish.mp3"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/kbrdn1/.open-island/bin/open-island-statusline",
+    "padding": 2
+  },
+  "enabledPlugins": {
+    "claude-hud@claude-hud": true,
+    "frontend-design@claude-code-plugins": true,
+    "gopls-lsp@claude-plugins-official": true,
+    "lua-lsp@claude-plugins-official": true,
+    "mgrep@Mixedbread-Grep": true,
+    "php-lsp@claude-plugins-official": true,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "codex@openai-codex": true,
+    "morph-compact@morph": true
+  },
+  "extraKnownMarketplaces": {
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    },
+    "morph": {
+      "source": {
+        "source": "github",
+        "repo": "morphllm/morph-claude-code-plugin"
+      }
+    }
+  },
+  "language": "French",
+  "skipDangerousModePermissionPrompt": true,
+  "editorMode": "vim",
+  "teammateMode": "auto",
+  "remoteControlAtStartup": true,
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true,
+  "voiceEnabled": true,
+  "_openIslandOriginalStatusLine": {
+    "type": "command",
+    "command": "bun /Users/kbrdn1/.claude/scripts/statusline.ts",
+    "padding": 0
+  },
+  "advisorModel": "opus"
+}

@@ -2,27 +2,29 @@
 #  Ghostty Terminal Configuration  #
 ####################################
 
-#  Catppuccin Macchiato Theme
-theme = catppuccin-macchiato.conf
+# Claude Dark Theme (ported from Zed)
+theme = claude-dark
 
-# UI
-background-opacity = 0.85
-background-blur-radius = 55
+# UI - No transparency, no blur
+background-opacity = 0.95
+background-blur-radius = 25
 
 # Font
-font-family = "CaskaydiaCove Nerd Font Mono"
+font-family = "OperatorMonoLig Nerd Font"
+# font-family = "CaskaydiaCove Nerd Font Mono"
 font-size = 14
 window-inherit-font-size = false
 
-# Cursor
+# Cursor - Shader disabled
 mouse-shift-capture = always
-custom-shader = shaders/cursor_smear_fade.glsl
+custom-shader = shaders/cursor_smear_fade_ultra.glsl
+# custom-shader-animation = false
 
 # Window
 window-height = 120
 window-width = 96
 window-padding-x = 10
-window-padding-y = 0,10
+window-padding-y = 10
 window-title-font-family = "CaskaydiaCove Nerd Font Mono"
 window-theme = ghostty
 window-save-state = always
@@ -39,14 +41,22 @@ clipboard-trim-trailing-spaces = true
 # Shell
 shell-integration = zsh
 shell-integration-features = title
+# Tmux: démarre tmux et attache à la session main
+command = /bin/zsh -lic "tmux new-session -A -s main"
 
 # MacOS Specific
-macos-titlebar-style = transparent
-macos-titlebar-proxy-icon = visible
+# Options: native, transparent, tabs, hidden
+# "transparent" causes freezes - avoid!
+# "tabs" provides best balance with visual effects
+macos-titlebar-style = hidden
+macos-option-as-alt = false
+title = " "
+macos-titlebar-proxy-icon = hidden
 macos-window-shadow = false
-macos-auto-secure-input = true
-macos-secure-input-indication = true
-macos-icon = custom-style
+macos-window-buttons = visible
+macos-auto-secure-input = false
+macos-secure-input-indication = false
+macos-icon = chalkboard
 macos-icon-frame = chrome
 macos-icon-ghost-color = CF7932
 macos-icon-screen-color = CF7932
@@ -57,3 +67,6 @@ desktop-notifications = true
 # Update
 auto-update-channel = stable
 auto-update = check
+
+# Keybindings - send CMD+V to application instead of terminal paste
+

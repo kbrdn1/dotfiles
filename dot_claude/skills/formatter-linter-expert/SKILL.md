@@ -1,11 +1,7 @@
 ---
 name: formatter-linter-expert
 description: Universal code formatter and linter analyzer for multi-ecosystem projects (Laravel/PHP, Bun/Node/TS/JS, React, Vue, Astro, Nuxt, Go, Rust, Deno) with intelligent asdf version management, auto-detection, and interactive workflows
-version: 1.0.0
-dependencies:
-  - python >= 3.9
-  - asdf (optional but recommended)
-allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep"]
+allowed-tools: Bash, Read, Write, Glob, Grep
 ---
 
 # Formatter & Linter Expert Analyzer
