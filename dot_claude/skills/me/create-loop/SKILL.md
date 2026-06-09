@@ -1,6 +1,6 @@
 ---
 name: me:create-loop
-description: Utiliser quand l'utilisateur veut CRÉER ou définir un nouveau loop auto-cadencé (pas en lancer un existant). Scaffolde une skill loop:<name> dans ~/.claude/skills/loop/<name>/SKILL.md, lançable via /loop:<name>.
+description: Utiliser quand l'utilisateur veut CRÉER ou définir un nouveau loop auto-cadencé (pas en lancer un existant). Demande la portée (globale ~/.claude ou per-project <repo>/.claude) si non précisée, puis scaffolde la skill loop:<name> + sa commande /loop:<name>.
 ---
 
 # me:create-loop — Définir un nouveau loop (skill `loop:<name>`)
@@ -9,11 +9,18 @@ Ce skill **crée une skill loop** : un nouveau loop auto-cadencé, matérialisé
 
 > Pour **exécuter** un loop, c'est `me:run-loop` (ou directement `/loop:<name>`).
 
-## Où écrire
+## Étape 0 — Déterminer la portée (`<base>`)
 
-```
-~/.claude/skills/loop/<name>/SKILL.md      →   name: loop:<name>   →   /loop:<name>
-```
+Un loop peut être **global** (dispo dans tous les projets) ou **per-project** (versionné avec un repo). Cela fixe la racine `<base>` utilisée partout ensuite :
+
+| Portée | `<base>` | Skill | Commande |
+|--------|----------|-------|----------|
+| **Globale** | `~/.claude` | `~/.claude/skills/loop/<name>/SKILL.md` | `~/.claude/commands/loop/<name>.md` |
+| **Per-project** | `<racine_repo>/.claude` | `<repo>/.claude/skills/loop/<name>/SKILL.md` | `<repo>/.claude/commands/loop/<name>.md` |
+
+🔴 **Si l'utilisateur n'a pas précisé la portée, la DEMANDER explicitement** (globale ou projet) avant d'écrire — ne pas deviner. Indices possibles : « pour ce projet / ce repo » → per-project ; « partout / global / pour tous mes projets » → globale. En cas de doute, poser la question.
+
+> Chaque loop = **deux** fichiers, sous la même `<base>` : la skill `loop:<name>` (comportement) et la commande `/loop:<name>` (déclencheur slash).
 
 `<name>` est en **kebab-case** (ex. `Build Until Green` → `build-until-green` → `loop:build-until-green`).
 
@@ -37,9 +44,13 @@ Demande (ou **infère du message**, puis confirme ce qui manque) :
 
 Si une validation échoue, l'expliquer et proposer une correction **avant** d'écrire.
 
-## Étape 3 — Écrire la skill `loop:<name>`
+## Étape 3 — Écrire la skill `loop:<name>` ET sa commande `/loop:<name>`
 
-Crée `~/.claude/skills/loop/<name>/SKILL.md`. Si le dossier existe déjà, le signaler et demander : écraser, renommer, ou éditer.
+Un loop a **deux** fichiers : la skill (le comportement) et la commande (le déclencheur slash). Crée les deux.
+
+### 3a — La skill : `<base>/skills/loop/<name>/SKILL.md`
+
+Si le dossier existe déjà, le signaler et demander : écraser, renommer, ou éditer.
 
 Utilise **exactement** ce gabarit (remplace les `<…>`) :
 
@@ -77,8 +88,28 @@ Status à chaque passe : `🔁 Itération N/<max_iterations> — <tenté> → ch
 Garde-fous : ne jamais dépasser `max_iterations` ; jamais de succès sans `exit_when` vu dans la sortie ; jamais skip/désactiver une validation — corriger la cause racine.
 ```
 
+### 3b — La commande : `<base>/commands/loop/<name>.md`
+
+C'est le déclencheur slash `/loop:<name>`. Une commande mince qui invoque la skill homonyme. Utilise **exactement** ce gabarit :
+
+```markdown
+---
+description: "Loop auto-cadencé — <goal> ; relance `<check_command>` jusqu'à « <exit_when> », max <max_iterations> itérations"
+---
+
+Invoke the `loop:<name>` skill via the Skill tool to run this self-paced loop.
+
+Pass along any user arguments: $ARGUMENTS
+```
+
 ## Étape 4 — Confirmer
 
-Affiche le **chemin créé** et rappelle comment le lancer :
+Affiche les **deux chemins créés** et rappelle comment le lancer :
 
-> Loop créé : `~/.claude/skills/loop/<name>/SKILL.md` (skill `loop:<name>`). Pour le lancer : `/loop:<name>` — ou « lance le loop <name> » (le moteur `me:run-loop` route). Un redémarrage de session peut être nécessaire pour que Claude Code découvre la nouvelle skill.
+> Loop créé (portée : <globale | per-project>) :
+> - skill `<base>/skills/loop/<name>/SKILL.md` (`loop:<name>`)
+> - commande `<base>/commands/loop/<name>.md` (`/loop:<name>`)
+>
+> Pour le lancer : `/loop:<name>` — ou « lance le loop <name> » (le moteur `me:run-loop` route). Un **redémarrage de session** est en général nécessaire pour que Claude Code découvre la nouvelle skill/commande.
+>
+> Si portée **globale** et dotfiles gérés par chezmoi → pense à versionner (skill `chezmoi`). Si **per-project**, commite les deux fichiers avec le repo.
