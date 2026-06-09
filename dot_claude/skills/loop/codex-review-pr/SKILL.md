@@ -35,7 +35,7 @@ echo "$RESULT" | jq -r '[.findings[] | select(.severity=="critical" or .severity
 ### Steps
 Step 1: Vérifier le contexte — être dans le checkout/worktree de la PR, sur sa branche (`gh pr view` doit renvoyer une PR). Sinon, s'y placer avant de continuer.
 Step 2: Lancer le `check_command`. Lire le JSON `blocking` : pour chaque finding `critical`/`high`, juger sa **pertinence** (vrai problème vs faux positif/hors-scope, en s'aidant de `confidence`).
-Step 3: Corriger la **cause racine** de chaque finding pertinent (commit atomique Gitmoji + Conventional référençant l'issue). Documenter et **écarter** les faux positifs/hors-scope — sans jamais désactiver/skip une validation pour faire taire le finding.
+Step 3: Corriger la **cause racine** et les **éléments pertinents en fonction du contexte du projet** (conventions, stack, `CLAUDE.md` et `.claude/rules/` du repo) — commit atomique Gitmoji + Conventional référençant l'issue. Documenter et **écarter** les faux positifs / findings hors-scope ou contraires aux conventions du projet — sans jamais désactiver/skip une validation pour faire taire le finding.
 
 ## Protocole self-pace (compteur à 1)
 
