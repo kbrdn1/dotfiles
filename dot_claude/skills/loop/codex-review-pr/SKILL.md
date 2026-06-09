@@ -5,7 +5,8 @@ description: Loop auto-cadencé — relance la review Codex CLI locale sur la PR
 
 # loop:codex-review-pr
 
-Loop auto-cadencé. Après la création d'une PR, relance la **review Codex CLI locale** (companion Node) et corrige les findings bloquants **pertinents** jusqu'à ce qu'il n'en reste plus. Applique le **PROTOCOLE SELF-PACE** ci-dessous (canonique dans `me:run-loop`).
+Loop auto-cadencé. **mode:** closed · **trigger:** self-pace · **exécution:** single.
+Après la création d'une PR, relance la **review Codex CLI locale** (companion Node) et corrige les findings bloquants **pertinents** jusqu'à ce qu'il n'en reste plus. Applique le **PROTOCOLE SELF-PACE** ci-dessous (canonique dans `me:run-loop`).
 
 > ⚠️ Le CLI Codex review l'arbre du **répertoire courant** sur la **branche courante** (cf. `me:check-reviews` Phase 1B). Lance ce loop **depuis le checkout/worktree de la PR**, sur sa branche — sinon il review le mauvais arbre.
 
@@ -32,10 +33,15 @@ echo "$RESULT" | jq '{verdict, blocking: [.findings[] | select(.severity=="criti
 echo "$RESULT" | jq -r '[.findings[] | select(.severity=="critical" or .severity=="high")] | length | "P0P1_COUNT=\(.)"'
 ```
 
-### Steps
-Step 1: Vérifier le contexte — être dans le checkout/worktree de la PR, sur sa branche (`gh pr view` doit renvoyer une PR). Sinon, s'y placer avant de continuer.
-Step 2: Lancer le `check_command`. Lire le JSON `blocking` : pour chaque finding `critical`/`high`, juger sa **pertinence** (vrai problème vs faux positif/hors-scope, en s'aidant de `confidence`).
-Step 3: Corriger la **cause racine** et les **éléments pertinents en fonction du contexte du projet** (conventions, stack, `CLAUDE.md` et `.claude/rules/` du repo) — commit atomique Gitmoji + Conventional référençant l'issue. Documenter et **écarter** les faux positifs / findings hors-scope ou contraires aux conventions du projet — sans jamais désactiver/skip une validation pour faire taire le finding.
+## Cycle
+
+- **Discovery** : vérifier le contexte — être dans le checkout/worktree de la PR, sur sa branche (`gh pr view` doit renvoyer une PR) ; sinon s'y placer. Lire le contexte projet (`CLAUDE.md`, `.claude/rules/`, conventions/stack).
+- **Planning** : déterminer la base (`origin/<baseRefName>`) et l'outillage de review (companion Codex local).
+- **Execution** :
+  Step 1: Lancer le `check_command`. Lire le JSON `blocking` : pour chaque finding `critical`/`high`, juger sa **pertinence** (vrai problème vs faux positif/hors-scope, en s'aidant de `confidence`).
+  Step 2: Corriger la **cause racine** et les **éléments pertinents en fonction du contexte du projet** (conventions, stack, `CLAUDE.md` et `.claude/rules/` du repo) — commit atomique Gitmoji + Conventional référençant l'issue. Documenter et **écarter** les faux positifs / findings hors-scope ou contraires aux conventions du projet — sans jamais désactiver/skip une validation pour faire taire le finding.
+- **Verification** : relancer le `check_command`, lire `P0P1_COUNT` et `verdict`.
+- **Iteration** : tant qu'il reste des bloquants pertinents, reboucler ; sinon stop/handback.
 
 ## Protocole self-pace (compteur à 1)
 
