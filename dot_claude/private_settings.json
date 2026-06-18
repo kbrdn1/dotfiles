@@ -144,6 +144,7 @@
     "ask": [],
     "defaultMode": "acceptEdits"
   },
+  "model": "opus[1m]",
   "hooks": {
     "Notification": [
       {
@@ -258,6 +259,16 @@
             "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash '/Users/kbrdn1/.claude/hooks/herdr-agent-state.sh' session",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [
@@ -327,32 +338,39 @@
   },
   "enabledPlugins": {
     "claude-hud@claude-hud": true,
+    "codex@openai-codex": true,
     "frontend-design@claude-code-plugins": true,
     "gopls-lsp@claude-plugins-official": true,
     "lua-lsp@claude-plugins-official": true,
     "mgrep@Mixedbread-Grep": true,
+    "morph-compact@morph": true,
     "php-lsp@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "codex@openai-codex": true,
-    "morph-compact@morph": true
+    "typescript-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
+    "morph": {
+      "source": {
+        "source": "github",
+        "repo": "morphllm/morph-claude-code-plugin"
+      }
+    },
     "openai-codex": {
       "source": {
         "source": "github",
         "repo": "openai/codex-plugin-cc"
       }
     },
-    "morph": {
+    "Mixedbread-Grep": {
       "source": {
         "source": "github",
-        "repo": "morphllm/morph-claude-code-plugin"
+        "repo": "mixedbread-ai/mgrep"
       }
     }
   },
   "language": "French",
+  "advisorModel": "opus",
   "skipDangerousModePermissionPrompt": true,
   "editorMode": "vim",
   "teammateMode": "auto",
@@ -361,9 +379,8 @@
   "agentPushNotifEnabled": true,
   "voiceEnabled": true,
   "_openIslandOriginalStatusLine": {
-    "type": "command",
     "command": "bun /Users/kbrdn1/.claude/scripts/statusline.ts",
-    "padding": 0
-  },
-  "advisorModel": "opus"
+    "padding": 0,
+    "type": "command"
+  }
 }

@@ -1,13 +1,13 @@
 ---
 name: me:create-loop
-description: Utiliser quand l'utilisateur veut CRÉER ou définir un nouveau loop auto-cadencé (pas en lancer un existant). Conçoit un loop SUR MESURE (closed-loop discovery→planning→execution→verification→iteration), demande la portée (globale ~/.claude ou per-project <repo>/.claude) et les dimensions (mode closed/open, trigger self-pace/stop-hook, single/fleet) si non précisées, puis scaffolde la skill loop:<name> + sa commande /loop:<name> (+ hook si stop-hook).
+description: Utiliser quand l'utilisateur veut CRÉER ou définir un nouveau loop auto-cadencé (pas en lancer un existant). Conçoit un loop SUR MESURE (closed-loop discovery→planning→execution→verification→iteration), demande la portée (globale ~/.claude ou per-project <repo>/.claude) et les dimensions (mode closed/open, trigger self-pace/stop-hook, single/fleet) si non précisées, puis scaffolde la skill me:loop:<name> + sa commande /loop:<name> (+ hook si stop-hook).
 ---
 
-# me:create-loop — Concevoir un loop sur mesure (skill `loop:<name>`)
+# me:create-loop — Concevoir un loop sur mesure (skill `me:loop:<name>`)
 
-Ce skill **crée un loop auto-cadencé** matérialisé comme la skill `loop:<name>` (invocable `/loop:<name>`). Il ne lance rien — il conçoit et scaffolde la définition.
+Ce skill **crée un loop auto-cadencé** matérialisé comme la skill `me:loop:<name>` (invocable `/me:loop:<name>`). Il ne lance rien — il conçoit et scaffolde la définition.
 
-> Pour **exécuter** un loop, c'est `me:run-loop` (ou directement `/loop:<name>`).
+> Pour **exécuter** un loop, c'est `me:run-loop` (ou directement `/me:loop:<name>`).
 
 ## 🎯 Principe : custom, pas un gabarit rigide
 
@@ -59,17 +59,17 @@ Recueille (ou **infère du message, puis confirme**) : le `goal`, les 4 dimensio
 
 ## Étape 4 — Écrire (sur mesure)
 
-### 4a — La skill : `<base>/skills/loop/<name>/SKILL.md`
+### 4a — La skill : `<base>/skills/me/loop/<name>/SKILL.md`
 
 `<name>` en **kebab-case**. Si le dossier existe, demander : écraser, renommer, éditer. Pars du gabarit **self-pace closed** ci-dessous et **adapte-le au besoin** (ajoute/retire des phases, ajuste le protocole) :
 
 ```markdown
 ---
-name: loop:<name>
-description: Loop auto-cadencé — <goal>. Relance `<check_command>` jusqu'à « <exit_when> », max <max_iterations> itérations. Déclencheurs : "/loop:<name>", "lance le loop <name>", "<goal>".
+name: me:loop:<name>
+description: Loop auto-cadencé — <goal>. Relance `<check_command>` jusqu'à « <exit_when> », max <max_iterations> itérations. Déclencheurs : "/me:loop:<name>", "lance le loop <name>", "<goal>".
 ---
 
-# loop:<name>
+# me:loop:<name>
 
 Loop auto-cadencé. **mode:** <closed|open> · **trigger:** <self-pace|stop-hook> · **exécution:** <single|fleet>.
 Applique le **PROTOCOLE SELF-PACE** ci-dessous (canonique dans `me:run-loop`).
@@ -105,31 +105,31 @@ Garde-fous : ne jamais dépasser `max_iterations` ; jamais de succès sans `exit
 - **mode: open** → ajouter une ligne `budget` ; dans Iteration, autoriser l'exploration de pistes non spécifiées mais **borner par le budget** et un standard de qualité explicite (eval gate strict). Avertir l'utilisateur du coût.
 - **fleet** → remplacer la section Execution par une orchestration : l'agent courant joue l'**orchestrateur**, délègue chaque sous-objectif à un `Agent`/`Task` (specialist), qui peut lui-même fan-out via subagents ; le `check_command` reste l'**eval gate global**. Chaque specialist applique le même mini-cycle discovery→…→verification.
 
-### 4b — La commande : `<base>/commands/loop/<name>.md`
+### 4b — La commande : `<base>/commands/me/loop/<name>.md`
 
 ```markdown
 ---
 description: "Loop auto-cadencé — <goal> ; relance `<check_command>` jusqu'à « <exit_when> », max <max_iterations> itérations"
 ---
 
-Invoke the `loop:<name>` skill via the Skill tool to run this self-paced loop.
+Invoke the `me:loop:<name>` skill via the Skill tool to run this self-paced loop.
 
 Pass along any user arguments: $ARGUMENTS
 ```
 
 ### 4c — (si `trigger: stop-hook`) Hook Stop scopé à la skill
 
-Le hook ne doit s'armer **que quand le loop tourne** → on le déclare **dans le frontmatter de la skill** `loop:<name>` (la doc : actif « while the skill or agent is active »), pas dans `settings.json` global. Ajoute au frontmatter :
+Le hook ne doit s'armer **que quand le loop tourne** → on le déclare **dans le frontmatter de la skill** `me:loop:<name>` (la doc : actif « while the skill or agent is active »), pas dans `settings.json` global. Ajoute au frontmatter :
 
 ```yaml
 hooks:
   Stop:
     - hooks:
         - type: command
-          command: "<chemin_absolu_ou_$CLAUDE_PROJECT_DIR>/skills/loop/<name>/stop-hook.sh"
+          command: "<chemin_absolu_ou_$CLAUDE_PROJECT_DIR>/skills/me/loop/<name>/stop-hook.sh"
 ```
 
-Et génère `<base>/skills/loop/<name>/stop-hook.sh` (`chmod +x`), gabarit :
+Et génère `<base>/skills/me/loop/<name>/stop-hook.sh` (`chmod +x`), gabarit :
 
 ```bash
 #!/usr/bin/env bash
@@ -137,7 +137,7 @@ INPUT=$(cat)
 # Garde-fou anti-boucle : si un blocage Stop est déjà actif, laisser s'arrêter
 [ "$(printf '%s' "$INPUT" | jq -r '.stop_hook_active')" = "true" ] && exit 0
 # Compteur d'itérations (respecte max_iterations en plus du cap natif de 8)
-CNT_FILE="${TMPDIR:-/tmp}/loop-<name>.count"; N=$(cat "$CNT_FILE" 2>/dev/null || echo 0)
+CNT_FILE="${TMPDIR:-/tmp}/me/loop-<name>.count"; N=$(cat "$CNT_FILE" 2>/dev/null || echo 0)
 [ "$N" -ge <max_iterations> ] && { rm -f "$CNT_FILE"; exit 0; }
 # Eval gate
 OUT=$(<check_command> 2>&1)
@@ -145,7 +145,7 @@ if printf '%s' "$OUT" | <test exit_when, ex: grep -q 'P0P1_COUNT=0'>; then
   rm -f "$CNT_FILE"; exit 0   # exit_when atteint → laisser s'arrêter
 fi
 echo $((N+1)) > "$CNT_FILE"
-jq -n --arg r "exit_when non atteint (itération $((N+1))/<max_iterations>). Refais les steps du loop:<name> puis laisse le hook revérifier." '{decision:"block", reason:$r}'
+jq -n --arg r "exit_when non atteint (itération $((N+1))/<max_iterations>). Refais les steps du me:loop:<name> puis laisse le hook revérifier." '{decision:"block", reason:$r}'
 exit 0
 ```
 
@@ -156,10 +156,10 @@ exit 0
 Affiche les chemins créés et comment lancer :
 
 > Loop créé (portée <globale|per-project>, mode <…>, trigger <…>, <single|fleet>) :
-> - skill `<base>/skills/loop/<name>/SKILL.md` (`loop:<name>`)
-> - commande `<base>/commands/loop/<name>.md` (`/loop:<name>`)
-> <- hook `<base>/skills/loop/<name>/stop-hook.sh` (si stop-hook)>
+> - skill `<base>/skills/me/loop/<name>/SKILL.md` (`me:loop:<name>`)
+> - commande `<base>/commands/me/loop/<name>.md` (`/me:loop:<name>`)
+> <- hook `<base>/skills/me/loop/<name>/stop-hook.sh` (si stop-hook)>
 >
-> Pour lancer : `/loop:<name>` — ou « lance le loop <name> » (le moteur `me:run-loop` route). **Redémarrage de session** en général nécessaire pour la découverte.
+> Pour lancer : `/me:loop:<name>` — ou « lance le loop <name> » (le moteur `me:run-loop` route). **Redémarrage de session** en général nécessaire pour la découverte.
 >
 > Si portée **globale** + dotfiles chezmoi → versionner (skill `chezmoi`). Si **per-project** → committer avec le repo.

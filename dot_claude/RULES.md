@@ -38,7 +38,7 @@ Détail + diagrammes : `~/Desktop/WORKFLOW-w-Claude-Code.md`.
 - 🟡 **Branche (checkout courant)** : `/me:issue-branch-pr [desc]`.
 - 🟡 **Sprint** : `/goal [desc]` — worktree autonome, merge progressif dans `dev`.
 - 🟡 **Release** : `/generate-changelog` → bump version → tag → merge `main` → release `gh`.
-- 🟡 **Reviews** : attendre Copilot/autres → `/me:check-reviews [PR#] --auto` + **CI verte** avant merge.
+- 🟡 **Reviews** : par défaut, la boucle **`/me:loop:codex-review-pr`** (CLI Codex local, auto-cadencé, **depuis le worktree**, corrige les findings bloquants pertinents P0/P1 jusqu'à clean). En **second plan**, déclencher **`/me:check-reviews [PR#]`** manuellement selon le besoin (cascade interne : `@codex review` cloud → CLI locaux `codex`/`coderabbit review --agent` → bots GitHub Copilot/CodeRabbit) ; attendre la **CI verte** avant merge.
 
 Conventions :
 - 🔴 Branche feature uniquement, **jamais sur `main`/`master`** directement.
