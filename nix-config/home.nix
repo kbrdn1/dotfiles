@@ -131,6 +131,7 @@
 
     # Cloud Tools
     awscli2
+    ssm-session-manager-plugin # requis par awst (tunnel SSM vers RDS)
     stripe-cli
     google-workspace-cli.packages.${pkgs.system}.default
 
@@ -138,6 +139,12 @@
     nerd-fonts.hack
     nerd-fonts.symbols-only
   ];
+
+  # ----------------------------- Dotfiles (managed) ---------------------------
+
+  # Outils AWS (awsp/awst) : déposé en ~/.config/aws-tools.zsh, sourcé depuis
+  # programs.zsh.initExtra. Versionné dans ce repo (cf. ./aws-tools.zsh).
+  home.file.".config/aws-tools.zsh".source = ./aws-tools.zsh;
 
   # -------------------------- Programs Configuration --------------------------
 
@@ -422,6 +429,9 @@
 
       # Load secrets if they exist
       [[ -f ~/.zsh_secrets ]] && source ~/.zsh_secrets
+
+      # Outils AWS : awsp (sélecteur de profil) + awst (tunnel SSM vers RDS)
+      [ -s ~/.config/aws-tools.zsh ] && source ~/.config/aws-tools.zsh
 
       # History Configuration
       HISTFILE=$HOME/.zhistory
