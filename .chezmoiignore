@@ -29,6 +29,8 @@
 # Claude Plugins - Auto-generated (too large)
 .claude/plugins/cache/
 .claude/plugins/marketplaces/
+# État runtime (timestamps + projectPath clients) — purement local
+.claude/plugins/installed_plugins.json
 
 # ===================================================================
 # Claude Projects - Conversations & Runtime (Machine Specific)
