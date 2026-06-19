@@ -134,6 +134,7 @@
     ssm-session-manager-plugin # requis par awst (tunnel SSM vers RDS)
     stripe-cli
     google-workspace-cli.packages.${pkgs.system}.default
+    google-cloud-sdk # gcloud — requis par `gws auth setup`
 
     # Fonts
     nerd-fonts.hack
