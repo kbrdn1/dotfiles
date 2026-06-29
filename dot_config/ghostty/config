@@ -41,8 +41,8 @@ clipboard-trim-trailing-spaces = true
 # Shell
 shell-integration = zsh
 shell-integration-features = title
-# Tmux: démarre tmux et attache à la session main
-command = /bin/zsh -lic "tmux new-session -A -s main"
+# Tmux: crée la session 'mobile' (détachée, pour Moshi/tel) puis attache 'main'
+command = /bin/zsh -lic "tmux new-session -d -s mobile 2>/dev/null; tmux new-session -A -s main"
 
 # MacOS Specific
 # Options: native, transparent, tabs, hidden
@@ -68,5 +68,8 @@ desktop-notifications = true
 auto-update-channel = stable
 auto-update = check
 
-# Keybindings - send CMD+V to application instead of terminal paste
+# Keybindings
+# Libère cmd+enter pour l'app (Claude Code = chat:submit) au lieu de toggle_fullscreen.
+# Le plein écran reste accessible via cmd+ctrl+f (super+ctrl+f, défaut Ghostty).
+keybind = super+enter=unbind
 
