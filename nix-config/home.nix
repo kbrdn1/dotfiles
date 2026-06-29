@@ -155,8 +155,8 @@
 
     # Font
     font = {
-      name = "CaskaydiaCove Nerd Font Mono";
-      size = 14;
+      name = "OperatorMonoLig Nerd Font";
+      size = 13;
     };
 
     settings = {
@@ -169,11 +169,11 @@
 
       # Transparency and Blur - Very light transparency
       background_opacity = "0.95";
-      background_blur = 32;
+      background_blur = 25;
       dynamic_background_opacity = "yes";
 
       # Window Layout
-      window_padding_width = "10 0 10 0";
+      window_padding_width = "10";
       hide_window_decorations = "no";
       confirm_os_window_close = 0;
       remember_window_size = "yes";
@@ -190,6 +190,8 @@
       # Clipboard
       clipboard_control = "write-clipboard write-primary read-clipboard read-primary";
       copy_on_select = "yes";
+      # Ghostty: clipboard-trim-trailing-spaces = true
+      strip_trailing_spaces = "smart";
 
       # Advanced
       allow_remote_control = "yes";
@@ -198,10 +200,10 @@
       # MacOS Specific
       macos_titlebar_color = "background";
       macos_option_as_alt = "yes";
-      macos_show_window_title_in = "all";
+      macos_show_window_title_in = "none";
       macos_quit_when_last_window_closed = "yes";
       macos_colorspace = "displayp3";
-      macos_thicken_font = "0.5";
+      macos_thicken_font = "0.3";
 
       # Performance
       repaint_delay = 10;
@@ -224,8 +226,8 @@
       scrollback_lines = 10000;
       scrollback_pager = "less --chop-long-lines --RAW-CONTROL-CHARS +INPUT_LINE_NUMBER";
 
-      # Shell
-      shell = "zsh";
+      # Shell — démarre tmux et attache à la session main (parité Ghostty: command = ...)
+      shell = ''/bin/zsh -lic "tmux new-session -A -s main"'';
     };
 
     # Custom theme
@@ -253,15 +255,21 @@
       color6 #8abfb8
       color7 #e0e0e0
 
-      # Bright colors (8-15)
+      # Bright colors (8-15) — différenciées des normales (parité thème Ghostty claude-dark)
       color8 #999999
-      color9 #ff7a7a
-      color10 #86e89a
-      color11 #ffdf61
-      color12 #7ab8ff
-      color13 #c79bff
-      color14 #8abfb8
+      color9 #ff8f8f
+      color10 #98eda9
+      color11 #ffe47a
+      color12 #8fc3ff
+      color13 #d0abff
+      color14 #99ccc6
       color15 #ffffff
+
+      # Keybindings — parité Ghostty (super+enter → app)
+      # kitty bind cmd+enter à new_window et n'envoie pas cmd/super au programme.
+      # On émet nous-mêmes la séquence protocole clavier super+enter (CSI 13;9u :
+      # enter=13, modificateur super=8+1=9) que tmux relaie jusqu'à Claude Code (submit).
+      map cmd+enter send_text all \e[13;9u
     '';
   };
 
@@ -358,7 +366,12 @@
       # Bat
       export BAT_THEME="Claude Dark"
 
-      # NOTE: PATH exports moved to profileExtra (fixes ZSH bug #2991)
+      # PATH minimal pour les shells NON-login (ssh/mosh n'exécutent que .zshenv).
+      # Sans ça, mosh-server / tmux / moshi-hook / herdr sont introuvables et
+      # la connexion Moshi déconnecte instantanément.
+      # En login, profileExtra re-pose le PATH complet APRÈS path_helper et reste
+      # l'autorité (cf. bug #2991) — ici on ne fait que dépanner le non-login.
+      export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$HOME/.local/bin:$PATH"
     '';
 
     # Shell aliases
