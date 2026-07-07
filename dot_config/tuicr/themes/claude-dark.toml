@@ -1,0 +1,63 @@
+# claude-dark — tuicr theme matching gwm's `[theme] preset = "claude-dark"`.
+# Accent palette ported from gwm src/tui/theme.rs::claude_dark (Anthropic
+# "Pure Dark"): signature orange #d4825d / #c15f3c, green #86e89a, yellow
+# #ffdf61, purple #c79bff, red #ff7a7a on a warm near-black background.
+# Activate with `theme = "claude-dark"` in ~/.config/tuicr/config.toml.
+
+# -- base --------------------------------------------------------------------
+panel_bg     = "#1a1a1a"
+bg_highlight = "#383838"
+fg_primary   = "#e0e0e0"
+fg_secondary = "#b0b0b0"
+fg_dim       = "#999999"
+
+# -- diff --------------------------------------------------------------------
+diff_add            = "#86e89a"
+diff_add_bg         = "#16301e"
+diff_del            = "#ff7a7a"
+diff_del_bg         = "#331b1e"
+diff_context        = "#b0b0b0"
+diff_hunk_header    = "#d4825d"
+expanded_context_fg = "#999999"
+
+syntax_add_bg = "#16301e"
+syntax_del_bg = "#331b1e"
+
+# -- file status -------------------------------------------------------------
+file_added    = "#86e89a"
+file_modified = "#ffdf61"
+file_deleted  = "#ff7a7a"
+file_renamed  = "#c79bff"
+
+# -- review status -----------------------------------------------------------
+reviewed = "#86e89a"
+pending  = "#ffdf61"
+
+# -- comment types -----------------------------------------------------------
+comment_note       = "#d4825d"
+comment_suggestion = "#c79bff"
+comment_issue      = "#ff7a7a"
+comment_praise     = "#86e89a"
+
+# -- ui chrome ---------------------------------------------------------------
+border_focused   = "#c15f3c"
+border_unfocused = "#383838"
+status_bar_bg    = "#232323"
+cursor_color     = "#d4825d"
+cursor_line_bg   = "#262626"
+branch_name      = "#86e89a"
+help_indicator   = "#999999"
+
+# -- message banners (dark fg on colored bg) ---------------------------------
+message_info_fg    = "#1a1a1a"
+message_info_bg    = "#d4825d"
+message_warning_fg = "#1a1a1a"
+message_warning_bg = "#ffdf61"
+message_error_fg   = "#1a1a1a"
+message_error_bg   = "#ff7a7a"
+update_badge_fg    = "#1a1a1a"
+update_badge_bg    = "#ffdf61"
+
+# -- mode indicator ----------------------------------------------------------
+mode_fg = "#1a1a1a"
+mode_bg = "#d4825d"

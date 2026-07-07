@@ -1,0 +1,3 @@
+# tuicr — user config. Resolved from $XDG_CONFIG_HOME/tuicr/config.toml.
+# `theme` first checks bundled names, then themes/<name>.toml.
+theme = "claude-dark"
