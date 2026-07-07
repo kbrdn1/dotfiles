@@ -12,16 +12,18 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 - [SetApp Applications 🎯](#setapp-applications-)
 - [Aliases & Functions 🔧](#aliases--functions-)
   - [System Aliases 🖥️](#system-aliases)
+  - [Nix Aliases ❄️](#nix-aliases)
   - [Development Aliases 👨‍💻](#development-aliases)
   - [GitHub Copilot Aliases 🤖](#github-copilot-aliases)
+  - [Claude Code Aliases 🤖](#claude-code-aliases)
   - [Window Manager Service Aliases 🪟](#window-manager-service-aliases)
   - [Tmux Aliases 📟](#tmux-aliases)
   - [Custom Functions ⚙️](#custom-functions)
 - [Shortcuts & Keybindings ⌨️](#shortcuts--keybindings-)
-  - [Space & Window Navigation 🔍](#space--window-navigation)
-  - [Window Management 🪟](#window-management)
-  - [Window Stacking & Resizing 📐](#window-stacking--resizing)
-  - [Miscellaneous Controls 🎛️](#miscellaneous-controls)
+  - [Workspace & Window Focus 🔍](#workspace--window-focus)
+  - [Move Windows 🪟](#move-windows)
+  - [Layout & Resize 📐](#layout--resize)
+  - [Service Mode & Reload 🎛️](#service-mode--reload)
   - [Tmux Keybindings 🖥️](#tmux-keybindings-)
 - [Zed Configuration ⚡](#zed-configuration-)
   - [Keybindings 🎹](#keybindings-)
@@ -33,59 +35,77 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
 
 ### CLI Tools 🛠
 
-Our essential command-line tools:
+Command-line tools are installed **declaratively via [Nix](https://nixos.org/) +
+[Home Manager](https://github.com/nix-community/home-manager)** (see
+[`nix-config/home.nix`](nix-config/home.nix)). Homebrew is kept only for GUI
+casks and a few system/exclusive packages. This replaces the previous
+ASDF + Homebrew setup (see [MIGRATION_NIX.md](MIGRATION_NIX.md)).
 
 - **Package Management**
-  - [Homebrew](https://brew.sh/): The missing package manager for macOS
-  - [Asdf](https://asdf-vm.com/): Multi-language version manager
+  - [Nix](https://nixos.org/) + [Home Manager](https://github.com/nix-community/home-manager): Declarative package & dotfile management
+  - [Chezmoi](https://www.chezmoi.io/): Dotfiles manager
+  - [Homebrew](https://brew.sh/): GUI casks + system tools (managed outside this repo)
 
 - **Core Utilities**
-  - [Coreutils](https://www.gnu.org/software/coreutils/): GNU core utilities
-  - [Curl](https://curl.se/): Data transfer tool
-  - [Git](https://git-scm.com/): Version control system
-  - [OpenSSL](https://www.openssl.org/): SSL/TLS toolkit
-  - [Bison](https://www.gnu.org/software/bison/): Parser generator
+  - [Coreutils](https://www.gnu.org/software/coreutils/) / [findutils](https://www.gnu.org/software/findutils/) / [gnused](https://www.gnu.org/software/sed/) / [gnugrep](https://www.gnu.org/software/grep/): GNU core utilities
+  - [fd](https://github.com/sharkdp/fd): Fast `find` replacement
+  - [ripgrep](https://github.com/BurntSushi/ripgrep): Fast recursive grep
+  - [tree](http://mama.indstate.edu/users/ice/tree/): Directory tree view
+  - [jq](https://jqlang.github.io/jq/) / [yq](https://github.com/mikefarah/yq): JSON / YAML processors
+  - [curl](https://curl.se/) / [wget](https://www.gnu.org/software/wget/) / [httpie](https://httpie.io/): HTTP clients
 
 - **Shell & Terminal**
   - [Oh My Zsh](https://ohmyz.sh/): Zsh configuration framework
   - [Powerlevel10k](https://github.com/romkatv/powerlevel10k): Zsh theme
-  - [Bat](https://github.com/sharkdp/bat): Enhanced cat command
-  - [Eza](https://eza.rocks/): Modern ls replacement
+  - [bat](https://github.com/sharkdp/bat): Enhanced `cat` (Claude Dark theme)
+  - [eza](https://eza.rocks/): Modern `ls` replacement
   - [Yazi](https://github.com/sxyazi/yazi): Terminal file manager
+  - [fzf](https://github.com/junegunn/fzf): Fuzzy finder
+  - [zoxide](https://github.com/ajeetdsouza/zoxide): Smarter `cd`
+  - [sesh](https://github.com/joshmedeski/sesh): Smart tmux session manager
   - [Tmux](https://github.com/tmux/tmux): Terminal multiplexer
+  - [htop](https://htop.dev/) / [bottom](https://github.com/ClementTsang/bottom) / [duf](https://github.com/muesli/duf): System & disk monitors
+
+- **Languages & Runtimes**
+  - [Node.js 24](https://nodejs.org/) + [Bun](https://bun.sh/) + [Deno](https://deno.land/) + [pnpm](https://pnpm.io/): JavaScript/TypeScript
+  - [Go](https://golang.org/): Programming language
+  - [Rust](https://www.rust-lang.org/): `rustc`, `cargo`, `rust-analyzer`, `clippy`, `rustfmt`
+  - [Python 3.13](https://www.python.org/): Programming language
+  - [PHP 8.4](https://www.php.net/) + [Symfony CLI](https://symfony.com/download): PHP ecosystem (pcov + redis extensions)
+  - [Neovim](https://neovim.io/): Hyperextensible Vim-based editor
 
 - **Development Tools**
-  - [PHP](https://www.php.net/) & [Composer](https://getcomposer.org/): PHP ecosystem
-  - [Python](https://www.python.org/): Programming language
-  - [Symfony CLI](https://symfony.com/download): Symfony framework tools
-  - [Node.js](https://nodejs.org/): JavaScript runtime
-  - [Rust](https://www.rust-lang.org/): Systems programming language
-  - [Go](https://golang.org/): Programming language
-  - [Bun](https://bun.sh/): JavaScript runtime & toolkit
-  - [Deno](https://deno.land/): JavaScript runtime
-
-- **Productivity Tools**
-  - [GH](https://cli.github.com/): GitHub CLI
+  - [git](https://git-scm.com/) + [GH](https://cli.github.com/): Version control & GitHub CLI
   - [Lazygit](https://github.com/jesseduffield/lazygit): Git TUI
   - [Lazydocker](https://github.com/jesseduffield/lazydocker): Docker TUI
-  - [Fzf](https://github.com/junegunn/fzf): Fuzzy finder
-  - [Zoxide](https://github.com/ajeetdsouza/zoxide): Smarter cd
-  - [Thefuck](https://github.com/nvbn/thefuck): Command correction
-  - [Neofetch](https://github.com/dylanaraps/neofetch): System info tool
-  - [Dashlane CLI](https://cli.dashlane.com/): Password manager CLI
+  - [Lazysql](https://github.com/jorgerojas26/lazysql): Database TUI
+  - [Tuicr](https://github.com/agavra/tuicr): Terminal code review TUI (vim keybindings, `claude-dark` theme)
+  - [just](https://github.com/casey/just): Command runner
+  - [tokei](https://github.com/XAMPPRocky/tokei) / [hyperfine](https://github.com/sharkdp/hyperfine): Code stats & benchmarking
+  - [pandoc](https://pandoc.org/): Document converter
+
+- **Kubernetes & Cloud**
+  - [kubectl](https://kubernetes.io/docs/reference/kubectl/) + [Helm](https://helm.sh/) + [minikube](https://minikube.sigs.k8s.io/): Kubernetes core
+  - [k9s](https://k9scli.io/) / [kubectx](https://github.com/ahmetb/kubectx) / [stern](https://github.com/stern/stern) / [kustomize](https://kustomize.io/) / [kubecolor](https://github.com/kubecolor/kubecolor): K8s tooling
+  - [ArgoCD](https://argo-cd.readthedocs.io/) / [dive](https://github.com/wagoodman/dive) / [popeye](https://github.com/derailed/popeye): GitOps & cluster/image auditing
+  - [AWS CLI](https://aws.amazon.com/cli/) (+ SSM plugin), [Stripe CLI](https://stripe.com/docs/stripe-cli), [gws](https://github.com/kbrdn1) (Google Workspace CLI), [gcloud](https://cloud.google.com/sdk)
+
+- **Media**
+  - [ffmpeg](https://ffmpeg.org/) / [ImageMagick](https://imagemagick.org/) / [poppler](https://poppler.freedesktop.org/): Media & document processing
+  - [rmpc](https://github.com/mierak/rmpc) / [mpc](https://www.musicpd.org/clients/mpc/): MPD music clients
 
 ### GUI Tools 🖥
 
 Essential graphical tools:
 
-- **Window Management**
-  - [Yabai](https://github.com/koekeishiya/yabai): Tiling window manager
-  - [Skhd](https://github.com/koekeishiya/skhd): Hotkey daemon
-  - [JankyBorders](https://github.com/FelixKratz/JankyBorders): Window borders
-  - [SketchyVim](https://github.com/FelixKratz/SketchyVim): Vim input fields
+- **Window Management** (migrated from Yabai + skhd — see [MIGRATION-YABAI-TO-AEROSPACE.md](MIGRATION-YABAI-TO-AEROSPACE.md))
+  - [AeroSpace](https://github.com/nikitabobko/AeroSpace): i3-like tiling window manager (8 workspaces, native bindings)
+  - [Karabiner-Elements](https://karabiner-elements.pqrs.org/): Keyboard remapper — maps right <kbd>⌥</kbd> to F18, the AeroSpace leader key
+  - [JankyBorders](https://github.com/FelixKratz/JankyBorders): Active window borders
+  - [SketchyVim](https://github.com/FelixKratz/SketchyVim): Vim keybindings in native text fields
 
 - **UI Enhancement**
-  - [Sketchybar](https://github.com/FelixKratz/SketchyBar): Custom menu bar
+  - [Sketchybar](https://github.com/FelixKratz/SketchyBar): Custom menu bar (AeroSpace + SketchyVim integration)
   - [SF Symbols](https://developer.apple.com/sf-symbols/): Apple system symbols
   - [Sketchybar App Font](https://github.com/kvndrsslr/sketchybar-app-font): Icon font
 
@@ -94,10 +114,11 @@ Essential graphical tools:
 Key applications:
 
 - **Development**
-  - [Zed](https://zed.dev/): Modern code editor
-  - [Ghostty](https://ghostty.org/): GPU-accelerated terminal
-  - [Warp](https://warp.dev/): Rust-based terminal
-  - [OrbStack](https://orbstack.dev/): Docker alternative
+  - [Ghostty](https://ghostty.org/) + **herdr**: Primary dev environment — GPU-accelerated terminal + workspace/agent manager
+  - [Zed](https://zed.dev/): Secondary IDE
+  - [Neovim](https://neovim.io/): Terminal editor
+  - [OrbStack](https://orbstack.dev/): Docker / Linux VM alternative
+  - [Warp](https://warp.dev/): Alternative terminal
   - [Postman](https://www.postman.com/): API platform
 
 - **Browsers & Communication**
@@ -134,6 +155,9 @@ Premium applications via SetApp:
 
 ## Aliases & Functions 🔧
 
+> Aliases and functions are defined in [`nix-config/home.nix`](nix-config/home.nix)
+> (`programs.zsh.shellAliases` / `initExtra`), not in a standalone `.zshrc`.
+
 ### System Aliases
 | Alias | Command | Description |
 |-------|---------|-------------|
@@ -141,19 +165,25 @@ Premium applications via SetApp:
 | `config` | `cd $XDG_CONFIG_HOME` | Navigate to config directory |
 | `edit-config` | `$EDITOR $XDG_CONFIG_HOME` | Edit config directory |
 | `reload-zsh` | `source ~/.zshrc` | Reload ZSH configuration |
-| `edit-zsh` | `$EDITOR ~/.zshrc` | Edit ZSH configuration |
+
+### Nix Aliases
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `reload-nix` | `home-manager switch --flake ~/nix-config` | Apply the Home Manager config |
+| `edit-nix` | `$EDITOR ~/nix-config/home.nix` | Edit `home.nix` |
+| `edit-flake` | `$EDITOR ~/nix-config/flake.nix` | Edit `flake.nix` |
 
 ### Development Aliases
 | Alias | Command | Description |
 |-------|---------|-------------|
-| `py`, `python` | `/usr/bin/python3` | Python 3 |
-| `pa` | `php artisan` | PHP Artisan CLI |
-| `a`, `adonis` | `node ace` | Adonis Ace CLI |
+| `py` | `python3` | Python 3 (Nix) |
+| `python` | `/usr/bin/python3` | System Python 3 |
+| `pa`, `laravel` | `php artisan` | Laravel Artisan CLI |
+| `a`, `adonis` | `node ace` | AdonisJS Ace CLI |
 | `ls` | `eza --color=always --long --git --no-filesize --icons=always --no-time --no-user --no-permissions --group-directories-first` | Enhanced listing |
-| `cd` | `zoxide` | Enhanced directory navigation |
 | `lg` | `lazygit` | Terminal UI for Git |
 | `lzd` | `lazydocker` | Terminal UI for Docker |
-| `f` | `fzf --tmux top,50%` | Fuzzy finder in Tmux fixed on top with 50% height |
+| `f` | `fzf --tmux top,50%` | Fuzzy finder in a Tmux popup (top, 50% height) |
 
 ### GitHub Copilot Aliases
 | Alias | Command | Description |
@@ -163,6 +193,14 @@ Premium applications via SetApp:
 | `gcc` | `gh copilot config` | Configure Copilot |
 | `gca` | `gh copilot alias` | Manage Copilot aliases |
 
+### Claude Code Aliases
+| Alias | Command | Description |
+|-------|---------|-------------|
+| `cc` | `claude --dangerously-skip-permissions` | Claude Code (skip permission prompts) |
+| `cca` | `claude --enable-auto-mode` | Claude Code in auto mode |
+| `ccc` | `claude --dangerously-skip-permissions --chrome` | Claude Code with Chrome |
+| `ccv` | `claude --dangerously-skip-permissions --verbose` | Claude Code verbose |
+
 ### Window Manager Service Aliases
 | Alias | Command | Description |
 |-------|---------|-------------|
@@ -170,88 +208,94 @@ Premium applications via SetApp:
 | `edit-sketchybar` | `$EDITOR $XDG_CONFIG_HOME/sketchybar` | Edit Sketchybar config |
 | `reload-borders` | `brew services restart borders` | Restart JankyBorders |
 | `edit-borders` | `$EDITOR $XDG_CONFIG_HOME/borders` | Edit JankyBorders config |
-| `reload-yabai` | `yabai --restart-service` | Restart Yabai |
-| `edit-yabai` | `$EDITOR $XDG_CONFIG_HOME/yabai` | Edit Yabai config |
-| `reload-skhd` | `skhd --restart-service` | Restart SKHD |
-| `edit-skhd` | `$EDITOR $XDG_CONFIG_HOME/skhd/skhdrc` | Edit SKHD config |
+
+> AeroSpace has no reload alias — it reloads in-config via <kbd>⌥→</kbd> <kbd>⇧</kbd><kbd>R</kbd> (see [keybindings](#window-management)).
 
 ### Tmux Aliases
 | Alias | Command | Description |
 |-------|---------|-------------|
 | `t` | `tmux -2` | Launch Tmux with 256 colors |
 | `reload-tmux` | `tmux source-file ~/.tmux.conf` | Reload Tmux configuration |
-| `edit-tmux` | `$EDITOR ~/.tmux.conf` | Edit Tmux configuration |
+| `ad` | `TMUX="" agent-deck` | Launch Agent Deck (outside a nested tmux) |
+
+### Custom Functions
+| Function | Description |
+|----------|-------------|
+| `y [dir]` | Open [Yazi](https://github.com/sxyazi/yazi) and `cd` into the last visited directory on exit |
+| `ccp [path]` | Launch Claude Code in a new tmux window of the `main` session (opens Ghostty if needed) |
+| `awsp [filter]` | Interactive AWS profile picker (fzf), exports `AWS_PROFILE`, runs `aws sso login` if the session expired |
+| `awst` | SSM port-forwarding tunnel to an RDS instance through an SSM-managed bastion (fzf pickers) |
+| `zen` | Toggle the Sketchybar "zen" plugin |
+| `edit-zsh` / `edit-tmux` / `edit-git` | Jump `$EDITOR` straight to the matching section of `home.nix` |
 
 ## Shortcuts & Keybindings ⌨️
 
-### Space & Window Navigation
-| Shortcut | Action |
-|----------|--------|
-| <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>5</kbd> | Focus space 1-5 on current display |
-| <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Focus window in direction (west/south/north/east) |
-| <kbd>⌥</kbd> + <kbd>0</kbd> | Focus first window |
-| <kbd>⌥</kbd> + <kbd>$</kbd> | Focus last window |
-| <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle float window |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>f</kbd> | Toggle fullscreen |
-| <kbd>⌥</kbd> + <kbd>f</kbd> | Toggle parent zoom |
+> **AeroSpace leader key.** Karabiner maps **right <kbd>⌥</kbd> → F18**, which
+> enters AeroSpace's `aero` mode. Each shortcut below is **press <kbd>⌥→</kbd>
+> (right Option), then the key**. A <kbd>⌃</kbd><kbd>⌥</kbd> + key fallback exists
+> for external keyboards. Workspace keys map letters to numbers:
+> `1 2 3` → 1-3, `Q W E` → 4-6, `O` → 7 (Obsidian), `C` → 8 (Claude).
 
-### Window Management
+### Workspace & Window Focus
 | Shortcut | Action |
 |----------|--------|
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Move window in direction |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>s</kbd> | Toggle split orientation |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>1</kbd>-<kbd>5</kbd> | Move window to space 1-5 |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>b</kbd>/<kbd>n</kbd> | Move window to prev/next space |
+| <kbd>⌥→</kbd> <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> · <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd> · <kbd>O</kbd>/<kbd>C</kbd> | Focus workspace 1-8 |
+| <kbd>⌥→</kbd> <kbd>Tab</kbd> | Back-and-forth between the last two workspaces |
+| <kbd>⌥→</kbd> <kbd>H</kbd>/<kbd>J</kbd>/<kbd>K</kbd>/<kbd>L</kbd> (or arrows) | Focus window left/down/up/right |
 
-### Window Stacking & Resizing
+### Move Windows
 | Shortcut | Action |
 |----------|--------|
-| <kbd>⇧</kbd> + <kbd>⌃</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Stack window in direction |
-| <kbd>⇧</kbd> + <kbd>⌃</kbd> + <kbd>b</kbd>/<kbd>p</kbd> | Navigate through stack |
-| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | Resize window |
-| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>e</kbd> | Equalize window sizes |
-| <kbd>⌃</kbd> + <kbd>⌥</kbd> + <kbd>g</kbd> | Toggle gaps |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd><kbd>H</kbd>/<kbd>J</kbd>/<kbd>K</kbd>/<kbd>L</kbd> (or arrows) | Move window left/down/up/right |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd> + workspace key (`1-3`, `Q W E`, `O`, `C`) | Move window to workspace 1-8 |
 
-### Miscellaneous Controls
+### Layout & Resize
 | Shortcut | Action |
 |----------|--------|
-| <kbd>⌥</kbd> + <kbd>-</kbd>/<kbd>_</kbd> | Create new window in horizontal/vertical split |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>Space</kbd> | Toggle Sketchybar visibility |
-| <kbd>⇧</kbd> + <kbd>⌥</kbd> + <kbd>r</kbd> | Reload Sketchybar |
+| <kbd>⌥→</kbd> <kbd>/</kbd> | Tiles layout (toggle horizontal/vertical) |
+| <kbd>⌥→</kbd> <kbd>,</kbd> | Accordion layout |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd><kbd>Space</kbd> | Toggle floating / tiling |
+| <kbd>⌥→</kbd> <kbd>F</kbd> | Fullscreen |
+| <kbd>⌥→</kbd> <kbd>-</kbd>/<kbd>=</kbd> | Resize smart −/＋50 |
+| <kbd>⌥→</kbd> <kbd>R</kbd> | Enter **resize mode** (<kbd>H</kbd>/<kbd>J</kbd>/<kbd>K</kbd>/<kbd>L</kbd> to resize, <kbd>Enter</kbd>/<kbd>Esc</kbd> to exit) |
+
+### Service Mode & Reload
+| Shortcut | Action |
+|----------|--------|
+| <kbd>⌥→</kbd> <kbd>⇧</kbd><kbd>R</kbd> | Reload AeroSpace config |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd><kbd>X</kbd> | Close focused window |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd><kbd>=</kbd> | Balance window sizes |
+| <kbd>⌥→</kbd> <kbd>Enter</kbd> | Open Ghostty |
+| <kbd>⌥→</kbd> <kbd>⇧</kbd><kbd>;</kbd> | Enter **service mode** (<kbd>R</kbd> flatten tree, <kbd>Backspace</kbd> close others, <kbd>H</kbd>/<kbd>V</kbd>/<kbd>S</kbd>/<kbd>W</kbd>/<kbd>T</kbd> layouts, <kbd>Esc</kbd> reload + exit) |
 
 ### Tmux Keybindings 🖥️
-| Shortcut | Action | Description |
-|----------|--------|-------------|
-| <kbd>⌃</kbd> + <kbd>s</kbd> | `prefix` | Prefix key (replaces default <kbd>⌃</kbd> + <kbd>b</kbd>) |
 
-#### Session Management
-| Shortcut | Action | Description |
-|----------|--------|-------------|
-| <kbd>prefix</kbd> + <kbd>r</kbd> | `source-file ~/.tmux.conf` | Reload tmux configuration |
-| <kbd>prefix</kbd> + <kbd>o</kbd> | `tmux-sessionx` | Open session manager |
-| <kbd>prefix</kbd> + <kbd>Space</kbd> | `which-key` | Show available keybindings |
+Prefix is <kbd>⌃</kbd> + <kbd>a</kbd> (replaces the default <kbd>⌃</kbd> + <kbd>b</kbd>). Mouse enabled, vi copy mode, windows/panes 1-indexed.
 
-#### Window Management
+#### Session & Window Management
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| <kbd>prefix</kbd> + <kbd>c</kbd> | `new-window` | Create new window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>H</kbd> | `previous-window` | Go to previous window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>L</kbd> | `next-window` | Go to next window |
-| <kbd>prefix</kbd> + <kbd>⌃</kbd> + <kbd>x</kbd> | `kill-window` | Close current window |
+| <kbd>prefix</kbd> <kbd>T</kbd> | `sesh connect` (fzf) | Smart session picker ([sesh](https://github.com/joshmedeski/sesh)) |
+| <kbd>prefix</kbd> <kbd>L</kbd> | `sesh last` | Switch to last session |
+| <kbd>prefix</kbd> <kbd>r</kbd> | `source-file ~/.tmux.conf` | Reload configuration |
+| <kbd>prefix</kbd> <kbd>c</kbd> | `new-window` | New window (current path) |
+| <kbd>prefix</kbd> <kbd>b</kbd> / <kbd>n</kbd> | `previous/next-window` | Previous / next window |
+| <kbd>prefix</kbd> <kbd>X</kbd> | `kill-window` | Close window |
 
 #### Pane Management
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| <kbd>prefix</kbd> + <kbd>h</kbd> | `select-pane -L` | Focus left pane |
-| <kbd>prefix</kbd> + <kbd>j</kbd> | `select-pane -D` | Focus down pane |
-| <kbd>prefix</kbd> + <kbd>k</kbd> | `select-pane -U` | Focus up pane |
-| <kbd>prefix</kbd> + <kbd>l</kbd> | `select-pane -R` | Focus right pane |
-| <kbd>prefix</kbd> + <kbd>x</kbd> | `kill-pane` | Close current pane |
-| <kbd>prefix</kbd> + <kbd>-</kbd> | `split-window -h` | Split pane horizontally |
-| <kbd>prefix</kbd> + <kbd>_</kbd> | `split-window -v` | Split pane vertically |
+| <kbd>prefix</kbd> <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | `select-pane` | Focus pane left/down/up/right |
+| <kbd>⌃</kbd> <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> | vim-aware `select-pane` | Focus pane (tmux.nvim, no prefix) |
+| <kbd>prefix</kbd> <kbd>H</kbd>/<kbd>J</kbd>/<kbd>K</kbd>/<kbd>L</kbd> | `resize-pane` (repeatable) | Resize pane |
+| <kbd>prefix</kbd> <kbd>v</kbd> / <kbd>s</kbd> | `split-window -h` / `-v` | Split horizontal / vertical (current path) |
+| <kbd>prefix</kbd> <kbd>x</kbd> | `kill-pane` | Close pane |
+| <kbd>prefix</kbd> <kbd>V</kbd> | `copy-mode` | Enter vi copy mode |
+| <kbd>prefix</kbd> <kbd>u</kbd> | `fzf-url` | Pick a URL from the pane |
 
 > [!NOTE]
-> The prefix key (<kbd>⌃</kbd> + <kbd>s</kbd>) must be pressed before using most tmux commands. After pressing the prefix key, release it before pressing the command key.
+> Plugins (TPM): tmux-sensible, tmux-yank, tmux-cpu, tmux-battery, tmux-fzf-url.
+> The prefix key (<kbd>⌃</kbd> + <kbd>a</kbd>) must be pressed and released before most commands.
 
 ## Zed Configuration ⚡
 
@@ -456,6 +500,16 @@ chezmoi init https://github.com/kbrdn1/dotfiles.git
 chezmoi apply
 ```
 
+5. **Install Nix & Home Manager** (CLI tools, shell, aliases — see [MIGRATION_NIX.md](MIGRATION_NIX.md))
+```bash
+# Install Nix (multi-user daemon)
+sh <(curl -L https://nixos.org/nix/install) --daemon
+
+# Apply the Home Manager config
+nix run home-manager/release-24.11 -- switch --flake ~/nix-config
+# thereafter: reload-nix
+```
+
 ### Post-Installation
 
 1. Configure system preferences:
@@ -477,7 +531,7 @@ defaults write com.apple.dock autohide -bool true
 defaults write com.apple.dock autohide-time-modifier -float 0.15
 ```
 
-2. Set up Yabai permissions
+2. Grant accessibility permissions to AeroSpace and Karabiner-Elements
 3. Install SetApp applications manually
 4. Restart your computer
 
