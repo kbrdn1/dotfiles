@@ -79,8 +79,8 @@ ASDF + Homebrew setup (see [MIGRATION_NIX.md](MIGRATION_NIX.md)).
   - [Lazygit](https://github.com/jesseduffield/lazygit): Git TUI
   - [Lazydocker](https://github.com/jesseduffield/lazydocker): Docker TUI
   - [Lazysql](https://github.com/jorgerojas26/lazysql): Database TUI
+  - [gwm](https://github.com/kbrdn1/gwm-cli): Git worktree manager (TUI + CLI)
   - [Tuicr](https://github.com/agavra/tuicr): Terminal code review TUI (vim keybindings, `claude-dark` theme)
-  - [just](https://github.com/casey/just): Command runner
   - [tokei](https://github.com/XAMPPRocky/tokei) / [hyperfine](https://github.com/sharkdp/hyperfine): Code stats & benchmarking
   - [pandoc](https://pandoc.org/): Document converter
 
@@ -92,7 +92,6 @@ ASDF + Homebrew setup (see [MIGRATION_NIX.md](MIGRATION_NIX.md)).
 
 - **Media**
   - [ffmpeg](https://ffmpeg.org/) / [ImageMagick](https://imagemagick.org/) / [poppler](https://poppler.freedesktop.org/): Media & document processing
-  - [rmpc](https://github.com/mierak/rmpc) / [mpc](https://www.musicpd.org/clients/mpc/): MPD music clients
 
 ### GUI Tools 🖥
 
@@ -103,9 +102,11 @@ Essential graphical tools:
   - [Karabiner-Elements](https://karabiner-elements.pqrs.org/): Keyboard remapper — maps right <kbd>⌥</kbd> to F18, the AeroSpace leader key
   - [JankyBorders](https://github.com/FelixKratz/JankyBorders): Active window borders
   - [SketchyVim](https://github.com/FelixKratz/SketchyVim): Vim keybindings in native text fields
+  - [SwipeAeroSpace](https://github.com/MediosZ/SwipeAeroSpace): Trackpad swipe gestures to switch AeroSpace workspaces
 
 - **UI Enhancement**
   - [Sketchybar](https://github.com/FelixKratz/SketchyBar): Custom menu bar (AeroSpace + SketchyVim integration)
+  - [Open Island](https://github.com/Octane0411/open-vibe-island): Notch companion to monitor & control AI coding agents (Claude Code, Codex…)
   - [SF Symbols](https://developer.apple.com/sf-symbols/): Apple system symbols
   - [Sketchybar App Font](https://github.com/kvndrsslr/sketchybar-app-font): Icon font
 
@@ -118,14 +119,14 @@ Key applications:
   - [Zed](https://zed.dev/): Secondary IDE
   - [Neovim](https://neovim.io/): Terminal editor
   - [OrbStack](https://orbstack.dev/): Docker / Linux VM alternative
-  - [Warp](https://warp.dev/): Alternative terminal
   - [Postman](https://www.postman.com/): API platform
 
 - **Browsers & Communication**
   - [Helium](https://helium.computer/): Privacy-first Chromium browser
-  - [Slack](https://slack.com/): Team communication
+  - [Mattermost](https://mattermost.com/): Team communication
   - [Discord](https://discord.com/): Community platform
   - [WhatsApp](https://www.whatsapp.com/): Messaging
+  - [Spark Mail](https://sparkmailapp.com/): Email client
 
 - **Productivity**
   - [Raycast](https://raycast.com/): Launcher & productivity tool
@@ -145,13 +146,9 @@ Premium applications via SetApp:
   - [CleanShot X](https://cleanshot.com/): Screenshot tool
   - [PixelSnap](https://getpixelsnap.com/): Measurement tool
   - [Sip](https://sipapp.io/): Color management
-  - [Yoink](https://eternalstorms.at/yoink/mac/): Drag and drop helper
 
 - **System Tools**
   - [CleanMyMac X](https://macpaw.com/cleanmymac): System cleaner
-  - [NotchNook](https://lo.cafe/notchnook): Notch utility
-  - [Canary Mail](https://canarymail.io/): Email client
-  - [Clop](https://setapp.com/apps/clop): Media optimizer
 
 ## Aliases & Functions 🔧
 
