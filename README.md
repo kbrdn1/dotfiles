@@ -126,7 +126,6 @@ Key applications:
   - [Mattermost](https://mattermost.com/): Team communication
   - [Discord](https://discord.com/): Community platform
   - [WhatsApp](https://www.whatsapp.com/): Messaging
-  - [Spark Mail](https://sparkmailapp.com/): Email client
 
 - **Productivity**
   - [Raycast](https://raycast.com/): Launcher & productivity tool
@@ -149,6 +148,7 @@ Premium applications via SetApp:
 
 - **System Tools**
   - [CleanMyMac X](https://macpaw.com/cleanmymac): System cleaner
+  - [Spark Mail](https://sparkmailapp.com/): Email client
 
 ## Aliases & Functions 🔧
 
