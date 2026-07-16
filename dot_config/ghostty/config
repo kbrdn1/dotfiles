@@ -41,8 +41,6 @@ clipboard-trim-trailing-spaces = true
 # Shell
 shell-integration = zsh
 shell-integration-features = title
-# Tmux: crée la session 'mobile' (détachée, pour Moshi/tel) puis attache 'main'
-command = /bin/zsh -lic "tmux new-session -d -s mobile 2>/dev/null; tmux new-session -A -s main"
 
 # MacOS Specific
 # Options: native, transparent, tabs, hidden
