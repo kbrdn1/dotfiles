@@ -160,17 +160,24 @@ flowchart TD
 
 > Publication d'une version.
 
-**Commande :** `/generate-changelog` *(per-project)* → bump version → tag → merge `main` → release `gh`.
+**Commande :** `/generate-changelog` *(per-project)* → bump version → merge `dev` → `main` → **tag** → release `gh`.
 
-📁 *Réf. : `gwm-cli/`, `fiches-pedagogiques-front/`, `fiches-pedagogiques-api-rest/`*
+⚠️ **Le tag vient APRÈS le merge sur `main`**, jamais avant : il doit pointer le commit qui porte déjà le bump de version et le changelog de la version, sinon la publication n'est pas reproductible depuis le tag.
+
+🔒 **Si `main` est protégée** (PR + status checks requis — c'est le cas de `gwm-cli`) : le merge `dev` → `main` passe par une **PR**, pas par un merge local direct. Attendre les checks verts, merger en **merge commit**, puis tagger le merge commit sur `main`. Avec `enforce_admins`, l'admin n'a aucune échappatoire : `git push origin main` est rejeté, il n'y a pas de plan B en urgence. Vérifier avant de cut : `gh api repos/<owner>/<repo>/branches/main/protection`.
+
+📁 *Réf. : `gwm-cli/` (main protégée), `fiches-pedagogiques-front/`, `fiches-pedagogiques-api-rest/`*
 
 ```mermaid
 flowchart LR
-    A["/generate-changelog<br/>(per-project)"] --> B[Bump version<br/>dans les fichiers]
-    B --> C[Tag de release<br/>via git]
-    C --> D[Merge sur main]
-    D --> E[Publication release<br/>via gh]
-    E --> F[✅ Release publiée]
+    A["/generate-changelog<br/>(per-project)"] --> B[Bump version<br/>+ changelog de version]
+    B --> C{main protégée ?}
+    C -->|oui| D[PR dev → main<br/>checks verts]
+    C -->|non| E[Merge local<br/>dev → main]
+    D --> F[Tag sur main<br/>APRÈS le merge]
+    E --> F
+    F --> G[Publication release<br/>via gh]
+    G --> H[✅ Release publiée]
 ```
 
 ---
