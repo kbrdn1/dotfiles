@@ -120,3 +120,20 @@
 **/.DS_Store
 **/*.bak
 **/*.bak-*
+
+# --- Repo documentation, not dotfiles -------------------------------------
+# These belong to the dotfiles repo itself. Without this chezmoi reads them as
+# managed files missing from $HOME and offers to copy them there.
+CONTRIBUTING.md
+MIGRATION_NIX.md
+MIGRATION_HOMEBREW.md
+MIGRATION-YABAI-TO-AEROSPACE.md
+
+# --- Kept in git, not deployed on this machine ----------------------------
+# Archived deliberately: still versioned, but not applied here, so they stop
+# showing as permanent drift. Drop the line to start deploying one again.
+.config/skhd/
+tmux_custom_modules/
+.claude/scripts/statusline/
+.config/sketchybar/plugins/music_controls.sh
+.config/sketchybar/plugins/spaces/handler.sh

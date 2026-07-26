@@ -18,9 +18,7 @@
 
 | Task Type | Best Tool | Alternative |
 |-----------|-----------|-------------|
-| UI components | Magic MCP | Manual coding |
 | Deep analysis | Sequential MCP | Native reasoning |
-| Symbol operations | Serena MCP | Manual search |
 | Pattern edits | Morphllm MCP | Individual edits |
 | Documentation | Context7 MCP | Web search |
 | Browser testing | Playwright MCP | Unit tests |

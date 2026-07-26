@@ -18,7 +18,6 @@
 
 ## Works Best With
 - **Sequential**: Context7 provides docs → Sequential analyzes implementation strategy
-- **Magic**: Context7 supplies patterns → Magic generates framework-compliant components
 
 ## Examples
 ```

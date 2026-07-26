@@ -19,7 +19,6 @@
 
 ## Works Best With
 - **Sequential**: Sequential plans test strategy → Playwright executes browser automation
-- **Magic**: Magic creates UI components → Playwright validates accessibility and behavior
 
 ## Examples
 ```
