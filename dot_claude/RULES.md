@@ -52,6 +52,8 @@ Conventions :
 ## Qualité & exécution
 - 🟡 **Complétude** : si je commence une implémentation, je la termine en état fonctionnel. Pas de TODO sur du code cœur, pas de mock/stub, pas de `not implemented`. Code réel uniquement.
 - 🟡 **Scope** : construire **uniquement ce qui est demandé** (MVP d'abord, YAGNI). Pas de features spéculatives ni de bloat non demandé.
+- 🟡 **Diff chirurgical** : ne toucher que ce que la tâche exige. Pas d'« amélioration » du code/commentaires/formatage adjacents, pas de refacto de ce qui n'est pas cassé, épouser le style existant même si je ferais autrement. Chaque ligne modifiée doit tracer jusqu'à la demande.
+- 🟡 **Suppression scopée** : supprimer uniquement ce que **mon** changement a rendu orphelin (imports, variables, fonctions). Le code mort préexistant : le signaler, pas le supprimer — sauf demande explicite. (Cas formatter repo-wide : garde-fou dans la skill `git-flow-worktree`.)
 - 🔴 **Échecs** : investiguer la cause racine (WHY), jamais désactiver/skip un test ou une validation pour faire passer. Corriger la cause, pas le symptôme.
 - 🟡 **Workspace propre** : supprimer les fichiers temporaires en fin de tâche. Placer tests/scripts/docs dans leurs dossiers dédiés.
 
