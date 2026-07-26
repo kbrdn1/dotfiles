@@ -18,6 +18,7 @@
 | **Navigateur / E2E** | `playwright` *au besoin* | `chrome-devtools` *(sur demande)* | — |
 | **Review de code (PR)** | boucle `/me:loop:codex-review-pr` (CLI Codex local, auto-cadencé, post-PR) | `/me:check-reviews` *(second plan, déclenché manuellement selon le besoin)* — cascade interne cloud/CLI/bots | bots GitHub (Copilot / CodeRabbit) — `gh pr review` manuelle |
 | **Worktrees** | `gwm` (gwm-cli) — **indispensable** | — | — |
+| **Suivi des sessions IA** | `gwm agents attach` après chaque création de worktree | `gwm agents` / pane Agents de la TUI | — |
 
 ### Cascade de décision des outils
 
@@ -78,6 +79,7 @@ flowchart LR
 > Mon mode **par défaut** quand je suis focus sur une feature / fix / hotfix / chore.
 
 **Commande :** `/me:issue-worktree-pr [desc]`
+**Juste après la création du worktree :** `gwm agents attach <slug> <session-id>` — la session a démarré depuis le checkout principal (en général `dev`), donc gwm l'attribue **là** et le worktree où elle bosse vraiment n'affiche aucun agent. Le pin corrige l'attribution ; c'est exactement ce pour quoi `attach` existe.
 **Puis :** review via la boucle `/me:loop:codex-review-pr` (CLI Codex local, auto-cadencé, corrige jusqu'à 0 finding bloquant pertinent) — **lancée depuis le worktree** — + CI verte. Au besoin, je déclenche `/me:check-reviews [PR#]` manuellement en second plan (cascade interne cloud/CLI/bots).
 
 📁 *Réf. : `fiches-pedagogiques-front/`, `fiches-pedagogiques-api-rest/`*
@@ -86,7 +88,8 @@ flowchart LR
 flowchart LR
     A["/me:issue-worktree-pr [desc]"] --> B[Issue GitHub créée]
     B --> C[Worktree isolé via gwm]
-    C --> D[Commits atomiques<br/>Gitmoji / Conventional]
+    C --> CA["gwm agents attach<br/>🔗 la session se pin<br/>sur le worktree"]
+    CA --> D[Commits atomiques<br/>Gitmoji / Conventional]
     D --> E[Push + PR<br/>depuis template repo]
     E --> G["/me:loop:codex-review-pr<br/>🔁 CLI Codex local (depuis le worktree)<br/>second plan manuel : /me:check-reviews"]
     G --> H{CI verte ?}
@@ -115,7 +118,8 @@ flowchart LR
 flowchart LR
     A["/me:spec-issue-worktree-pr [desc]"] --> B[Issue GitHub créée #N]
     B --> C[Worktree gwm<br/>feat/#N-slug]
-    C --> D["speckit.specify --no-branch --number N<br/>→ .specify/specs/N-slug/"]
+    C --> CA["gwm agents attach<br/>🔗 pin de la session"]
+    CA --> D["speckit.specify --no-branch --number N<br/>→ .specify/specs/N-slug/"]
     D --> E[speckit.plan → speckit.tasks<br/>+ hydratation Claude Tasks]
     E --> F["speckit.implement<br/>(+ speckit.converge optionnel)"]
     F --> G[Commits atomiques<br/>artefacts spec + code]
@@ -215,6 +219,16 @@ flowchart TD
 - **Reviews** : source par défaut = la boucle **`/me:loop:codex-review-pr`** (CLI Codex local, auto-cadencé, lancée après la PR — **depuis le worktree** en mode worktree — qui corrige jusqu'à 0 finding bloquant pertinent P0/P1, max 5 itérations). En **second plan**, je déclenche **`/me:check-reviews [PR#]`** manuellement selon le besoin (cascade interne : `@codex review` cloud → CLI locaux Codex/CodeRabbit → bots GitHub Copilot/CodeRabbit). On attend la **CI verte** avant merge.
 - **Sprint** : merge progressif dans `dev` ; release depuis `main`.
 - **Worktrees** : gérés via `gwm` (config `.gwm.toml` par repo).
+- **Sessions IA** : après chaque `gwm create`, la session courante se pin sur le worktree via `gwm agents attach`. Sans ça, `gwm agents` et le pane Agents de la TUI montrent la session sur le repo principal — l'endroit d'où elle a démarré, pas celui où elle travaille. Auto-identification :
+
+  ```bash
+  SID=$(gwm agents --format json \
+    | jq -r '[.[].agents | (.top // empty), (.all // [])[]]
+             | map(select(.kind == "claude")) | max_by(.last_activity) | .id')
+  gwm agents attach <slug> "$SID"
+  ```
+
+  La session qui lance la commande vient de toucher son propre transcript : c'est donc la plus fraîche que gwm voit, ce qui rend l'auto-identification fiable plutôt que devinée. Best-effort — un pin manquant ne coûte que de la visibilité.
 
 ---
 

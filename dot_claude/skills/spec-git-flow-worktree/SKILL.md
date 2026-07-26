@@ -84,6 +84,21 @@ git rev-parse --abbrev-ref HEAD       # MUST be <type>/#<N>-<slug>
 
 `gwm` creates the branch + worktree and runs the `.gwm.toml` bootstrap (`copy` / `guard` / `no_symlink` / `command`). If the bootstrap report shows any `✗`, **stop** and surface the failed steps — do not build on a broken bootstrap. See [[gwm]] for the schema and sigils (`✓ · ! ✗`).
 
+
+**Attach this session to the new worktree** (`gwm agents`, gwm ≥ 1.3.0). The session was started from the main checkout — usually on `dev` — so gwm attributes it *there*, and the worktree it actually works in shows no agent. A pin is exactly the case `attach` exists for: it overlays detection when the recorded directory cannot be right.
+
+```bash
+# The session running this command just touched its own transcript, so it is
+# the freshest Claude session gwm can see — that is what makes this
+# self-identification reliable rather than a guess.
+SID=$(gwm agents --format json \
+  | jq -r '[.[].agents | (.top // empty), (.all // [])[]]
+           | map(select(.kind == "claude")) | max_by(.last_activity) | .id')
+[ -n "$SID" ] && [ "$SID" != "null" ] && gwm agents attach <slug> "$SID"
+```
+
+Best-effort: if `jq` is missing or nothing matches, skip it and carry on — a missing pin costs visibility in `gwm agents` / the TUI, nothing more. Pins accumulate, so re-running is safe; `gwm agents detach <slug>` clears them.
+
 > **gwm owns the branch.** It is already created and checked out — Spec Kit must NOT create another. That is why step 4a passes `--no-branch`.
 
 ### 4. Spec-driven design (inside the worktree)
