@@ -43,6 +43,13 @@
 .claude/projects/*personal*/
 .claude/projects/*private*/
 
+# Dependencies of the scripts that live in the source tree (statusline is a
+# real bun project, tracked as source). Its own .gitignore already keeps
+# node_modules out of git, but chezmoi does not read nested .gitignores — so
+# without this it reports 703 phantom files and would copy 67 MB of
+# dependencies into ~/.claude on the next apply.
+.claude/scripts/**/node_modules/
+
 # Temporary/cache files in all projects
 .claude/projects/**/node_modules/
 .claude/projects/**/.git/
