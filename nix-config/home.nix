@@ -350,8 +350,8 @@
     # Environment variables
     envExtra = ''
       export XDG_CONFIG_HOME="$HOME/.config"
-      export EDITOR="zed"
-      export VISUAL="zed"
+      export EDITOR="nvim"
+      export VISUAL="nvim"
       export RUST_SRC_PATH="${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}"
       export USER_FOLDER=$(basename $HOME)
 
