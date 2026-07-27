@@ -1,7 +1,7 @@
 # WORKFLOW w/ Claude Code
 
 > Ma façon de travailler avec Claude Code — outils, cascades de priorité et workflows Git.
-> Dernière mise à jour : 2026-06-19.
+> Dernière mise à jour : 2026-07-27.
 
 ---
 
@@ -164,24 +164,43 @@ flowchart TD
 
 > Publication d'une version.
 
-**Commande :** `/generate-changelog` *(per-project)* → bump version → merge `dev` → `main` → **tag** → release `gh`.
+**Commande :** `/me:release [X.Y.Z | patch | minor | major]` — skill `me:release`, protocole générique. Le `/changelog` du projet (généré par `/me:changelog-create`) reste l'**étape 1** ; le skill couvre tout ce qui vient après. **Si le repo a son propre `/release`, il fait foi** (réf. `bijouterie-julian`).
+
+⛔ **Le bump et la migration du changelog sont des commits** → ils naissent sur `dev`, jamais sur `main`. Direction unique : `feature → dev → main → (preprod → prod)`.
 
 ⚠️ **Le tag vient APRÈS le merge sur `main`**, jamais avant : il doit pointer le commit qui porte déjà le bump de version et le changelog de la version, sinon la publication n'est pas reproductible depuis le tag.
 
 🔒 **Si `main` est protégée** (PR + status checks requis — c'est le cas de `gwm-cli`) : le merge `dev` → `main` passe par une **PR**, pas par un merge local direct. Attendre les checks verts, merger en **merge commit**, puis tagger le merge commit sur `main`. Avec `enforce_admins`, l'admin n'a aucune échappatoire : `git push origin main` est rejeté, il n'y a pas de plan B en urgence. Vérifier avant de cut : `gh api repos/<owner>/<repo>/branches/main/protection`.
 
-📁 *Réf. : `gwm-cli/` (main protégée), `fiches-pedagogiques-front/`, `fiches-pedagogiques-api-rest/`*
+⚠️ **Qui publie la release change selon le repo** — se tromper double-publie ou ne publie rien :
+
+| Knob | `gwm-cli` | `bijouterie-julian` |
+|---|---|---|
+| Fichiers de version | `Cargo.toml` + `Cargo.lock` | `config/version.php` (vérité) + `package.json` |
+| Fichier de version du changelog | `changelogs/X.Y.Z.md` (sans `v`) | `changelogs/vX.Y.Z.md` |
+| `dev` → `main` | PR (main protégée) | merge local (merge commit) |
+| Publication | **CI sur tag `v*`** (`release.yml`, `--notes-file`) | **manuelle** (`gh release create`) |
+| Gate | `cargo test` + CI | `make build` + tests **via Docker** (CI désactivée) |
+| Post-release | homebrew/scoop (CI), sync docs + ROADMAP | propagation preprod, Project board |
+
+Invariants dans les deux cas : `CHANGELOG.md` racine = `[Unreleased]` seule + index `## Past releases` ; un fichier par version sous `changelogs/` ; titre de release = **`vX.Y.Z` seul** ; notes = `--notes-file changelogs/<version>.md` ; la release est un **snapshot** (corriger après coup → `gh release edit --notes-file`).
+
+📁 *Réf. : `gwm-cli/` (main protégée, release par la CI), `bijouterie-julian/` (`/release` per-project), `fiches-pedagogiques-front/`, `fiches-pedagogiques-api-rest/`*
 
 ```mermaid
 flowchart LR
-    A["/generate-changelog<br/>(per-project)"] --> B[Bump version<br/>+ changelog de version]
-    B --> C{main protégée ?}
+    A["/changelog X.Y.Z<br/>(per-project)"] --> B[Bump version<br/>+ commit sur dev]
+    B --> V[Gate : tests + build<br/>sortie réelle]
+    V --> C{main protégée ?}
     C -->|oui| D[PR dev → main<br/>checks verts]
     C -->|non| E[Merge local<br/>dev → main]
     D --> F[Tag sur main<br/>APRÈS le merge]
     E --> F
-    F --> G[Publication release<br/>via gh]
-    G --> H[✅ Release publiée]
+    F --> G{Qui publie ?}
+    G -->|CI sur tag| G1[release.yml<br/>--notes-file]
+    G -->|manuel| G2[gh release create]
+    G1 --> H[✅ Release publiée<br/>+ propagation]
+    G2 --> H
 ```
 
 ---
@@ -197,7 +216,7 @@ flowchart TD
     DEV -->|Feature spec-driven<br/>worktree| SWT["Spec-driven Worktree<br/>/me:spec-issue-worktree-pr"]
     DEV -->|Feature spec-driven<br/>checkout courant| SBR["Spec-driven Branche<br/>/me:spec-issue-branch-pr"]
     DEV -->|Sprint complet| SP["Workflow Sprint<br/>/goal"]
-    DEV -->|Publication| RE["Workflow Release<br/>/generate-changelog"]
+    DEV -->|Publication| RE["Workflow Release<br/>/me:release"]
 
     WT --> RV["/me:loop:codex-review-pr<br/>🔁 CLI Codex local (auto-cadencé)<br/>second plan manuel : /me:check-reviews<br/>+ CI verte"]
     BR --> RV
@@ -218,6 +237,7 @@ flowchart TD
 - **PR** : remplie depuis le template du repo (`.github/PULL_REQUEST_TEMPLATE.md`).
 - **Reviews** : source par défaut = la boucle **`/me:loop:codex-review-pr`** (CLI Codex local, auto-cadencé, lancée après la PR — **depuis le worktree** en mode worktree — qui corrige jusqu'à 0 finding bloquant pertinent P0/P1, max 5 itérations). En **second plan**, je déclenche **`/me:check-reviews [PR#]`** manuellement selon le besoin (cascade interne : `@codex review` cloud → CLI locaux Codex/CodeRabbit → bots GitHub Copilot/CodeRabbit). On attend la **CI verte** avant merge.
 - **Sprint** : merge progressif dans `dev` ; release depuis `main`.
+- **Release** : `/me:release` (skill `me:release`) — bump + changelog **commités sur `dev`**, merge `dev → main` en merge commit, **tag après le merge**, notes = `changelogs/<version>.md`, titre = `vX.Y.Z` seul. Un `/release` per-project (ex. `bijouterie-julian`) fait foi sur le protocole générique.
 - **Worktrees** : gérés via `gwm` (config `.gwm.toml` par repo).
 - **Sessions IA** : après chaque `gwm create`, la session courante se pin sur le worktree via `gwm agents attach`. Sans ça, `gwm agents` et le pane Agents de la TUI montrent la session sur le repo principal — l'endroit d'où elle a démarré, pas celui où elle travaille. Auto-identification :
 
@@ -262,6 +282,7 @@ flowchart TD
 
 ## ✅ Fait récemment
 
+- **Skill + command `/me:release`** (2026-07-27) : `/generate-changelog` était un **nom mort** (plus aucun fichier ne le définit depuis `/me:changelog-create`) et la ligne Release de `RULES.md` décrivait l'ordre **inverse** du vrai (`tag → merge` au lieu de `merge → tag`). Remplacé par un skill `me:release` + `commands/me/release.md` (ref léger), dont le protocole est **extrait des deux flows réels** : le `/release` per-project de `bijouterie-julian` (6 étapes, `gh release create` manuel, propagation preprod, Project #20) et le flow observé de `gwm-cli` (commit `🔖 chore(release): vX.Y.Z` sur `dev`, PR `dev → main` car main protégée, tag après merge, release **publiée par la CI** sur le tag `v*` avec `--notes-file changelogs/X.Y.Z.md`). Le skill garde les **invariants** (bump/changelog = commits nés sur `dev` ; `CHANGELOG.md` racine = `[Unreleased]` seule + index ; tag après merge ; titre `vX.Y.Z` seul ; release = snapshot → `gh release edit`) et sort le reste en **table de knobs à détecter** (fichiers de version, préfixe `v`, main protégée, **qui publie**, gate de vérif, post-release). Étape 1 = le `/changelog` du projet, inchangé. Répercuté dans `RULES.md`, `WORKFLOW.md` (section Release + mermaid + vue d'ensemble + conventions), `skills/me/setup` et les `CLAUDE.md` des repos qui citaient l'ancien nom. Non testé sur une vraie release (à valider au prochain cut).
 - **Workflows spec-driven `/me:spec-issue-{worktree,branch}-pr`** (2026-06-19) : deux nouveaux workflows **issue-first + Spec Kit**, copies de `/me:issue-{worktree,branch}-pr` avec les phases `speckit.specify → speckit.plan → speckit.tasks` insérées après la création du worktree/branche, puis `speckit.implement` à la place de l'implémentation freeform. Architecture **command → skill** respectée : logique dans les skills `spec-git-flow-worktree` / `spec-git-flow-branch`, commands `commands/me/spec-issue-*-pr.md` = ref léger (idiome `run-loop`). **Audit + MAJ Spec Kit vs `github/spec-kit`** au passage : (1) **découplage de la création de branche** — `create-new-feature.sh` gagne `--no-branch` + auto-skip si déjà sur la branche cible (gwm/git possède la branche, speckit ne fait que le spec dir) ; (2) **`.specify/feature.json`** persisté + lu en priorité par `common.sh::get_feature_paths` (fallback préfixe), auto-git-ignored ; (3) **`speckit.converge`** porté (append-only : réinjecte les écarts spec↔code en tâches). Écartés volontairement (redondants/contre-productifs pour mon modèle) : système extensions/hooks (gwm + commits atomiques le couvrent), presets (pas de CLI Python), timestamp numbering (mon n° = issue GitHub). ⚠️ Les patchs des **scripts** touchent le **scaffold** de `speckit.install` → effet sur les futurs `/speckit.install` ; projets déjà installés = re-run `/speckit.install` (merge) ou patch manuel de `.specify/scripts/bash/`. Non testé end-to-end (à valider au premier run réel sur un repo avec `.specify/`).
 - **Review par défaut = boucle CLI Codex local** (2026-06-10) : la source de review par défaut après une PR n'est plus `@codex review` cloud via `/me:check-reviews --auto`, mais la **boucle `/me:loop:codex-review-pr`** (CLI Codex local, auto-cadencé, corrige les findings bloquants pertinents P0/P1 jusqu'à clean, max 5 itérations — lancée **depuis le worktree** en mode worktree). **`/me:check-reviews`** passe en **second plan**, déclenché **manuellement** selon le besoin (il garde sa cascade interne cloud/CLI/bots). Répercuté dans : table d'outils + cascade + 3 workflows (branche/worktree/sprint) + vue d'ensemble + conventions ; et dans les skills/commands `issue-worktree-pr`, `git-flow-worktree`, `setup`. ⚠️ La règle « review depuis le worktree, jamais le checkout principal » devient le chemin **courant** (plus un edge case) car la boucle lit l'arbre local sur la branche courante.
 - **Deux pièges du workflow worktree** (2026-06-08, vécus sur `fiches-pedagogiques-api-rest`) :
