@@ -26,6 +26,8 @@ Résolution de conflit : Sécurité > Scope (ne faire que le demandé) > Qualit�
 - 🟡 **Docs dev** (lib/framework/SDK/CLI) : `context7`.
 - 🟢 **Au besoin** : `sequential-thinking` (analyse complexe), `playwright` (navigateur/E2E). `chrome-devtools` **uniquement sur demande** de l'utilisateur.
 - 🟢 **Transfo de code en masse** : `morphllm` (morph-mcp, fast-apply) **si besoin**.
+- 🟡 **Comprendre une codebase inconnue/oubliée** : `graphify` — `graphify extract . --code-only` (AST local, 0 token, 0 clé) puis interroger `graphify-out/graph.json`, avant de grep à l'aveugle. **Toujours depuis la racine du repo, jamais depuis `worktrees/`.**
+- 🟡 **Notes & connaissance** : `tolaria` (MCP multi-vault) sur `~/Vault/pro` et `~/Vault/perso`. Frontmatter à `type` obligatoire, **valeurs de chaîne quotées, aucune syntaxe Templater** (ça casse le parseur YAML sur tout le vault). ⛔ **Pas de symlink dans un vault** : tolaria ne les suit pas (dossier invisible, fichier indexé mais illisible) — les docs de repo restent dans les repos, c'est le rôle de graphify.
 - 🟡 **Édition** : `Edit` + `replace_all` pour les renommages ; plusieurs `Edit` (batchés dans le même tour) pour des changements distincts ; `Write` pour créer/réécrire entièrement. Batch les `Read`.
 - 🟢 **Délégation** : `Task`/`Agent` pour les opérations multi-étapes complexes. `Workflow` (multi-agents) uniquement pour les tâches massives/audits, sur opt-in explicite.
 
@@ -46,6 +48,7 @@ Conventions :
 - 🟡 Issue remplie depuis le template du repo (`.github/ISSUE_TEMPLATE/*`).
 - 🟡 PR remplie depuis le template du repo (`.github/PULL_REQUEST_TEMPLATE.md`). Worktrees gérés via `gwm` (`.gwm.toml`).
 - 🔴 `git status`/`git diff` avant de commit. Commit/push **uniquement** quand demandé.
+- 🟢 **Au merge de PR** (pas au commit) : une note dans `~/Vault/pro` ou `perso` — pourquoi cette solution, ce que la review a attrapé qui vaut au-delà de la PR, ce qui est reporté. Seul moment où le contexte est frais et où git ne le garde pas. Jamais y redoubler changelog, doc technique ou tâche.
 
 ---
 

@@ -19,6 +19,8 @@
 | **Review de code (PR)** | boucle `/me:loop:codex-review-pr` (CLI Codex local, auto-cadencé, post-PR) | `/me:check-reviews` *(second plan, déclenché manuellement selon le besoin)* — cascade interne cloud/CLI/bots | bots GitHub (Copilot / CodeRabbit) — `gh pr review` manuelle |
 | **Worktrees** | `gwm` (gwm-cli) — **indispensable** | — | — |
 | **Suivi des sessions IA** | `gwm agents attach` après chaque création de worktree | `gwm agents` / pane Agents de la TUI | — |
+| **Comprendre une codebase** | `graphify` (graph AST + doc, `graphify-out/graph.json`) | `mgrep` / `serena` | lecture directe |
+| **Notes & connaissance** | `tolaria` (MCP multi-vault, `~/Vault/{pro,perso}`) | — | — |
 
 ### Cascade de décision des outils
 
@@ -49,7 +51,91 @@ flowchart TD
     R1 -->|au besoin / second plan| R2["/me:check-reviews (manuel)<br/>cascade interne :<br/>@codex review cloud → CLI → bots"]
     R2 -->|indispo| R3[bots GitHub<br/>Copilot / CodeRabbit]
     R3 -->|indispo| R4[gh pr review manuelle]
+
+    Q -->|Comprendre l'archi d'un repo| G1["graphify<br/>graph AST + doc"]
+    G1 -->|graphe absent / périmé| G2["graphify extract .<br/>--code-only = gratuit"]
+
+    Q -->|Retrouver une décision,<br/>un audit, un chiffrage| T1["tolaria<br/>~/Vault/pro · ~/Vault/perso"]
 ```
+
+---
+
+## 🧠 Où vit quoi — les 4 emplacements du savoir
+
+> La règle qui évite de tout redoubler. Le vault a été abandonné une première fois
+> précisément parce qu'il recopiait ce que git avait déjà.
+
+| Emplacement | Contenu | Outil |
+|---|---|---|
+| `<repo>/docs/` + le code | comment ça marche | **`graphify`** — `graphify-out/graph.json` |
+| `~/Vault/pro`, `~/Vault/perso` | **pourquoi** : décisions, audits, chiffrages, retex, dailies | **`tolaria`** (MCP multi-vault) |
+| `~/.claude/projects/*/memory/` | leçons de session, par projet, liées aux issues | **Claude, d'elle-même** — 339 notes, contexte riche, on n'y touche pas |
+| git : issues, PR, `changelogs/X.Y.Z.md` | le quoi, daté et versionné | `gh`, `/me:release` |
+
+**Ne jamais écrire dans le vault** : doc technique de repo, changelog, tâche, procédure
+(= skill `me:*`). Si git le sait déjà, le vault ne le redit pas.
+
+**Les mémoires Claude restent où elles sont.** Elles vivent leur vie, apportent le contexte
+riche par projet, et Claude les lit au démarrage — les déplacer casse ça. Ce qui remonte
+dans le vault, c'est la leçon **transverse** (celle qui vaut au-delà d'un repo), promue à
+la main en note permanente. C'est le seul chemin qui décloisonne les silos par projet.
+
+### tolaria — l'essentiel opérationnel
+
+- deux vaults **frères**, jamais imbriqués (`assertNotNested` refuse) : `~/Vault/pro` (`kbrdn1/vault-pro`) et `~/Vault/perso` (`kbrdn1/vault-perso`), privés, **hors iCloud**
+- MCP multi-vault via `VAULT_PATHS` (tableau JSON, **chemins absolus** — pas d'expansion du `~` sur les env vars). `search_notes` traverse les deux, `get_vault_context` les renvoie séparément
+- ⛔ **tolaria ne suit pas les symlinks** : un dossier symlinké est invisible (ni indexé ni cherchable), un fichier symlinké est indexé mais `get_note` le rejette (`Note path must stay inside the active vault`). Vérifié sur 2026.8.19, cf. issue #234 fermée mais toujours vivante. **Donc pas de `<repo>/docs` symlinké dans un vault** — c'est le rôle de graphify. Les deux vaults actuels en contiennent **zéro**, la question est close par construction.
+- ⚠️ **la config MCP qui compte est `~/.claude.json` → `mcpServers.tolaria`**, pas `~/.claude/mcp.json`. Les deux peuvent exister ; seul le premier est lu par Claude Code. Éditer le mauvais donne un `/mcp` reconnect qui remonte l'ancien vault sans erreur.
+- ✅ rendu desktop validé sur `v2027-08-28` (le sidecar MCP de cette build est cassé et patché à part, voir plus bas — l'app Rust, elle, va bien)
+- ⛔ **YAML strict** : toute valeur de chaîne quotée, **aucune syntaxe Templater** dans le frontmatter — une seule note cassée faisait échouer `get_vault_context` sur tout le vault
+- `type` obligatoire : `project` (début/fin) · `responsibility` (pas de fin) · `procedure` · `note` · `reference` · `daily`
+- l'`AGENTS.md` à la racine de chaque vault est exposé au LLM (`hasAgentInstructions`) — **c'est lui qui porte les conventions détaillées**, pas ce fichier : structure, frontmatter, nommage, templates
+- ⚠️ **l'app tolaria auto-commite le vault** sous ses propres libellés (`Update 9 notes in <dossier>`), signés à mon nom. Si j'édite hors de l'app, mes messages de commit m'échappent — faire le `git commit` avant que l'app ne ramasse, ou accepter le libellé générique
+- couper le pro : `mounted: false` dans `vaults.json` le sort de la recherche et du contexte
+
+**Structure retenue — découpage par produit, pas par org ni par client.** Une note descend au
+niveau le plus précis qui reste vrai ; en cas de doute, monter d'un cran (trop bas = invisible
+depuis les autres dépôts concernés, trop haut = trouvable quand même).
+
+| Portée | Vault pro | Vault perso |
+|---|---|---|
+| un dépôt / projet | `<produit>/<dépôt>/<famille>/` | `01 - Projects/<projet>/<famille>/` |
+| plusieurs dépôts d'un produit | `<produit>/<famille>/` | `01 - Projects/<famille>/` |
+| plusieurs produits d'un client | `05 - Clients/<client>/<famille>/` | — |
+| toute l'organisation | `04 - Flippad/<famille>/` | — |
+| au-delà de tout projet | — | `04 - Permanent/` |
+
+Familles : `audits/` (état des lieux daté), `decisions/` (arbitrage + ce qui a été écarté +
+retex après exécution), `integrations/` (faisabilité d'un tiers, ancrée à un `codebase_head`).
+Les dossiers se créent **à la première note** — pas de scaffolding vide, tolaria ne les affiche
+pas et git ne les versionne pas.
+
+Un template par famille dans `99 - Meta/`, typés `procedure` avec leur frontmatter cible dans
+un bloc ` ```yaml ` — sinon ils comptent comme de faux audits dans les types et la recherche.
+Toute note de `audits/`/`decisions/`/`integrations/` ouvre sur un bloc `> **Produit** · dépôt ·
+date · PR` dérivé du frontmatter : lue seule, elle doit dire à quoi elle appartient.
+- ⚠️ **après chaque auto-update de tolaria** : `~/.claude/scripts/tolaria-mcp-repatch.sh`. La release `v2027-08-28` livre un bundle CJS où esbuild a perdu `import.meta.url` (`var import_meta = {}`) → `new URL("./app-config-policy.json", undefined)` lève `TypeError: Invalid URL` au chargement, le serveur MCP ne démarre plus (et le JSON n'est pas livré non plus). Le script est idempotent : il ne touche rien si le bundle est sain, sinon il backup, patche et vérifie. À supprimer quand l'upstream aura corrigé.
+
+### graphify — l'essentiel opérationnel
+
+```bash
+graphify extract . --code-only   # AST tree-sitter local, 0 token, 0 clé API
+env -u ANTHROPIC_API_KEY graphify extract . --backend=claude-cli   # + passe LLM via l'abo
+graphify label . --backend=claude-cli   # nommage des communautés
+graphify update .                # après des commits, gratuit
+```
+
+⚠️ **`env -u ANTHROPIC_API_KEY` est obligatoire pour le backend `claude-cli`.** Une clé API
+présente dans l'environnement court-circuite le login claude.ai et le CLI sort en 1 :
+`claude.ai connectors are disabled because ANTHROPIC_API_KEY … takes precedence over your
+claude.ai login`. Sans ça, **tous** les chunks sémantiques échouent (vu en vrai : 9/9 sur
+gwm-cli) et la passe docs ne produit rien — le graphe code reste intact, mais tu n'as que
+le squelette.
+
+- sortie dans `graphify-out/` : `graph.html`, `GRAPH_REPORT.md`, `graph.json`
+- chaque arête est taguée `EXTRACTED` / `INFERRED` / `AMBIGUOUS`
+- ⚠️ **toujours depuis la racine du repo, sur `dev`** — jamais depuis `worktrees/`, sinon on indexe le mauvais arbre (même discipline que la review Codex, dans l'autre sens)
+- sur un repo d'équipe : `graphify-out/` gitignoré d'abord, on décide de le commiter ensuite
 
 ---
 
@@ -236,19 +322,18 @@ flowchart TD
 - **Issue** : remplie depuis le template du repo (`.github/ISSUE_TEMPLATE/*`).
 - **PR** : remplie depuis le template du repo (`.github/PULL_REQUEST_TEMPLATE.md`).
 - **Reviews** : source par défaut = la boucle **`/me:loop:codex-review-pr`** (CLI Codex local, auto-cadencé, lancée après la PR — **depuis le worktree** en mode worktree — qui corrige jusqu'à 0 finding bloquant pertinent P0/P1, max 5 itérations). En **second plan**, je déclenche **`/me:check-reviews [PR#]`** manuellement selon le besoin (cascade interne : `@codex review` cloud → CLI locaux Codex/CodeRabbit → bots GitHub Copilot/CodeRabbit). On attend la **CI verte** avant merge.
+- **Notes** : au **merge de PR**, une note dans `~/Vault/pro` (ou `perso`) — pourquoi cette solution, ce que la review a attrapé qui vaut au-delà de la PR, ce qui est reporté. C'est le seul moment où le contexte est frais et où git ne le garde pas. Jamais au commit.
+- **Codebase** : avant de plonger dans un repo qu'on ne connaît pas ou plus, `graphify extract . --code-only` (gratuit) puis interroger `graph.json` plutôt que grep à l'aveugle.
 - **Sprint** : merge progressif dans `dev` ; release depuis `main`.
 - **Release** : `/me:release` (skill `me:release`) — bump + changelog **commités sur `dev`**, merge `dev → main` en merge commit, **tag après le merge**, notes = `changelogs/<version>.md`, titre = `vX.Y.Z` seul. Un `/release` per-project (ex. `bijouterie-julian`) fait foi sur le protocole générique.
 - **Worktrees** : gérés via `gwm` (config `.gwm.toml` par repo).
-- **Sessions IA** : après chaque `gwm create`, la session courante se pin sur le worktree via `gwm agents attach`. Sans ça, `gwm agents` et le pane Agents de la TUI montrent la session sur le repo principal — l'endroit d'où elle a démarré, pas celui où elle travaille. Auto-identification :
+- **Sessions IA** : après chaque `gwm create`, la session courante se pin sur le worktree via `gwm agents attach`. Sans ça, `gwm agents` et le pane Agents de la TUI montrent la session sur le repo principal — l'endroit d'où elle a démarré, pas celui où elle travaille. Claude Code expose l'id exact dans l'environnement :
 
   ```bash
-  SID=$(gwm agents --format json \
-    | jq -r '[.[].agents | (.top // empty), (.all // [])[]]
-             | map(select(.kind == "claude")) | max_by(.last_activity) | .id')
-  gwm agents attach <slug> "$SID"
+  gwm agents attach <slug> "$CLAUDE_CODE_SESSION_ID"
   ```
 
-  La session qui lance la commande vient de toucher son propre transcript : c'est donc la plus fraîche que gwm voit, ce qui rend l'auto-identification fiable plutôt que devinée. Best-effort — un pin manquant ne coûte que de la visibilité.
+  **Filet automatique** : `~/.claude/scripts/statusline.ts` fait le pin tout seul (`gwm agents attach . <session_id>`, en tâche de fond) dès que la session édite un fichier dans un worktree lié alors que son cwd est ailleurs — exactement le cas que la détection gwm ne peut pas couvrir. Il détache le pin précédent quand la session change de worktree, et le glyphe punaise (`\u{f08d}`) collé au nom du worktree en ligne 2 confirme le pin tel qu'il est réellement en git config (`branch.<b>.gwm-agent-pin`). Le pin manuel reste utile : il arrive *avant* la première édition.
 
 ---
 
@@ -281,6 +366,10 @@ flowchart TD
 ---
 
 ## ✅ Fait récemment
+
+- **Vaults tolaria `~/Vault/{pro,perso}` + graphify** (2026-08-28) : le vault Obsidian (282 notes dans iCloud) était **mort depuis juin** — 92 wikilinks pour 282 notes, `04 - Permanent` vide, les « tags » les plus fréquents étaient des couleurs hex fuyant de blocs mermaid, et 132 des 139 notes de `01 - Projects` étaient des copies de `README.md`/`CLAUDE.md` de repos (déjà dérivées : `diff` sort des écarts sur `README.md` et `SECURITY.md`). **Il n'est pas mort, l'écriture avait déménagé** : les vraies notes de juin-juillet sont à la racine des workspaces client (analyses d'intégration, audits d'infra, calculs de charge) et surtout dans **339 mémoires Claude Code** (`~/.claude/projects/*/memory/`, dont 142 gwm-cli et 103 bijouterie-julian) — la courbe des dailies le dit : 7 (nov) → 16 → **19 (jan, pic)** → 13 → 1 → 1 → 0. Deux vaults git **frères** hors iCloud (`kbrdn1/vault-pro`, `kbrdn1/vault-perso`, privés), MCP multi-vault via `VAULT_PATHS`. 12 notes pro **copiées** (pas déplacées) avec frontmatter tolaria, 119 notes perso migrées ciblé. Les mémoires Claude **restent en place** : elles vivent d'elles-mêmes et apportent le contexte riche par projet. ⛔ **Découverte bloquante** : tolaria **ne suit pas les symlinks** — vérifié sur 2026.8.19, source + empirique. Dossier symlinké = invisible (`collectMarkdownFile` teste `isDirectory()`, faux sur un symlink, et le nom ne finit pas par `.md`) ; fichier symlinké = **indexé et cherchable mais `get_note` le rejette** (`realpath` + `isVaultRelativePath`), soit le pire cas, exactement l'issue #234 fermée COMPLETED le 2026-04-24 et contestée depuis par deux users. Les 9 symlinks `01 - Projects/* → <repo>/docs` étaient donc invisibles ; ce rôle passe à **graphify**. ✅ Le bug YAML Templater qui faisait planter `get_vault_context` sur tout le vault (une seule note en cause) est corrigé en 2026.8.19 — mais la règle « valeurs quotées, pas de Templater » reste. ⚠️ Les deux outils sont **pré-1.0** (tolaria en alpha quotidienne, graphify v0.9.51 créé il y a 4 mois, 1142 issues) : rien d'unique ne vit dedans, le vault Obsidian n'est pas supprimé. `search_notes` est du plein-texte basique — bon sur 1-2 termes, il décroche sur une question en langage naturel. Premier run graphify sur `gwm-cli` : 7439 nœuds, 18375 arêtes, 243 communautés, **0 token** en `--code-only` (93 % EXTRACTED) ; le `GRAPH_REPORT.md` est maigre sans la passe docs (les 168 docs sautées sont là où est la valeur « améliorer la doc »), et le nommage des communautés retombe sur le nœud-hub même via `--backend=claude-cli`.
+
+- **Pin gwm automatique + `$CLAUDE_CODE_SESSION_ID`** (2026-08-03) : l'heuristique jq « la session Claude la plus fraîche que gwm voit » disparaît des 4 fichiers qui la portaient — Claude Code expose **`CLAUDE_CODE_SESSION_ID`** dans l'environnement du tool Bash, donc `gwm agents attach <slug> "$CLAUDE_CODE_SESSION_ID"` est exact au lieu d'être deviné. En **filet**, `~/.claude/scripts/statusline.ts` pin la session tout seul : il détectait déjà le worktree réel (dernier fichier édité) et reçoit le `session_id` dans son JSON, donc il lance `gwm agents attach . <sid>` en tâche de fond — **gaté** sur (édition, pas simple lecture) + (cwd dans un autre arbre) + (worktree *lié*), avec détach du pin précédent au changement de worktree. ⚠️ `gwm agents attach` **refuse un id qu'il n'a pas encore détecté** (il lit les artefacts on-disk) : le 1er essai peut perdre la course, d'où un **retry borné à 3 renders** par worktree — au-delà on abandonne, jamais de spawn à chaque render. Le glyphe punaise (`\u{f08d}`) de la ligne 2 lit `branch.<b>.gwm-agent-pin` (la vérité git config), donc il ne ment pas si l'attach échoue. Check : `scripts/statusline-pin.test.sh` (repo + worktree temporaires, shim `gwm` qui échoue au 1er attach, HOME isolé).
 
 - **Skill + command `/me:release`** (2026-07-27) : `/generate-changelog` était un **nom mort** (plus aucun fichier ne le définit depuis `/me:changelog-create`) et la ligne Release de `RULES.md` décrivait l'ordre **inverse** du vrai (`tag → merge` au lieu de `merge → tag`). Remplacé par un skill `me:release` + `commands/me/release.md` (ref léger), dont le protocole est **extrait des deux flows réels** : le `/release` per-project de `bijouterie-julian` (6 étapes, `gh release create` manuel, propagation preprod, Project #20) et le flow observé de `gwm-cli` (commit `🔖 chore(release): vX.Y.Z` sur `dev`, PR `dev → main` car main protégée, tag après merge, release **publiée par la CI** sur le tag `v*` avec `--notes-file changelogs/X.Y.Z.md`). Le skill garde les **invariants** (bump/changelog = commits nés sur `dev` ; `CHANGELOG.md` racine = `[Unreleased]` seule + index ; tag après merge ; titre `vX.Y.Z` seul ; release = snapshot → `gh release edit`) et sort le reste en **table de knobs à détecter** (fichiers de version, préfixe `v`, main protégée, **qui publie**, gate de vérif, post-release). Étape 1 = le `/changelog` du projet, inchangé. Répercuté dans `RULES.md`, `WORKFLOW.md` (section Release + mermaid + vue d'ensemble + conventions), `skills/me/setup` et les `CLAUDE.md` des repos qui citaient l'ancien nom. Non testé sur une vraie release (à valider au prochain cut).
 - **Workflows spec-driven `/me:spec-issue-{worktree,branch}-pr`** (2026-06-19) : deux nouveaux workflows **issue-first + Spec Kit**, copies de `/me:issue-{worktree,branch}-pr` avec les phases `speckit.specify → speckit.plan → speckit.tasks` insérées après la création du worktree/branche, puis `speckit.implement` à la place de l'implémentation freeform. Architecture **command → skill** respectée : logique dans les skills `spec-git-flow-worktree` / `spec-git-flow-branch`, commands `commands/me/spec-issue-*-pr.md` = ref léger (idiome `run-loop`). **Audit + MAJ Spec Kit vs `github/spec-kit`** au passage : (1) **découplage de la création de branche** — `create-new-feature.sh` gagne `--no-branch` + auto-skip si déjà sur la branche cible (gwm/git possède la branche, speckit ne fait que le spec dir) ; (2) **`.specify/feature.json`** persisté + lu en priorité par `common.sh::get_feature_paths` (fallback préfixe), auto-git-ignored ; (3) **`speckit.converge`** porté (append-only : réinjecte les écarts spec↔code en tâches). Écartés volontairement (redondants/contre-productifs pour mon modèle) : système extensions/hooks (gwm + commits atomiques le couvrent), presets (pas de CLI Python), timestamp numbering (mon n° = issue GitHub). ⚠️ Les patchs des **scripts** touchent le **scaffold** de `speckit.install` → effet sur les futurs `/speckit.install` ; projets déjà installés = re-run `/speckit.install` (merge) ou patch manuel de `.specify/scripts/bash/`. Non testé end-to-end (à valider au premier run réel sur un repo avec `.specify/`).
