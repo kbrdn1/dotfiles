@@ -135,7 +135,18 @@ le squelette.
 - sortie dans `graphify-out/` : `graph.html`, `GRAPH_REPORT.md`, `graph.json`
 - chaque arête est taguée `EXTRACTED` / `INFERRED` / `AMBIGUOUS`
 - ⚠️ **toujours depuis la racine du repo, sur `dev`** — jamais depuis `worktrees/`, sinon on indexe le mauvais arbre (même discipline que la review Codex, dans l'autre sens)
-- sur un repo d'équipe : `graphify-out/` gitignoré d'abord, on décide de le commiter ensuite
+- sur un repo d'équipe : `graphify-out/` en **exclude local** (`.git/info/exclude`), pas dans le `.gitignore` versionné — zéro diff, la décision de commiter le graphe reste à l'équipe
+- ⛔ **run long = détaché, sinon il meurt avec la session.** Les tâches de fond sont des enfants du process Claude Code : un redémarrage les emporte. Trois runs perdus comme ça sur fp-api-rest avant de comprendre.
+
+  ```bash
+  cd <repo> && nohup env -u ANTHROPIC_API_KEY PATH="$HOME/.claude/scripts/nomcp:$PATH" \
+    graphify extract . --backend=claude-cli > graphify-out/run.log 2>&1 < /dev/null & disown
+  ```
+
+  Vérifier `ppid 1` (rattaché à init) et suivre `tail -f graphify-out/run.log`. ⚠️ `env` veut ses options **avant** les assignations : `env -u VAR PATH=… cmd`, jamais `env PATH=… -u VAR`.
+- le **cache incrémental survit aux kills** — vérifié deux fois (164/199 sur gwm-cli, 306/374 sur fp-api-rest). Un run interrompu se relance, il ne se refait pas.
+- ⚠️ **les Knowledge Gaps du rapport ne sont pas une todo-list de doc.** Sur fp-api-rest, 4242 des 4599 nœuds isolés sont du bruit AST (`.setUp()`, `.__construct()`, dépendances Composer). Seuls les ~179 nœuds `file_type: document` orphelins ont un signal, et le lot est encore pollué (`robots.txt`, templates d'issue, entrées de changelog). Le rapport compte 843, mes calculs 4599 — la définition diffère, ne pas citer le chiffre sans le recalculer.
+- ce qui est **réellement solide** dans le rapport : les God Nodes (abstractions centrales, mesurées), les import cycles, les communautés navigables, le taux EXTRACTED. Le nommage des communautés, lui, retombe sur le nœud-hub même en Opus avec la passe docs complète — faiblesse de l'outil, pas du corpus.
 
 ---
 
