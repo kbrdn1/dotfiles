@@ -6,3 +6,8 @@ dot_claude/plugins/installed_plugins.json
 
 # Claude session logs (contain sensitive data)
 dot_claude/projects/
+
+# Build junk — le scanner de me:codebase-visualizer produit du __pycache__
+# (.chezmoiignore ne parle qu'à chezmoi, pas à git : il faut les deux)
+__pycache__/
+*.pyc
