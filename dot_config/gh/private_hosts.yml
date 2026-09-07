@@ -1,5 +1,5 @@
 github.com:
-    git_protocol: ssh
+    git_protocol: https
     users:
-        kbrdn1:
+        kbrdn1: {}
     user: kbrdn1

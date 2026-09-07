@@ -16,7 +16,7 @@ font-size = 14
 window-inherit-font-size = false
 
 # Cursor - Shader disabled
-mouse-shift-capture = always
+mouse-shift-capture = false
 custom-shader = shaders/cursor_smear_fade_ultra.glsl
 # custom-shader-animation = false
 
