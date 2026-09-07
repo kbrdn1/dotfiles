@@ -88,16 +88,11 @@ git rev-parse --abbrev-ref HEAD       # MUST be <type>/#<N>-<slug>
 **Attach this session to the new worktree** (`gwm agents`, gwm ≥ 1.3.0). The session was started from the main checkout — usually on `dev` — so gwm attributes it *there*, and the worktree it actually works in shows no agent. A pin is exactly the case `attach` exists for: it overlays detection when the recorded directory cannot be right.
 
 ```bash
-# The session running this command just touched its own transcript, so it is
-# the freshest Claude session gwm can see — that is what makes this
-# self-identification reliable rather than a guess.
-SID=$(gwm agents --format json \
-  | jq -r '[.[].agents | (.top // empty), (.all // [])[]]
-           | map(select(.kind == "claude")) | max_by(.last_activity) | .id')
-[ -n "$SID" ] && [ "$SID" != "null" ] && gwm agents attach <slug> "$SID"
+# Claude Code exports the exact session id — no guessing from `gwm agents` output.
+gwm agents attach <slug> "$CLAUDE_CODE_SESSION_ID"
 ```
 
-Best-effort: if `jq` is missing or nothing matches, skip it and carry on — a missing pin costs visibility in `gwm agents` / the TUI, nothing more. Pins accumulate, so re-running is safe; `gwm agents detach <slug>` clears them.
+Best-effort: if the variable is empty, skip it — `~/.claude/scripts/statusline.ts` pins the session by itself as soon as it edits a file inside the worktree, so a missed pin costs a turn of visibility in `gwm agents` / the TUI, nothing more. Pins accumulate, so re-running is safe; `gwm agents detach <slug>` clears them.
 
 > **gwm owns the branch.** It is already created and checked out — Spec Kit must NOT create another. That is why step 4a passes `--no-branch`.
 
@@ -211,14 +206,16 @@ If the repo targets a non-`main` integration branch (gwm-cli targets `dev`), add
 
 ### 9. Review the PR
 
-Default review source: the **`/me:loop:codex-review-pr`** loop (local Codex CLI, self-paced — fixes relevant blocking findings P0/P1 until clean). Run it **from inside the worktree**, never the main checkout:
+Default review source: the **`/me:loop:claude-review-pr`** loop (a Claude agent spawned with **fresh** context, self-paced — fixes relevant blocking findings P0/P1/P2 until clean). For a sensitive PR, double up with `/me:loop:codex-review-pr` (local Codex CLI — a **third-party** reviewer). Run it **from inside the worktree**, never the main checkout:
 
 ```bash
 cd "$(gwm path <slug>)"   # MANDATORY before review
-/me:loop:codex-review-pr
+/me:loop:claude-review-pr
 ```
 
 As a secondary, on-demand step the user triggers `/me:check-reviews [PR#]` manually. Tools that read the working tree must run from the worktree (the main checkout may hold unrelated untracked work → review noise). See [[check-reviews]].
+
+Once the review loop is clean, run **`/me:loop:ci-until-green`** from the same worktree. It reads the checks for the **exact SHA** of `HEAD` (not "the branch"), refuses to conclude while anything is unpushed, and never reads "zero checks" as a green CI. Do not merge before `CI_FAILED=0 CI_PENDING=0` with `CI_TOTAL ≥ 1`.
 
 ## Output expected at each step
 

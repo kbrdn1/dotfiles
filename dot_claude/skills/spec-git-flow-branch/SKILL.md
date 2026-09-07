@@ -185,13 +185,15 @@ If the repo targets a non-`main` integration branch (gwm-cli targets `dev`), add
 
 ### 7. Review the PR
 
-Default review source: the **`/me:loop:codex-review-pr`** loop (local Codex CLI, self-paced — fixes relevant blocking findings P0/P1 until clean). In branch mode you are already on the feature branch in the current checkout — run it directly:
+Default review source: the **`/me:loop:claude-review-pr`** loop (a Claude agent spawned with **fresh** context, self-paced — fixes relevant blocking findings P0/P1/P2 until clean). For a sensitive PR, double up with `/me:loop:codex-review-pr` (local Codex CLI — a **third-party** reviewer). In branch mode you are already on the feature branch in the current checkout — run it directly:
 
 ```bash
-/me:loop:codex-review-pr
+/me:loop:claude-review-pr
 ```
 
 ⚠️ The loop reviews the **current working dir** on the **current branch**: stay on the PR branch (no checkout back to `main`/`dev`) before launching. As a secondary, on-demand step the user triggers `/me:check-reviews [PR#]` manually. See [[check-reviews]].
+
+Once the review loop is clean, run **`/me:loop:ci-until-green`**. It reads the checks for the **exact SHA** of `HEAD` (not "the branch"), refuses to conclude while anything is unpushed, and never reads "zero checks" as a green CI. Do not merge before `CI_FAILED=0 CI_PENDING=0` with `CI_TOTAL ≥ 1`.
 
 ## Output expected at each step
 
