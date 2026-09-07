@@ -11,7 +11,7 @@ SPACE_COLORS=(
   "$MAGENTA"    # 4: Helium
   "$PEACH"      # 5: Chat
   "$YELLOW"     # 6: DB
-  "$CYAN"       # 7: Obsidian
+  "$CYAN"       # 7: Tolaria
   "$ORANGE"     # 8: Claude
 )
 

@@ -28,3 +28,6 @@ __pycache__/
 # Clones tiers modifiés en local (excalidraw-diagram, visual-explainer) : on
 # versionne leur contenu, jamais leur .git — chezmoi le mappe en dot_git/.
 private_dot_claude/skills/*/dot_git/
+
+# Cache de stats runtime — ignore par chezmoi, restait suivi par git
+private_dot_claude/stats-cache.json

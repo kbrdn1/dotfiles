@@ -10,11 +10,11 @@ source "$SETTINGS_DIR/icons.sh"
 SPACE_ICONS=(
   "󰋜"           # 1: Home (nerd font)
   ":music:"      # 2: Music
-  ":zed:"        # 3: Zed
+  ":ghostty:"    # 3: Ghostty
   "󰖟"           # 4: Helium (nerd font globe)
   ":discord:"    # 5: Chat
   "󰆼"           # 6: DB (nerd font database)
-  ":obsidian:"   # 7: Obsidian
+  "󰠮"           # 7: Tolaria (nerd font notebook)
   ":claude:"     # 8: Claude AI
 )
 
@@ -25,18 +25,18 @@ SPACE_FONTS=(
   "$FONT:Bold:14.0"                   # 4 nerd font
   "sketchybar-app-font:Regular:14.0"  # 5
   "$FONT:Bold:17.0"                   # 6 nerd font
-  "sketchybar-app-font:Regular:14.0"  # 7
+  "$FONT:Bold:16.0"                   # 7 nerd font
   "sketchybar-app-font:Regular:14.0"  # 8
 )
 
 SPACE_LABELS=(
   "Home"
   "Music"
-  "Zed"
+  "Ghostty"
   "Helium"
   "Chat"
   "DB"
-  "Obsidian"
+  "Tolaria"
   "Claude"
 )
 
@@ -44,11 +44,11 @@ SPACE_LABELS=(
 SPACE_COLORS=(
   "$BLUE"       # 1: Home
   "$RED"        # 2: Music
-  "$GREEN"      # 3: Zed
+  "$GREEN"      # 3: Ghostty
   "$MAGENTA"    # 4: Helium
   "$PEACH"      # 5: Chat
   "$YELLOW"     # 6: DB
-  "$CYAN"       # 7: Obsidian
+  "$CYAN"       # 7: Tolaria
   "$ORANGE"     # 8: Claude
 )
 

@@ -125,7 +125,7 @@ ctrl-alt-3 = ['workspace 3', 'exec-and-forget sketchybar --trigger aerospace_wor
 ctrl-alt-q = ['workspace 4', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=4']
 ctrl-alt-w = ['workspace 5', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=5']
 ctrl-alt-e = ['workspace 6', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=6']
-ctrl-alt-o = ['workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=7']
+ctrl-alt-n = ['workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=7']
 ctrl-alt-c = ['workspace 8', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=8']
 
 # Navigation rapide
@@ -142,7 +142,7 @@ ctrl-alt-shift-3 = ['move-node-to-workspace 3', 'exec-and-forget sketchybar --tr
 ctrl-alt-shift-q = ['move-node-to-workspace 4', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
 ctrl-alt-shift-w = ['move-node-to-workspace 5', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
 ctrl-alt-shift-e = ['move-node-to-workspace 6', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
-ctrl-alt-shift-o = ['move-node-to-workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
+ctrl-alt-shift-n = ['move-node-to-workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
 ctrl-alt-shift-c = ['move-node-to-workspace 8', 'exec-and-forget sketchybar --trigger aerospace_workspace_change']
 
 # Déplacer ET suivre
@@ -243,7 +243,7 @@ esc = ['exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', '
 q = ['workspace 4', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=4', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 w = ['workspace 5', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=5', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 e = ['workspace 6', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=6', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
-o = ['workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=7', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+n = ['workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=7', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 c = ['workspace 8', 'exec-and-forget sketchybar --trigger aerospace_workspace_change FOCUSED_WORKSPACE=8', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
 # Navigation rapide
@@ -259,7 +259,7 @@ shift-3 = ['move-node-to-workspace 3', 'exec-and-forget sketchybar --trigger aer
 shift-q = ['move-node-to-workspace 4', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 shift-w = ['move-node-to-workspace 5', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 shift-e = ['move-node-to-workspace 6', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
-shift-o = ['move-node-to-workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
+shift-n = ['move-node-to-workspace 7', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 shift-c = ['move-node-to-workspace 8', 'exec-and-forget sketchybar --trigger aerospace_workspace_change', 'exec-and-forget sketchybar --trigger aerospace_mode_change MODE=main', 'mode main']
 
 # ┌─────────────────────────────────────────────────────────────┐
@@ -582,8 +582,12 @@ run = 'move-node-to-workspace 6'
 
 # ┌─────────────────────────────────────────────────────────────┐
 # │                WORKSPACE 7: PRISE DE NOTES                  │
-# │                     (Obsidian exclusif)                     │
+# │                    (Tolaria, Obsidian)                      │
 # └─────────────────────────────────────────────────────────────┘
+
+[[on-window-detected]]
+if.app-id = 'club.refactoring.tolaria'
+run = 'move-node-to-workspace 7'
 
 [[on-window-detected]]
 if.app-id = 'md.obsidian'

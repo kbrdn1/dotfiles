@@ -28,6 +28,7 @@
       "alt-R": ["task::Spawn", { "task_name": "Files: Rename Files (FZF)" }],
       // ── Git ───────────────────────────────────────────────────────────────
       "alt-g": ["task::Spawn", { "task_name": "Git: Lazygit" }],
+      "alt-w": ["task::Spawn", { "task_name": "Git: gwm-cli" }],
       // ── Database ──────────────────────────────────────────────────────────
       "alt-r": ["task::Spawn", { "task_name": "Database: Redis CLI" }],
       "alt-s": ["task::Spawn", { "task_name": "LazySQL" }],
@@ -39,6 +40,7 @@
       "alt-k": ["task::Spawn", { "task_name": "Kubernetes: Lazykube" }],
       // ── Project ───────────────────────────────────────────────────────────
       "alt-p": ["task::Spawn", { "task_name": "Files: Generate Project Structure file" }],
+      "alt-m": ["task::Spawn", { "task_name": "Lazymake" }],
     },
   },
 
