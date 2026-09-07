@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CI/CD Pipeline — Reference Template</title>
+<!--
+  Reference template for the visual-explainer skill: Mermaid diagrams.
+  Teal/cyan palette — distinctly different from terracotta (architecture)
+  and rose (data-table) templates so agents absorb variety.
+  Key patterns demonstrated:
+  - Teal/cyan palette (NOT indigo/violet)
+  - Dot-grid background atmosphere (different from radial gradient)
+  - Large heading (38px) for typographic contrast
+  - ESM import of Mermaid + @mermaid-js/layout-elk
+  - Mermaid theme: 'base' + full themeVariables, fontSize: 16px
+  - CSS overrides: .nodeLabel 16px, .edgeLabel 13px
+  - look: 'handDrawn' for sketchy aesthetic (toggle to 'classic')
+  - layout: 'elk' for better node positioning
+  - Zoom controls with scroll-to-zoom and drag-to-pan
+  - Both light and dark themes via prefers-color-scheme
+  - Staggered fade-in, reduced motion respect
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  /* ============ THEME ============ */
+  :root {
+    --font-body: 'Bricolage Grotesque', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+    --bg: #1a1a1a;
+    --surface: #242424;
+    --surface-0: #2a2a2a;
+    --surface-1: #383838;
+    --surface-2: #444444;
+    --border: #555555;
+    --border-dim: rgba(255, 255, 255, 0.06);
+    --text: #e0e0e0;
+    --text-dim: #b0b0b0;
+    --text-muted: #999999;
+    --muted: #555555;
+    --accent: #D4825D;
+    --accent-dark: #C15F3C;
+    --accent-dim: rgba(212, 130, 93, 0.15);
+    --success: #86E89A;
+    --warning: #FFDF61;
+    --error: #FF7A7A;
+    --info: #7AB8FF;
+    --special: #C79BFF;
+    --secondary: #8ABFB8;
+    --success-dim: rgba(134, 232, 154, 0.12);
+    --warning-dim: rgba(255, 223, 97, 0.12);
+    --error-dim: rgba(255, 122, 122, 0.12);
+    --info-dim: rgba(122, 184, 255, 0.12);
+    --special-dim: rgba(199, 155, 255, 0.12);
+    --secondary-dim: rgba(138, 191, 184, 0.12);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #faf8f6;
+      --surface: #f0ece8;
+      --surface-0: #e8e2dc;
+      --surface-1: #ddd5cc;
+      --surface-2: #d0c6ba;
+      --border: rgba(0, 0, 0, 0.1);
+      --border-dim: rgba(0, 0, 0, 0.06);
+      --text: #2a2520;
+      --text-dim: #5a4a40;
+      --text-muted: #8a7a70;
+      --muted: #8a7a70;
+      --accent: #C15F3C;
+      --accent-dark: #a04e30;
+      --accent-dim: rgba(193, 95, 60, 0.12);
+      --success-dim: rgba(134, 232, 154, 0.18);
+      --warning-dim: rgba(255, 223, 97, 0.18);
+      --error-dim: rgba(255, 122, 122, 0.18);
+      --info-dim: rgba(122, 184, 255, 0.18);
+      --special-dim: rgba(199, 155, 255, 0.18);
+      --secondary-dim: rgba(138, 191, 184, 0.18);
+    }
+  }
+
+  /* ============ RESET + BASE ============ */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background-color: var(--bg);
+    background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
+    color: var(--text);
+    font-family: var(--font-body);
+    padding: 40px;
+    min-height: 100vh;
+  }
+
+  /* ============ ANIMATION ============ */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate {
+    animation: fadeUp 0.4s ease-out both;
+    animation-delay: calc(var(--i, 0) * 0.06s);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+      transition-duration: 0.01ms !important;
+    }
+    .mermaid-wrap .mermaid { transition: none; }
+  }
+
+  /* ============ LAYOUT ============ */
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 38px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    margin-bottom: 6px;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    margin-bottom: 32px;
+  }
+
+  .description {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-dim);
+    margin-bottom: 24px;
+    max-width: 700px;
+  }
+
+  .description code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ============ MERMAID CONTAINER ============ */
+  .mermaid-wrap {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px 24px;
+    overflow: auto;
+    margin-bottom: 24px;
+  }
+
+  .mermaid-wrap .mermaid {
+    display: flex;
+    justify-content: center;
+    transition: transform 0.2s ease;
+    transform-origin: top center;
+  }
+
+  .zoom-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 2px;
+    z-index: 10;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+  }
+
+  .zoom-controls button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .zoom-controls button:hover {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  .mermaid-wrap {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .mermaid-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
+  .mermaid-wrap::-webkit-scrollbar-track { background: transparent; }
+  .mermaid-wrap::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  .mermaid-wrap::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+  .mermaid-wrap.is-zoomed { cursor: grab; }
+  .mermaid-wrap.is-panning { cursor: grabbing; user-select: none; }
+
+  /* ============ MERMAID SVG OVERRIDES ============ */
+  .mermaid .nodeLabel {
+    font-family: var(--font-body) !important;
+    font-size: 16px !important;
+  }
+
+  .mermaid .edgeLabel {
+    font-family: var(--font-mono) !important;
+    font-size: 13px !important;
+  }
+
+  .mermaid .node rect,
+  .mermaid .node circle,
+  .mermaid .node polygon {
+    stroke-width: 1.5px !important;
+  }
+
+  .mermaid .edge-pattern-solid {
+    stroke-width: 1.5px !important;
+  }
+
+  /* ============ LEGEND ============ */
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+
+  /* ============ CALLOUT ============ */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 20px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-dim);
+    margin-top: 24px;
+  }
+
+  .callout strong { color: var(--text); }
+
+  .callout code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ============ RESPONSIVE ============ */
+  @media (max-width: 768px) {
+    body { padding: 16px; }
+    h1 { font-size: 22px; }
+    .mermaid-wrap { padding: 16px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <h1 class="animate" style="--i:0">CI/CD Pipeline</h1>
+  <p class="subtitle animate" style="--i:1">github actions &rarr; staging &rarr; production</p>
+
+  <p class="description animate" style="--i:2">
+    Every push to <code>main</code> triggers the full pipeline. Tests and linting run in parallel,
+    then the build step produces a Docker image. Staging deploys automatically; production requires
+    manual approval via a GitHub environment gate.
+  </p>
+
+  <div class="mermaid-wrap animate" style="--i:3">
+    <div class="zoom-controls">
+      <button onclick="zoomDiagram(this, 1.2)" title="Zoom in">+</button>
+      <button onclick="zoomDiagram(this, 0.8)" title="Zoom out">&minus;</button>
+      <button onclick="resetZoom(this)" title="Reset zoom">&#8634;</button>
+    </div>
+    <pre class="mermaid">
+      graph TD
+        A[Push to main] --> B{Branch?}
+        B -->|main| C[Run Tests]
+        B -->|feature| I[Run Tests]
+        I --> J[Preview Deploy]
+        C --> D[Lint + Type Check]
+        C --> E[Unit Tests]
+        C --> F[Integration Tests]
+        D --> G[Build Docker Image]
+        E --> G
+        F --> G
+        G --> H[Deploy to Staging]
+        H --> K{Smoke Tests Pass?}
+        K -->|Yes| L[Manual Approval]
+        K -->|No| M[Alert + Rollback]
+        L --> N[Deploy to Production]
+        N --> O[Health Check]
+        O --> P[Done]
+    </pre>
+  </div>
+
+  <div class="legend animate" style="--i:4">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--accent)"></div> Automated step</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--warning)"></div> Decision gate</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--error)"></div> Failure path</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--success)"></div> Success</div>
+  </div>
+
+  <div class="callout animate" style="--i:5">
+    <strong>Hand-drawn mode.</strong> This template uses <code>look: 'handDrawn'</code> for a sketchy aesthetic.
+    Switch to <code>look: 'classic'</code> in the Mermaid config for clean, precise lines.
+    The <code>layout: 'elk'</code> engine provides better node positioning for complex graphs —
+    it requires the separate <code>@mermaid-js/layout-elk</code> package (imported above). Without it,
+    Mermaid silently falls back to dagre.
+  </div>
+
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk/dist/mermaid-layout-elk.esm.min.mjs';
+
+  mermaid.registerLayoutLoaders(elkLayouts);
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    look: 'handDrawn',
+    layout: 'elk',
+    themeVariables: {
+      primaryColor: '#2a2a2a',
+      primaryTextColor: '#e0e0e0',
+      primaryBorderColor: '#555555',
+      lineColor: '#D4825D',
+      secondaryColor: '#383838',
+      tertiaryColor: '#444444',
+      background: '#1a1a1a',
+      mainBkg: '#2a2a2a',
+      nodeBorder: '#555555',
+      clusterBkg: '#242424',
+      clusterBorder: '#555555',
+      titleColor: '#e0e0e0',
+      edgeLabelBackground: '#242424',
+      nodeTextColor: '#e0e0e0',
+      fontSize: '16px',
+      fontFamily: "'Bricolage Grotesque', system-ui, sans-serif",
+    }
+  });
+</script>
+<script>
+  function updateZoomState(wrap) {
+    var target = wrap.querySelector('.mermaid');
+    var zoom = parseFloat(target.dataset.zoom || '1');
+    wrap.classList.toggle('is-zoomed', zoom > 1);
+  }
+
+  function zoomDiagram(btn, factor) {
+    var wrap = btn.closest('.mermaid-wrap');
+    var target = wrap.querySelector('.mermaid');
+    var current = parseFloat(target.dataset.zoom || '1');
+    var next = Math.min(Math.max(current * factor, 0.3), 5);
+    target.dataset.zoom = next;
+    target.style.transform = 'scale(' + next + ')';
+    updateZoomState(wrap);
+  }
+
+  function resetZoom(btn) {
+    var wrap = btn.closest('.mermaid-wrap');
+    var target = wrap.querySelector('.mermaid');
+    target.dataset.zoom = '1';
+    target.style.transform = 'scale(1)';
+    updateZoomState(wrap);
+  }
+
+  document.querySelectorAll('.mermaid-wrap').forEach(function(wrap) {
+    // Scroll-to-zoom (Ctrl/Cmd + wheel)
+    wrap.addEventListener('wheel', function(e) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      var target = wrap.querySelector('.mermaid');
+      var current = parseFloat(target.dataset.zoom || '1');
+      var factor = e.deltaY < 0 ? 1.1 : 0.9;
+      var next = Math.min(Math.max(current * factor, 0.3), 5);
+      target.dataset.zoom = next;
+      target.style.transform = 'scale(' + next + ')';
+      updateZoomState(wrap);
+    }, { passive: false });
+
+    // Drag-to-pan
+    var startX, startY, scrollL, scrollT;
+    wrap.addEventListener('mousedown', function(e) {
+      if (e.target.closest('.zoom-controls')) return;
+      var target = wrap.querySelector('.mermaid');
+      if (parseFloat(target.dataset.zoom || '1') <= 1) return;
+      wrap.classList.add('is-panning');
+      startX = e.clientX;
+      startY = e.clientY;
+      scrollL = wrap.scrollLeft;
+      scrollT = wrap.scrollTop;
+    });
+    window.addEventListener('mousemove', function(e) {
+      if (!wrap.classList.contains('is-panning')) return;
+      wrap.scrollLeft = scrollL - (e.clientX - startX);
+      wrap.scrollTop = scrollT - (e.clientY - startY);
+    });
+    window.addEventListener('mouseup', function() {
+      wrap.classList.remove('is-panning');
+    });
+  });
+</script>
+
+</body>
+</html>

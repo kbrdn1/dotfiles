@@ -1,0 +1,250 @@
+{
+  "doc": "cv",
+  "lang": "en",
+  "identity": {
+    "name": "Kylian Bardini",
+    "title": "Full Stack Engineer — TypeScript & Cloud",
+    "summary": "Full stack developer since 2022, on a permanent contract at Jewely x Flippad after two years as an apprentice in the same team. Project lead and backend architect on a 17-month platform rebuild — 4,528 of the API's 5,244 commits — then payments, type safety and releases on a multi-tenant e-commerce CMS. From TypeScript/Vue to Laravel through to AWS deployment.",
+    "location": "Nancy, France",
+    "mobility": "Cross-border to Luxembourg — relocating to the Thionville area",
+    "nationality": "French citizen (EU) — no work permit required",
+    "availability": "Available as soon as possible — notice period negotiable",
+    "email": "kylianb1@icloud.com",
+    "phone": "+33 6 38 34 60 86",
+    "photo": "assets/photo.jpg",
+    "links": [
+      {
+        "label": "Portfolio",
+        "url": "https://kbrdn.dev"
+      },
+      {
+        "label": "GitHub",
+        "url": "https://github.com/kbrdn1"
+      },
+      {
+        "label": "LinkedIn",
+        "url": "https://linkedin.com/in/kylian-bardini-aa0528234"
+      }
+    ]
+  },
+  "sections": [
+    {
+      "type": "experience",
+      "title": "Professional experience",
+      "items": [
+        {
+          "role": "Full Stack Developer",
+          "company": "Jewely x Flippad",
+          "location": "Nancy, France",
+          "period": "Oct 2023 — present",
+          "contract": "Permanent contract since Dec 2025, previously apprenticeship",
+          "bullets": [
+            "Multi-tenant e-commerce CMS (Laravel 12, Vue 3 + Inertia, Docker Swarm): payment gateways switchable per shop (Stripe, Alma, Sogecommerce, Apple Pay, crypto), per-shop feature flag registry, 8 releases in 6 weeks.",
+            "Migrated the admin dashboard to 100% TypeScript: vue-tsc type ratchet in CI, 1,721 errors down to 0, allowJs disabled, zero any enforced by an automated check.",
+            "Fiches Pédagogiques, a teaching-resources platform: project lead and backend architect on the from-scratch rebuild — 17 months, 3 developers, around a hundred tables, 4,528 of the API's 5,244 commits.",
+            "Took the platform to production and ran it since: 301/410 redirect plan on a site with heavy organic traffic, Sentry observability, Google Analytics 4, GDPR compliance, 4 releases since launch.",
+            "Jewely ERP: plugin-based, extensible import architecture (Shopify and Zoho drivers, phased runs, reporting, CLI) to migrate a new client's catalogue off their original platform.",
+            "Technical guidance and mentoring for two developers, including a Master's-level apprentice supported over time; defined the team's development conventions."
+          ],
+          "stack": [
+            "Laravel",
+            "PHP",
+            "Vue",
+            "Nuxt",
+            "Inertia",
+            "TypeScript",
+            "Alpine.js",
+            "Tailwind CSS",
+            "Node.js",
+            "MySQL",
+            "Redis",
+            "Elasticsearch",
+            "AWS",
+            "Docker Swarm",
+            "Traefik",
+            "GitHub Actions",
+            "Stripe",
+            "Sentry"
+          ]
+        },
+        {
+          "role": "Full Stack Developer",
+          "company": "Virtual Immersion",
+          "period": "Nov 2022 — Sep 2023",
+          "contract": "Apprenticeship",
+          "bullets": [
+            "File-management API in Symfony, mixed-reality immersion experiences on WordPress, interactive map navigation for a wildlife park in React."
+          ],
+          "stack": [
+            "Symfony",
+            "Laravel",
+            "React",
+            "MySQL",
+            "Tailwind CSS",
+            "WordPress"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "projects",
+      "title": "Open source projects",
+      "items": [
+        {
+          "name": "gwm",
+          "tagline": "git worktree manager in Rust",
+          "url": "github.com/kbrdn1/gwm-cli",
+          "description": "Single Rust binary (CLI + ratatui TUI): one branch convention shared across projects, declarative per-repo bootstrap, JSON API and daemon, multi-repo workspace mode. 1.0 in June 2026, machine contracts frozen under SemVer."
+        },
+        {
+          "name": "LazyCurl",
+          "tagline": "terminal HTTP client",
+          "url": "github.com/kbrdn1/LazyCurl",
+          "description": "HTTP client in Go: collections versioned alongside the code, JavaScript scripting, test assertions, imports cURL / OpenAPI 3.x / Postman."
+        }
+      ]
+    },
+    {
+      "type": "skills",
+      "title": "Technical skills",
+      "groups": [
+        {
+          "label": "Programming",
+          "items": [
+            "TypeScript",
+            "JavaScript",
+            "PHP",
+            "Go",
+            "Rust",
+            "SQL"
+          ]
+        },
+        {
+          "label": "Front-end",
+          "items": [
+            "Vue",
+            "Nuxt",
+            "React",
+            "Inertia",
+            "Alpine.js",
+            "Tailwind CSS",
+            "Vite"
+          ]
+        },
+        {
+          "label": "Back-end",
+          "items": [
+            "Laravel",
+            "Symfony",
+            "Node.js",
+            "Hono.js",
+            "AdonisJS",
+            "Prisma",
+            "Drizzle"
+          ]
+        },
+        {
+          "label": "Data",
+          "items": [
+            "MySQL",
+            "MongoDB",
+            "Redis",
+            "Elasticsearch"
+          ]
+        },
+        {
+          "label": "Cloud & DevOps",
+          "items": [
+            "AWS (Lambda, API Gateway, EC2, S3, CloudFront, CloudWatch)",
+            "Docker Swarm",
+            "Traefik",
+            "GitHub Actions",
+            "Nginx",
+            "Heroku"
+          ]
+        },
+        {
+          "label": "Practices",
+          "items": [
+            "Modular architecture",
+            "DDD",
+            "SOLID",
+            "TDD",
+            "CI/CD",
+            "code review",
+            "SemVer",
+            "Agile"
+          ]
+        },
+        {
+          "label": "Payments",
+          "items": [
+            "Stripe",
+            "Alma",
+            "Sogecommerce",
+            "Apple Pay"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "education",
+      "title": "Education",
+      "items": [
+        {
+          "school": "Metz Numeric School",
+          "program": "Software Engineering programme",
+          "period": "2023 — 2025",
+          "note": "advanced architecture, micro-services, DDD/TDD"
+        },
+        {
+          "school": "Metz Numeric School",
+          "program": "Bachelor, Full Stack Development",
+          "period": "2022 — 2023"
+        },
+        {
+          "school": "CCI Longwy EESC",
+          "program": "Web and Mobile Development (2-year higher diploma)",
+          "period": "2020 — 2022"
+        }
+      ]
+    },
+    {
+      "type": "languages",
+      "title": "Languages",
+      "items": [
+        {
+          "label": "French",
+          "level": "native"
+        },
+        {
+          "label": "English",
+          "level": "fluent written and comprehension, working proficiency spoken"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Interests",
+      "body": [
+        "Literature · History · Sport · Video games"
+      ]
+    }
+  ],
+  "gateExtra": [
+    "Fiches Pédagogiques",
+    "Jewely",
+    "Stripe",
+    "AWS",
+    "Luxembourg",
+    "TypeScript",
+    "Docker Swarm",
+    "gwm-cli",
+    "LazyCurl",
+    "Interests",
+    "Literature",
+    "History",
+    "Sport",
+    "Video games"
+  ]
+}

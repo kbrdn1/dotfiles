@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Shim : force `claude -p` a demarrer SANS serveur MCP.
+#
+# Pourquoi : graphify (backend claude-cli) construit une commande figee
+# (llm.py:1706 et :2899) sans moyen d'y passer de flags. Chaque chunk paie donc
+# le spawn de toute la stack MCP utilisateur, pour une tache texte->JSON qui
+# n'appelle jamais d'outil. Mesure : 20,57s user / 134% CPU sans, 3,39s / 26% avec.
+# Upstream : https://github.com/Graphify-Labs/graphify/issues/1743
+#
+# Usage : PATH="$HOME/.claude/scripts/nomcp:$PATH" env -u ANTHROPIC_API_KEY graphify extract .
+# (env -u ANTHROPIC_API_KEY reste obligatoire : une cle API court-circuite le login claude.ai)
+#
+# A supprimer quand graphify honorera GRAPHIFY_CLAUDE_CLI_ARGS.
+exec "$HOME/.local/bin/claude" --strict-mcp-config --mcp-config '{"mcpServers":{}}' "$@"

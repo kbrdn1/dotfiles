@@ -1,13 +1,30 @@
+# ⚠️ La source de ~/.claude s'appelle private_dot_claude/ depuis que le dossier
+# est marqué private (il contient .credentials.json, il doit rester en 0700).
+# Les motifs ci-dessous suivent ce nom — pas dot_claude/.
+
 # Claude plugins cache and marketplaces (too large, regenerated automatically)
-dot_claude/plugins/cache/
-dot_claude/plugins/marketplaces/
+private_dot_claude/plugins/cache/
+private_dot_claude/plugins/marketplaces/
 # Runtime state (timestamps + projectPath clients — ne pas exposer sur repo public)
-dot_claude/plugins/installed_plugins.json
+private_dot_claude/plugins/installed_plugins.json
 
 # Claude session logs (contain sensitive data)
-dot_claude/projects/
+private_dot_claude/projects/
+
+# Runtime Claude : exclu de chezmoi par .chezmoiignore, mais git les traquait
+# depuis avant cette regle. 75 Mo de snapshots zsh et de todos de sessions mortes.
+private_dot_claude/shell-snapshots/
+private_dot_claude/todos/
+private_dot_claude/statsig/
+private_dot_claude/plans/
+private_dot_claude/telemetry/
+private_dot_claude/.credentials.json
 
 # Build junk — le scanner de me:codebase-visualizer produit du __pycache__
 # (.chezmoiignore ne parle qu'à chezmoi, pas à git : il faut les deux)
 __pycache__/
 *.pyc
+
+# Clones tiers modifiés en local (excalidraw-diagram, visual-explainer) : on
+# versionne leur contenu, jamais leur .git — chezmoi le mappe en dot_git/.
+private_dot_claude/skills/*/dot_git/
