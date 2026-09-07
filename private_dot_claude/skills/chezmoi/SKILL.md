@@ -4,8 +4,8 @@ description: >-
   Use when editing, syncing, or adding ANY config file managed by chezmoi for
   this machine (dotfiles under ~/.config, ~/.claude, ~/.oh-my-zsh, ~/.warp, and
   other home-dir configs) - handles chezmoi prefix mappings (dot_/private_/
-  executable_/symlink_/encrypted_), age encryption, the changelog-generator
-  .tmpl trap that breaks `chezmoi status/diff/apply`, conflict resolution, and
+  executable_/symlink_/encrypted_), age encryption, the `private_dot_claude`
+  0700 rule that a bare `chezmoi apply` would break, conflict resolution, and
   pull/apply/push so changes are never lost. Trigger on "chezmoi", "dotfiles",
   "sync my config", "update my dotfiles", or before any `chezmoi status/diff/
   apply/update/add`.
@@ -28,7 +28,7 @@ metadata:
 - **Encryption**: `age`. Config in `~/.config/chezmoi/chezmoi.toml`:
   - identity `~/.config/age/chezmoi.txt`, recipient `age1j9uw…hs3xl`.
   - Add a secret with `chezmoi add --encrypt <file>` → stored as `encrypted_*`.
-- `~/.claude/skills/` is itself managed by chezmoi (`dot_claude/skills/`).
+- `~/.claude/skills/` is itself managed by chezmoi (`private_dot_claude/skills/`).
   **This skill lives in the source**, so edit it there and `chezmoi apply` it.
 
 ## Core principle
@@ -38,43 +38,25 @@ of truth — the home file is generated. **Always check for a template first**,
 edit the correct source file, respect prefix mappings, and follow the conflict
 workflow so nothing is lost.
 
-## CRITICAL #1: the changelog-generator `.tmpl` trap
+## CRITICAL #1: `~/.claude` must stay `0700`
 
-This repo has exactly two `.tmpl` files and **they are NOT chezmoi templates**:
+The source dir is `private_dot_claude/`, **not** `dot_claude/`. That `private_`
+prefix is load-bearing: `~/.claude` holds `.credentials.json` (the claude.ai
+OAuth token) and the repo is **public**.
 
-```
-dot_claude/skills/changelog-generator/templates/client.tmpl
-dot_claude/skills/changelog-generator/templates/technical.tmpl
-```
-
-They are assets of the `changelog-generator` skill (Go templates using custom
-funcs like `hasFeatures`). chezmoi tries to render them and **crashes**:
-
-```
-chezmoi: ... template: .../client.tmpl:8: function "hasFeatures" not defined
-```
-
-This breaks bare `chezmoi status`, `chezmoi diff`, `chezmoi apply`,
-`chezmoi update`. **Workaround — exclude the templates entity:**
+Without the prefix, chezmoi computes a target mode of `0755` and **every**
+`chezmoi apply` silently widens the directory. The drift shows up as a harmless
+looking `M .claude` line in `chezmoi status`; applying it is the bug.
 
 ```bash
-chezmoi status  --exclude=templates
-chezmoi diff    --exclude=templates
-chezmoi apply   --exclude=templates
+stat -f '%Sp' ~/.claude    # must print drwx------
 ```
 
-When applying a single subtree (recommended for most edits), target the path so
-the bad files are never touched:
+If it ever reads `drwxr-xr-x`: `chmod 700 ~/.claude`, then check the source is
+still named `private_dot_claude` (`chezmoi chattr private ~/.claude` restores it).
 
-```bash
-chezmoi apply ~/.claude/skills/chezmoi
-chezmoi apply ~/.config/ghostty
-```
-
-Do NOT "fix" this by `chezmoi add`-ing the rendered file or deleting the
-`.tmpl` — those files must keep the `.tmpl` name for the changelog-generator
-skill to load them. The clean long-term fix is to stop chezmoi from templating
-that subtree; until then, use `--exclude=templates` or path-scoped applies.
+`.credentials.json` is ignored on **both** sides — `.chezmoiignore` for chezmoi,
+`.gitignore` for git. One is not enough: they are independent tools.
 
 ## CRITICAL #2: check for templates before editing
 
@@ -82,21 +64,31 @@ that subtree; until then, use `--exclude=templates` or path-scoped applies.
 ls -la ~/.local/share/chezmoi/<prefix_mapped_name>*
 ```
 
-If a real `.tmpl` exists for the file you want to change:
+If a `.tmpl` exists for the file you want to change:
 - Edit the **template source**, not the generated home file.
 - **Never** `chezmoi add` a templated file (it strips the `.tmpl` attribute and
   destroys the template logic permanently).
 - Copy directly into the source instead.
 
-(Right now only the two changelog-generator files carry `.tmpl`, and those are
-the fake-template trap above — but check anyway before assuming.)
+**There are currently zero `.tmpl` files in the source.** Until 2026-09-07 the
+repo carried a dead copy of `changelog-generator` whose `client.tmpl` /
+`technical.tmpl` were Go templates (custom funcs like `hasFeatures`), not chezmoi
+templates — chezmoi tried to render them and crashed every bare `status`/`diff`/
+`apply`, which is why every command in this skill used to carry
+`--exclude=templates`. That copy is gone (the live skill ships
+`templates/generate_changelog.md` instead), so **the flag is no longer needed**.
+Check anyway before assuming — a new `.tmpl` would bring the crash back:
+
+```bash
+find ~/.local/share/chezmoi -name '*.tmpl' -not -path '*/.git/*'
+```
 
 ## Prefix mappings (real paths in this repo)
 
 | Home file | chezmoi source |
 |-----------|----------------|
-| `.claude/CLAUDE.md` | `dot_claude/CLAUDE.md` |
-| `.claude/skills/<x>/SKILL.md` | `dot_claude/skills/<x>/SKILL.md` |
+| `.claude/CLAUDE.md` | `private_dot_claude/CLAUDE.md` |
+| `.claude/skills/<x>/SKILL.md` | `private_dot_claude/skills/<x>/SKILL.md` |
 | `.config/ghostty/config` | `dot_config/ghostty/config` |
 | `.config/ghostty/themes/claude-dark` | `dot_config/ghostty/themes/private_claude-dark` |
 | `.config/zed/settings.json` | `dot_config/zed/private_settings.json` |
@@ -116,7 +108,7 @@ the fake-template trap above — but check anyway before assuming.)
 - symlink → `symlink_` prefix (target is the file content)
 - templated → `.tmpl` suffix (rendered by chezmoi — see the trap above)
 
-**Top-level source entries:** `dot_claude/`, `dot_config/`, `dot_oh-my-zsh/`,
+**Top-level source entries:** `private_dot_claude/`, `dot_config/`, `dot_oh-my-zsh/`,
 `dot_warp/`, `nix-config/`, `sketchybar-app-font/`, `tmux_custom_modules/`.
 `nix-config/` is versioned in the repo but is **not** a `dot_` home mapping (it
 feeds the nix/home-manager setup), so leave it to the nix workflow.
@@ -141,7 +133,7 @@ For any managed config file:
 1. **Check for a real template**: `ls ~/.local/share/chezmoi/<prefix_mapped_name>*`
 2. **Edit the source** (template if one exists, else the source file) — or edit
    the home file then copy it in: `cp ~/<file> ~/.local/share/chezmoi/<prefix_mapped_name>`
-3. **Verify**: `chezmoi diff --exclude=templates` (or path-scoped)
+3. **Verify**: `chezmoi diff` (or path-scoped)
 4. **Commit**: `cd ~/.local/share/chezmoi && git add -A && git commit -m "msg"`
 5. **Push**: `git push`
 
@@ -154,10 +146,10 @@ To go the other direction (deploy source → home): `chezmoi apply <path>`.
 
 ```bash
 cd ~/.local/share/chezmoi
-chezmoi status --exclude=templates        # see drift before pulling
+chezmoi status        # see drift before pulling
 git pull --rebase
-chezmoi diff   --exclude=templates        # preview what apply would change
-chezmoi apply  --exclude=templates        # or: chezmoi apply <specific paths>
+chezmoi diff          # preview what apply would change
+chezmoi apply         # or: chezmoi apply <specific paths>
 ```
 
 ## Conflict resolution (local drift + remote changes)
@@ -165,12 +157,12 @@ chezmoi apply  --exclude=templates        # or: chezmoi apply <specific paths>
 ### 1. Capture local drift BEFORE pulling
 
 ```bash
-chezmoi status --exclude=templates
+chezmoi status
 # MM = modified in both home and source ; M = source only ; A = in source, missing in home
 ```
 
 For each file to keep: `cp ~/<file> ~/.local/share/chezmoi/<prefix_mapped_name>`,
-then `chezmoi diff --exclude=templates` to confirm. Commit (don't push yet):
+then `chezmoi diff` to confirm. Commit (don't push yet):
 
 ```bash
 cd ~/.local/share/chezmoi && git add -A && git commit -m "capture local config drift"
@@ -185,8 +177,8 @@ git pull --rebase   # resolve any git conflicts in source files
 ### 3. Review & apply
 
 ```bash
-chezmoi diff --exclude=templates
-chezmoi apply --exclude=templates     # remote good → applies
+chezmoi diff
+chezmoi apply     # remote good → applies
 # local should win → already committed in step 1
 # need a merge → edit the source file, git commit again
 ```
@@ -211,7 +203,8 @@ credentials but you don't want full encryption. Commit + push.
 
 | Mistake | Symptom | Fix |
 |---------|---------|-----|
-| Bare `chezmoi status/apply` | `hasFeatures` template crash | add `--exclude=templates` or path-scope |
+| `chezmoi apply` on `~/.claude` | dir widened to `0755` with a token inside | `chmod 700`, keep the source named `private_dot_claude` |
+| A new `.tmpl` lands in the source | bare `status/diff/apply` crashes on render | it is an asset, not a template → path-scope, or move it out of the source |
 | `chezmoi add` on a template | template logic lost | copy into source directly |
 | Edit the home file when a `.tmpl` exists | change overwritten on apply | edit the source template |
 | `chezmoi upgrade` | fights the nix-managed binary | upgrade via nix |
@@ -221,7 +214,8 @@ credentials but you don't want full encryption. Commit + push.
 
 ## Red flags — STOP and check
 
-- About to run bare `chezmoi status/diff/apply` → add `--exclude=templates`.
+- About to `chezmoi apply` without a path → it may widen `~/.claude` to `0755`.
+  Path-scope it, and check `stat -f '%Sp' ~/.claude` after.
 - About to `chezmoi add` → check for a `.tmpl` source first.
 - About to edit a dotfile → confirm the source path and whether it's templated.
 - Touching a secret → use `--encrypt` / `private_`, never commit plaintext.
