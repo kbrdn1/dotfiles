@@ -16,7 +16,8 @@
 | **Transfo. de code en masse** | `morphllm` (morph-mcp, fast-apply) *si besoin* | — | — |
 | **Analyse / raisonnement** | `sequential-thinking` *au besoin* | — | — |
 | **Navigateur / E2E** | `playwright` *au besoin* | `chrome-devtools` *(sur demande)* | — |
-| **Review de code (PR)** | boucle `/me:loop:codex-review-pr` (CLI Codex local, auto-cadencé, post-PR) | `/me:check-reviews` *(second plan, déclenché manuellement selon le besoin)* — cascade interne cloud/CLI/bots | bots GitHub (Copilot / CodeRabbit) — `gh pr review` manuelle |
+| **Review de code (PR)** | boucle `/me:loop:claude-review-pr` (agent Claude frais, auto-cadencé, post-PR) | boucle `/me:loop:codex-review-pr` (CLI Codex local — quand il faut un **reviewer tiers**) puis `/me:check-reviews` *(manuel)* | bots GitHub (Copilot / CodeRabbit) — `gh pr review` manuelle |
+| **CI verte (PR)** | boucle `/me:loop:ci-until-green` (checks du **SHA exact** de HEAD, corrige la cause racine, max 6) | `gh pr checks --watch` à la main | ~~`watch-ci`~~ *(déprécié : lit la branche, pas le sha ; 3 essais en dur)* |
 | **Worktrees** | `gwm` (gwm-cli) — **indispensable** | — | — |
 | **Suivi des sessions IA** | `gwm agents attach` après chaque création de worktree | `gwm agents` / pane Agents de la TUI | — |
 | **Comprendre une codebase** | `graphify` (graph AST + doc, `graphify-out/graph.json`) | `mgrep` / `serena` | lecture directe |
@@ -47,8 +48,10 @@ flowchart TD
     Q -->|Tester dans le navigateur| B1[playwright]
     B1 -->|perf / debug avancé| B2[chrome-devtools<br/>sur demande]
 
-    Q -->|Reviewer une PR| R1["boucle /me:loop:codex-review-pr<br/>CLI Codex local, auto-cadencé<br/>(post-PR, par défaut)"]
-    R1 -->|au besoin / second plan| R2["/me:check-reviews (manuel)<br/>cascade interne :<br/>@codex review cloud → CLI → bots"]
+    Q -->|Reviewer une PR| R1["boucle /me:loop:claude-review-pr<br/>agent Claude frais, auto-cadencé<br/>(post-PR, par défaut)"]
+    R1 -->|PR sensible :<br/>reviewer tiers| R1b["boucle /me:loop:codex-review-pr<br/>CLI Codex local"]
+    R1b -->|au besoin / second plan| R2["/me:check-reviews (manuel)<br/>cascade interne :<br/>@codex review cloud → CLI → bots"]
+    R1 -->|au besoin / second plan| R2
     R2 -->|indispo| R3[bots GitHub<br/>Copilot / CodeRabbit]
     R3 -->|indispo| R4[gh pr review manuelle]
 
@@ -155,7 +158,7 @@ le squelette.
 > Quand je suis focus sur une **feature / fix / hotfix / chore** sans worktree.
 
 **Commande :** `/me:issue-branch-pr [desc]`
-**Puis :** review via la boucle `/me:loop:codex-review-pr` (CLI Codex local, auto-cadencé, corrige jusqu'à 0 finding bloquant pertinent) + CI verte. Au besoin, je déclenche `/me:check-reviews [PR#]` manuellement en second plan (cascade interne cloud/CLI/bots).
+**Puis :** review via la boucle `/me:loop:claude-review-pr` (agent Claude frais, auto-cadencé, corrige jusqu'à 0 finding bloquant pertinent) + `/me:loop:ci-until-green`. PR sensible → doubler avec `/me:loop:codex-review-pr` (reviewer tiers). Au besoin, `/me:check-reviews [PR#]` en second plan manuel.
 
 ```mermaid
 flowchart LR
@@ -163,7 +166,7 @@ flowchart LR
     B --> C[Branche feature depuis<br/>la default branch à jour]
     C --> D[Commits atomiques<br/>Gitmoji / Conventional]
     D --> E[Push + PR<br/>depuis template repo]
-    E --> G["/me:loop:codex-review-pr<br/>🔁 CLI Codex local (auto-cadencé)<br/>second plan manuel : /me:check-reviews"]
+    E --> G["/me:loop:claude-review-pr<br/>🔁 agent Claude frais (auto-cadencé)<br/>tiers si sensible : /me:loop:codex-review-pr"]
     G --> H{CI verte ?}
     H -->|non| G
     H -->|oui| I[✅ PR prête à merge]
@@ -177,7 +180,7 @@ flowchart LR
 
 **Commande :** `/me:issue-worktree-pr [desc]`
 **Juste après la création du worktree :** `gwm agents attach <slug> <session-id>` — la session a démarré depuis le checkout principal (en général `dev`), donc gwm l'attribue **là** et le worktree où elle bosse vraiment n'affiche aucun agent. Le pin corrige l'attribution ; c'est exactement ce pour quoi `attach` existe.
-**Puis :** review via la boucle `/me:loop:codex-review-pr` (CLI Codex local, auto-cadencé, corrige jusqu'à 0 finding bloquant pertinent) — **lancée depuis le worktree** — + CI verte. Au besoin, je déclenche `/me:check-reviews [PR#]` manuellement en second plan (cascade interne cloud/CLI/bots).
+**Puis :** review via la boucle `/me:loop:claude-review-pr` (agent Claude frais, auto-cadencé, corrige jusqu'à 0 finding bloquant pertinent) — **lancée depuis le worktree** — + `/me:loop:ci-until-green`. PR sensible → doubler avec `/me:loop:codex-review-pr` (reviewer tiers). Au besoin, `/me:check-reviews [PR#]` en second plan manuel.
 
 📁 *Réf. : `fiches-pedagogiques-front/`, `fiches-pedagogiques-api-rest/`*
 
@@ -188,7 +191,7 @@ flowchart LR
     C --> CA["gwm agents attach<br/>🔗 la session se pin<br/>sur le worktree"]
     CA --> D[Commits atomiques<br/>Gitmoji / Conventional]
     D --> E[Push + PR<br/>depuis template repo]
-    E --> G["/me:loop:codex-review-pr<br/>🔁 CLI Codex local (depuis le worktree)<br/>second plan manuel : /me:check-reviews"]
+    E --> G["/me:loop:claude-review-pr<br/>🔁 agent Claude frais (depuis le worktree)<br/>tiers si sensible : /me:loop:codex-review-pr"]
     G --> H{CI verte ?}
     H -->|non| G
     H -->|oui| I[✅ PR prête à merge]
@@ -207,7 +210,7 @@ flowchart LR
 **Principe issue-first** : le n° d'issue GitHub pilote la branche (`<type>/#N-slug`, créée par **gwm**/git) **et** le spec dir (`N-slug`, créé par **speckit**). `speckit.specify` tourne en **`--no-branch`** (gwm/git possède déjà la branche) avec `--number N` → la résolution downstream (`feature.json` + préfixe) garde issue = branche = spec.
 **Prérequis** : `.specify/` présent dans le repo (sinon `/speckit.install`).
 **Boucle optionnelle** : `speckit.converge` → réinjecte les écarts spec↔code en tâches, puis `speckit.implement` à nouveau.
-**Puis :** review via la boucle `/me:loop:codex-review-pr` (depuis le worktree en mode worktree) + CI verte.
+**Puis :** review via la boucle `/me:loop:claude-review-pr` (depuis le worktree en mode worktree) + `/me:loop:ci-until-green`.
 
 📁 *Réf. : repos avec Spec Kit installé (`.specify/`)*
 
@@ -221,7 +224,7 @@ flowchart LR
     E --> F["speckit.implement<br/>(+ speckit.converge optionnel)"]
     F --> G[Commits atomiques<br/>artefacts spec + code]
     G --> H[Push + PR<br/>Closes #N]
-    H --> I["/me:loop:codex-review-pr<br/>(depuis le worktree)"]
+    H --> I["/me:loop:claude-review-pr<br/>(depuis le worktree)"]
     I --> J{CI verte ?}
     J -->|non| I
     J -->|oui| K[✅ PR prête à merge]
@@ -231,21 +234,23 @@ flowchart LR
 
 ---
 
-## 🎯 Workflow — Sprint (`/goal`)
+## 🎯 Workflow — Sprint (`/me:goal`)
 
 > Quand je suis focus sur un **sprint** complet (issues + hiérarchie avec dépendances `blocked`).
 
-**Commande :** `/goal [desc sprint avec issues et hiérarchie blocked]`
-Utilise le **workflow worktree autonome**, merge progressivement dans `dev` après review (boucle `/me:loop:codex-review-pr` — CLI Codex local — prioritaire ; `/me:check-reviews` en second plan manuel), et résout les conflits.
+⚠️ **Renommé `/goal` → `/me:goal` (2026-09-07)** : `/goal` est depuis la 2.1.139 une **commande native** de Claude Code (condition de complétion évaluée par un modèle qui ne lit que le transcript). Rien à voir avec ce workflow. Le nom est pris, on ne le réutilise pas.
+
+**Commande :** `/me:goal [desc sprint avec issues et hiérarchie blocked]`
+Utilise le **workflow worktree autonome**, merge progressivement dans `dev` après review (boucle `/me:loop:claude-review-pr` — agent Claude frais — prioritaire ; `/me:loop:codex-review-pr` si reviewer tiers voulu ; `/me:check-reviews` en second plan manuel), et résout les conflits.
 
 📁 *Réf. : `gwm-cli/`, `LazyCurl-rs/`*
 
 ```mermaid
 flowchart TD
-    A["/goal [desc sprint]"] --> B[Décomposition<br/>Issues + hiérarchie blocked]
+    A["/me:goal [desc sprint]"] --> B[Décomposition<br/>Issues + hiérarchie blocked]
     B --> C[Pour chaque issue débloquée]
     C --> D[Workflow worktree autonome<br/>issue → worktree → PR]
-    D --> E{Review /me:loop:codex-review-pr<br/>CLI Codex local · second plan /me:check-reviews}
+    D --> E{Review /me:loop:claude-review-pr<br/>agent Claude frais · tiers /me:loop:codex-review-pr}
     E -->|OK| F[Merge progressif dans dev]
     F --> G{Conflits ?}
     G -->|oui| H[Résolution des conflits]
@@ -312,10 +317,10 @@ flowchart TD
     DEV -->|Feature dans<br/>le checkout courant| BR["Workflow Branche<br/>/me:issue-branch-pr"]
     DEV -->|Feature spec-driven<br/>worktree| SWT["Spec-driven Worktree<br/>/me:spec-issue-worktree-pr"]
     DEV -->|Feature spec-driven<br/>checkout courant| SBR["Spec-driven Branche<br/>/me:spec-issue-branch-pr"]
-    DEV -->|Sprint complet| SP["Workflow Sprint<br/>/goal"]
+    DEV -->|Sprint complet| SP["Workflow Sprint<br/>/me:goal"]
     DEV -->|Publication| RE["Workflow Release<br/>/me:release"]
 
-    WT --> RV["/me:loop:codex-review-pr<br/>🔁 CLI Codex local (auto-cadencé)<br/>second plan manuel : /me:check-reviews<br/>+ CI verte"]
+    WT --> RV["/me:loop:claude-review-pr<br/>🔁 agent Claude frais (auto-cadencé)<br/>tiers si sensible : /me:loop:codex-review-pr<br/>+ /me:loop:ci-until-green"]
     BR --> RV
     SWT --> RV
     SBR --> RV
@@ -332,7 +337,7 @@ flowchart TD
 - **Commits** : atomiques, Gitmoji + Conventional Commits, référencent l'issue.
 - **Issue** : remplie depuis le template du repo (`.github/ISSUE_TEMPLATE/*`).
 - **PR** : remplie depuis le template du repo (`.github/PULL_REQUEST_TEMPLATE.md`).
-- **Reviews** : source par défaut = la boucle **`/me:loop:codex-review-pr`** (CLI Codex local, auto-cadencé, lancée après la PR — **depuis le worktree** en mode worktree — qui corrige jusqu'à 0 finding bloquant pertinent P0/P1, max 5 itérations). En **second plan**, je déclenche **`/me:check-reviews [PR#]`** manuellement selon le besoin (cascade interne : `@codex review` cloud → CLI locaux Codex/CodeRabbit → bots GitHub Copilot/CodeRabbit). On attend la **CI verte** avant merge.
+- **Reviews** : source par défaut = la boucle **`/me:loop:claude-review-pr`** (agent Claude spawné en contexte **frais**, auto-cadencé, lancée après la PR — **depuis le worktree** en mode worktree — qui corrige jusqu'à 0 finding bloquant pertinent P0/P1/P2, max 8 itérations, avec analyse de convergence). ⚠️ Le reviewer est du **même modèle que la session** : moins de diversité adversariale qu'un tiers, il partage les angles morts. Sur une **PR sensible** (sécurité, argent, multi-tenant, migration de données), doubler avec **`/me:loop:codex-review-pr`** (CLI Codex local, reviewer tiers). En **second plan**, **`/me:check-reviews [PR#]`** manuellement (cascade interne : `@codex review` cloud → CLI locaux Codex/CodeRabbit → bots GitHub Copilot/CodeRabbit). Puis **`/me:loop:ci-until-green`** avant merge.
 - **Notes** : au **merge de PR**, une note dans `~/Vault/pro` (ou `perso`) — pourquoi cette solution, ce que la review a attrapé qui vaut au-delà de la PR, ce qui est reporté. C'est le seul moment où le contexte est frais et où git ne le garde pas. Jamais au commit.
 - **Codebase** : avant de plonger dans un repo qu'on ne connaît pas ou plus, `graphify extract . --code-only` (gratuit) puis interroger `graph.json` plutôt que grep à l'aveugle.
 - **Sprint** : merge progressif dans `dev` ; release depuis `main`.
@@ -377,6 +382,8 @@ flowchart TD
 ---
 
 ## ✅ Fait récemment
+
+- **Review par défaut = `claude-review-pr` · loop `ci-until-green` · `/goal` → `/me:goal`** (2026-09-07) : trois changements dans le système de loops. **(1) Le reviewer par défaut passe du CLI Codex à l'agent Claude frais** (`/me:loop:claude-review-pr`) — plus de broker, plus de wedge, plus de fallback ; `codex-review-pr` reste pour ce qu'il apporte vraiment, la **diversité adversariale d'un reviewer tiers**, sur les PR sensibles. **(2) Nouveau loop `/me:loop:ci-until-green`**, qui remplace la skill `watch-ci` (dépréciée : elle lit `gh run list` sur la **branche** — donc potentiellement la run d'un commit qui n'est plus HEAD — plafonne à 3 essais en dur et n'a aucune garde anti-faux-vert). Le loop lit les checks du **SHA exact** de HEAD (`repos/{repo}/commits/{sha}/check-runs`), exige que tout soit poussé, ferme les trois faux-verts (checks périmés / zéro check / travail non poussé) et laisse une **fenêtre de décantation** de 2 min pour ne pas confondre « workflow pas encore créé » et « pas de CI ». **(3) `/goal` → `/me:goal`** : `/goal` est une **commande native** depuis la 2.1.139 (condition de complétion jugée par un évaluateur qui ne lit que le **transcript**) — le nom était en collision avec mon workflow sprint, et ce workflow n'existait de toute façon **nulle part** comme fichier. Au passage : `me:run-loop` et `CLAUDE.md` pointaient encore `skills/loop/<name>` → `/loop:<name>` alors que le disque dit `skills/me/loop/` → `/me:loop:` (les 3 descriptions frontmatter annonçaient le mauvais préfixe, or ce sont elles qui pilotent le triggering) ; l'**analyse de convergence** (~80 lignes dupliquées entre les deux loops de review) est extraite dans `skills/me/loop/_shared/convergence.md` ; la **garde anti-faux-propre** (#772/#1008) devient un garde-fou du moteur et un point de validation de `me:create-loop`, au lieu de vivre uniquement dans les deux loops qui l'avaient apprise ; et le gabarit `trigger: stop-hook` gagne une **sentinelle d'armement** — la doc dit noir sur blanc qu'un hook de frontmatter de skill reste enregistré *pour tout le reste de la session*, donc sans sentinelle il relance le `check_command` à chaque `Stop` bien après la fin du loop. ⚠️ `ci-until-green` : pipeline de verdict validé sur données réelles (chemin vert **et** rouge, 20 checks sur `gwm-cli`) et garde « tout poussé » vérifiée ; **le run end-to-end complet n'a pas été fait** — à confirmer au premier usage réel.
 
 - **Vaults tolaria `~/Vault/{pro,perso}` + graphify** (2026-08-28) : le vault Obsidian (282 notes dans iCloud) était **mort depuis juin** — 92 wikilinks pour 282 notes, `04 - Permanent` vide, les « tags » les plus fréquents étaient des couleurs hex fuyant de blocs mermaid, et 132 des 139 notes de `01 - Projects` étaient des copies de `README.md`/`CLAUDE.md` de repos (déjà dérivées : `diff` sort des écarts sur `README.md` et `SECURITY.md`). **Il n'est pas mort, l'écriture avait déménagé** : les vraies notes de juin-juillet sont à la racine des workspaces client (analyses d'intégration, audits d'infra, calculs de charge) et surtout dans **339 mémoires Claude Code** (`~/.claude/projects/*/memory/`, dont 142 gwm-cli et 103 bijouterie-julian) — la courbe des dailies le dit : 7 (nov) → 16 → **19 (jan, pic)** → 13 → 1 → 1 → 0. Deux vaults git **frères** hors iCloud (`kbrdn1/vault-pro`, `kbrdn1/vault-perso`, privés), MCP multi-vault via `VAULT_PATHS`. 12 notes pro **copiées** (pas déplacées) avec frontmatter tolaria, 119 notes perso migrées ciblé. Les mémoires Claude **restent en place** : elles vivent d'elles-mêmes et apportent le contexte riche par projet. ⛔ **Découverte bloquante** : tolaria **ne suit pas les symlinks** — vérifié sur 2026.8.19, source + empirique. Dossier symlinké = invisible (`collectMarkdownFile` teste `isDirectory()`, faux sur un symlink, et le nom ne finit pas par `.md`) ; fichier symlinké = **indexé et cherchable mais `get_note` le rejette** (`realpath` + `isVaultRelativePath`), soit le pire cas, exactement l'issue #234 fermée COMPLETED le 2026-04-24 et contestée depuis par deux users. Les 9 symlinks `01 - Projects/* → <repo>/docs` étaient donc invisibles ; ce rôle passe à **graphify**. ✅ Le bug YAML Templater qui faisait planter `get_vault_context` sur tout le vault (une seule note en cause) est corrigé en 2026.8.19 — mais la règle « valeurs quotées, pas de Templater » reste. ⚠️ Les deux outils sont **pré-1.0** (tolaria en alpha quotidienne, graphify v0.9.51 créé il y a 4 mois, 1142 issues) : rien d'unique ne vit dedans, le vault Obsidian n'est pas supprimé. `search_notes` est du plein-texte basique — bon sur 1-2 termes, il décroche sur une question en langage naturel. Premier run graphify sur `gwm-cli` : 7439 nœuds, 18375 arêtes, 243 communautés, **0 token** en `--code-only` (93 % EXTRACTED) ; le `GRAPH_REPORT.md` est maigre sans la passe docs (les 168 docs sautées sont là où est la valeur « améliorer la doc »), et le nommage des communautés retombe sur le nœud-hub même via `--backend=claude-cli`.
 

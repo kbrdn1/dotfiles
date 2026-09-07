@@ -38,9 +38,10 @@ Détail + diagrammes : `~/Desktop/WORKFLOW-w-Claude-Code.md`.
 
 - 🟡 **Worktree (défaut)** : `/me:issue-worktree-pr [desc]` (isole via `gwm`).
 - 🟡 **Branche (checkout courant)** : `/me:issue-branch-pr [desc]`.
-- 🟡 **Sprint** : `/goal [desc]` — worktree autonome, merge progressif dans `dev`.
+- 🟡 **Sprint** : `/me:goal [desc]` — worktree autonome, merge progressif dans `dev`. (⚠️ **pas** `/goal`, qui est la commande native « condition de complétion ».)
 - 🟡 **Release** : `/me:release [X.Y.Z]` — changelog (`/changelog` du projet) → bump version → merge `dev` → `main` → **tag après le merge** → release (CI sur tag, ou `gh release create`). Un `/release` propre au repo, s'il existe, fait foi.
-- 🟡 **Reviews** : par défaut, la boucle **`/me:loop:codex-review-pr`** (CLI Codex local, auto-cadencé, **depuis le worktree**, corrige les findings bloquants pertinents P0/P1 jusqu'à clean). En **second plan**, déclencher **`/me:check-reviews [PR#]`** manuellement selon le besoin (cascade interne : `@codex review` cloud → CLI locaux `codex`/`coderabbit review --agent` → bots GitHub Copilot/CodeRabbit) ; attendre la **CI verte** avant merge.
+- 🟡 **Reviews** : par défaut, la boucle **`/me:loop:claude-review-pr`** (agent Claude spawné en contexte **frais**, auto-cadencé, **depuis le worktree**, corrige les findings bloquants pertinents P0/P1/P2 jusqu'à clean, analyse de convergence). ⚠️ Même modèle que la session = angles morts partagés : sur une **PR sensible** (sécurité, argent, multi-tenant, migration de données), doubler avec **`/me:loop:codex-review-pr`** (CLI Codex local, reviewer **tiers**). En **second plan**, **`/me:check-reviews [PR#]`** manuellement (cascade interne : `@codex review` cloud → CLI locaux `codex`/`coderabbit review --agent` → bots GitHub Copilot/CodeRabbit) ; attendre la **CI verte** avant merge.
+- 🟡 **CI** : `/me:loop:ci-until-green` — attend les checks du **SHA exact** de HEAD, corrige la cause racine des jobs rouges, repousse, jusqu'au vert (max 6). 🔴 Jamais de `continue-on-error`, de job désactivé, de test skippé ni de re-run à l'aveugle pour verdir : une CI aveugle est pire qu'une CI rouge.
 
 Conventions :
 - 🔴 Branche feature uniquement, **jamais sur `main`/`master`** directement.

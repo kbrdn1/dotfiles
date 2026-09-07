@@ -1,5 +1,5 @@
 ---
-description: "Crée un nouveau loop auto-cadencé — scaffolde la skill loop:<name> + sa commande /loop:<name>"
+description: "Crée un nouveau loop auto-cadencé — scaffolde la skill me:loop:<name> + sa commande /me:loop:<name>"
 argument-hint: "<nom> [goal / check_command / exit_when / max_iterations / steps]"
 ---
 

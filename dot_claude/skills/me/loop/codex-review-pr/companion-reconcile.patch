@@ -1,0 +1,201 @@
+--- a/codex-companion.mjs
++++ b/codex-companion.mjs
+@@ -52,6 +52,13 @@
+ } from "./lib/tracked-jobs.mjs";
+ import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+ import {
++  clearBrokerSession,
++  loadBrokerSession,
++  sendBrokerShutdown,
++  teardownBrokerSession,
++  waitForBrokerEndpoint
++} from "./lib/broker-lifecycle.mjs";
++import {
+   renderNativeReviewResult,
+   renderReviewResult,
+   renderStoredJobResult,
+@@ -80,7 +87,8 @@
+       "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
+       "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
+       "  node scripts/codex-companion.mjs result [job-id] [--json]",
+-      "  node scripts/codex-companion.mjs cancel [job-id] [--json]"
++      "  node scripts/codex-companion.mjs cancel [job-id] [--json]",
++      "  node scripts/codex-companion.mjs reconcile [--force] [--stall-ms <n>] [--json]"
+     ].join("\n")
+   );
+ }
+@@ -690,6 +698,25 @@
+ 
+   const cwd = resolveCommandCwd(options);
+   const workspaceRoot = resolveCommandWorkspace(options);
++
++  // Best-effort pre-launch self-heal: clear orphaned (dead-PID) jobs and a
++  // dead broker so this review doesn't immediately wedge on someone else's
++  // leftovers. A live, progressing broker is never touched here (orphan-only;
++  // the during-wait stall watch lives in the caller). Never abort the review.
++  try {
++    const summary = await reconcileWorkspace(workspaceRoot);
++    if (summary.reconciledJobs.length || summary.brokerReset) {
++      const queue = summarizeQueue(workspaceRoot);
++      process.stderr.write(
++        `[codex] preflight: cleared ${summary.reconciledJobs.length} stale job(s)` +
++          `${summary.brokerReset ? ", reset dead broker" : ""}; ` +
++          `queue ${queue.queued} queued / ${queue.running} running.\n`
++      );
++    }
++  } catch (error) {
++    process.stderr.write(`[codex] preflight skipped: ${error?.message ?? error}\n`);
++  }
++
+   const focusText = positionals.join(" ").trim();
+   const target = resolveReviewTarget(cwd, {
+     base: options.base,
+@@ -835,8 +862,138 @@
+       }),
+     { logFile }
+   );
++}
++
++// --- Self-heal helpers (reconcile): clean orphaned jobs + wedged brokers ---
++
++// A wedged broker keeps a live PID but stops advancing the active job's log
++// (it pins `activeStreamSocket` to a now-dead review client and answers every
++// new request with BROKER_BUSY). PID liveness alone can't detect that — the
++// honest progress signal is the running job's log mtime.
++function isProcessAlive(pid) {
++  if (!Number.isFinite(Number(pid))) {
++    return false;
++  }
++  try {
++    process.kill(Number(pid), 0);
++    return true;
++  } catch (error) {
++    // EPERM => the process exists but isn't ours; still "alive".
++    return error && error.code === "EPERM";
++  }
++}
++
++// Smallest age (ms) across active jobs that have written a log, or null when
++// no active job has a log yet. A fresh log on ANY active job means the broker
++// is making progress, so we never tear it down underneath a live review.
++function activeJobLogStallMs(workspaceRoot) {
++  const nowMs = Date.now();
++  let freshest = Infinity;
++  for (const job of listJobs(workspaceRoot)) {
++    if (job.status !== "running" && job.status !== "queued") {
++      continue;
++    }
++    const logFile = job.logFile;
++    if (!logFile || !fs.existsSync(logFile)) {
++      continue;
++    }
++    try {
++      const age = nowMs - fs.statSync(logFile).mtimeMs;
++      if (age < freshest) {
++        freshest = age;
++      }
++    } catch {
++      // Ignore unreadable log files.
++    }
++  }
++  return freshest === Infinity ? null : freshest;
++}
++
++function summarizeQueue(workspaceRoot) {
++  let queued = 0;
++  let running = 0;
++  for (const job of listJobs(workspaceRoot)) {
++    if (job.status === "queued") {
++      queued += 1;
++    } else if (job.status === "running") {
++      running += 1;
++    }
++  }
++  return { queued, running };
+ }
+ 
++// Mark active jobs whose owning process is gone as failed, and tear down a
++// broker that is dead, explicitly forced, or stalled past `stallMs`. Always
++// safe to call: it only touches jobs with a dead PID and only restarts a
++// broker that is not making progress, so a concurrent, advancing review on
++// the same workspace is left untouched.
++async function reconcileWorkspace(workspaceRoot, options = {}) {
++  const { force = false, stallMs = null } = options;
++  const reconciledJobs = [];
++  for (const job of listJobs(workspaceRoot)) {
++    if ((job.status === "running" || job.status === "queued") && !isProcessAlive(job.pid)) {
++      upsertJob(workspaceRoot, {
++        id: job.id,
++        status: "failed",
++        phase: "aborted",
++        updatedAt: nowIso()
++      });
++      reconciledJobs.push({ id: job.id, pid: job.pid ?? null, was: job.status });
++    }
++  }
++
++  let brokerReset = false;
++  let stalledMs = null;
++  const session = loadBrokerSession(workspaceRoot);
++  if (session) {
++    const pidAlive = isProcessAlive(session.pid);
++    stalledMs = activeJobLogStallMs(workspaceRoot);
++    const stalled = Number.isFinite(stallMs) && stalledMs != null && stalledMs >= stallMs;
++    if (!pidAlive || force || stalled) {
++      // Try a graceful shutdown first so the app-server flushes; then force
++      // the teardown (kill + remove sock/pidfile/sessionDir) and drop the
++      // broker.json so the next review spawns a clean broker.
++      if (session.endpoint) {
++        try {
++          await sendBrokerShutdown(session.endpoint);
++          await waitForBrokerEndpoint(session.endpoint, 200).catch(() => false);
++        } catch {
++          // Ignore: the broker may already be gone or unresponsive.
++        }
++      }
++      teardownBrokerSession({ ...session, killProcess: terminateProcessTree });
++      clearBrokerSession(workspaceRoot);
++      brokerReset = true;
++    }
++  }
++
++  return { workspaceRoot, reconciledJobs, brokerReset, stalledMs };
++}
++
++async function handleReconcile(argv) {
++  const { options } = parseCommandInput(argv, {
++    valueOptions: ["cwd", "stall-ms"],
++    booleanOptions: ["json", "force"]
++  });
++
++  const cwd = resolveCommandCwd(options);
++  const workspaceRoot = resolveWorkspaceRoot(cwd);
++  const stallMs = options["stall-ms"] != null ? Number(options["stall-ms"]) : null;
++  const summary = await reconcileWorkspace(workspaceRoot, {
++    force: Boolean(options.force),
++    stallMs
++  });
++  const queue = summarizeQueue(workspaceRoot);
++  const payload = { ...summary, queue };
++  const stalledNote =
++    summary.stalledMs != null ? ` (active job idle ${Math.round(summary.stalledMs / 1000)}s)` : "";
++  const rendered =
++    `Reconcile: ${summary.reconciledJobs.length} stale job(s) failed` +
++    `${summary.brokerReset ? `, broker reset${stalledNote}` : ""}. ` +
++    `Queue: ${queue.queued} queued, ${queue.running} running.\n`;
++  outputCommandResult(payload, rendered, options.json);
++}
++
+ async function handleStatus(argv) {
+   const { options, positionals } = parseCommandInput(argv, {
+     valueOptions: ["cwd", "timeout-ms", "poll-interval-ms"],
+@@ -1015,6 +1172,9 @@
+     case "cancel":
+       await handleCancel(argv);
+       break;
++    case "reconcile":
++      await handleReconcile(argv);
++      break;
+     default:
+       throw new Error(`Unknown subcommand: ${subcommand}`);
+   }
