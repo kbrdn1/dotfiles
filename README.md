@@ -55,7 +55,7 @@ ASDF + Homebrew setup (see [MIGRATION_NIX.md](MIGRATION_NIX.md)).
   - [Yazi](https://github.com/sxyazi/yazi): Terminal file manager
   - [fzf](https://github.com/junegunn/fzf): Fuzzy finder
   - [zoxide](https://github.com/ajeetdsouza/zoxide): Smarter `cd`
-  - **herdr**: Terminal multiplexer — workspaces, panes and AI-agent panes. The daily driver.
+  - [herdr](https://herdr.dev): Terminal multiplexer — workspaces, panes and AI-agent panes. The daily driver.
   - [Tmux](https://github.com/tmux/tmux): Multiplexer it replaced. Still installed and configured (via home-manager) for existing sessions, but no longer the default.
   - [sesh](https://github.com/joshmedeski/sesh): Smart tmux session manager
   - [htop](https://htop.dev/) / [bottom](https://github.com/ClementTsang/bottom) / [duf](https://github.com/muesli/duf): System & disk monitors
@@ -177,7 +177,7 @@ Essential graphical tools:
 Key applications:
 
 - **Development**
-  - [Ghostty](https://ghostty.org/) + **herdr**: Primary dev environment — GPU-accelerated terminal + workspace/agent manager
+  - [Ghostty](https://ghostty.org/) + [herdr](https://herdr.dev): Primary dev environment — GPU-accelerated terminal + workspace/agent manager
   - [Claude](https://claude.ai/download): Desktop companion to the Claude Code CLI
   - [Codex](https://openai.com/codex/): Desktop companion to the Codex CLI
   - [Zed](https://zed.dev/) (+ Zed Preview): Secondary IDE
@@ -186,8 +186,8 @@ Key applications:
   - [Postman](https://www.postman.com/): API platform — **not installed right now**, kept here as a target to reinstall
 
 - **Design**
-  - **Open Design**: Local-first design workspace (MCP server wired into Claude Code)
-  - **Pencil**: `.pen` design files editor (MCP server wired into Claude Code)
+  - [Open Design](https://open-design.ai): Local-first design workspace (MCP server wired into Claude Code)
+  - [Pencil](https://pencil.dev): `.pen` design files editor (MCP server wired into Claude Code)
   - [Figma](https://www.figma.com/): Design tool
 
 - **Browsers & Communication**
@@ -198,7 +198,7 @@ Key applications:
 
 - **Productivity**
   - [Raycast](https://raycast.com/): Launcher & productivity tool
-  - **Tolaria**: Knowledge base over the `~/Vault/pro` and `~/Vault/perso` git vaults — **replaced [Obsidian](https://obsidian.md/)**, which is still installed but no longer where notes are written
+  - [Tolaria](https://tolaria.md): Knowledge base over the `~/Vault/pro` and `~/Vault/perso` git vaults — **replaced [Obsidian](https://obsidian.md/)**, which is still installed but no longer where notes are written
   - [Rectangle](https://rectangleapp.com/): Window management
   - [Dashlane](https://www.dashlane.com/): Password manager
 
