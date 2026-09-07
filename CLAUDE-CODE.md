@@ -10,10 +10,10 @@ Ce document ne fait que lister ce qui est installé.
 
 | | |
 |---|---|
-| Skills `me:*` | 27 |
+| Skills `me:*` | 28 |
 | Autres skills | 42 |
 | Skills liés (tiers) | 101 |
-| Commandes | 68 |
+| Commandes | 69 |
 | Agents | 22 |
 
 ## Skills `me:*` — ma méthode de travail
@@ -33,6 +33,7 @@ génération de documents. Ce sont elles que `RULES.md` et `WORKFLOW.md` citent.
 | `me:create-command` | Cree une nouvelle skill Claude Code avec structure SKILL.md, frontmatter et fichiers support |
 | `me:create-loop` | Utiliser quand l'utilisateur veut CRÉER ou définir un nouveau loop auto-cadencé (pas en lancer un existant) |
 | `me:cv` | Génère et adapte le CV de Kylian Bardini à une offre ou une entreprise précise, puis produit un PDF A4 une page à la charte kbrdn.dev qui passe le contrôle ATS… |
+| `me:design-pattern` | Design patterns — `select` : cadrer un besoin, poser les questions qui tranchent, recommander le patron adapté (ou aucun). `analyze` : lire du code existant,… |
 | `me:devis-flippad` | Génère le devis commercial final en PDF à la charte FLIPPAD/JEWELY (en-tête émetteur/client doré, logo, tableau de lots « DÉVELOPPEMENT » avec sous-lignes… |
 | `me:devis-xlsx` | Construit un classeur de devis .xlsx paramétrable à partir d'une estimation de charge en jours-homme : onglet paramètres (TJM, TVA, sélecteurs en cellules… |
 | `me:flakes` | Detect the project dev stack and manage its Nix flake dev environment (init/update flake.nix + .envrc) |
@@ -155,6 +156,7 @@ Chaque commande est un point d'entrée léger qui délègue à un skill.
 | `me:create-loop` | Crée un nouveau loop auto-cadencé — scaffolde la skill me:loop:<name> + sa commande /me:loop:<name> |
 | `cv` | Adapte le CV à une offre/entreprise et produit un PDF A4 une page qui passe le gate ATS (pdftotext), à la charte kbrdn.dev — via la skill me:cv |
 | `design-export` | Extrait le design system d'un site web (couleurs, typographie, spacing, composants) dans un DESIGN.md via Hyperbrowser |
+| `me:design-pattern` | Design patterns — select : choisir le patron adapté à un besoin (ou aucun) · analyze : lire du code existant, smells + SOLID + refactorings (read-only) |
 | `devis-flippad` | Génère le devis commercial final en PDF à la charte FLIPPAD/JEWELY (en-tête doré, tableau de lots, récapitulatif HT/TVA/TTC, page CGV + signature + paiement,… |
 | `devis-xlsx` | Transforme une estimation de charge en jours-homme en classeur de devis .xlsx paramétrable (TJM en cellule, totaux par formule, fourchettes bas/haut,… |
 | `flakes` | Detect the project dev stack and manage its Nix flake dev environment (init/update flake.nix + .envrc) |
