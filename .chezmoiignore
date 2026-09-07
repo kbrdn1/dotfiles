@@ -137,3 +137,7 @@ tmux_custom_modules/
 .claude/scripts/statusline/
 .config/sketchybar/plugins/music_controls.sh
 .config/sketchybar/plugins/spaces/handler.sh
+
+# build junk — le scanner de me:codebase-visualizer produit du __pycache__
+**/__pycache__/
+**/*.pyc

@@ -1,0 +1,3048 @@
+<meta charset="utf-8">
+<title>gwm Atlas</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Claude Dark — la palette maison de mes artifacts
+   (~/.claude/skills/visual-explainer/references/claude-dark-palette.md).
+   Dark-first : :root est Pure Dark, le light est un override explicite pour
+   prefers-color-scheme ET pour un data-theme posé par le lecteur. */
+:root{
+  --bg:#1a1a1a; --surface:#242424; --surface-0:#2a2a2a; --surface-1:#383838;
+  --surface-2:#444444; --border:#555555; --border-dim:#666666;
+  --text:#e0e0e0; --text-dim:#b0b0b0; --text-muted:#999999; --muted:#555555;
+  --accent:#D4825D; --accent-dark:#C15F3C; --accent-dim:rgba(212,130,93,.15);
+  --success:#86E89A; --warning:#FFDF61; --error:#FF7A7A; --info:#7AB8FF; --special:#C79BFF;
+
+  /* rôles de l'atlas, tous dérivés de la palette ci-dessus */
+  --paper:var(--bg); --panel:var(--surface); --paper2:var(--surface-0);
+  --ink:var(--text); --soft:var(--text-muted); --soft2:var(--muted);
+  --line:var(--border-dim); --rule:var(--surface-1);
+  --top:var(--surface-0); --top-hot:#3a2c24; --hatch:var(--border);
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"Monaspace Krypton",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#faf8f6; --surface:#f0ece8; --surface-0:#e8e2dc; --surface-1:#ddd5cc;
+    --surface-2:#d0c6ba; --border:rgba(0,0,0,.28); --border-dim:rgba(0,0,0,.42);
+    --text:#2a2520; --text-dim:#5a4a40; --text-muted:#8a7a70; --muted:#b4a89c;
+    --accent:#C15F3C; --accent-dark:#a04e30; --accent-dim:rgba(193,95,60,.12);
+    --success:#2f8f4e; --warning:#9a7b12; --error:#c0392b; --special:#7b52b8;
+    --top:#e8e2dc; --top-hot:#f3e4da; --hatch:rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#faf8f6; --surface:#f0ece8; --surface-0:#e8e2dc; --surface-1:#ddd5cc;
+  --surface-2:#d0c6ba; --border:rgba(0,0,0,.28); --border-dim:rgba(0,0,0,.42);
+  --text:#2a2520; --text-dim:#5a4a40; --text-muted:#8a7a70; --muted:#b4a89c;
+  --accent:#C15F3C; --accent-dark:#a04e30; --accent-dim:rgba(193,95,60,.12);
+  --success:#2f8f4e; --warning:#9a7b12; --error:#c0392b; --special:#7b52b8;
+  --top:#e8e2dc; --top-hot:#f3e4da; --hatch:rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--mono);font-size:11px;line-height:1.45;
+  -webkit-font-smoothing:antialiased;overflow:hidden;
+}
+button,input{font:inherit;color:inherit;background:none;border:0}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#app{display:flex;flex-direction:column;height:100vh;min-height:520px}
+
+/* ---------- topbar ---------- */
+#top{display:flex;align-items:stretch;border-bottom:1px solid var(--line);flex:0 0 auto;overflow-x:auto}
+#top .cell{padding:7px 14px;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center;gap:2px;white-space:nowrap}
+#top .k{font-size:8.5px;letter-spacing:.13em;color:var(--soft);text-transform:uppercase}
+#top .v{font-size:11px}
+#repo{min-width:210px}
+#repo .v{font-size:12.5px;letter-spacing:.02em}
+#repo .v span{color:var(--soft)}
+#top #acts{margin-left:auto;display:flex;flex-direction:row;align-items:center;gap:5px;padding:0 10px;border-right:0;flex-wrap:nowrap}
+#top #acts button{border:1px solid var(--line);padding:4px 7px;white-space:nowrap;font-size:9px;letter-spacing:.1em;text-transform:uppercase;background:var(--paper2)}
+#top #acts button:hover{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-dark)}
+#top #acts button.on{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+
+/* ---------- shell ---------- */
+#shell{display:flex;flex:1 1 auto;min-height:0}
+
+/* ---------- sidebar ---------- */
+#side{width:216px;flex:0 0 216px;border-right:1px solid var(--line);overflow-y:auto;padding:0 0 24px;display:flex;flex-direction:column}
+#side::-webkit-scrollbar{width:6px}
+#side::-webkit-scrollbar-thumb{background:var(--rule)}
+#find{margin:8px;padding:4px 7px;border:1px solid var(--rule);background:var(--paper2);font-size:9.5px;letter-spacing:.05em;flex:0 0 auto}
+#find::placeholder{color:var(--soft2)}
+#find:focus{border-color:var(--accent);outline:none}
+.grp{font-size:8.5px;letter-spacing:.13em;color:var(--soft);text-transform:uppercase;padding:12px 12px 5px}
+.row{display:flex;align-items:center;gap:7px;padding:4px 10px;margin:0 8px 3px;border:1px solid var(--rule);cursor:pointer;background:var(--paper2);width:calc(100% - 16px);text-align:left}
+.row:hover{border-color:var(--line)}
+.row.on{background:var(--accent-dim);border-color:var(--accent)}
+.row.hide{display:none}
+.row .code{font-size:9px;width:15px;flex:0 0 15px;color:var(--soft)}
+.row.on .code{color:var(--accent-dark)}
+.row .nm{flex:1 1 auto;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;line-height:1.25}
+.row .sz{font-size:8.5px;color:var(--soft);white-space:nowrap}
+.row.on .sz{color:var(--text)}
+.row .hub{color:var(--special);font-size:9px}
+#legend{margin:14px 8px 0;padding:9px 10px;border:1px solid var(--rule);font-size:8.5px;color:var(--soft);line-height:1.7}
+#legend b{color:var(--text-dim);font-weight:400}
+#legend .sw{display:inline-block;width:14px;border-top:1px solid var(--line);vertical-align:middle;margin-right:5px}
+#legend .sw.dash{border-top-style:dotted}
+#legend .sw.run{border-top-style:dashed}
+#legend .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);vertical-align:middle;margin-right:7px}
+
+/* ---------- canvas ---------- */
+#stage{position:relative;flex:1 1 auto;min-width:0;overflow:hidden;cursor:grab;outline:none}
+#stage.drag{cursor:grabbing}
+#svg{width:100%;height:100%;display:block;touch-action:none}
+.struct{cursor:pointer}
+#zoom{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:4px}
+#zoom button{width:20px;height:20px;border:1px solid var(--line);background:var(--paper2);font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center}
+#zoom button:hover{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-dark)}
+#hints{position:absolute;left:0;right:0;bottom:0;padding:6px 14px;font-size:8.5px;letter-spacing:.1em;color:var(--soft);text-transform:uppercase;pointer-events:none}
+#back{position:absolute;left:14px;top:10px;border:1px solid var(--line);background:var(--paper2);padding:4px 9px;font-size:9px;letter-spacing:.1em;text-transform:uppercase;display:none}
+#back.on{display:block}
+#back:hover{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-dark)}
+#payload{position:absolute;pointer-events:none;background:var(--accent);color:var(--bg);border:1px solid var(--accent);padding:3px 6px;font-size:9px;letter-spacing:.04em;opacity:0;transition:opacity .12s;white-space:nowrap;z-index:5}
+#payload.on{opacity:1}
+
+/* ---------- right panel ---------- */
+#panel{width:266px;flex:0 0 266px;border-left:1px solid var(--line);display:flex;flex-direction:column;background:var(--panel)}
+#tabs{display:flex;flex:0 0 auto;border-bottom:1px solid var(--line)}
+#tabs button{flex:1 1 0;padding:6px 4px;font-size:9px;letter-spacing:.1em;text-transform:uppercase;border-right:1px solid var(--rule)}
+#tabs button:last-child{border-right:0}
+#tabs button.on{background:var(--accent);color:var(--bg)}
+#body{overflow-y:auto;padding:14px 16px 30px;flex:1 1 auto}
+#body::-webkit-scrollbar{width:6px}
+#body::-webkit-scrollbar-thumb{background:var(--rule)}
+.eyebrow{font-size:8.5px;letter-spacing:.13em;color:var(--soft);text-transform:uppercase}
+h1{font-size:17px;font-weight:500;letter-spacing:-.01em;margin:4px 0 3px;line-height:1.2;text-wrap:balance}
+.sub{color:var(--soft);font-size:10px;margin-bottom:14px;line-height:1.4}
+.sec{font-size:8.5px;letter-spacing:.13em;color:var(--soft);text-transform:uppercase;margin:16px 0 6px;border-top:1px solid var(--rule);padding-top:9px}
+#body p{margin:0 0 9px}
+mark{background:var(--accent-dim);color:var(--accent);padding:0 3px}
+.pill{display:inline-block;border:1px solid var(--rule);padding:1px 5px;margin:0 3px 3px 0;font-size:9px;color:var(--soft)}
+.pill.cyc{border-color:var(--special);color:var(--special)}
+.kv{display:flex;gap:8px;margin-bottom:3px}
+.kv .k{color:var(--soft);flex:0 0 74px}
+.step{border-left:2px solid var(--accent);padding-left:8px;margin-bottom:8px}
+.pinned{float:right;font-size:8.5px;letter-spacing:.1em;color:var(--soft);text-transform:uppercase}
+#body a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent-dim)}
+#body a:hover{border-bottom-color:var(--accent)}
+.files a{display:block;font-size:9.5px;margin-bottom:2px}
+.delta{font-variant-numeric:tabular-nums}
+.up{color:var(--success)} .down{color:var(--error)} .new{color:var(--accent)}
+
+/* ---------- responsive ---------- */
+@media (max-width:1200px){
+  #side{width:184px;flex-basis:184px} #panel{width:238px;flex-basis:238px}
+}
+@media (max-width:980px){
+  body{overflow:auto}
+  #app{height:auto;min-height:100vh}
+  #shell{flex-direction:column}
+  #side{display:none}
+  #stage{height:62vh;min-height:380px;flex:0 0 auto}
+  #panel{width:100%;flex-basis:auto;border-left:0;border-top:1px solid var(--line)}
+  #body{max-height:none}
+  #top #acts{padding:0 8px}
+}
+
+
+/* ---------- barre de vues ---------- */
+#views{display:flex;gap:0;border-bottom:1px solid var(--line);flex:0 0 auto;background:var(--paper2)}
+#views button{padding:5px 14px;font-size:9px;letter-spacing:.12em;text-transform:uppercase;border-right:1px solid var(--rule);color:var(--soft)}
+#views button:hover{color:var(--text)}
+#views button.on{background:var(--accent);color:var(--bg)}
+#views .note{margin-left:auto;padding:5px 12px;font-size:8.5px;letter-spacing:.1em;color:var(--soft);text-transform:uppercase;align-self:center}
+#views #btnLang{border-left:1px solid var(--rule);min-width:44px;text-align:center}
+#views #btnTheme{border-right:0;min-width:74px;text-align:center}
+
+/* ---------- vue flow (mermaid) ---------- */
+#flow{position:absolute;inset:0;overflow:auto;padding:18px 22px 40px;display:none}
+#flow.on{display:block}
+#flow h2{font-size:9px;letter-spacing:.13em;color:var(--soft);text-transform:uppercase;margin:0 0 8px;font-weight:400}
+#flow .card{border:1px solid var(--rule);background:var(--paper2);margin-bottom:16px}
+#flow .head{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--rule)}
+#flow .head button{margin-left:auto;border:1px solid var(--line);padding:2px 8px;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase}
+#flow .head button:hover{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-dark)}
+#flow .render{position:relative;overflow:hidden;height:64vh;min-height:340px;cursor:grab;
+  background:var(--paper2)}
+#flow .render.drag{cursor:grabbing}
+#flow .pan{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+#flow .zoom{position:absolute;right:8px;top:8px;display:flex;gap:4px;z-index:2}
+#flow .zoom button{width:20px;height:20px;border:1px solid var(--line);background:var(--paper2);
+  font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+#flow .zoom button.wide{width:auto;padding:0 7px;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase}
+#flow .zoom button:hover{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-dark)}
+#flow pre.mermaid{margin:0;font-size:10px;line-height:1.5;color:var(--text-dim);white-space:pre}
+#flow .src{border-top:1px solid var(--rule);display:none}
+#flow .src.on{display:block}
+#flow .src pre{margin:0;padding:10px 12px;max-height:46vh;overflow:auto;font-size:10px;
+  line-height:1.5;color:var(--text-dim);white-space:pre;tab-size:2}
+#flow .src pre::-webkit-scrollbar{width:8px;height:8px}
+#flow .src pre::-webkit-scrollbar-thumb{background:var(--rule)}
+#flow .head button.on{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+#flow .hint{font-size:9px;color:var(--soft);margin:0 0 14px}
+#flow .fallback{padding:8px 12px;font-size:9px;color:var(--soft);border-top:1px solid var(--rule)}
+#doc{position:absolute;inset:0;overflow:auto;padding:18px 22px 48px;display:none}
+#doc.on{display:block}
+#doc h2{font-size:9px;letter-spacing:.13em;color:var(--soft);text-transform:uppercase;margin:22px 0 8px;font-weight:400;border-top:1px solid var(--rule);padding-top:9px}
+#doc h2:first-of-type{margin-top:4px;border-top:0;padding-top:0}
+#doc h2 span{color:var(--accent);letter-spacing:0;text-transform:none}
+#doc .hint{font-size:9.5px;color:var(--soft);margin:0 0 10px;max-width:80ch;line-height:1.6}
+#doc .chips{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+#doc .chip{display:inline-flex;align-items:baseline;gap:5px;border:1px solid var(--rule);background:var(--paper2);padding:2px 7px;font-size:9.5px;color:var(--text-dim);cursor:pointer;text-align:left}
+#doc .chip b{color:var(--accent);font-weight:400;font-size:8.5px;letter-spacing:.08em}
+#doc .chip i{font-style:normal;color:var(--soft);font-size:8.5px}
+#doc .chip:hover{border-color:var(--accent);background:var(--accent);color:var(--bg)}
+#doc .chip:hover b,#doc .chip:hover i{color:var(--bg)}
+#doc .layers{display:flex;flex-direction:column;gap:7px}
+#doc .layer{display:flex;gap:10px;align-items:flex-start;border-left:2px solid var(--rule);padding-left:9px}
+#doc .layer .lk{flex:0 0 92px;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--soft);padding-top:3px}
+#doc .layer .lk i{display:block;font-style:normal;color:var(--accent);letter-spacing:0;text-transform:none;font-size:9px}
+#doc .ring{display:flex;flex-wrap:wrap;align-items:center;gap:3px;margin-bottom:5px}
+#doc .arr{color:var(--special);font-size:10px;padding:0 1px}
+#doc table{border-collapse:collapse;width:100%;font-size:9.5px;margin-bottom:6px}
+#doc th{text-align:left;font-weight:400;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--soft);border-bottom:1px solid var(--rule);padding:4px 8px 4px 0}
+#doc td{border-bottom:1px solid var(--rule);padding:4px 8px 4px 0;vertical-align:top;color:var(--text-dim)}
+#doc td:nth-child(4){width:56%}
+#doc code{font-size:9.5px;color:var(--text)}
+#doc .pill.dim{opacity:.55}
+#doc .pill i{font-style:normal;color:var(--accent)}
+#doc .kv em{font-style:normal;color:var(--special)}
+#doc a.pill{color:var(--soft);text-decoration:none}
+#doc a.pill:hover{border-color:var(--accent);color:var(--accent-dark)}
+#doc .bar{display:flex;height:9px;border:1px solid var(--rule);margin-bottom:6px;overflow:hidden}
+#doc .seg{display:block}
+#doc .sw{display:inline-block;width:7px;height:7px;margin-right:4px}
+#doc .s0{background:var(--accent)}#doc .s1{background:var(--special)}
+#doc .s2{background:var(--soft)}#doc .s3{background:var(--line)}
+#doc .kv{align-items:flex-start;margin-bottom:5px;font-size:9.5px}
+#doc .kv .k{flex:0 0 210px;color:var(--soft)}
+#doc::-webkit-scrollbar{width:8px}#doc::-webkit-scrollbar-thumb{background:var(--rule)}
+
+/* ---------- vue matrice ---------- */
+.cellhi{cursor:pointer}
+
+
+/* --accent-dark est plus foncé que --accent : parfait sur fond clair, illisible
+   sur fond sombre. On repasse à --accent quand le fond est sombre. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) #top #acts button:hover,
+  :root:not([data-theme="light"]) #flow .head button:hover,
+  :root:not([data-theme="light"]) #flow .zoom button:hover,
+  :root:not([data-theme="light"]) #zoom button:hover,
+  :root:not([data-theme="light"]) #back:hover{color:var(--accent)}
+  :root:not([data-theme="light"]) .row.on .code{color:var(--accent)}
+}
+:root[data-theme="dark"] #top #acts button:hover,
+:root[data-theme="dark"] #flow .head button:hover,
+:root[data-theme="dark"] #flow .zoom button:hover,
+:root[data-theme="dark"] #zoom button:hover,
+:root[data-theme="dark"] #back:hover{color:var(--accent)}
+:root[data-theme="dark"] .row.on .code{color:var(--accent)}
+
+/* ---------- motion ---------- */
+@media (prefers-reduced-motion: reduce){
+  *{transition:none!important}
+}
+</style>
+
+<div id="app">
+  <div id="top">
+    <span id="topbar" style="display:contents"><div class="cell" id="repo"><div class="k">Repository</div><div class="v">gwm-cli <span>· git worktree manager</span></div></div>
+    <div class="cell"><div class="k">Rust</div><div class="v"><b>124k</b> lines · 167 files</div></div>
+    <div class="cell"><div class="k">Source</div><div class="v"><b>53k</b> · 70 files</div></div>
+    <div class="cell"><div class="k">Tests</div><div class="v"><b>2 974</b> · 97 files</div></div>
+    <div class="cell"><div class="k">CLI</div><div class="v"><b>39</b> subcommands</div></div>
+    <div class="cell"><div class="k">Release</div><div class="v"><b>v1.8.0</b> · 4 workflows</div></div>
+    </span><div class="cell" id="acts">
+      <button id="btnDiff">Diff v1.0.0</button>
+      <button id="btnFlow">Pause</button>
+      <button id="btnTrace">Trace</button>
+      <button id="btnCopy">Copy</button>
+      <button id="btnReset">Reset</button>
+    </div>
+  </div>
+
+    <div id="views">
+      <button data-v="iso" class="on">Isometric</button>
+      <button data-v="matrix">Matrix</button>
+      <button data-v="hotspots">Hotspots</button>
+      <button data-v="flow">Mermaid</button>
+      <button data-v="arch">Architecture</button>
+      <button data-v="stack">Stack</button>
+      <span class="note" id="viewNote"></span>
+      <button id="btnLang" title="Language / langue">EN</button>
+      <button id="btnTheme" title="Theme / thème">Theme</button>
+    </div>
+  <div id="shell">
+    <div id="side">
+      <input id="find" type="search" placeholder="/ chercher un module" aria-label="Chercher un module">
+      <div id="rail"></div>
+      <div id="legend">
+        <div><b>hauteur</b> = lignes de code</div>
+        <div><b>dalle plate</b> = stockage</div>
+        <div><span class="sw"></span>import (compilation)</div>
+        <div><span class="sw run"></span>flux à l'exécution</div>
+        <div><span class="sw dash"></span>relation de conception</div>
+        <div><span class="dot"></span>donnée en transit</div>
+        <div><span style="color:var(--special)">◆</span> hub / dépendance mutuelle</div>
+      </div>
+    </div>
+    <div id="stage">
+      <svg id="svg" role="img" aria-label="Carte isométrique du dépôt"></svg>
+      <button id="back">← Come back out</button>
+      <div id="zoom"><button id="zin" aria-label="Zoomer">+</button><button id="zout" aria-label="Dézoomer">−</button></div>
+      <div id="flow"></div>
+      <div id="doc"></div>
+      <div id="payload"></div>
+      <div id="hints">Hover to read · Click to pin · Double-click to go inside · Drag to pan · Scroll to zoom</div>
+    </div>
+    <div id="panel">
+      <div id="tabs"><button class="on" data-t="what">What it does</button><button data-t="how">How it's built</button></div>
+      <div id="body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- ATLAS DATA START ----
+/* Tout ce qui suit jusqu'au marqueur END est ce qu'on remplace pour un autre
+   dépôt. Chaque nombre vient d'un scan réel (scripts/atlas_scan.py) ;
+   `mod` porte les chemins réels, qui servent au lien code, au rafraîchissement
+   des LOC et au mode diff. `src` sur une arête distingue un import de
+   compilation d'une relation de conception. */
+
+const REPO = {
+  name: "gwm-cli",
+  kicker: "gwm — git worktree manager",
+  title: "The Worktree Fleet",
+  sub: "how one command turns an issue number into an isolated, bootstrapped checkout",
+  repoUrl: "https://github.com/kbrdn1/gwm-cli",
+  sha: "13ba225ce871d37fef01f4ce5e9a751c109b2cf7",
+  prevRev: "v1.0.0",
+};
+
+const OVERVIEW_WHAT = `
+<p>This repository is a <mark>git worktree manager</mark> written in Rust: a CLI of 39 subcommands
+and a ratatui TUI that share one module tree. It creates a branch and its worktree in one move,
+bootstraps the new checkout from a repo-local <mark>.gwm.toml</mark>, links it to a GitHub issue or
+GitLab merge request, and keeps a fleet of those checkouts navigable.</p>
+<p>The centre of the diagram is <mark>worktree</mark> — the libgit2 layer that adds, lists, renames
+and removes worktrees. Everything to its left decides <em>what</em> a worktree should be called and
+be configured with; everything to its right talks to a forge over <code>gh</code> or <code>glab</code>;
+everything below it watches the fleet after the fact — doctor, notes, agent sessions, the undo
+journal.</p>
+<p>The tall cluster on the right is the TUI: <mark>24k lines</mark> across a render pass, an
+orchestrating app struct and sixteen extracted state slices. It is by a wide margin the largest
+surface in the repo, and the reason <code>tui_app_tests.rs</code> alone is 13.5k lines.</p>
+<p class="sec">How to read it</p>
+<p>Hover anything for a plain description; the <mark>How it's built</mark> tab gives the
+implementation. The moving marks are data in motion — hover one to see what travels on that line.
+Double-click a structure to <mark>go inside</mark> it. <mark>Trace one step</mark> walks a real
+<code>gwm create</code> through the whole system, and <mark>Diff vs v1.0.0</mark> repaints every
+block by how much it grew since the 1.0 cut.</p>`;
+
+const OVERVIEW_HOW = `
+<p>One binary, one lib target. <code>src/lib.rs</code> exists only as a test seam — the whole crate
+is <code>#![doc(hidden)]</code> — so the 97 integration test files under <code>tests/</code> can
+reach the same module tree the binary uses.</p>
+<p>Git work is split deliberately: read-side inspection and worktree administration go through
+<mark>libgit2</mark>, while mutating porcelain (fetch, rebase, merge) shells out to the
+<code>git</code> binary. Forge access is never linked in — it shells out to the user's own
+<code>gh</code> / <code>glab</code>, so gwm inherits their auth instead of storing a token.</p>
+<p>Config is a repo-local <code>.gwm.toml</code> guarded by a <mark>TOFU trust ledger</mark>: the
+file is hashed and the (origin, sha256) tuple looked up before any <code>[[bootstrap.command]]</code>
+runs. The threat model is arbitrary code execution from an untrusted remote, so the default is to
+prompt.</p>
+<p>The machine surface is frozen: <code>contract.rs</code> pins the JSON DTOs that
+<code>--format=json</code>, the JSON-RPC daemon and the statusline all share, so editors and status
+bars can depend on them across the 1.x line.</p>
+<p class="sec">How this map was measured</p>
+<p>Line counts come from <code>atlas_scan.py</code> over <code>git ls-files</code>. Edges are the
+real import graph — <code>use crate::</code> / <code>super::</code> / <code>gwm::{…}</code> resolved
+against the module index — with <mark>538 compile-time imports</mark> kept separate from
+<mark>41 mentions that only appear in doc comments</mark>. A dashed edge here is a design
+relationship, not a dependency the compiler would see.</p>
+<p>The same scan finds <mark>13 mutually dependent block pairs</mark> — five of them involve
+<code>config</code> alone. The seven that already had an edge on this map are drawn in purple
+rather than doubled back on themselves; the other six connect blocks this map does not link
+directly.</p>`;
+
+/* grille de cellules : empreintes disjointes par construction */
+const CELL = 2.6, FOOT = 2.0;
+const at = (i, j) => ({ gx: i * CELL, gy: j * CELL });
+
+const STRUCTURES = [
+  /* ---- entrées (haut du losange) ---- */
+  { id:"entry", code:"EN", name:"Entry point", group:"the way in", loc:"138", churn:224, commits:38, locNow:138, locPrev:101, fanIn:0, fanOut:4, mod:["src/main.rs","src/lib.rs"], ...at(0,0), w:1.4, d:1.4, h:0.5,
+    what:"main.rs boots the process and lib.rs re-exports the module tree so the integration tests can reach it. 138 lines of pure wiring.",
+    how:"main.rs is 79 lines: build the clap command, hand argv to cli::run, map the error to an exit code. lib.rs is a #![doc(hidden)] test seam, explicitly not a public API.",
+    talks:["aliases","cli"] },
+
+  { id:"aliases", code:"AL", name:"Aliases", group:"the way in", loc:"499", churn:553, commits:8, locNow:499, locPrev:463, fanIn:3, fanOut:3, mod:["src/aliases.rs"], ...at(0,1), w:FOOT, d:FOOT, h:0.9,
+    what:"Expands user-defined shortcuts before the parser sees them: `gwm co` can become `gwm create --from dev`.",
+    how:"String substitution on argv, three resolution levels — built-in, repo `[aliases]` in .gwm.toml, then ~/.config/gwm/aliases.toml. Mirrors git's own `[alias]` shape. Runs before clap so an alias can expand to flags.",
+    talks:["cli"] },
+
+  { id:"cli", code:"CL", name:"CLI dispatch", group:"the way in", loc:"5 351", churn:8519, commits:172, locNow:5351, locPrev:4354, fanIn:3, fanOut:26, mod:["src/cli.rs"], ...at(1,0), w:2.2, d:2.2, h:5.3,
+    what:"The clap command tree: 39 subcommands from `create` and `list` to `daemon`, `exec` and `undo`. Every non-TUI path in the program starts here.",
+    how:"Derive-based clap. Each subcommand resolves its target worktrees, calls into the domain module, and prints. The handlers stay thin on purpose — the testable logic lives in the module, the CLI keeps the argument resolution and the rendering. `tests/cli_binary.rs` (7.7k lines) drives the real binary.",
+    talks:["config","naming","worktree","tui-runtime","daemon","forge","fleet-ops","doctor","lifecycle"],
+    children:[
+      {code:"WT",name:"worktree ops",h:3,what:"create · list · remove · path · prune · switch · sync · bootstrap"},
+      {code:"FG",name:"forge ops",h:2.4,what:"new · pr · review · link · unlink · open · status · labels · milestones"},
+      {code:"CF",name:"config ops",h:1.8,what:"init · config · trust · aliases · types · presets"},
+      {code:"MC",name:"machine",h:1.6,what:"daemon · statusline · completions · shell-init · tui · theme"},
+      {code:"FL",name:"fleet",h:1.4,what:"exec · clean · agents · doctor · history · undo · note"},
+      {code:"MX",name:"multiplexer",h:0.8,what:"tmux · zellij · hooks · commit-prefix"},
+    ] },
+
+  /* ---- TUI (flanc droit) ---- */
+  { id:"tui-runtime", code:"TR", name:"TUI runtime", group:"the tui", loc:"1 590", churn:3686, commits:169, locNow:1590, locPrev:1293, fanIn:1, fanOut:5, mod:["src/tui/mod.rs"], ...at(2,0), w:FOOT, d:FOOT, h:1.6,
+    what:"Owns the terminal: raw mode, the event loop, the redraw cadence, and handing control back cleanly on exit.",
+    how:"crossterm + ratatui. Also the module that re-exports the stable TUI entry points (recent_commits_lines) so integration tests pin the algorithm rather than the internals.",
+    talks:["app","config","trust","launch-io"] },
+
+  { id:"app", code:"AP", name:"App state", group:"the tui", loc:"6 942", churn:10856, commits:229, locNow:6942, locPrev:4175, fanIn:2, fanOut:21, mod:["src/tui/app.rs"], ...at(3,0), w:2.1, d:2.1, h:6.6,
+    what:"The orchestrator: which worktree is selected, which modal is open, what the async tasks are doing. Every keystroke ends up mutating this.",
+    how:"Was a 1300-line god struct; issue #102 decomposed it into the sixteen state slices next door, one PR per slice. App now composes them and owns only cross-slice transitions. Tested ratatui-free in tests/tui_app_tests.rs — 13.5k lines, the largest test file in the repo.",
+    talks:["state","render","worktree","forge","agents","command-log","fleet-ops","removal","sync","keymap"] },
+
+  { id:"render", code:"UI", name:"Render pass", group:"the tui", loc:"7 414", churn:16046, commits:255, locNow:7414, locPrev:5224, fanIn:2, fanOut:13, mod:["src/tui/ui.rs"], ...at(4,0), w:2.1, d:2.1, h:7.4,
+    what:"Draws every frame: the worktree table, the sidebar, modals, the commit graph, the hint bars. The single largest file in the repository.",
+    how:"Pure ratatui widget composition — takes &App, returns nothing but draw calls. No state mutation, which is what lets the state machine be tested without a terminal. Hint helpers advertise the canonical <type>/#<issue>-<desc> field set dynamically (issue #418).",
+    talks:["worktree","agents","command-log","bootstrap","naming","github","config"] },
+
+  { id:"state", code:"ST", name:"State slices", group:"the tui", loc:"5 011", churn:6469, commits:142, locNow:5011, locPrev:3154, fanIn:3, fanOut:14, mod:["src/tui/state/config_panel.rs","src/tui/state/rich_view.rs","src/tui/state/async_task.rs","src/tui/state/sidebar.rs","src/tui/state/pty_overlay.rs","src/tui/state/github_fetch.rs","src/tui/state/detail_overlay.rs","src/tui/state/create_form.rs","src/tui/state/note_editor.rs","src/tui/state/filter.rs","src/tui/state/confirm.rs","src/tui/state/clean_overlay.rs","src/tui/state/link_prompt.rs","src/tui/state/exec_picker.rs","src/tui/state/command_logs.rs","src/tui/state/spinner.rs","src/tui/state/mod.rs"], ...at(4,1), w:FOOT, d:FOOT, h:4.9,
+    what:"Sixteen small state machines — the filter buffer, the confirm countdown, the config panel, the PTY overlay — each owning exactly one concern.",
+    how:"Extracted per issue #102 to break up the App god struct. Each exposes a pure-state API; App composes them. Largest slices: config_panel 734, rich_view 585, async_task 518, sidebar 470, pty_overlay 447.",
+    talks:[],
+    children:[
+      {code:"CP",name:"config panel",h:3.4,what:"734 lines — the in-TUI .gwm.toml editor"},
+      {code:"RV",name:"rich view",h:2.8,what:"585 lines — the detail pane renderer state"},
+      {code:"AT",name:"async task",h:2.5,what:"518 lines — background job tracking"},
+      {code:"SB",name:"sidebar",h:2.3,what:"470 lines — focus and section state"},
+      {code:"PT",name:"pty overlay",h:2.2,what:"447 lines — embedded terminal"},
+      {code:"GF",name:"github fetch",h:2.1,what:"432 lines — live forge status polling"},
+      {code:"DO",name:"detail overlay",h:1.5,what:"305 lines"},
+      {code:"CR",name:"create form",h:1.4,what:"298 lines"},
+      {code:"NE",name:"note editor",h:1.2,what:"233 lines"},
+      {code:"FI",name:"filter",h:1.1,what:"214 lines"},
+      {code:"CO",name:"confirm",h:1.0,what:"202 lines"},
+      {code:"CL",name:"clean overlay",h:0.9,what:"168 lines"},
+      {code:"LP",name:"link prompt",h:0.7,what:"141 lines"},
+      {code:"EP",name:"exec picker",h:0.5,what:"90 lines"},
+      {code:"LG",name:"command logs",h:0.5,what:"87 lines"},
+      {code:"SP",name:"spinner",h:0.4,what:"54 lines"},
+    ] },
+
+  { id:"keymap", code:"KM", name:"Keymaps", group:"the tui", loc:"1 413", churn:1679, commits:52, locNow:1413, locPrev:1229, fanIn:8, fanOut:0, mod:["src/tui/keymap.rs","src/tui/modal_keymap.rs"], ...at(5,0), w:FOOT, d:FOOT, h:1.4,
+    what:"What every key does, in the main view and inside each modal — including the lazygit-style chords.",
+    how:"Two tables: keymap.rs for the global map (775 lines), modal_keymap.rs for per-modal overrides (638). Both are data, not match arms in the event loop, so the help overlay renders from the same source the dispatcher reads.",
+    talks:["doctor"] },
+
+  { id:"theme", code:"TH", name:"Theme", group:"the tui", loc:"850", churn:960, commits:30, locNow:850, locPrev:775, fanIn:6, fanOut:1, mod:["src/tui/theme.rs","src/tui/palette.rs"], ...at(6,0), w:1.6, d:1.6, h:0.85,
+    what:"Colour resolution for the TUI, configurable from `[theme]` in .gwm.toml and switchable with `gwm theme`.",
+    how:"theme.rs (392) resolves the palette; palette.rs (458) holds the named colour sets. Falls back to a terminal-safe default when a name doesn't resolve, rather than erroring out mid-render.",
+    talks:["tui-runtime"] },
+
+  { id:"graph", code:"CG", name:"Commit graph", group:"the tui", loc:"814", churn:1174, commits:13, locNow:814, locPrev:808, fanIn:1, fanOut:3, mod:["src/tui/commit_graph.rs","src/tui/wt_tree.rs"], ...at(5,1), w:1.6, d:1.6, h:0.8,
+    what:"The little ASCII commit topology beside each worktree, plus the worktree tree view.",
+    how:"commit_graph.rs (460) is ported from lazygit's topology renderer; wt_tree.rs (354) lays out the grouped tree. Both are benchmarked — benches/commit_graph.rs and two sidebar benches guard the render cost.",
+    talks:["worktree"] },
+
+  /* ---- surface machine ---- */
+  { id:"daemon", code:"DA", name:"Daemon", group:"the machine surface", loc:"1 672", churn:2676, commits:24, locNow:1672, locPrev:610, fanIn:1, fanOut:4, mod:["src/daemon.rs"], ...at(2,1), w:FOOT, d:FOOT, h:1.65,
+    what:"A long-running JSON-RPC 2.0 server on a unix socket, so editors and status bars call `list` / `doctor` / `path` once instead of spawning gwm per query.",
+    how:"Issue #38 phase 2. Serves the json_api DTOs verbatim and supports `subscribe` for pushed updates when the worktree set changes. The socket path and the DTO shapes are both frozen by contract.rs.",
+    talks:["json-api","config","socket"] },
+
+  { id:"json-api", code:"JS", name:"JSON contract", group:"the machine surface", loc:"486", churn:632, commits:21, locNow:486, locPrev:253, fanIn:3, fanOut:5, mod:["src/json_api.rs","src/contract.rs"], ...at(3,1), w:FOOT, d:FOOT, h:0.5,
+    what:"The stable machine-readable shape shared by `--format=json`, the daemon, and the statusline. Frozen for the 1.x line.",
+    how:"json_api.rs (395) holds DTOs deliberately decoupled from the internal WorktreeInfo / DoctorReport so refactors don't break external tooling; contract.rs (91) pins the three surfaces gwm pledges to keep stable and is tested against docs/schema/*.json.",
+    talks:["worktree","notes","github","doctor","agents"] },
+
+  { id:"statusline", code:"SL", name:"Statusline", group:"the machine surface", loc:"156", churn:184, commits:4, locNow:156, locPrev:148, fanIn:1, fanOut:1, mod:["src/statusline.rs"], ...at(1,1), w:1.4, d:1.4, h:0.35,
+    what:"One compact line for tmux / starship: which worktree, how dirty, how far ahead of upstream.",
+    how:"Issue #309 — the first real client of the daemon. Pure render core: takes a slice of JsonWorktree and returns a string, so it is testable without a socket. It never links the daemon in — it speaks to it over the socket, which is why that edge is dashed here.",
+    talks:["daemon"] },
+
+  /* ---- config & naming (flanc gauche) ---- */
+  { id:"config", code:"CF", name:"Config", group:"naming & config", loc:"2 995", churn:3751, commits:98, locNow:2995, locPrev:2422, fanIn:19, fanOut:9, mod:["src/config.rs","src/config_cli.rs","src/presets.rs"], ...at(0,2), w:2.1, d:2.1, h:2.9,
+    what:"Reads `.gwm.toml` — where worktrees live, how branches are named, what to bootstrap, which theme, which launcher — merged with user-level defaults.",
+    how:"config.rs (2 351) parses and merges; config_cli.rs (555) backs `gwm config get/set/validate`; presets.rs (89) ships eight starter configs (rust, node, nuxt, laravel, symfony, go, python-uv, generic) for `gwm init --preset`. 54 modules depend on it — the widest fan-in in the repo after the error type.",
+    talks:["trust","naming","launch-io","fleet-ops","gwm-toml"] },
+
+  { id:"naming", code:"NM", name:"Naming", group:"naming & config", loc:"1 651", churn:3287, commits:48, locNow:1651, locPrev:189, fanIn:15, fanOut:2, mod:["src/naming.rs"], ...at(1,2), w:FOOT, d:FOOT, h:1.65,
+    what:"Turns 'a fix for issue 572' into `fix/#572-overlay-height` and the on-disk path that goes with it — and refuses names git would reject.",
+    how:"Compile-time regexes lifted to module statics (issue #97) so each validation runs at ~50ns instead of recompiling per call. worktree_spec() is the one entry point; kebab() and the sanitise_*_for_terminal() family keep untrusted issue titles from smuggling escape sequences into the terminal. Grew 8.7× since v1.0.0 — the single biggest expansion in the repo.",
+    talks:["worktree","config"] },
+
+  { id:"trust", code:"TS", name:"Trust ledger", group:"naming & config", loc:"569", churn:641, commits:11, locNow:569, locPrev:412, fanIn:5, fanOut:1, mod:["src/trust.rs"], ...at(0,3), w:1.6, d:1.6, h:0.6,
+    what:"Trust-on-first-use for `.gwm.toml`: the first time a repo wants to run bootstrap commands, gwm asks.",
+    how:"Issue #95. Persists (origin URL, sha256 of .gwm.toml) to ~/.config/gwm/trust.toml, overridable via GWM_TRUST_LEDGER. Re-prompts when the hash changes. --allow-bootstrap / GWM_ALLOW_BOOTSTRAP=1 skips it for CI; --deny-bootstrap short-circuits execution entirely for forensic inspection.",
+    talks:["forge","ledgers"] },
+
+  /* ---- cœur worktree (centre) ---- */
+  { id:"lifecycle", code:"LC", name:"Lifecycle hooks", group:"worktree core", loc:"444", churn:492, commits:8, locNow:444, locPrev:301, fanIn:4, fanOut:6, mod:["src/lifecycle.rs"], ...at(2,2), w:FOOT, d:FOOT, h:0.45,
+    what:"Runs the user's pre/post create and remove steps around every worktree operation.",
+    how:"has_steps() / run_phase() / run_phase_quiet() over the `[[bootstrap.command]]` phases, with a report printer. Every mutating path routes through it so a TUI delete and a CLI delete run the same hooks — the bug that motivated issue #521.",
+    talks:["bootstrap","worktree","github","command-log"] },
+
+  { id:"worktree", code:"WT", name:"Worktree core", group:"worktree core", loc:"1 758", churn:2630, commits:73, locNow:1758, locPrev:1439, fanIn:17, fanOut:5, mod:["src/worktree.rs"], ...at(3,2), w:2.3, d:2.3, h:1.9,
+    what:"The actual git work: add a worktree and its branch, list them with dirty state and ahead/behind, rename, verify, prune, remove.",
+    how:"libgit2 for administration (add / remove_verified / prunable / prune) and inspection (is_dirty, branch_age, stash list); shells out to `git` for log, diff --shortstat and anything porcelain. remove_verified() takes the expected path and refuses when it drifted — the guard that makes an interactive delete safe.",
+    talks:["command-log","notes","github","launch-io","naming"],
+    children:[
+      {code:"AD",name:"add",h:3,what:"create the branch and the worktree in one libgit2 call"},
+      {code:"LS",name:"list",h:2.6,what:"walk worktrees, resolve HEAD, dirty state, ahead/behind"},
+      {code:"RM",name:"remove",h:2.2,what:"remove_verified: refuse when the on-disk path drifted"},
+      {code:"RN",name:"rename",h:1.6,what:"move the worktree and retarget its admin files"},
+      {code:"PR",name:"prune",h:1.2,what:"drop admin files whose working dir is gone"},
+      {code:"GT",name:"git shell",h:1.4,what:"run_git / run_git_logged — the porcelain escape hatch"},
+    ] },
+
+  { id:"bootstrap", code:"BS", name:"Bootstrap", group:"worktree core", loc:"758", churn:1142, commits:22, locNow:758, locPrev:758, fanIn:8, fanOut:2, mod:["src/bootstrap.rs"], ...at(3,3), w:FOOT, d:FOOT, h:0.8,
+    what:"Makes a fresh worktree usable: copies the untracked files a checkout can't carry (.env, local configs), guards directories that must not be symlinked, then runs the configured install commands.",
+    how:"run_core() walks the `[[bootstrap]]` blocks; evaluate_when() gates each step on a small expression language; copy_no_follow / write_no_follow refuse to traverse symlinks — the no-symlink guard that keeps a hostile .gwm.toml from writing outside the worktree. Only runs once trust.rs has cleared the file.",
+    talks:["command-log"] },
+
+  { id:"removal", code:"RM", name:"Remove & undo", group:"worktree core", loc:"445", churn:597, commits:8, locNow:445, locPrev:248, fanIn:2, fanOut:4, mod:["src/removal.rs","src/history.rs"], ...at(2,3), w:FOOT, d:FOOT, h:0.45,
+    what:"The one removal sequence — pre-hooks, journal the branch OID, destroy, post-hooks — and the `gwm undo` that walks it back.",
+    how:"Issue #521 pulled this out of cli::remove_one, which is why the TUI's `d` used to run no hooks and record nothing. history.rs (248) writes each destructive op to a per-user TOML journal with enough state to recreate the branch at its OID and re-add the worktree, so recovery doesn't need reflog archaeology.",
+    talks:["lifecycle","worktree","bootstrap","ledgers"] },
+
+  { id:"sync", code:"SY", name:"Sync", group:"worktree core", loc:"222", churn:298, commits:6, locNow:222, locPrev:222, fanIn:3, fanOut:1, mod:["src/sync.rs"], ...at(2,4), w:1.6, d:1.6, h:0.25,
+    what:"`gwm sync` — fetch, then rebase or merge a worktree's branch onto its upstream.",
+    how:"Issue #24. Read side (dirty check, upstream resolution, ahead/behind) through libgit2; the mutating fetch/rebase/merge shell out to `git` because reimplementing rebase on libgit2 would be a second, worse rebase.",
+    talks:["worktree"] },
+
+  { id:"review", code:"RV", name:"PR review", group:"worktree core", loc:"221", churn:243, commits:4, locNow:221, locPrev:213, fanIn:1, fanOut:7, mod:["src/review.rs"], ...at(1,4), w:1.6, d:1.6, h:0.25,
+    what:"`gwm review <PR#>` — materialise somebody else's pull request into its own isolated worktree.",
+    how:"Issue #308, the only inbound worktree path: every other one assumes you authored a <type>/#<issue>-<desc> branch. Resolves the PR through the forge abstraction, creates the worktree, then runs the normal sync + bootstrap sequence on it.",
+    talks:["forge","sync","lifecycle"] },
+
+  { id:"workspace", code:"WS", name:"Workspace mode", group:"worktree core", loc:"218", churn:248, commits:7, locNow:218, locPrev:218, fanIn:2, fanOut:1, mod:["src/workspace.rs"], ...at(0,4), w:1.6, d:1.6, h:0.25,
+    what:"`--workspace ~/Projects` — one table across every repo one level under a root, not just the current one.",
+    how:"Issue #36. Discovers direct-child git repos, merges their listings into one view with a leading REPO column. Deliberately orthogonal: .gwm.toml stays per-repo, there is no workspace-level config.",
+    talks:["worktree"] },
+
+  /* ---- forge (flanc droit bas) ---- */
+  { id:"forge", code:"FG", name:"Forge abstraction", group:"the forge", loc:"1 197", churn:1589, commits:30, locNow:1197, locPrev:0, fanIn:7, fanOut:6, mod:["src/forge.rs"], ...at(4,2), w:FOOT, d:FOOT, h:1.2,
+    what:"The one trait the rest of the program sees: fetch an issue, open a PR, sync labels — without knowing whether it lands on GitHub or GitLab.",
+    how:"Issue #419, and entirely new since v1.0.0. `forge` / `[forge_hosts]` in .gwm.toml pick the backend per host; the two implementations shell out to the user's own `gh` and `glab`, so gwm never handles a token. Anything network-shaped lives behind this boundary — nothing above it may call a CLI directly.",
+    talks:["github","gitlab","labels","trust","command-log"],
+    children:[
+      {code:"GH",name:"GitHub / gh",h:2.6,what:"2 284 lines — the default backend"},
+      {code:"GL",name:"GitLab / glab",h:2.0,what:"1 544 lines — issue #419"},
+      {code:"TR",name:"trust add",h:0.8,what:"per-host trust for forge resolution"},
+    ] },
+
+  { id:"github", code:"GH", name:"GitHub backend", group:"the forge", loc:"2 284", churn:3812, commits:68, locNow:2284, locPrev:1358, fanIn:10, fanOut:3, mod:["src/github.rs"], ...at(5,2), w:FOOT, d:FOOT, h:2.3,
+    what:"Talks to GitHub through `gh`, and stores the issue ↔ PR ↔ branch link so every worktree knows what it belongs to.",
+    how:"Links live in git branch config — branch.<name>.gwm-issue and .gwm-pr — and the issue number is auto-detected from the <type>/#<N>-<slug> convention when no override is set. That is why a worktree keeps its link after a clone or a rename: the truth is in git, not in a sidecar file.",
+    talks:["gitlab","labels","templates","worktree","git-config"] },
+
+  { id:"gitlab", code:"GL", name:"GitLab backend", group:"the forge", loc:"1 544", churn:2400, commits:35, locNow:1544, locPrev:0, fanIn:2, fanOut:2, mod:["src/gitlab.rs"], ...at(6,2), w:FOOT, d:FOOT, h:1.55,
+    what:"The same operations against GitLab merge requests, through `glab`.",
+    how:"Issue #419, new since v1.0.0. Two invocation styles picked per operation rather than uniformly: first-class `glab issue`/`glab mr` for reads, raw `glab api` where the porcelain doesn't expose the field gwm needs. Mirrors the GitHub backend's link storage so nothing above the trait branches on forge type.",
+    talks:["labels"] },
+
+  { id:"labels", code:"LM", name:"Labels & milestones", group:"the forge", loc:"618", churn:672, commits:9, locNow:618, locPrev:618, fanIn:5, fanOut:1, mod:["src/labels.rs","src/milestones.rs"], ...at(4,3), w:1.6, d:1.6, h:0.6,
+    what:"Declares the repo's label and milestone set in `.gwm.toml` and syncs it upstream — no more clicking through settings on every new repo.",
+    how:"labels.rs (351) resolves `[[labels]]` into LabelSpecs, filling in deterministic pastel colours when omitted, and diffs against the remote; milestones.rs (267) does the same for `[[milestones]]`, normalising dates and defaulting state to open. Both compute the diff first and only then apply.",
+    talks:["github"] },
+
+  { id:"templates", code:"TP", name:"Templates & prefixes", group:"the forge", loc:"870", churn:998, commits:10, locNow:870, locPrev:870, fanIn:1, fanOut:3, mod:["src/issue_templates.rs","src/pr_templates.rs","src/templating.rs","src/gitmoji.rs","src/hooks.rs"], ...at(5,3), w:1.6, d:1.6, h:1.3,
+    what:"Fills the repo's issue and PR templates from branch context, and prepends the right Gitmoji + Conventional Commits prefix to every commit message.",
+    how:"issue_templates.rs (158) + pr_templates.rs (110) + templating.rs (138) render from a context the caller collects (branch, base/head, commits, diff stats) — deliberately pure, so `gwm pr --render` is testable without network. gitmoji.rs (239) maps branch type → emoji with a baked-in default table overridable in .gwm.toml; hooks.rs (225) installs the commit-msg hook that calls `gwm commit-prefix` and prepends it when the message doesn't already start with one.",
+    talks:["github"] },
+
+  /* ---- autour de la flotte (bas) ---- */
+  { id:"doctor", code:"DC", name:"Doctor", group:"around the fleet", loc:"1 009", churn:1521, commits:44, locNow:1009, locPrev:679, fanIn:3, fanOut:9, mod:["src/doctor.rs"], ...at(3,4), w:FOOT, d:FOOT, h:1.0,
+    what:"`gwm doctor` — one report answering 'is my setup sane?': config, environment, worktree state, whether `gh`/`glab` are there and authenticated.",
+    how:"Aggregates a series of cheap checks so users and CI don't run a dozen ad-hoc commands. Also the module the TUI and launcher consult before offering an action that needs an external binary — the checks are reused, not duplicated.",
+    talks:["worktree","forge","notes","bootstrap"] },
+
+  { id:"agents", code:"AG", name:"Agent sessions", group:"around the fleet", loc:"1 213", churn:1647, commits:25, locNow:1213, locPrev:0, fanIn:5, fanOut:0, mod:["src/agent_sessions.rs"], ...at(4,4), w:FOOT, d:FOOT, h:1.2,
+    what:"Shows which AI coding session is working in which worktree — Claude Code, Codex, opencode, Mistral Vibe — and lets you pin one manually.",
+    how:"Issue #408, new since v1.0.0. Reads each tool's persisted session artefacts under the user's home area with std::fs only — no process scanning, no OS-specific API — so the same path runs on Linux, macOS and Windows. A pin (branch.<name>.gwm-agent-pin) overlays detection for the cases the recorded directory cannot cover, e.g. a session started in the main checkout but working in a worktree.",
+    talks:["git-config"] },
+
+  { id:"notes", code:"NT", name:"Notes", group:"around the fleet", loc:"395", churn:477, commits:8, locNow:395, locPrev:0, fanIn:5, fanOut:1, mod:["src/notes.rs"], ...at(5,4), w:1.6, d:1.6, h:0.4,
+    what:"A Markdown scratchpad per worktree — what this branch is for, what's left — surviving the worktree itself.",
+    how:"Issue #515, new since v1.0.0. One file per branch under .git/gwm/notes/ in the main checkout, not in the worktree: the worktree is disposable, the note shouldn't be. Git config already holds the three per-branch keys; a note is too big for config, so it gets a file next to it.",
+    talks:["note-files"] },
+
+  { id:"command-log", code:"CD", name:"Command log", group:"around the fleet", loc:"314", churn:362, commits:6, locNow:314, locPrev:224, fanIn:7, fanOut:0, mod:["src/command_log.rs"], ...at(3,5), w:1.6, d:1.6, h:0.3,
+    what:"A scrollable transcript of every external command gwm ran — the `gh` calls, the bootstrap steps, the lifecycle hooks — behind a lazygit-style modal.",
+    how:"Issue #226. Bounded in-memory ring; the one-line statusbar action log (#217) is ephemeral and only shows the latest, this keeps the history. Everything that shells out logs here, which is what makes a failed bootstrap step diagnosable after the fact.",
+    talks:[] },
+
+  { id:"fleet-ops", code:"FO", name:"Exec & clean", group:"around the fleet", loc:"967", churn:1313, commits:25, locNow:967, locPrev:596, fanIn:5, fanOut:1, mod:["src/exec.rs","src/clean.rs"], ...at(1,5), w:FOOT, d:FOOT, h:0.95,
+    what:"Run one command across every worktree, and reclaim the gigabytes of build output a fleet accumulates.",
+    how:"Both issue #313. exec.rs (539) keeps the spawn primitive and the exit-code rollup pure and testable, the CLI does target resolution and printing — which is why the edge from here to the worktree core is a design relationship, not an import. clean.rs (428) scans each worktree for target/, node_modules/, dist/, build/, sizes them, reports — and only deletes when explicitly asked.",
+    talks:["worktree"] },
+
+  { id:"launch-io", code:"LA", name:"Launch & IO", group:"around the fleet", loc:"561", churn:575, commits:7, locNow:561, locPrev:426, fanIn:5, fanOut:1, mod:["src/launcher.rs","src/multiplexer.rs","src/clipboard.rs"], ...at(2,5), w:1.6, d:1.6, h:0.55,
+    what:"Opens the worktree where you want it: an editor, a git TUI, a new tmux window or zellij tab — and yanks paths to the clipboard.",
+    how:"launcher.rs (316) substitutes placeholders into a `command` template from .gwm.toml, splits with shell-words and execs with cwd = worktree.path. multiplexer.rs (110) builds the tmux/zellij argv as pure functions returning Vec<String>. clipboard.rs (135) decides between host clipboard binaries and an OSC52 escape sequence, for the ssh case.",
+    talks:[] },
+
+  /* ---- stockage (dalles) ---- */
+  { id:"gwm-toml", code:"GT", name:".gwm.toml", group:"where state lives", loc:"per repo", ...at(6,3), w:2.2, d:2.2, h:0.22, slab:true,
+    what:"The repo-local config: worktree root, branch patterns, bootstrap steps, labels, milestones, theme, launchers.",
+    how:"Committed to the repo, which is exactly why it is hashed against the trust ledger before any of its commands run. Eight presets seed it; `gwm config validate` checks it; the TUI config panel edits it in place." },
+
+  { id:"git-config", code:"GC", name:"git branch config", group:"where state lives", loc:"3 keys", ...at(6,4), w:2.2, d:2.2, h:0.22, slab:true,
+    what:"Where a worktree's links live: its issue, its PR, and any pinned agent session.",
+    how:"branch.<name>.gwm-issue / .gwm-pr / .gwm-agent-pin. Storing them in git config rather than a sidecar means they survive clone, rename and worktree removal, and other tools can read them with plain `git config`." },
+
+  { id:"ledgers", code:"LG", name:"user ledgers", group:"where state lives", loc:"2 files", ...at(6,5), w:2.2, d:2.2, h:0.22, slab:true,
+    what:"Two per-user TOML files: the trust ledger, and the undo journal of destructive operations.",
+    how:"~/.config/gwm/trust.toml (overridable via GWM_TRUST_LEDGER) holds (origin, sha256) tuples; the history journal holds each removal with the branch OID and path needed to recreate it. Per-user, not per-repo, because both answer questions about *this machine*." },
+
+  { id:"note-files", code:"NF", name:"note files", group:"where state lives", loc:".git/gwm", ...at(4,6), w:2.0, d:2.0, h:0.22, slab:true,
+    what:"One Markdown file per branch, in the main checkout's .git directory.",
+    how:"Deliberately outside the worktree: the worktree is disposable and the note has to outlive it." },
+
+  { id:"socket", code:"SK", name:"daemon socket", group:"where state lives", loc:"unix", ...at(2,6), w:1.8, d:1.8, h:0.22, slab:true,
+    what:"The unix domain socket the daemon listens on and the statusline connects to.",
+    how:"Path frozen by contract.rs alongside the DTO shapes, so an editor plugin can find it without asking gwm." },
+
+  /* ---- preuve (coin) ---- */
+  { id:"tests", code:"TE", name:"Test suite", group:"proof", loc:"70.8k", locNow:70767, locPrev:39520, ...at(0,6), w:2.4, d:2.4, h:1.1, slab:true,
+    what:"2 974 test functions across 97 files — 1.3× the size of the source it covers. TDD is a hard merge requirement here, not a guideline.",
+    how:"tui_app_tests.rs (13.5k) drives the state machine ratatui-free; cli_binary.rs (7.7k) runs the real binary under assert_cmd and is the canary for every new subcommand; worktree_integration.rs (2.4k) works against real temp repos via libgit2. config, naming, github, gitlab, doctor and agent_sessions each get their own file.",
+    talks:["cli"] },
+
+  { id:"ci", code:"CI", name:"CI & release", group:"proof", loc:"4 flows", ...at(0,5), w:1.6, d:1.6, h:0.5,
+    what:"Four workflows: CI on every push, docs sync, pre-release, and the tagged release that publishes the binaries.",
+    how:"main is protected with seven required checks and enforce_admins on — there is no direct push for anyone, the maintainer included. dev reaches main through a PR and the tag is pushed after the merge, so the tag always points at a commit that already carries the version bump and the per-version changelog file release.yml reads with --notes-file.",
+    talks:["tests"] },
+];
+
+/* Provenance de chaque arête — vérifiée par scripts/atlas_check.mjs --scan :
+   src:"import"  dépendance de compilation, vue par atlas_scan dans le code
+   src:"runtime" flux réel à l'exécution qui ne passe pas par un `use`
+                 (socket, git config, fichier sur disque)
+   src:"design"  relation de conception : déclaration de sous-module, contrat
+                 respecté, résolution faite par l'appelant */
+const EDGES = [
+  { f:"entry", t:"aliases", flow:1, src:"import", pay:"argv" },
+  { f:"aliases", t:"cli", mutual:1, flow:1, src:"import", pay:"expanded argv" },
+  { f:"cli", t:"config", flow:1, src:"import", pay:".gwm.toml lookup" },
+  { f:"config", t:"trust", mutual:1, flow:1, src:"import", pay:"sha256 of .gwm.toml" },
+  { f:"cli", t:"naming", flow:1, src:"import", pay:"type + issue + description" },
+  { f:"naming", t:"worktree", mutual:1, flow:1, src:"import", pay:"branch name + path" },
+  { f:"cli", t:"worktree", flow:1, src:"import", pay:"create · list · remove" },
+  { f:"cli", t:"lifecycle", flow:1, src:"import", pay:"phase boundary" },
+  { f:"lifecycle", t:"worktree", src:"import", pay:"the operation itself" },
+  { f:"lifecycle", t:"bootstrap", flow:1, src:"import", pay:"bootstrap ctx" },
+  { f:"bootstrap", t:"command-log", flow:1, src:"import", pay:"step output" },
+  { f:"worktree", t:"github", flow:1, src:"import", pay:"branch ↔ issue link" },
+  { f:"github", t:"git-config", flow:1, src:"runtime", pay:"gwm-issue · gwm-pr" },
+  { f:"cli", t:"forge", flow:1, src:"import", pay:"issue / PR request" },
+  { f:"forge", t:"github", mutual:1, flow:1, src:"import", pay:"gh invocation" },
+  { f:"forge", t:"gitlab", mutual:1, src:"import", pay:"glab invocation" },
+  { f:"forge", t:"trust", src:"import", pay:"host trust check" },
+  { f:"forge", t:"labels", src:"import", pay:"declared label set" },
+  { f:"labels", t:"github", src:"design", pay:"label diff" },
+  { f:"github", t:"templates", src:"design", pay:"PR body context" },
+  { f:"github", t:"gitlab", src:"design", pay:"shared link storage" },
+  { f:"cli", t:"tui-runtime", flow:1, src:"import", pay:"terminal handover" },
+  { f:"tui-runtime", t:"app", flow:1, src:"design", pay:"key events" },
+  { f:"app", t:"state", mutual:1, flow:1, src:"import", pay:"slice transitions" },
+  { f:"app", t:"render", mutual:1, flow:1, src:"import", pay:"&App" },
+  { f:"app", t:"keymap", src:"import", pay:"resolved action" },
+  { f:"render", t:"worktree", src:"import", pay:"table rows" },
+  { f:"app", t:"worktree", flow:1, src:"import", pay:"selected worktree" },
+  { f:"app", t:"agents", src:"import", pay:"session detection" },
+  { f:"agents", t:"git-config", src:"runtime", pay:"agent pin" },
+  { f:"keymap", t:"doctor", src:"design", pay:"is this action available" },
+  { f:"theme", t:"tui-runtime", src:"design", pay:"palette" },
+  { f:"graph", t:"worktree", src:"import", pay:"commit topology" },
+  { f:"cli", t:"daemon", src:"import", pay:"serve" },
+  { f:"daemon", t:"json-api", flow:1, src:"import", pay:"JSON-RPC result" },
+  { f:"json-api", t:"worktree", flow:1, src:"import", pay:"WorktreeInfo → DTO" },
+  { f:"statusline", t:"daemon", src:"runtime", pay:"list · subscribe over the socket" },
+  { f:"daemon", t:"socket", src:"runtime", pay:"bind" },
+  { f:"removal", t:"worktree", src:"import", pay:"verified path" },
+  { f:"removal", t:"ledgers", flow:1, src:"runtime", pay:"branch OID + path" },
+  { f:"trust", t:"ledgers", src:"runtime", pay:"(origin, sha256)" },
+  { f:"config", t:"gwm-toml", src:"runtime", pay:"parsed blocks" },
+  { f:"worktree", t:"notes", src:"import", pay:"branch name" },
+  { f:"notes", t:"note-files", src:"runtime", pay:"markdown" },
+  { f:"cli", t:"doctor", src:"import", pay:"check request" },
+  { f:"doctor", t:"forge", src:"import", pay:"gh / glab probe" },
+  { f:"cli", t:"fleet-ops", src:"import", pay:"target set" },
+  { f:"fleet-ops", t:"worktree", src:"design", pay:"per-worktree dir" },
+  { f:"worktree", t:"launch-io", src:"import", pay:"path to open" },
+  { f:"review", t:"forge", src:"design", pay:"PR ref" },
+  { f:"review", t:"sync", src:"design", pay:"fetch + rebase" },
+  { f:"sync", t:"worktree", src:"import", pay:"upstream state" },
+  { f:"workspace", t:"worktree", src:"import", pay:"merged listing" },
+  { f:"tests", t:"cli", src:"import", pay:"assert_cmd" },
+  { f:"ci", t:"tests", src:"design", pay:"cargo test" },
+];
+
+const EXTERNALS = [
+  { at:"github", dx:170, dy:-105, label:"GitHub · gh CLI" },
+  { at:"gitlab", dx:120, dy:60, label:"GitLab · glab CLI" },
+  { at:"worktree", dx:-300, dy:-205, label:"libgit2 + git binary" },
+  { at:"agents", dx:250, dy:90, label:"Claude Code · Codex · opencode · Vibe" },
+  { at:"launch-io", dx:-175, dy:55, label:"tmux · zellij · $EDITOR" },
+];
+
+const TRACE = [
+  ["entry", "You run `gwm create fix/#572-overlay-height`. main.rs builds the clap command and hands argv over — 79 lines, no logic."],
+  ["aliases", "Aliases expand first, before clap ever parses. Nothing matches here, so argv passes through untouched."],
+  ["cli", "clap resolves Command::Create. The handler's job is to gather context and call the domain modules — it holds no worktree logic itself."],
+  ["config", "`.gwm.toml` is read from the repo root and merged with the user-level defaults: worktree root, branch pattern, bootstrap steps."],
+  ["trust", "Before any bootstrap command may run, the file is hashed and (origin, sha256) looked up in the trust ledger. Known tuple, no prompt."],
+  ["naming", "worktree_spec() parses the type, the issue number and the description against the compiled pattern, and returns `fix/#572-overlay-height` plus its on-disk path."],
+  ["forge", "The description is thin, so gwm asks the forge for issue #572's title. The trait picks the GitHub backend for this host."],
+  ["github", "`gh issue view 572` returns the title; it is sanitised for the terminal before it is ever printed or used in a path."],
+  ["worktree", "libgit2 creates the branch at the base ref and adds the worktree. This is the only place on-disk worktree state is created."],
+  ["lifecycle", "The pre_create phase runs. Every mutating path routes through here, so the TUI and the CLI run the same hooks."],
+  ["bootstrap", "Untracked files are copied without following symlinks, no-symlink guards applied, then the configured install commands run inside the new worktree."],
+  ["command-log", "Every one of those external commands is recorded in the transcript, so a failed step is still readable afterwards."],
+  ["github", "The link is written to git config: branch.fix/#572-overlay-height.gwm-issue = 572. It now survives clone, rename and removal."],
+  ["agents", "Your coding session gets pinned to the new worktree, so `gwm agents` and the TUI attribute it here rather than to the checkout it started from."],
+];
+
+/* Traduction française. Le DATA anglais reste la source ; toute clé absente
+   ici retombe sur l'anglais. Les noms de blocs et les identifiants techniques
+   restent en l'état — on traduit le propos, pas le code. */
+const I18N = { fr: {
+  kicker: "gwm — gestionnaire de worktrees git",
+  title: "La flotte de worktrees",
+  sub: "comment une commande transforme un numéro d'issue en checkout isolé et prêt à l'emploi",
+  ui: {
+    iso: "Isométrique", matrix: "Matrice", hotspots: "Points chauds", flow: "Diagramme",
+    what: "Ce que ça fait", how: "Comment c'est fait",
+    diff: "Diff", pause: "Pause", resume: "Reprendre", trace: "Tracer", copy: "Copier",
+    copied: "Copié", reset: "Réinitialiser", back: "← Ressortir", code: "Code", fit: "Ajuster",
+    find: "/ chercher un module",
+    hints: "Survoler pour lire · Cliquer pour épingler · Double-clic pour entrer · Glisser pour déplacer · Molette pour zoomer",
+    diffHints: rev => `Diff vs ${rev} · vert = a grossi · rouge = a rétréci · orange = nouveau`,
+    noteIso: "hauteur = lignes de code · dalle = stockage",
+    noteMatrix: "ligne → colonne : la ligne importe la colonne · violet = mutuel",
+    noteHotspots: "churn × taille · un commit compte par fichier touché",
+    noteFlow: "dessiné ici, exportable en source mermaid",
+    legend: ["<b>hauteur</b> = lignes de code", "<b>dalle plate</b> = stockage",
+             "import (compilation)", "flux à l'exécution", "relation de conception",
+             "donnée en transit", "hub / dépendance mutuelle"],
+    talksTo: "Parle à", calledBy: "Appelé par", reach: "Portée", growth: "Croissance",
+    source: "Source", inside: "à l'intérieur", pinned: "épinglé", whatsInThere: "Ce qu'il y a dedans",
+    stepAfter: "L'étape suivante", step: (i, n) => `Étape ${i} / ${n}`,
+    endTrace: "— fin de la trace —", tracing: "Trace", parts: "parties", lines: "lignes",
+    nothingDown: "rien en aval", entrySurface: "surface d'entrée",
+    noEdge: n => `${n} modules en dépendent — aucune arête tracée ici`,
+    reachLine: (i, o, hub) => `${i} module${i === 1 ? "" : "s"} l'importent, il en importe ${o}.${hub ? " Un hub — le modifier se propage." : ""}`,
+    newSince: rev => `nouveau depuis ${rev}`, since: rev => `depuis ${rev}`,
+    goInside: "double-clic pour entrer", more: n => `+${n} autres`,
+    noMermaid: "Pas de moteur mermaid ici — voici le source. Il est rendu dans l'artifact publié.",
+    flowHint: "Dessiné depuis le même graphe que les autres vues. <em>Mermaid</em> donne le source, celui qui se colle dans une doc, une issue, ou dans un prompt.",
+    flowNote: "Uniquement le chemin principal et les arêtes mutuelles — le graphe complet en un seul flowchart est illisible, c'est à ça que sert la matrice.",
+    depFlow: "Flux de dépendances", reqTrace: "Trace d'une requête",
+    quadBigStable: "GROS · STABLE", quadBigOften: "GROS · CHANGE SOUVENT",
+    quadSmallStable: "PETIT · STABLE", quadSmallOften: "PETIT · CHANGE SOUVENT",
+    axisChurn: w => `COMMITS-FICHIERS SUR ${w} →`, axisLoc: "LIGNES DE CODE →",
+    noChurn: "pas de churn mesuré — relancer atlas_scan.py --inject",
+    noInside: "pas de vue intérieure pour cette structure",
+    mutual: "mutuel", fileCommits: "commits-fichiers", linesTouched: "lignes remuées",
+    mermaidSrc: "Mermaid", diagram: "Diagramme",
+    arch: "Architecture", stack: "Stack",
+    noteArch: "couches, cycles et frontières — recalculés depuis le graphe mesuré",
+    noteStack: "manifestes, outillage, CI — lus dans le dépôt",
+    archHint: "Rien n'est écrit à la main ici. Couches, cycles, hubs et frontières sont recalculés depuis les arêtes que les autres vues dessinent, donc cette page ne peut pas diverger de la carte.",
+    stackHint: "Lu dans les manifestes du dépôt. <em>Utilisé par</em> est mesuré sur les imports, pas sur le manifeste — une dépendance que personne n'importe directement reste vide, ce qui est déjà une information.",
+    layers: "Couches", layer: k => `couche ${k}`,
+    cyclesTitle: "Cycles de dépendances",
+    cyclesHint: "Composantes fortement connexes : dans un anneau, chaque bloc atteint tous les autres. Un anneau à deux blocs, c'est la marque violette de la matrice ; les plus longs n'apparaissent nulle part ailleurs.",
+    noCycle: "Aucun cycle — toutes les dépendances descendent.",
+    crossings: "Ce qui traverse chaque frontière",
+    crossHint: "Les noms qu'un bloc importe réellement d'un autre, relevés dans le graphe d'imports. Une arête dit qu'il y a un lien ; ceci dit lequel.",
+    noCrossing: "Aucun symbole mesuré — lancer atlas_scan.py --stack-for.",
+    entrySurfaces: "Surfaces d'entrée", entryHint: "Rien dans le dépôt ne les importe — on y arrive de l'extérieur.",
+    foundations: "Fondations", leafHint: "Elles n'importent rien. Les modifier remonte, jamais l'inverse.",
+    hubsTitle: "Hubs", hubHint: "Portée au-dessus de la médiane du dépôt. Toucher l'un d'eux touche tout ce qui est en aval.",
+    languages: "Langages",
+    dep: "Dépendance", version: "Version", scope: "Portée", usedBy: "Utilisé par",
+    devDep: "dev", runtimeDep: "exécution", noImport: "aucun import direct trouvé",
+    undeclared: "Utilisé sans être déclaré",
+    undeclaredHint: "Importé par le code mais absent de tous les manifestes — disponible seulement par transitivité, donc un bump de dépendance ailleurs peut casser le build.",
+    shellsOut: "Binaires appelés",
+    shellsHint: "Les binaires que le code invoque. Une dépendance d'exécution qu'aucun manifeste ne consigne, et souvent la plus structurante.",
+    commands: "Commandes de build et de test", ci: "Intégration continue",
+    ciOff: "commenté", jobs: n => `${n} jobs`,
+    testSurface: "Surface de test", files: "fichiers", ofCode: "du code",
+    entryPoints: "Points d'entrée",
+    noStack: "Pas de bloc STACK — lancer atlas_scan.py --stack-for atlas.html et coller le résultat dans la section DATA.",
+  },
+  topbar: `<div class="cell" id="repo"><div class="k">Dépôt</div><div class="v">gwm-cli <span>· gestionnaire de worktrees</span></div></div>
+    <div class="cell"><div class="k">Rust</div><div class="v"><b>124k</b> lignes · 167 fichiers</div></div>
+    <div class="cell"><div class="k">Source</div><div class="v"><b>53k</b> · 70 fichiers</div></div>
+    <div class="cell"><div class="k">Tests</div><div class="v"><b>2 974</b> · 97 fichiers</div></div>
+    <div class="cell"><div class="k">CLI</div><div class="v"><b>39</b> sous-commandes</div></div>
+    <div class="cell"><div class="k">Version</div><div class="v"><b>v1.8.0</b> · 4 workflows</div></div>`,
+  groups: {
+    "the way in": "par où ça entre", "the tui": "la TUI",
+    "the machine surface": "la surface machine", "naming & config": "nommage & config",
+    "worktree core": "cœur worktree", "the forge": "la forge",
+    "around the fleet": "autour de la flotte", "where state lives": "où vit l'état",
+    "proof": "preuve",
+  },
+  overviewWhat: `
+<p>Ce dépôt est un <mark>gestionnaire de worktrees git</mark> écrit en Rust : une CLI de
+39 sous-commandes et une TUI ratatui qui partagent le même arbre de modules. Il crée une branche et
+son worktree d'un seul geste, prépare le nouveau checkout depuis un <mark>.gwm.toml</mark> local au
+dépôt, le relie à une issue GitHub ou une merge request GitLab, et garde une flotte de ces
+checkouts navigable.</p>
+<p>Le centre du diagramme est <mark>worktree</mark> — la couche libgit2 qui ajoute, liste, renomme
+et supprime les worktrees. Tout ce qui est à sa gauche décide <em>comment</em> un worktree doit
+s'appeler et être configuré ; tout ce qui est à sa droite parle à une forge via <code>gh</code> ou
+<code>glab</code> ; tout ce qui est en dessous surveille la flotte après coup — doctor, notes,
+sessions d'agents, journal d'annulation.</p>
+<p>Le grand ensemble à droite, c'est la TUI : <mark>24k lignes</mark> réparties entre une passe de
+rendu, une structure d'application qui orchestre, et seize tranches d'état extraites. C'est de loin
+la plus grosse surface du dépôt, et la raison pour laquelle <code>tui_app_tests.rs</code> fait à lui
+seul 13,5k lignes.</p>
+<p class="sec">Comment le lire</p>
+<p>Survolez n'importe quoi pour une description en clair ; l'onglet <mark>Comment c'est fait</mark>
+donne l'implémentation. Les marques mobiles sont des données en mouvement — survolez-en une pour
+voir ce qui circule sur cette ligne. Double-cliquez une structure pour <mark>entrer dedans</mark>.
+<mark>Tracer</mark> suit un vrai <code>gwm create</code> à travers tout le système, et
+<mark>Diff v1.0.0</mark> repeint chaque bloc selon ce qu'il a pris depuis la 1.0.</p>`,
+  overviewHow: `
+<p>Un binaire, une cible lib. <code>src/lib.rs</code> n'existe que comme couture de test — tout le
+crate est <code>#![doc(hidden)]</code> — pour que les 97 fichiers de tests d'intégration sous
+<code>tests/</code> atteignent le même arbre de modules que le binaire.</p>
+<p>Le travail git est séparé volontairement : l'inspection en lecture et l'administration des
+worktrees passent par <mark>libgit2</mark>, tandis que la porcelaine mutante (fetch, rebase, merge)
+appelle le binaire <code>git</code>. L'accès à la forge n'est jamais lié à la compilation — il
+appelle les <code>gh</code> / <code>glab</code> de l'utilisateur, donc gwm hérite de son
+authentification au lieu de stocker un jeton.</p>
+<p>La config est un <code>.gwm.toml</code> local au dépôt, gardé par un
+<mark>registre de confiance TOFU</mark> : le fichier est haché et le couple (origine, sha256)
+recherché avant qu'un <code>[[bootstrap.command]]</code> ne s'exécute. Le modèle de menace est
+l'exécution de code arbitraire venu d'un remote non fiable : par défaut, on demande.</p>
+<p>La surface machine est gelée : <code>contract.rs</code> fige les DTO JSON que partagent
+<code>--format=json</code>, le démon JSON-RPC et la statusline, pour que les éditeurs et les barres
+d'état puissent en dépendre sur toute la ligne 1.x.</p>
+<p class="sec">Comment cette carte a été mesurée</p>
+<p>Les comptes de lignes viennent d'<code>atlas_scan.py</code> sur <code>git ls-files</code>. Les
+arêtes sont le vrai graphe d'imports — <code>use crate::</code> / <code>super::</code> /
+<code>gwm::{…}</code> résolus contre l'index des modules — avec
+<mark>538 imports de compilation</mark> tenus à part des
+<mark>41 mentions qui n'apparaissent qu'en commentaire</mark>. Une arête en pointillé ici est une
+relation de conception, pas une dépendance que le compilateur verrait.</p>
+<p>Le même scan trouve <mark>13 paires de blocs mutuellement dépendants</mark> — cinq impliquent
+<code>config</code> à elle seule. Les sept qui portaient déjà une arête sur cette carte sont
+tracées en violet plutôt que dédoublées ; les six autres relient des blocs que cette carte ne
+connecte pas directement.</p>`,
+  trace: {
+    0: "Vous lancez `gwm create fix/#572-overlay-height`. main.rs construit la commande clap et passe argv — 79 lignes, aucune logique.",
+    1: "Les alias s'expansent d'abord, avant même que clap ne parse. Rien ne correspond ici, argv passe intact.",
+    2: "clap résout Command::Create. Le rôle du handler est de rassembler le contexte et d'appeler les modules du domaine — il ne porte aucune logique de worktree.",
+    3: "`.gwm.toml` est lu à la racine du dépôt et fusionné avec les défauts utilisateur : racine des worktrees, motif de branche, étapes de bootstrap.",
+    4: "Avant qu'une commande de bootstrap ne puisse tourner, le fichier est haché et le couple (origine, sha256) cherché dans le registre de confiance. Couple connu, pas de question.",
+    5: "worktree_spec() analyse le type, le numéro d'issue et la description contre le motif compilé, et renvoie `fix/#572-overlay-height` avec son chemin sur disque.",
+    6: "La description est maigre : gwm demande à la forge le titre de l'issue #572. Le trait choisit le backend GitHub pour cet hôte.",
+    7: "`gh issue view 572` renvoie le titre ; il est assaini pour le terminal avant d'être affiché ou utilisé dans un chemin.",
+    8: "libgit2 crée la branche sur la référence de base et ajoute le worktree. C'est le seul endroit où de l'état worktree est créé sur disque.",
+    9: "La phase pre_create s'exécute. Tout chemin mutant passe par ici, donc la TUI et la CLI lancent les mêmes hooks.",
+    10: "Les fichiers non suivis sont copiés sans suivre les liens symboliques, les gardes no-symlink appliquées, puis les commandes d'installation configurées tournent dans le nouveau worktree.",
+    11: "Chacune de ces commandes externes est enregistrée dans le transcript, pour qu'une étape ratée reste lisible après coup.",
+    12: "Le lien est écrit dans la config git : branch.fix/#572-overlay-height.gwm-issue = 572. Il survit désormais au clone, au renommage et à la suppression.",
+    13: "Votre session de code se pin sur le nouveau worktree, pour que `gwm agents` et la TUI l'attribuent ici et non au checkout d'où elle a démarré.",
+  },
+  pay: {
+    "entry>aliases": "argv", "aliases>cli": "argv expansé", "cli>config": "lecture du .gwm.toml",
+    "config>trust": "sha256 du .gwm.toml", "cli>naming": "type + issue + description",
+    "naming>worktree": "nom de branche + chemin", "cli>worktree": "create · list · remove",
+    "cli>lifecycle": "frontière de phase", "lifecycle>worktree": "l'opération elle-même",
+    "lifecycle>bootstrap": "contexte de bootstrap", "bootstrap>command-log": "sortie de l'étape",
+    "worktree>github": "lien branche ↔ issue", "github>git-config": "gwm-issue · gwm-pr",
+    "cli>forge": "demande d'issue / de PR", "forge>github": "appel gh", "forge>gitlab": "appel glab",
+    "forge>trust": "vérification de confiance", "forge>labels": "jeu de labels déclaré",
+    "labels>github": "diff des labels", "github>templates": "contexte du corps de PR",
+    "github>gitlab": "stockage de lien partagé", "cli>tui-runtime": "passage du terminal",
+    "tui-runtime>app": "événements clavier", "app>state": "transitions de tranches", "app>render": "&App",
+    "app>keymap": "action résolue", "render>worktree": "lignes du tableau",
+    "app>worktree": "worktree sélectionné", "app>agents": "détection de session",
+    "agents>git-config": "pin d'agent", "keymap>doctor": "cette action est-elle disponible",
+    "theme>tui-runtime": "palette", "graph>worktree": "topologie des commits", "cli>daemon": "servir",
+    "daemon>json-api": "résultat JSON-RPC", "json-api>worktree": "WorktreeInfo → DTO",
+    "statusline>daemon": "list · subscribe via la socket", "daemon>socket": "bind",
+    "removal>worktree": "chemin vérifié", "removal>ledgers": "OID de branche + chemin",
+    "trust>ledgers": "(origine, sha256)", "config>gwm-toml": "blocs parsés",
+    "worktree>notes": "nom de branche", "notes>note-files": "markdown", "cli>doctor": "demande de check",
+    "doctor>forge": "sonde gh / glab", "cli>fleet-ops": "jeu de cibles",
+    "fleet-ops>worktree": "dossier par worktree", "worktree>launch-io": "chemin à ouvrir",
+    "review>forge": "référence de PR", "review>sync": "fetch + rebase", "sync>worktree": "état amont",
+    "workspace>worktree": "listing fusionné", "tests>cli": "assert_cmd", "ci>tests": "cargo test",
+  },
+  blocks: {
+    entry: { what: "main.rs démarre le processus et lib.rs réexporte l'arbre de modules pour que les tests d'intégration l'atteignent. 138 lignes de pur câblage.",
+      how: "main.rs fait 79 lignes : construire la commande clap, passer argv à cli::run, transformer l'erreur en code de sortie. lib.rs est une couture de test #![doc(hidden)], explicitement pas une API publique." },
+    aliases: { what: "Développe les raccourcis définis par l'utilisateur avant que le parseur ne les voie : `gwm co` peut devenir `gwm create --from dev`.",
+      how: "Substitution de chaînes sur argv, trois niveaux de résolution — intégré, `[aliases]` du dépôt dans .gwm.toml, puis ~/.config/gwm/aliases.toml. Reprend la forme du `[alias]` de git. Tourne avant clap, donc un alias peut se développer en options." },
+    cli: { what: "L'arbre de commandes clap : 39 sous-commandes, de `create` et `list` jusqu'à `daemon`, `exec` et `undo`. Tout chemin non-TUI du programme part d'ici.",
+      how: "clap en dérivation. Chaque sous-commande résout ses worktrees cibles, appelle le module du domaine, et affiche. Les handlers restent minces exprès — la logique testable vit dans le module, la CLI garde la résolution d'arguments et le rendu. `tests/cli_binary.rs` (7,7k lignes) pilote le vrai binaire." },
+    "tui-runtime": { what: "Possède le terminal : mode brut, boucle d'événements, cadence de redessin, et rendu propre de la main à la sortie.",
+      how: "crossterm + ratatui. C'est aussi le module qui réexporte les points d'entrée TUI stables (recent_commits_lines) pour que les tests d'intégration figent l'algorithme plutôt que les internes." },
+    app: { what: "L'orchestrateur : quel worktree est sélectionné, quelle modale est ouverte, où en sont les tâches asynchrones. Chaque frappe finit par muter ça.",
+      how: "C'était une structure fourre-tout de 1300 lignes ; l'issue #102 l'a décomposée en seize tranches d'état voisines, une PR par tranche. App les compose désormais et ne garde que les transitions transverses. Testé sans ratatui dans tests/tui_app_tests.rs — 13,5k lignes, le plus gros fichier de test du dépôt." },
+    render: { what: "Dessine chaque image : le tableau des worktrees, la barre latérale, les modales, le graphe de commits, les barres d'aide. Le plus gros fichier du dépôt.",
+      how: "Composition pure de widgets ratatui — prend &App, ne renvoie que des appels de dessin. Aucune mutation d'état, ce qui permet de tester la machine à états sans terminal. Les aides annoncent dynamiquement le jeu de champs canonique <type>/#<issue>-<desc> (issue #418)." },
+    state: { what: "Seize petites machines à états — le tampon de filtre, le compte à rebours de confirmation, le panneau de config, l'overlay PTY — chacune ne possédant qu'une seule préoccupation.",
+      how: "Extraites via l'issue #102 pour casser la structure fourre-tout d'App. Chacune expose une API d'état pur ; App les compose. Les plus grosses : config_panel 734, rich_view 585, async_task 518, sidebar 470, pty_overlay 447." },
+    keymap: { what: "Ce que fait chaque touche, dans la vue principale et dans chaque modale — y compris les accords à la lazygit.",
+      how: "Deux tables : keymap.rs pour la carte globale (775 lignes), modal_keymap.rs pour les surcharges par modale (638). Les deux sont des données, pas des bras de match dans la boucle d'événements, donc l'aide se rend depuis la source que lit le dispatcheur." },
+    theme: { what: "Résolution des couleurs de la TUI, configurable depuis `[theme]` dans .gwm.toml et commutable avec `gwm theme`.",
+      how: "theme.rs (392) résout la palette ; palette.rs (458) contient les jeux de couleurs nommés. Retombe sur un défaut sûr pour le terminal quand un nom ne résout pas, plutôt que d'échouer en plein rendu." },
+    graph: { what: "Le petit graphe ASCII de topologie des commits à côté de chaque worktree, plus la vue en arbre des worktrees.",
+      how: "commit_graph.rs (460) est porté du moteur de topologie de lazygit ; wt_tree.rs (354) dispose l'arbre groupé. Les deux sont mesurés — benches/commit_graph.rs et deux benches de barre latérale gardent le coût de rendu." },
+    daemon: { what: "Un serveur JSON-RPC 2.0 durable sur une socket unix, pour que les éditeurs et les barres d'état appellent `list` / `doctor` / `path` une fois au lieu de lancer gwm à chaque requête.",
+      how: "Issue #38 phase 2. Sert les DTO de json_api tels quels et supporte `subscribe` pour recevoir les mises à jour quand l'ensemble des worktrees change. Le chemin de la socket et la forme des DTO sont tous deux gelés par contract.rs." },
+    "json-api": { what: "La forme machine stable que partagent `--format=json`, le démon et la statusline. Gelée pour la ligne 1.x.",
+      how: "json_api.rs (395) contient des DTO volontairement découplés des WorktreeInfo / DoctorReport internes, pour qu'un refactor ne casse pas l'outillage extérieur ; contract.rs (91) fige les trois surfaces que gwm s'engage à tenir et est testé contre docs/schema/*.json." },
+    statusline: { what: "Une ligne compacte pour tmux / starship : quel worktree, à quel point il est sale, de combien il est en avance sur l'amont.",
+      how: "Issue #309 — le premier vrai client du démon. Cœur de rendu pur : prend une tranche de JsonWorktree et renvoie une chaîne, donc testable sans socket. Il ne lie jamais le démon à la compilation — il lui parle par la socket, d'où le pointillé sur cette arête." },
+    config: { what: "Lit `.gwm.toml` — où vivent les worktrees, comment les branches sont nommées, quoi bootstrapper, quel thème, quel lanceur — fusionné avec les défauts utilisateur.",
+      how: "config.rs (2 351) parse et fusionne ; config_cli.rs (555) sert `gwm config get/set/validate` ; presets.rs (89) livre huit configs de départ (rust, node, nuxt, laravel, symfony, go, python-uv, generic) pour `gwm init --preset`. 54 modules en dépendent — la plus large entrée du dépôt après le type d'erreur." },
+    naming: { what: "Transforme « un fix pour l'issue 572 » en `fix/#572-overlay-height` et le chemin disque qui va avec — et refuse les noms que git rejetterait.",
+      how: "Regex compilées à la construction, hissées en statiques de module (issue #97), pour que chaque validation tourne en ~50 ns au lieu de recompiler le motif à chaque appel. worktree_spec() est le point d'entrée unique ; kebab() et la famille sanitise_*_for_terminal() empêchent un titre d'issue non fiable de glisser des séquences d'échappement dans le terminal. A été multiplié par 8,7 depuis la v1.0.0 — la plus forte expansion du dépôt." },
+    trust: { what: "Confiance à la première utilisation pour `.gwm.toml` : la première fois qu'un dépôt veut lancer des commandes de bootstrap, gwm demande.",
+      how: "Issue #95. Persiste (URL d'origine, sha256 du .gwm.toml) dans ~/.config/gwm/trust.toml, remplaçable via GWM_TRUST_LEDGER. Redemande quand le hash change. --allow-bootstrap / GWM_ALLOW_BOOTSTRAP=1 court-circuite pour la CI ; --deny-bootstrap coupe l'exécution entièrement, pour inspecter un dépôt inconnu." },
+    lifecycle: { what: "Exécute les étapes pre/post création et suppression de l'utilisateur autour de chaque opération de worktree.",
+      how: "has_steps() / run_phase() / run_phase_quiet() sur les phases de `[[bootstrap.command]]`, avec un afficheur de rapport. Tout chemin mutant passe par là, donc une suppression depuis la TUI et depuis la CLI lancent les mêmes hooks — le bug qui a motivé l'issue #521." },
+    worktree: { what: "Le vrai travail git : ajouter un worktree et sa branche, les lister avec état sale et avance/retard, renommer, vérifier, élaguer, supprimer.",
+      how: "libgit2 pour l'administration (add / remove_verified / prunable / prune) et l'inspection (is_dirty, branch_age, liste des stash) ; appel au binaire `git` pour log, diff --shortstat et toute la porcelaine. remove_verified() reçoit le chemin attendu et refuse s'il a dérivé — la garde qui rend une suppression interactive sûre." },
+    bootstrap: { what: "Rend un worktree neuf utilisable : copie les fichiers non suivis qu'un checkout ne peut pas emporter (.env, configs locales), protège les dossiers qui ne doivent pas être des liens symboliques, puis lance les commandes d'installation configurées.",
+      how: "run_core() parcourt les blocs `[[bootstrap]]` ; evaluate_when() conditionne chaque étape via un petit langage d'expression ; copy_no_follow / write_no_follow refusent de traverser un lien symbolique — la garde qui empêche un .gwm.toml hostile d'écrire hors du worktree. Ne tourne qu'une fois que trust.rs a validé le fichier." },
+    removal: { what: "La séquence unique de suppression — hooks amont, journalisation de l'OID de branche, destruction, hooks aval — et le `gwm undo` qui la remonte.",
+      how: "L'issue #521 l'a sortie de cli::remove_one, ce qui explique pourquoi le `d` de la TUI ne lançait aucun hook et n'enregistrait rien. history.rs (248) écrit chaque opération destructrice dans un journal TOML par utilisateur, avec assez d'état pour recréer la branche à son OID et réajouter le worktree — la récupération ne demande plus d'archéologie dans le reflog." },
+    sync: { what: "`gwm sync` — fetch, puis rebase ou merge de la branche d'un worktree sur son amont.",
+      how: "Issue #24. Le côté lecture (état sale, résolution de l'amont, avance/retard) passe par libgit2 ; les étapes mutantes fetch/rebase/merge appellent `git`, parce que réimplémenter le rebase sur libgit2 donnerait un second rebase, en moins bon." },
+    review: { what: "`gwm review <PR#>` — matérialise la pull request de quelqu'un d'autre dans son propre worktree isolé.",
+      how: "Issue #308, le seul chemin worktree entrant : tous les autres supposent que vous avez écrit une branche <type>/#<issue>-<desc>. Résout la PR via l'abstraction de forge, crée le worktree, puis lui applique la séquence normale sync + bootstrap." },
+    workspace: { what: "`--workspace ~/Projects` — un seul tableau sur tous les dépôts situés un niveau sous une racine, pas seulement le courant.",
+      how: "Issue #36. Découvre les dépôts git enfants directs, fusionne leurs listings en une vue avec une colonne REPO en tête. Volontairement orthogonal : le .gwm.toml reste par dépôt, il n'y a pas de config au niveau workspace." },
+    forge: { what: "Le seul trait que voit le reste du programme : récupérer une issue, ouvrir une PR, synchroniser des labels — sans savoir si ça atterrit sur GitHub ou GitLab.",
+      how: "Issue #419, et entièrement nouveau depuis la v1.0.0. `forge` / `[forge_hosts]` dans .gwm.toml choisissent le backend par hôte ; les deux implémentations appellent les `gh` et `glab` de l'utilisateur, donc gwm ne manipule jamais de jeton. Tout ce qui a la forme d'un accès réseau vit derrière cette frontière — rien au-dessus n'a le droit d'appeler une CLI directement." },
+    github: { what: "Parle à GitHub via `gh`, et stocke le lien issue ↔ PR ↔ branche pour que chaque worktree sache à quoi il appartient.",
+      how: "Les liens vivent dans la config git de branche — branch.<nom>.gwm-issue et .gwm-pr — et le numéro d'issue est détecté depuis la convention <type>/#<N>-<slug> quand aucune valeur n'est forcée. C'est pour ça qu'un worktree garde son lien après un clone ou un renommage : la vérité est dans git, pas dans un fichier annexe." },
+    gitlab: { what: "Les mêmes opérations sur les merge requests GitLab, via `glab`.",
+      how: "Issue #419, nouveau depuis la v1.0.0. Deux styles d'appel choisis opération par opération plutôt qu'uniformément : `glab issue`/`glab mr` de première classe pour les lectures, `glab api` brut là où la porcelaine n'expose pas le champ dont gwm a besoin. Reprend le stockage de liens du backend GitHub, pour que rien au-dessus du trait ne teste le type de forge." },
+    labels: { what: "Déclare le jeu de labels et de jalons du dépôt dans `.gwm.toml` et le synchronise en amont — fini les clics dans les réglages à chaque nouveau dépôt.",
+      how: "labels.rs (351) résout les `[[labels]]` en LabelSpec, en remplissant des couleurs pastel déterministes quand elles sont omises, et diffe contre le remote ; milestones.rs (267) fait de même pour les `[[milestones]]`, en normalisant les dates et en défaussant l'état à open. Les deux calculent le diff d'abord, et n'appliquent qu'ensuite." },
+    templates: { what: "Remplit les templates d'issue et de PR du dépôt depuis le contexte de branche, et préfixe chaque message de commit du bon Gitmoji + Conventional Commits.",
+      how: "issue_templates.rs (158) + pr_templates.rs (110) + templating.rs (138) rendent depuis un contexte que l'appelant rassemble (branche, base/head, commits, stats de diff) — volontairement purs, donc `gwm pr --render` est testable sans réseau. gitmoji.rs (239) associe type de branche → emoji via une table par défaut compilée et surchargeable dans .gwm.toml ; hooks.rs (225) installe le hook commit-msg qui appelle `gwm commit-prefix` et préfixe quand le message ne commence pas déjà par un préfixe." },
+    doctor: { what: "`gwm doctor` — un rapport unique qui répond à « mon installation est-elle saine ? » : config, environnement, état des worktrees, présence et authentification de `gh`/`glab`.",
+      how: "Agrège une série de vérifications peu coûteuses pour éviter aux utilisateurs et à la CI une douzaine de commandes ad hoc. C'est aussi le module que la TUI et le lanceur consultent avant de proposer une action qui a besoin d'un binaire externe — les vérifications sont réutilisées, pas dupliquées." },
+    agents: { what: "Montre quelle session de code IA travaille dans quel worktree — Claude Code, Codex, opencode, Mistral Vibe — et permet d'en épingler une à la main.",
+      how: "Issue #408, nouveau depuis la v1.0.0. Lit les artefacts de session persistés par chaque outil sous le répertoire personnel, avec std::fs uniquement — aucun balayage de processus, aucune API spécifique à un OS — donc le même chemin tourne sur Linux, macOS et Windows. Un pin (branch.<nom>.gwm-agent-pin) recouvre la détection dans les cas que le répertoire enregistré ne peut pas couvrir : une session démarrée dans le checkout principal mais qui travaille dans un worktree." },
+    notes: { what: "Un bloc-notes Markdown par worktree — à quoi sert cette branche, ce qu'il reste à faire — qui survit au worktree lui-même.",
+      how: "Issue #515, nouveau depuis la v1.0.0. Un fichier par branche sous .git/gwm/notes/ dans le checkout principal, pas dans le worktree : le worktree est jetable, la note ne devrait pas l'être. La config git porte déjà les trois clés par branche ; une note est trop grosse pour la config, elle a donc un fichier à côté." },
+    "command-log": { what: "Un transcript défilant de chaque commande externe lancée par gwm — les appels `gh`, les étapes de bootstrap, les hooks de cycle de vie — derrière une modale à la lazygit.",
+      how: "Issue #226. Anneau borné en mémoire ; le journal d'action d'une ligne dans la barre d'état (#217) est éphémère et ne montre que la dernière, celui-ci garde l'historique. Tout ce qui appelle l'extérieur journalise ici, ce qui rend une étape de bootstrap ratée diagnosticable après coup." },
+    "fleet-ops": { what: "Lancer une commande sur tous les worktrees, et récupérer les gigaoctets de sortie de build qu'une flotte accumule.",
+      how: "Issue #313 pour les deux. exec.rs (539) garde la primitive de lancement et l'agrégation du code de sortie pures et testables, la CLI fait la résolution des cibles et l'affichage. clean.rs (428) scanne chaque worktree pour target/, node_modules/, dist/, build/, les mesure, rapporte — et ne supprime que si on le demande explicitement." },
+    "launch-io": { what: "Ouvre le worktree là où vous le voulez : un éditeur, une TUI git, une nouvelle fenêtre tmux ou un onglet zellij — et copie les chemins dans le presse-papier.",
+      how: "launcher.rs (316) substitue les placeholders dans un modèle `command` du .gwm.toml, découpe avec shell-words et exécute avec cwd = worktree.path. multiplexer.rs (110) construit l'argv tmux/zellij en fonctions pures renvoyant Vec<String>. clipboard.rs (135) arbitre entre les binaires de presse-papier de l'hôte et une séquence d'échappement OSC52, pour le cas ssh." },
+    "gwm-toml": { what: "La config locale au dépôt : racine des worktrees, motifs de branche, étapes de bootstrap, labels, jalons, thème, lanceurs.",
+      how: "Committée dans le dépôt, ce qui est exactement pourquoi elle est hachée contre le registre de confiance avant qu'une de ses commandes ne tourne. Huit presets l'amorcent ; `gwm config validate` la vérifie ; le panneau de config de la TUI l'édite sur place." },
+    "git-config": { what: "Où vivent les liens d'un worktree : son issue, sa PR, et toute session d'agent épinglée.",
+      how: "branch.<nom>.gwm-issue / .gwm-pr / .gwm-agent-pin. Les stocker dans la config git plutôt que dans un fichier annexe leur fait survivre au clone, au renommage et à la suppression du worktree, et d'autres outils peuvent les lire avec un simple `git config`." },
+    ledgers: { what: "Deux fichiers TOML par utilisateur : le registre de confiance, et le journal d'annulation des opérations destructrices.",
+      how: "~/.config/gwm/trust.toml (remplaçable via GWM_TRUST_LEDGER) contient les couples (origine, sha256) ; le journal d'historique contient chaque suppression avec l'OID de branche et le chemin nécessaires pour la recréer. Par utilisateur et non par dépôt, parce que les deux répondent à des questions sur *cette machine*." },
+    "note-files": { what: "Un fichier Markdown par branche, dans le répertoire .git du checkout principal.",
+      how: "Volontairement hors du worktree : le worktree est jetable et la note doit lui survivre." },
+    socket: { what: "La socket de domaine unix sur laquelle le démon écoute et à laquelle la statusline se connecte.",
+      how: "Chemin gelé par contract.rs au même titre que la forme des DTO, pour qu'un plugin d'éditeur la trouve sans demander à gwm." },
+    tests: { what: "2 974 fonctions de test sur 97 fichiers — 1,3 fois la taille du code qu'elles couvrent. Le TDD est ici une condition de merge, pas une recommandation.",
+      how: "tui_app_tests.rs (13,5k) pilote la machine à états sans ratatui ; cli_binary.rs (7,7k) lance le vrai binaire sous assert_cmd et sert de canari à chaque nouvelle sous-commande ; worktree_integration.rs (2,4k) travaille sur de vrais dépôts temporaires via libgit2. config, naming, github, gitlab, doctor et agent_sessions ont chacun leur fichier." },
+    ci: { what: "Quatre workflows : la CI à chaque push, la synchro de doc, la pré-release, et la release sur tag qui publie les binaires.",
+      how: "main est protégée avec sept checks obligatoires et enforce_admins activé — il n'y a de push direct pour personne, mainteneur compris. dev atteint main par une PR et le tag est poussé après le merge, donc le tag pointe toujours un commit qui porte déjà le bump de version et le fichier de changelog de la version que release.yml lit avec --notes-file." },
+  },
+} };
+
+/* Les enfants (vues intérieures) sont déclarés à part pour ne pas alourdir les
+   entrées de blocs ; on les greffe sur I18N.fr.blocks au chargement. */
+const FR_CHILDREN = {
+  "cli": {
+      0: { what: "create · list · remove · path · prune · switch · sync · bootstrap" },
+      1: { what: "new · pr · review · link · unlink · open · status · labels · milestones" },
+      2: { what: "init · config · trust · aliases · types · presets" },
+      3: { what: "daemon · statusline · completions · shell-init · tui · theme" },
+      4: { what: "exec · clean · agents · doctor · history · undo · note" },
+      5: { what: "tmux · zellij · hooks · commit-prefix" } },
+  "state": {
+      0: { what: "734 lignes — l'éditeur de .gwm.toml intégré à la TUI" },
+      1: { what: "585 lignes — l'état du rendu du volet de détail" },
+      2: { what: "518 lignes — suivi des tâches de fond" },
+      3: { what: "470 lignes — focus et sections" },
+      4: { what: "447 lignes — terminal embarqué" },
+      5: { what: "432 lignes — interrogation du statut de la forge en direct" },
+      6: { what: "305 lignes" }, 7: { what: "298 lignes" }, 8: { what: "233 lignes" },
+      9: { what: "214 lignes" }, 10: { what: "202 lignes" }, 11: { what: "168 lignes" },
+      12: { what: "141 lignes" }, 13: { what: "90 lignes" }, 14: { what: "87 lignes" },
+      15: { what: "54 lignes" } },
+  "worktree": {
+      0: { what: "crée la branche et le worktree en un seul appel libgit2" },
+      1: { what: "parcourt les worktrees, résout HEAD, état sale, avance/retard" },
+      2: { what: "remove_verified : refuse quand le chemin sur disque a dérivé" },
+      3: { what: "déplace le worktree et recible ses fichiers d'administration" },
+      4: { what: "supprime les fichiers d'admin dont le dossier de travail a disparu" },
+      5: { what: "run_git / run_git_logged — l'échappatoire vers la porcelaine" } },
+  "forge": {
+      0: { what: "2 284 lignes — le backend par défaut" },
+      1: { what: "1 544 lignes — issue #419" },
+      2: { what: "confiance par hôte pour la résolution de forge" } },
+};
+for (const [id, kids] of Object.entries(FR_CHILDREN)) {
+  I18N.fr.blocks[id] = Object.assign(I18N.fr.blocks[id] || {}, { children: kids });
+}
+
+const STACK = {
+  "manifests": [
+    {
+      "path": "Cargo.toml",
+      "eco": "cargo",
+      "name": "gwm-cli",
+      "version": "1.8.0",
+      "toolchain": {
+        "edition": "2021",
+        "rust-version": "1.95"
+      },
+      "deps": [
+        {
+          "n": "anyhow",
+          "v": "1",
+          "dev": 0
+        },
+        {
+          "n": "chrono",
+          "v": "0.4",
+          "dev": 0,
+          "by": [
+            "cli",
+            "labels",
+            "removal",
+            "state",
+            "trust",
+            "worktree"
+          ]
+        },
+        {
+          "n": "clap",
+          "v": "4.5",
+          "dev": 0,
+          "by": [
+            "aliases",
+            "app",
+            "cli",
+            "entry"
+          ]
+        },
+        {
+          "n": "clap_complete",
+          "v": "4.5",
+          "dev": 0,
+          "by": [
+            "cli"
+          ]
+        },
+        {
+          "n": "crossterm",
+          "v": "0.29",
+          "dev": 0,
+          "by": [
+            "app",
+            "keymap",
+            "launch-io",
+            "state",
+            "tui-runtime"
+          ]
+        },
+        {
+          "n": "dirs",
+          "v": "6",
+          "dev": 0,
+          "by": [
+            "agents",
+            "aliases",
+            "cli",
+            "config",
+            "naming",
+            "removal",
+            "render",
+            "trust"
+          ]
+        },
+        {
+          "n": "git2",
+          "v": "0.21",
+          "dev": 0,
+          "by": [
+            "app",
+            "cli",
+            "daemon",
+            "doctor",
+            "forge",
+            "github",
+            "graph",
+            "json-api",
+            "launch-io",
+            "lifecycle",
+            "naming",
+            "notes",
+            "removal",
+            "render",
+            "review",
+            "state",
+            "sync",
+            "templates",
+            "trust",
+            "workspace",
+            "worktree"
+          ]
+        },
+        {
+          "n": "glob",
+          "v": "0.3",
+          "dev": 0,
+          "by": [
+            "bootstrap"
+          ]
+        },
+        {
+          "n": "libz-sys",
+          "v": "1",
+          "dev": 0
+        },
+        {
+          "n": "nucleo-matcher",
+          "v": "0.3",
+          "dev": 0,
+          "by": [
+            "state",
+            "theme"
+          ]
+        },
+        {
+          "n": "portable-pty",
+          "v": "0.9",
+          "dev": 0,
+          "by": [
+            "fleet-ops",
+            "state"
+          ]
+        },
+        {
+          "n": "ratatui",
+          "v": "0.30",
+          "dev": 0,
+          "by": [
+            "app",
+            "cli",
+            "graph",
+            "render",
+            "theme",
+            "tui-runtime"
+          ]
+        },
+        {
+          "n": "regex",
+          "v": "1",
+          "dev": 0,
+          "by": [
+            "bootstrap",
+            "config",
+            "github",
+            "naming"
+          ]
+        },
+        {
+          "n": "rusqlite",
+          "v": "0.40.1",
+          "dev": 0,
+          "by": [
+            "agents"
+          ]
+        },
+        {
+          "n": "serde",
+          "v": "1",
+          "dev": 0,
+          "by": [
+            "aliases",
+            "cli",
+            "config",
+            "daemon",
+            "forge",
+            "github",
+            "gitlab",
+            "json-api",
+            "removal",
+            "templates",
+            "trust"
+          ]
+        },
+        {
+          "n": "serde_json",
+          "v": "1",
+          "dev": 0,
+          "by": [
+            "agents",
+            "cli",
+            "daemon",
+            "github",
+            "gitlab"
+          ]
+        },
+        {
+          "n": "serde_yaml_ng",
+          "v": "0.10.0",
+          "dev": 0,
+          "by": [
+            "templates"
+          ]
+        },
+        {
+          "n": "sha2",
+          "v": "0.11",
+          "dev": 0,
+          "by": [
+            "trust"
+          ]
+        },
+        {
+          "n": "shell-words",
+          "v": "1",
+          "dev": 0,
+          "by": [
+            "aliases",
+            "doctor",
+            "launch-io",
+            "lifecycle",
+            "tui-runtime"
+          ]
+        },
+        {
+          "n": "shellexpand",
+          "v": "3",
+          "dev": 0,
+          "by": [
+            "config",
+            "naming"
+          ]
+        },
+        {
+          "n": "tempfile",
+          "v": "3",
+          "dev": 0,
+          "by": [
+            "agents",
+            "cli",
+            "doctor",
+            "launch-io",
+            "removal",
+            "state",
+            "templates",
+            "trust"
+          ]
+        },
+        {
+          "n": "thiserror",
+          "v": "2",
+          "dev": 0
+        },
+        {
+          "n": "toml",
+          "v": "1.1",
+          "dev": 0,
+          "by": [
+            "aliases",
+            "cli",
+            "config",
+            "doctor",
+            "removal",
+            "templates",
+            "trust"
+          ]
+        },
+        {
+          "n": "toml_edit",
+          "v": "0.25",
+          "dev": 0,
+          "by": [
+            "config"
+          ]
+        },
+        {
+          "n": "tui-term",
+          "v": "0.3",
+          "dev": 0,
+          "by": [
+            "render",
+            "state"
+          ]
+        },
+        {
+          "n": "unicode-segmentation",
+          "v": "1.13",
+          "dev": 0,
+          "by": [
+            "render"
+          ]
+        },
+        {
+          "n": "which",
+          "v": "8",
+          "dev": 0,
+          "by": [
+            "app",
+            "bootstrap",
+            "cli",
+            "doctor",
+            "launch-io",
+            "tui-runtime"
+          ]
+        },
+        {
+          "n": "assert_cmd",
+          "v": "2",
+          "dev": 1
+        },
+        {
+          "n": "criterion",
+          "v": "0.8",
+          "dev": 1
+        },
+        {
+          "n": "predicates",
+          "v": "3",
+          "dev": 1
+        },
+        {
+          "n": "toml",
+          "v": "1.1",
+          "dev": 1,
+          "by": [
+            "aliases",
+            "cli",
+            "config",
+            "doctor",
+            "removal",
+            "templates",
+            "trust"
+          ]
+        },
+        {
+          "n": "unicode-width",
+          "v": "0.2",
+          "dev": 1
+        }
+      ],
+      "scripts": {},
+      "entry": [
+        "src/main.rs",
+        "src/lib.rs"
+      ]
+    }
+  ],
+  "ci": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "name": "ci",
+      "on": [
+        "push",
+        "pull_request",
+        "workflow_dispatch"
+      ],
+      "jobs": [
+        "fmt",
+        "clippy",
+        "msrv",
+        "test",
+        "hook-smoke",
+        "audit",
+        "doctor"
+      ]
+    },
+    {
+      "path": ".github/workflows/docs-sync.yml",
+      "name": "docs-sync",
+      "on": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobs": [
+        "notify"
+      ]
+    },
+    {
+      "path": ".github/workflows/pre-release.yml",
+      "name": "pre-release",
+      "on": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobs": [
+        "build",
+        "release"
+      ]
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "name": "release",
+      "on": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "jobs": [
+        "build",
+        "release",
+        "homebrew-tap-update",
+        "scoop-bucket-update"
+      ]
+    }
+  ],
+  "make": {
+    "Makefile": [
+      "audit",
+      "build",
+      "build-release",
+      "changelog-rc-check",
+      "ci",
+      "clean",
+      "clippy",
+      "doctor",
+      "doctor-release",
+      "fetch",
+      "fmt",
+      "fmt-check",
+      "help",
+      "install",
+      "lint",
+      "msrv",
+      "run",
+      "test",
+      "test-minimal-path",
+      "test-release",
+      "test-verbose",
+      "test-watch",
+      "tui"
+    ]
+  },
+  "bins": [
+    {
+      "n": "git",
+      "hits": 54
+    },
+    {
+      "n": "sh",
+      "hits": 10
+    },
+    {
+      "n": "cat",
+      "hits": 2
+    },
+    {
+      "n": "true",
+      "hits": 1
+    },
+    {
+      "n": "tmux",
+      "hits": 1
+    },
+    {
+      "n": "bash",
+      "hits": 1
+    }
+  ],
+  "entry": [
+    "src/lib.rs",
+    "src/main.rs"
+  ],
+  "tests": {
+    "files": 100,
+    "loc": 72141
+  },
+  "langs": {
+    "rust": 125082
+  },
+  "edgeSyms": {
+    "app>state": [
+      "build_key_rows",
+      "fields_for",
+      "agent_detail_rows",
+      "ci_check_rows",
+      "filter_rows",
+      "filter_sessions",
+      "fuzzy_match_indices",
+      "rich_issue_rows",
+      "rich_pr_rows"
+    ],
+    "app>fleet-ops": [
+      "delete_reclaim",
+      "human_size",
+      "resolve_clean_dirs",
+      "scan_worktree_safe",
+      "container_run_name",
+      "resolve_exec_command",
+      "resolve_exec_container"
+    ],
+    "app>config": [
+      "global_config_path",
+      "resolved_rows",
+      "set_array_at",
+      "set_string_at",
+      "set_value_at",
+      "unset_at"
+    ],
+    "worktree>notes": [
+      "branches_with_notes",
+      "move_conflict",
+      "notes_dir",
+      "occupied_by",
+      "relative_path",
+      "rename"
+    ],
+    "tui-runtime>launch-io": [
+      "plan_clipboard_write",
+      "build_tmux_command",
+      "build_zellij_command",
+      "detect_tmux",
+      "detect_zellij"
+    ],
+    "app>github": [
+      "add_agent_pin",
+      "agent_pins",
+      "pinnable_branch",
+      "remove_agent_pin",
+      "self"
+    ],
+    "app>launch-io": [
+      "self",
+      "build_tmux_command",
+      "build_zellij_command",
+      "detect_tmux",
+      "detect_zellij"
+    ],
+    "cli>daemon": [
+      "client",
+      "default_socket",
+      "serve",
+      "socket_path"
+    ],
+    "cli>launch-io": [
+      "build_tmux_command",
+      "build_zellij_command",
+      "detect_tmux",
+      "detect_zellij"
+    ],
+    "json-api>agents": [
+      "agents_home",
+      "detect_all",
+      "detect_with_sessions",
+      "path_display_key"
+    ],
+    "app>agents": [
+      "agents_home",
+      "detect_all",
+      "detect_with_sessions",
+      "path_display_key"
+    ],
+    "app>naming": [
+      "editable_segments",
+      "kebab",
+      "sanitise_for_terminal",
+      "worktree_spec"
+    ],
+    "cli>agents": [
+      "agents_home",
+      "detect_all",
+      "path_display_key"
+    ],
+    "cli>config": [
+      "default_branch_pattern",
+      "expand_placeholders",
+      "global_config_path"
+    ],
+    "cli>statusline": [
+      "active_index_with",
+      "render",
+      "watch"
+    ],
+    "cli>tui-runtime": [
+      "run",
+      "run_picker",
+      "run_workspace"
+    ],
+    "config>naming": [
+      "default_branch_types",
+      "branch_pattern_warning",
+      "sanitise_for_terminal"
+    ],
+    "forge>command-log": [
+      "run_logged",
+      "run_logged_redacted",
+      "run_logged_with_stdin"
+    ],
+    "forge>trust": [
+      "config_is_trusted",
+      "origin_key_for_repo",
+      "resolve_mode"
+    ],
+    "github>forge": [
+      "cli_command_line",
+      "repo_slug",
+      "self"
+    ],
+    "app>trust": [
+      "evaluate_silent",
+      "evaluate_silent_bytes",
+      "origin_key_for_repo"
+    ],
+    "state>naming": [
+      "editable_segments",
+      "sanitise_block_for_terminal",
+      "sanitise_for_terminal"
+    ],
+    "render>graph": [
+      "render_commits",
+      "self",
+      "working_tree_category"
+    ],
+    "aliases>config": [
+      "global_config_path",
+      "resolve_gwm_config_file"
+    ],
+    "cli>naming": [
+      "sanitise_block_for_terminal",
+      "sanitise_for_terminal"
+    ],
+    "config>fleet-ops": [
+      "validate_clean_profile_dirs",
+      "validate_exec_profile"
+    ],
+    "doctor>bootstrap": [
+      "evaluate_when",
+      "when_atoms"
+    ],
+    "doctor>naming": [
+      "branch_pattern_warning",
+      "sanitise_for_terminal"
+    ],
+    "doctor>notes": [
+      "branches_with_notes",
+      "notes_dir"
+    ],
+    "gitlab>labels": [
+      "validate_label_name",
+      "self"
+    ],
+    "json-api>github": [
+      "agent_pins",
+      "pinnable_branch"
+    ],
+    "naming>config": [
+      "default_branch_pattern",
+      "expand_placeholders"
+    ],
+    "app>notes": [
+      "prepare",
+      "read"
+    ],
+    "app>render": [
+      "build_sidebar_payload",
+      "overlay_modal_width"
+    ],
+    "app>workspace": [
+      "discover",
+      "merge_worktrees"
+    ],
+    "app>worktree": [
+      "rename_worktree",
+      "self"
+    ],
+    "render>state": [
+      "split_section_heights",
+      "stacked_table_height"
+    ],
+    "render>worktree": [
+      "git_stash_list",
+      "self"
+    ],
+    "aliases>naming": [
+      "is_display_reordering"
+    ],
+    "bootstrap>command-log": [
+      "run_logged"
+    ]
+  },
+  "undeclared": []
+};
+
+// ---- ATLAS DATA END ----
+
+/* ==================================================================== */
+/* ============================ ENGINE ================================ */
+/* Projection iso fixe : x=(gx-gy)*26, y=(gx+gy)*14.3 - h*16.           */
+/* L'ordre du peintre trie par gx+gy, donc aucun z-index n'est requis.  */
+/* La scène est construite une fois ; le survol ne touche que des       */
+/* attributs, pour que les points animés ne redémarrent jamais.         */
+/* ==================================================================== */
+
+const SVGNS = "http://www.w3.org/2000/svg";
+const KX = 26, KY = 14.3, KH = 16;
+const proj = (gx, gy, h = 0) => [(gx - gy) * KX, (gx + gy) * KY - h * KH];
+const el = (n, a = {}) => { const e = document.createElementNS(SVGNS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const byId = Object.fromEntries(STRUCTURES.map(s => [s.id, s]));
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* --- graphe dérivé : cycles et hubs, calculés depuis EDGES --------------- */
+const pairKey = (a, b) => [a, b].sort().join("|");
+const MUTUAL = new Set();
+for (const e of EDGES) if (e.mutual || EDGES.some(o => o.f === e.t && o.t === e.f)) MUTUAL.add(pairKey(e.f, e.t));
+/* fanIn / fanOut viennent du scan (modules réellement dépendants), pas du
+   nombre d'arêtes dessinées : le dessin résume, la mesure compte. */
+const FANIN = id => byId[id]?.fanIn ?? 0, FANOUT = id => byId[id]?.fanOut ?? 0;
+/* Seuil relatif au dépôt : 10 dépendants font un hub dans un crate de 167
+   modules et un bloc ordinaire dans une application de 2 216. */
+const HUB = (() => {
+  const v = STRUCTURES.map(s => s.fanIn || 0).filter(Boolean).sort((a, b) => a - b);
+  return Math.max(5, (v[Math.floor(v.length / 2)] || 1) * 3);
+})();
+const isHub = id => FANIN(id) >= HUB || FANOUT(id) >= HUB;
+
+const state = { sel: null, pin: null, inside: null, trace: -1, tab: "what",
+                tx: 0, ty: 0, s: 1, flowing: true, diff: false, view: 'iso', lang: 'en' };
+
+const svg = document.getElementById("svg");
+const stage = document.getElementById("stage");
+const panel = document.getElementById("body");
+const payload = document.getElementById("payload");
+
+let world, nodes = {}, edgeEls = [];
+
+/* --- defs ---------------------------------------------------------------- */
+function defs() {
+  const d = el("defs");
+  d.innerHTML = `
+    <pattern id="grid" width="26" height="14.3" patternUnits="userSpaceOnUse">
+      <path d="M0 7.15 L13 0 L26 7.15 L13 14.3 Z" fill="none" stroke="var(--rule)" stroke-width=".5" opacity=".5"/>
+    </pattern>
+    <pattern id="gridSquare" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M20 0 H0 V20" fill="none" stroke="var(--rule)" stroke-width=".5" opacity=".35"/>
+    </pattern>
+    <pattern id="hatch" width="3" height="3" patternUnits="userSpaceOnUse">
+      <path d="M0 0 V3" stroke="var(--hatch)" stroke-width=".55" opacity=".55"/>
+    </pattern>
+    <pattern id="hatchDim" width="4" height="4" patternUnits="userSpaceOnUse">
+      <path d="M0 0 V4" stroke="var(--hatch)" stroke-width=".5" opacity=".32"/>
+    </pattern>`;
+  return d;
+}
+
+/* --- un bloc isométrique ------------------------------------------------- */
+function box(s) {
+  const g = el("g", { class: "struct", "data-id": s.id, tabindex: "0", role: "button",
+                      "aria-label": `${s.name}, ${s.loc}` });
+  const { gx, gy, w, d, h } = s;
+  const A = proj(gx, gy, h), B = proj(gx + w, gy, h), C = proj(gx + w, gy + d, h), D = proj(gx, gy + d, h);
+  const B0 = proj(gx + w, gy, 0), C0 = proj(gx + w, gy + d, 0), D0 = proj(gx, gy + d, 0);
+  const pts = a => a.map(p => p.join(",")).join(" ");
+  const sw = isHub(s.id) ? 1.5 : .85;
+  const faces = [];
+  let top;
+
+  if (s.slab) {
+    for (let k = 3; k >= 0; k--) {
+      const off = k * 3.2, lift = p => [p[0], p[1] - off];
+      const t = el("polygon", { points: pts([A, B, C, D].map(lift)), fill: "var(--top)", stroke: "var(--line)", "stroke-width": sw });
+      faces.push(t, el("polygon", { points: pts([D, C, C0, D0].map(lift)), fill: "url(#hatch)", stroke: "var(--line)", "stroke-width": sw }),
+                 el("polygon", { points: pts([B, C, C0, B0].map(lift)), fill: "url(#hatchDim)", stroke: "var(--line)", "stroke-width": sw }));
+      if (k === 0) top = t;
+    }
+    faces.forEach(f => g.appendChild(f));
+    g.appendChild(top);           // la face du dessus repasse par-dessus la pile
+  } else {
+    faces.push(el("polygon", { points: pts([D, C, C0, D0]), fill: "url(#hatch)", stroke: "var(--line)", "stroke-width": sw }),
+               el("polygon", { points: pts([B, C, C0, B0]), fill: "url(#hatchDim)", stroke: "var(--line)", "stroke-width": sw }));
+    top = el("polygon", { points: pts([A, B, C, D]), fill: "var(--top)", stroke: "var(--line)", "stroke-width": sw });
+    faces.push(top);
+    faces.forEach(f => g.appendChild(f));
+  }
+
+  const cx = (A[0] + C[0]) / 2, cy = (A[1] + C[1]) / 2 - (s.slab ? 9 : 0);
+  const t1 = el("text", { x: cx, y: cy - 1, "text-anchor": "middle", "font-size": 8.5, fill: "var(--ink)", "letter-spacing": ".08em" });
+  t1.textContent = s.code;
+  const t2 = el("text", { x: cx, y: cy + 8, "text-anchor": "middle", "font-size": 6.5, fill: "var(--soft)" });
+  t2.textContent = s.loc;
+  g.append(t1, t2);
+  nodes[s.id] = { g, top, labels: [t1, t2] };
+  return g;
+}
+
+/* --- routage : coude en L entre centres ---------------------------------- */
+function centre(s) { return proj(s.gx + s.w / 2, s.gy + s.d / 2, s.slab ? 0 : s.h * .35); }
+function edgePath(a, b) {
+  const [x1, y1] = centre(a), [x2, y2] = centre(b);
+  const midY = y1 + (y2 - y1) * .5;
+  return `M${x1} ${y1} L${x1} ${midY} L${x2} ${midY} L${x2} ${y2}`;
+}
+
+/* --- construction (une fois par vue) ------------------------------------- */
+function build() {
+  svg.innerHTML = "";
+  nodes = {}; edgeEls = [];
+  svg.appendChild(defs());
+  world = el("g", { id: "world" });
+  const ground = { iso: "url(#grid)", hotspots: "url(#gridSquare)", matrix: "none" }[state.view];
+  if (ground !== "none")
+    world.appendChild(el("rect", { x: -4000, y: -4000, width: 8000, height: 8000, fill: ground }));
+  svg.appendChild(world);
+  if (state.view === "matrix") buildMatrix();
+  else if (state.view === "hotspots") buildHotspots();
+  else state.inside ? buildInside(byId[state.inside]) : buildMap();
+  applyTransform();
+}
+
+function buildMap() {
+  const eg = el("g");
+  EDGES.forEach((e, i) => {
+    const a = byId[e.f], b = byId[e.t];
+    if (!a || !b) return;
+    const cyc = MUTUAL.has(pairKey(e.f, e.t));
+    const p = el("path", {
+      id: "e" + i, d: edgePath(a, b), fill: "none",
+      stroke: cyc ? "var(--special)" : "var(--line)",
+      "stroke-width": e.flow ? .9 : .7,
+      "stroke-dasharray": { design: "2 3", runtime: "6 3" }[e.src] || "none",
+      opacity: e.flow ? .8 : .5,
+    });
+    eg.appendChild(p);
+    let dot = null;
+    if (e.flow) {
+      dot = el("circle", { r: 2.3, fill: "var(--accent)", class: "dot", "data-pay": tPay(e) || "" });
+      if (REDUCED) {                               // pas d'animation : on pose la marque au milieu
+        const mid = p.getPointAtLength ? p.getPointAtLength(p.getTotalLength() / 2) : { x: 0, y: 0 };
+        dot.setAttribute("cx", mid.x); dot.setAttribute("cy", mid.y);
+      } else {
+        const m = el("animateMotion", { dur: (4 + (i % 5) * .7) + "s", repeatCount: "indefinite", rotate: "auto" });
+        m.appendChild(el("mpath", { href: "#e" + i }));
+        dot.appendChild(m);
+      }
+      eg.appendChild(dot);
+    }
+    edgeEls.push({ e, path: p, dot, cyc });
+  });
+  world.appendChild(eg);
+
+  const xg = el("g");
+  EXTERNALS.forEach(x => {
+    const a = byId[x.at]; if (!a) return;
+    const [cx, cy] = centre(a);
+    const tx = cx + x.dx, ty = cy + x.dy;
+    xg.appendChild(el("path", { d: `M${cx} ${cy} L${tx} ${ty}`, stroke: "var(--soft2)", "stroke-width": .6, "stroke-dasharray": "2 3", fill: "none" }));
+    const t = el("text", { x: tx + (x.dx > 0 ? 5 : -5), y: ty + 3, "text-anchor": x.dx > 0 ? "start" : "end", "font-size": 6.5, fill: "var(--soft)", "letter-spacing": ".1em" });
+    t.textContent = x.label.toUpperCase();
+    xg.appendChild(t);
+  });
+  world.appendChild(xg);
+
+  [...STRUCTURES].sort((a, b) => (a.gx + a.gy) - (b.gx + b.gy)).forEach(s => world.appendChild(box(s)));
+}
+
+function buildInside(s) {
+  const t2 = t;
+  const kids = s.children || [];
+  const cols = Math.ceil(Math.sqrt(kids.length)) || 1;
+  const rows = Math.ceil(kids.length / cols), STEP = 3.2;
+  kids.forEach((k, i) => {
+    const gx = ((i % cols) - (cols - 1) / 2) * STEP, gy = (Math.floor(i / cols) - (rows - 1) / 2) * STEP;
+    world.appendChild(box({ id: s.id + ":" + i, code: k.code, name: k.name, loc: "", gx, gy, w: 2, d: 2, h: k.h || 1 }));
+    const [cx, cy] = proj(gx + 1, gy + 1, 0);
+    const t = el("text", { x: cx, y: cy + 22, "text-anchor": "middle", "font-size": 6.5, fill: "var(--soft)", "letter-spacing": ".08em" });
+    t.textContent = k.name.toUpperCase();
+    world.appendChild(t);
+  });
+  if (!kids.length) {
+    const t = el("text", { x: 0, y: 0, "text-anchor": "middle", "font-size": 9, fill: "var(--soft)" });
+    t.textContent = t2("noInside");
+    world.appendChild(t);
+  }
+}
+
+/* --- peinture (à chaque changement d'état, sans reconstruire) ------------- */
+function deltaOf(s) {
+  if (!Number.isFinite(s.locNow) || !Number.isFinite(s.locPrev)) return null;
+  if (!s.locPrev) return { kind: "new", pct: null };
+  const pct = (s.locNow - s.locPrev) / s.locPrev * 100;
+  return { kind: pct > 5 ? "up" : pct < -5 ? "down" : "flat", pct };
+}
+
+function topFill(id, hot) {
+  if (hot) return "var(--top-hot)";
+  if (state.diff) {
+    const d = deltaOf(byId[id]);
+    if (d) return { new: "var(--accent-dim)", up: "rgba(134,232,154,.18)",
+                    down: "rgba(255,122,122,.18)", flat: "var(--top)" }[d.kind];
+  }
+  return "var(--top)";
+}
+
+function applyFocus() {
+  if (state.inside || state.view !== "iso") return;
+  const focus = state.trace >= 0 ? TRACE[state.trace][0] : (state.pin || state.sel);
+  const related = new Set();
+  if (focus) {
+    related.add(focus);
+    EDGES.forEach(e => { if (e.f === focus) related.add(e.t); if (e.t === focus) related.add(e.f); });
+  }
+  for (const s of STRUCTURES) {
+    const n = nodes[s.id]; if (!n) continue;
+    const dim = focus && !related.has(s.id);
+    const hot = s.id === focus;
+    n.g.setAttribute("opacity", dim ? .42 : 1);
+    n.top.setAttribute("fill", topFill(s.id, hot));
+    n.g.querySelectorAll("polygon").forEach(p => p.setAttribute("stroke", hot ? "var(--accent)" : "var(--line)"));
+  }
+  for (const { e, path, dot, cyc } of edgeEls) {
+    const dim = focus && !(related.has(e.f) && related.has(e.t));
+    path.setAttribute("opacity", dim ? .18 : (e.flow ? .8 : .5));
+    path.setAttribute("stroke", cyc ? "var(--special)" : "var(--line)");
+    if (dot) dot.style.display = dim ? "none" : "";
+  }
+}
+
+/* --- transform ----------------------------------------------------------- */
+function applyTransform() {
+  const r = stage.getBoundingClientRect();
+  world.setAttribute("transform", `translate(${r.width / 2 + state.tx} ${r.height / 2 + state.ty}) scale(${state.s})`);
+}
+function fit() {
+  const r = stage.getBoundingClientRect();
+  if (state.view === "matrix") {
+    state.tx = 0; state.ty = 0;
+    state.s = Math.min(1.5, Math.max(.42, Math.min(r.width / 780, (r.height - 56) / 740)));
+  } else if (state.view === "hotspots") {
+    state.tx = 0; state.ty = 0;
+    state.s = Math.min(1.4, Math.max(.5, Math.min(r.width / 820, r.height / 560)));
+  } else {
+    state.tx = 0; state.ty = state.inside ? -60 : -Math.min(160, r.height * .22);
+    state.s = state.inside ? 1.05 : Math.min(1.25, Math.max(.58, r.width / 1240));
+  }
+  applyTransform();
+}
+
+/* --- panneau ------------------------------------------------------------- */
+const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+/* `mod` accepte un fichier ou un dossier (suffixe "/") — un bloc qui agrège
+   600 fichiers déclare son dossier, pas la liste. */
+function href(p) {
+  const kind = p.endsWith("/") ? "tree" : "blob";
+  return `${REPO.repoUrl}/${kind}/${REPO.sha}/${p.replace(/\/$/, "")}`;
+}
+function fileLinks(s) {
+  if (!s.mod || !REPO.repoUrl) return "";
+  const shown = s.mod.slice(0, 6);
+  return `<div class="sec">${t("source")}</div><div class="files">` +
+    shown.map(p => `<a href="${href(p)}" target="_blank" rel="noopener">${esc(p)}</a>`).join("") +
+    (s.mod.length > shown.length ? `<span class="pill">${t("more")(s.mod.length - shown.length)}</span>` : "") + `</div>`;
+}
+
+function deltaLine(s) {
+  const d = deltaOf(s);
+  if (!d) return "";
+  const label = d.kind === "new" ? `<span class="new">${t("newSince")(REPO.prevRev)}</span>`
+    : `<span class="delta ${d.kind === "flat" ? "" : d.kind}">${d.pct > 0 ? "+" : ""}${d.pct.toFixed(0)}% ${t("since")(REPO.prevRev)}</span>`;
+  return `<div class="sec">${t("growth")}</div><p>${label} — ${s.locPrev || 0} → ${s.locNow} ${t("lines")}</p>`;
+}
+
+function paint() {
+  const tab = state.tab;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.t === tab));
+
+  if (state.inside) {
+    const s = byId[state.inside];
+    panel.innerHTML = `<span class="pinned">${t("inside")}</span>
+      <div class="eyebrow">${esc(tGroup(s.group))}</div>
+      <h1>${esc(s.name)}</h1>
+      <div class="sub">${esc(s.loc)} ${t("lines")} · ${(s.children || []).length} ${t("parts")}</div>
+      <p>${tField(s, tab)}</p>
+      <div class="sec">${t("whatsInThere")}</div>
+      ${(s.children || []).map((k, i) => `<div class="kv"><span class="k">${esc(k.code)} ${esc(k.name)}</span><span>${esc(tChild(s, i, "what"))}</span></div>`).join("")}
+      ${fileLinks(s)}`;
+    return;
+  }
+
+  if (state.trace >= 0) {
+    const s = byId[TRACE[state.trace][0]];
+    panel.innerHTML = `<div class="eyebrow">${t("tracing")} · ${esc(REPO.traceLabel || "")}</div>
+      <h1>${t("step")(state.trace + 1, TRACE.length)}</h1>
+      <div class="sub">${esc(s.name)} · ${esc(s.loc)} ${t("lines")}</div>
+      <p>${esc(tTrace(state.trace))}</p>
+      <div class="sec">${t("stepAfter")}</div>
+      <p>${state.trace + 1 < TRACE.length ? esc(byId[TRACE[state.trace + 1][0]].name) : t("endTrace")}</p>
+      <div class="sec">${tab === "what" ? t("what") : t("how")}</div>
+      <p>${tField(s, tab)}</p>`;
+    return;
+  }
+
+  const s = byId[state.pin || state.sel];
+  if (!s) {
+    panel.innerHTML = `<div class="eyebrow">${esc(L().kicker ?? REPO.kicker)}</div>
+      <h1>${esc(L().title ?? REPO.title)}</h1><div class="sub">${esc(L().sub ?? REPO.sub)}</div>
+      ${tOverview(tab)}`;
+    return;
+  }
+  const out = EDGES.filter(e => e.f === s.id), ins = EDGES.filter(e => e.t === s.id);
+  const pill = (e, dir) => {
+    const other = byId[dir === "out" ? e.t : e.f];
+    const cyc = MUTUAL.has(pairKey(e.f, e.t));
+    return `<span class="pill${cyc ? " cyc" : ""}">${dir === "out" ? "→" : "←"} ${esc(other.name)}${e.src === "design" ? " ⋯" : e.src === "runtime" ? " ⇢" : ""}</span>`;
+  };
+  const hub = Number.isFinite(s.fanIn)
+    ? `<div class="sec">${t("reach")}</div><p>${t("reachLine")(s.fanIn, s.fanOut, isHub(s.id))}</p>` : "";
+  panel.innerHTML = `${state.pin ? `<span class="pinned">${t("pinned")}</span>` : ""}
+    <div class="eyebrow">${esc(tGroup(s.group))}</div>
+    <h1>${esc(s.name)}</h1>
+    <div class="sub">${esc(s.loc)} ${t("lines")}${s.children ? " · " + t("goInside") : ""}</div>
+    <p>${tField(s, tab)}</p>
+    <div class="sec">${t("talksTo")}</div>
+    <div>${out.map(e => pill(e, "out")).join("") || `<span class="pill">${t("nothingDown")}</span>`}</div>
+    <div class="sec">${t("calledBy")}</div>
+    <div>${ins.map(e => pill(e, "in")).join("") ||
+      (s.fanIn ? `<span class="pill">${t("noEdge")(s.fanIn)}</span>`
+               : `<span class="pill">${t("entrySurface")}</span>`)}</div>
+    ${hub}${deltaLine(s)}${fileLinks(s)}`;
+}
+
+/* --- rail ---------------------------------------------------------------- */
+function sidebar() {
+  const rail = document.getElementById("rail");
+  const groups = [];
+  STRUCTURES.forEach(s => {
+    let g = groups.find(x => x.name === s.group);
+    if (!g) groups.push(g = { name: s.group, items: [] });
+    g.items.push(s);
+  });
+  rail.innerHTML = groups.map(g => `<div class="grp">${esc(tGroup(g.name))}</div>` + g.items.map(s =>
+    `<button class="row" data-id="${s.id}" data-q="${esc((s.id + " " + s.name + " " + s.group + " " + (s.mod || []).join(" ")).toLowerCase())}">
+       <span class="code">${esc(s.code)}</span><span class="nm">${esc(s.name)}</span>
+       ${isHub(s.id) ? '<span class="hub" title="hub">◆</span>' : ""}<span class="sz">${esc(s.loc)}</span>
+     </button>`).join("")).join("");
+  rail.querySelectorAll(".row").forEach(r => {
+    r.onclick = () => pinTo(state.pin === r.dataset.id ? null : r.dataset.id);
+    r.onmouseenter = () => { if (!state.pin) { state.sel = r.dataset.id; sync(); } };
+    r.onmouseleave = () => { if (!state.pin) { state.sel = null; sync(); } };
+  });
+}
+
+function sync() {
+  const cur = state.trace >= 0 ? TRACE[state.trace][0] : (state.pin || state.sel);
+  document.querySelectorAll("#rail .row").forEach(r => r.classList.toggle("on", r.dataset.id === cur));
+  applyFocus(); paint();
+}
+
+function pinTo(id) {
+  state.pin = id; state.sel = null; state.trace = -1;
+  location.hash = id ? "s=" + id : "";
+  sync();
+}
+
+/* --- recherche ----------------------------------------------------------- */
+const find = document.getElementById("find");
+find.addEventListener("input", () => {
+  const q = find.value.trim().toLowerCase();
+  document.querySelectorAll("#rail .row").forEach(r => r.classList.toggle("hide", q && !r.dataset.q.includes(q)));
+  document.querySelectorAll("#rail .grp").forEach(g => {
+    let n = g.nextElementSibling, any = false;
+    while (n && n.classList.contains("row")) { if (!n.classList.contains("hide")) any = true; n = n.nextElementSibling; }
+    g.style.display = any ? "" : "none";
+  });
+});
+find.addEventListener("keydown", e => {
+  if (e.key === "Enter") { const first = document.querySelector("#rail .row:not(.hide)"); if (first) pinTo(first.dataset.id); }
+  if (e.key === "Escape") { find.value = ""; find.dispatchEvent(new Event("input")); find.blur(); }
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement !== find) { e.preventDefault(); find.focus(); find.select(); }
+});
+
+/* --- interaction --------------------------------------------------------- */
+stage.addEventListener("mousemove", ev => {
+  if (OVERLAY.has(state.view)) return;   // la vue mermaid a ses propres gestes
+  const dot = ev.target.closest(".dot, .cellhi");
+  if (dot && dot.dataset.pay) {
+    const r = stage.getBoundingClientRect();
+    payload.textContent = dot.dataset.pay;
+    payload.style.left = (ev.clientX - r.left + 12) + "px";
+    payload.style.top = (ev.clientY - r.top - 22) + "px";
+    payload.classList.add("on");
+  } else payload.classList.remove("on");
+
+  if (state.pin || state.inside || state.view === "matrix") return;
+  const g = ev.target.closest(".struct");
+  const id = g ? g.dataset.id : null;
+  if (id !== state.sel) { state.sel = id; state.trace = -1; sync(); }
+});
+
+stage.addEventListener("click", ev => {
+  if (OVERLAY.has(state.view) || drag.moved) return;
+  const cell = ev.target.closest("[data-row], .rowlab");
+  if (cell) return pinTo(cell.dataset.row || cell.dataset.id);
+  const g = ev.target.closest(".struct");
+  if (!g) return pinTo(null);
+  pinTo(state.pin === g.dataset.id ? null : g.dataset.id);
+});
+
+stage.addEventListener("dblclick", ev => {
+  if (OVERLAY.has(state.view)) return;
+  const g = ev.target.closest(".struct");
+  if (g && byId[g.dataset.id]?.children) goInside(g.dataset.id);
+});
+
+svg.addEventListener("keydown", ev => {
+  const g = ev.target.closest(".struct"); if (!g) return;
+  if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pinTo(g.dataset.id); }
+  if (ev.key === "e" && byId[g.dataset.id]?.children) goInside(g.dataset.id);
+});
+svg.addEventListener("focusin", ev => {
+  const g = ev.target.closest(".struct");
+  if (g && !state.pin) { state.sel = g.dataset.id; sync(); }
+});
+
+function goInside(id) {
+  state.inside = id; state.pin = id; state.trace = -1;
+  location.hash = "inside=" + id;
+  document.getElementById("back").classList.add("on");
+  build(); paint(); fit();
+}
+function comeBack() {
+  state.inside = null; state.pin = null;
+  location.hash = "";
+  document.getElementById("back").classList.remove("on");
+  build(); sync(); fit();
+}
+document.getElementById("back").onclick = comeBack;
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape" || document.activeElement === find) return;
+  if (state.inside) comeBack(); else pinTo(null);
+});
+
+/* pan + zoom */
+const drag = { on: false, x: 0, y: 0, moved: false };
+stage.addEventListener("mousedown", e => { if (OVERLAY.has(state.view)) return; drag.on = true; drag.moved = false; drag.x = e.clientX; drag.y = e.clientY; stage.classList.add("drag"); });
+window.addEventListener("mousemove", e => {
+  if (!drag.on) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  state.tx += dx; state.ty += dy; drag.x = e.clientX; drag.y = e.clientY; applyTransform();
+});
+window.addEventListener("mouseup", () => { drag.on = false; stage.classList.remove("drag"); setTimeout(() => drag.moved = false, 0); });
+stage.addEventListener("wheel", e => {
+  if (OVERLAY.has(state.view)) return;
+  e.preventDefault();
+  state.s = Math.min(3, Math.max(.3, state.s * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+  applyTransform();
+}, { passive: false });
+document.getElementById("zin").onclick = () => { state.s = Math.min(3, state.s * 1.2); applyTransform(); };
+document.getElementById("zout").onclick = () => { state.s = Math.max(.3, state.s / 1.2); applyTransform(); };
+
+/* --- topbar -------------------------------------------------------------- */
+document.getElementById("btnFlow").onclick = e => {
+  state.flowing = !state.flowing;
+  state.flowing ? svg.unpauseAnimations() : svg.pauseAnimations();
+  e.target.textContent = state.flowing ? "Pause" : "Resume";
+};
+document.getElementById("btnTrace").onclick = () => {
+  state.trace = (state.trace + 1) % TRACE.length;
+  state.pin = null; state.sel = null;
+  location.hash = "trace=" + state.trace;
+  sync();
+};
+/* Le bouton diff ne vit que si une révision de comparaison est déclarée —
+   un atlas sans `prevRev` ne doit pas casser sur un handler manquant. */
+const btnDiff = document.getElementById("btnDiff");
+if (REPO.prevRev) {
+  btnDiff.textContent = `Diff ${REPO.prevRev}`;
+  btnDiff.onclick = e => {
+    state.diff = !state.diff;
+    e.target.classList.toggle("on", state.diff);
+    document.getElementById("hints").textContent = state.diff
+      ? `Diff vs ${REPO.prevRev} · green grew · red shrank · orange is new`
+      : "Hover to read · Click to pin · Double-click to go inside · Drag to pan · Scroll to zoom";
+    sync();
+  };
+} else btnDiff?.remove();
+document.getElementById("btnCopy").onclick = async e => {
+  const md = [
+    `# ${REPO.name} — ${L().title ?? REPO.title}`, "", L().sub ?? REPO.sub, "",
+    `## Blocks (${STRUCTURES.length})`,
+    ...STRUCTURES.map(s => `- **${s.code} ${s.name}** (${tGroup(s.group)}, ${s.loc}) — ${tField(s, "what")}`),
+    "", `## Edges (${EDGES.length})`,
+    ...EDGES.map(x => `- ${x.f} → ${x.t} [${x.src || "?"}] : ${tPay(x) || ""}`),
+    "", `## Trace`,
+    ...TRACE.map(([id], i) => `${i + 1}. **${byId[id].name}** — ${tTrace(i)}`),
+  ].join("\n");
+  try { await navigator.clipboard.writeText(md); e.target.textContent = t("copied"); }
+  catch { const ta = document.createElement("textarea"); ta.value = md; document.body.append(ta); ta.select();
+          document.execCommand("copy"); ta.remove(); e.target.textContent = t("copied"); }
+  setTimeout(() => (e.target.textContent = t("copy")), 1400);
+};
+document.getElementById("btnReset").onclick = () => {
+  state.trace = -1;
+  if (state.inside) comeBack(); else { pinTo(null); fit(); }
+};
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => { state.tab = b.dataset.t; paint(); });
+
+
+
+/* ==================================================================== */
+/* ============================== I18N ================================ */
+/* Le DATA est en anglais ; `I18N.fr` le recouvre clé par clé. Toute clé  */
+/* absente retombe sur l'anglais, donc une traduction partielle reste     */
+/* lisible au lieu de casser la page.                                     */
+/* ==================================================================== */
+
+const UI_EN = {
+  iso: "Isometric", matrix: "Matrix", hotspots: "Hotspots", flow: "Diagram",
+  what: "What it does", how: "How it's built",
+  diff: "Diff", pause: "Pause", resume: "Resume", trace: "Trace", copy: "Copy",
+  copied: "Copied", reset: "Reset", back: "← Come back out", code: "Code", fit: "Fit",
+  find: "/ find a module",
+  hints: "Hover to read · Click to pin · Double-click to go inside · Drag to pan · Scroll to zoom",
+  diffHints: rev => `Diff vs ${rev} · green grew · red shrank · orange is new`,
+  noteIso: "height = lines of code · slab = storage",
+  noteMatrix: "row → column: the row imports the column · purple = mutual",
+  noteHotspots: "churn × size · one commit counts per file touched",
+  noteFlow: "drawn here, exportable as mermaid source",
+  legend: ["<b>height</b> = lines of code", "<b>flat slab</b> = storage",
+           "import (compile time)", "runtime flow", "design relationship",
+           "data in transit", "hub / mutual dependency"],
+  talksTo: "Talks to", calledBy: "Called by", reach: "Reach", growth: "Growth",
+  source: "Source", inside: "inside", pinned: "pinned", whatsInThere: "What's in there",
+  stepAfter: "The step after", step: (i, n) => `Step ${i} / ${n}`,
+  endTrace: "— end of trace —", tracing: "Tracing", parts: "parts", lines: "lines",
+  nothingDown: "nothing downstream", entrySurface: "entry surface",
+  noEdge: n => `${n} modules depend on it — no edge drawn here`,
+  reachLine: (i, o, hub) => `${i} module${i === 1 ? "" : "s"} import it, it imports ${o}.${hub ? " A hub — changing it ripples." : ""}`,
+  newSince: rev => `new since ${rev}`, since: rev => `since ${rev}`,
+  goInside: "double-click to go inside", more: n => `+${n} more`,
+  noMermaid: "No mermaid renderer here — showing the source. It renders in the published artifact.",
+  flowHint: "Drawn from the same graph as the other views. <em>Mermaid</em> gives the source, which is what pastes into a doc, an issue, or back into a prompt.",
+  flowNote: "Main-path and mutual edges only — the full graph in one flowchart is unreadable, which is what the matrix view is for.",
+  depFlow: "Dependency flow", reqTrace: "Request trace",
+  quadBigStable: "BIG · STABLE", quadBigOften: "BIG · CHANGES OFTEN",
+  quadSmallStable: "SMALL · STABLE", quadSmallOften: "SMALL · CHANGES OFTEN",
+  axisChurn: w => `FILE-COMMITS OVER ${w} →`, axisLoc: "LINES OF CODE →",
+  noChurn: "no churn measured — run atlas_scan.py --inject",
+  noInside: "no inside view for this structure",
+  mutual: "mutual", fileCommits: "file-commits", linesTouched: "lines touched",
+  mermaidSrc: "Mermaid", diagram: "Diagram",
+  arch: "Architecture", stack: "Stack",
+  noteArch: "layers, cycles and boundaries — recomputed from the measured graph",
+  noteStack: "manifests, toolchain, CI — read from the repository",
+  archHint: "Nothing here is written by hand. Layers, cycles, hubs and boundaries are recomputed from the same edges the other views draw, so this page cannot drift from the map.",
+  stackHint: "Read from the repository's own manifests. <em>Used by</em> is measured from the imports, not from the manifest — a dependency nobody imports directly shows up empty, which is itself a finding.",
+  layers: "Layers", layer: k => `layer ${k}`,
+  cyclesTitle: "Dependency cycles",
+  cyclesHint: "Strongly connected components: every block in a ring can reach every other. A two-block ring is the purple mark in the matrix; longer rings appear nowhere else.",
+  noCycle: "No cycle — every dependency points downward.",
+  crossings: "What crosses each boundary",
+  crossHint: "The names one block actually imports from another, taken from the import graph. An edge says there is a link; this says which one.",
+  noCrossing: "No symbol measured — run atlas_scan.py --stack-for.",
+  entrySurfaces: "Entry surfaces", entryHint: "Nothing in the repository imports these — they are reached from outside.",
+  foundations: "Foundations", leafHint: "These import nothing. Changing them ripples up, never down.",
+  hubsTitle: "Hubs", hubHint: "Reach above the repository's median. Touching one of these touches everything downstream.",
+  languages: "Languages",
+  dep: "Dependency", version: "Version", scope: "Scope", usedBy: "Used by",
+  devDep: "dev", runtimeDep: "runtime", noImport: "no direct import found",
+  undeclared: "Used but not declared",
+  undeclaredHint: "Imported by the code but absent from every manifest — available only transitively, so a dependency bump elsewhere can break the build.",
+  shellsOut: "Shells out to",
+  shellsHint: "Binaries the code invokes. A runtime dependency no manifest records, and often the most structural one.",
+  commands: "Build & test commands", ci: "Continuous integration",
+  ciOff: "commented out", jobs: n => `${n} jobs`,
+  testSurface: "Test surface", files: "files", ofCode: "of the code",
+  entryPoints: "Entry points",
+  noStack: "No STACK block — run atlas_scan.py --stack-for atlas.html and paste the result into the DATA section.",
+};
+
+const LANGS = { en: UI_EN, fr: null };          // `fr` est branché par le DATA
+const L = () => (state.lang === "fr" && typeof I18N !== "undefined" ? I18N.fr : null) || {};
+const t = k => (L().ui || {})[k] ?? UI_EN[k];
+const tGroup = g => (L().groups || {})[g] ?? g;
+const tField = (s, f) => ((L().blocks || {})[s.id] || {})[f] ?? s[f];
+const tChild = (s, i, f) => (((L().blocks || {})[s.id] || {}).children || {})[i]?.[f]
+                            ?? (s.children || [])[i]?.[f];
+const tPay = e => (L().pay || {})[`${e.f}>${e.t}`] ?? e.pay;
+const tTrace = i => (L().trace || {})[i] ?? TRACE[i][1];
+const tOverview = tab => (tab === "what"
+  ? (L().overviewWhat ?? OVERVIEW_WHAT) : (L().overviewHow ?? OVERVIEW_HOW));
+
+/* ==================================================================== */
+/* ============================= VUES ================================= */
+/* Quatre lectures du même graphe. L'isométrique montre la forme, la     */
+/* matrice montre les cycles (DSM : un carré noir sur la diagonale =     */
+/* dépendance mutuelle), les hotspots croisent taille et churn, mermaid  */
+/* sort le graphe dans un format que l'agent peut relire.                */
+/* ==================================================================== */
+
+const VIEW_NOTE = () => ({ iso: t("noteIso"), matrix: t("noteMatrix"),
+                           hotspots: t("noteHotspots"), flow: t("noteFlow"),
+                           arch: t("noteArch"), stack: t("noteStack") });
+
+/* Ordre en couches (Kahn tolérant aux cycles) : les entrées en haut, les
+   feuilles en bas. Sur un graphe en couches, la matrice n'a alors aucune
+   marque sous la diagonale — c'est le diagnostic que la DSM rend gratuit. */
+function layerOrder() {
+  const ids = STRUCTURES.map(s => s.id);
+  const out = [], left = new Set(ids);
+  const deps = id => EDGES.filter(e => e.f === id && left.has(e.t)).length;
+  while (left.size) {
+    const ready = [...left].filter(id => deps(id) === 0);
+    const batch = ready.length ? ready
+      : [[...left].sort((a, b) => deps(a) - deps(b))[0]];   // cycle : on force
+    batch.sort((a, b) => (byId[b].fanIn || 0) - (byId[a].fanIn || 0));
+    batch.forEach(id => { out.push(id); left.delete(id); });
+  }
+  return out.reverse();                                     // sources d'abord
+}
+
+/* ---------------------------------------------------------------- matrice */
+function buildMatrix() {
+  const order = layerOrder();
+  const n = order.length, C = 15, PAD = 128, TOP = 96;
+  const pair = new Map();
+  for (const e of EDGES) pair.set(`${e.f}>${e.t}`, e);
+
+  const g = el("g", { transform: `translate(${-((n * C + PAD) / 2)} ${-((n * C + TOP) / 2)})` });
+
+  order.forEach((id, i) => {
+    const s = byId[id], y = TOP + i * C;
+    const rl = el("text", { x: PAD - 6, y: y + 10.5, "text-anchor": "end", "font-size": 8.5,
+                            fill: "var(--text-dim)", class: "rowlab", "data-id": id });
+    rl.textContent = `${s.code} ${s.name}`.slice(0, 22);
+    g.appendChild(rl);
+    const cl = el("text", { x: 0, y: 0, "font-size": 8.5, fill: "var(--text-dim)",
+                            transform: `translate(${PAD + i * C + 10.5} ${TOP - 6}) rotate(-90)` });
+    cl.textContent = s.code;
+    g.appendChild(cl);
+  });
+
+  order.forEach((rid, r) => {
+    order.forEach((cid, c) => {
+      const x = PAD + c * C, y = TOP + r * C;
+      if (r === c) {
+        g.appendChild(el("rect", { x, y, width: C - 1, height: C - 1,
+                                   fill: "var(--surface-1)", opacity: .55 }));
+        return;
+      }
+      const fwd = pair.get(`${rid}>${cid}`), bwd = pair.get(`${cid}>${rid}`);
+      if (!fwd && !bwd) return;
+      // `mutual:1` porte le cycle sans qu'une arête de retour soit dessinée
+      const mutual = (fwd && bwd) || fwd?.mutual || bwd?.mutual;
+      const fill = mutual ? "var(--special)" : fwd ? "var(--accent)" : "var(--info)";
+      const cell = el("rect", { x, y, width: C - 1, height: C - 1, fill,
+                                opacity: mutual ? .85 : .55, class: "cellhi",
+                                "data-pay": mutual
+                                  ? `${byId[rid].name} ⇄ ${byId[cid].name} — ${t("mutual")}`
+                                  : fwd ? `${byId[rid].name} → ${byId[cid].name} : ${tPay(fwd) || ""}`
+                                        : `${byId[cid].name} → ${byId[rid].name} : ${tPay(bwd) || ""}`,
+                                "data-row": rid });
+      g.appendChild(cell);
+    });
+  });
+
+  // cadre + repère de la diagonale
+  g.appendChild(el("rect", { x: PAD, y: TOP, width: n * C, height: n * C,
+                             fill: "none", stroke: "var(--line)", "stroke-width": .8 }));
+  world.appendChild(g);
+}
+
+/* -------------------------------------------------------------- hotspots */
+function buildHotspots() {
+  const t2 = t;
+  const pts = STRUCTURES.filter(s => Number.isFinite(s.commits) && s.locNow);
+  if (!pts.length) {
+    const t = el("text", { x: 0, y: 0, "text-anchor": "middle", "font-size": 10, fill: "var(--soft)" });
+    t.textContent = t2("noChurn");
+    world.appendChild(t); return;
+  }
+  const W = 620, H = 420;
+  const lg = v => Math.log10(Math.max(1, v));
+  const xs = pts.map(p => lg(p.commits)), ys = pts.map(p => lg(p.locNow));
+  const [x0, x1] = [Math.min(...xs), Math.max(...xs)], [y0, y1] = [Math.min(...ys), Math.max(...ys)];
+  const X = v => (lg(v) - x0) / (x1 - x0 || 1) * W - W / 2;
+  const Y = v => H / 2 - (lg(v) - y0) / (y1 - y0 || 1) * H;
+  const med = a => [...a].sort((p, q) => p - q)[Math.floor(a.length / 2)];
+  const mx = med(pts.map(p => p.commits)), my = med(pts.map(p => p.locNow));
+
+  const g = el("g");
+  // quadrants
+  g.appendChild(el("line", { x1: X(mx), y1: -H / 2 - 10, x2: X(mx), y2: H / 2 + 10,
+                             stroke: "var(--rule)", "stroke-dasharray": "3 3" }));
+  g.appendChild(el("line", { x1: -W / 2 - 10, y1: Y(my), x2: W / 2 + 10, y2: Y(my),
+                             stroke: "var(--rule)", "stroke-dasharray": "3 3" }));
+  const label = (x, y, txt, anchor) => {
+    const t = el("text", { x, y, "text-anchor": anchor, "font-size": 8, fill: "var(--soft)",
+                           "letter-spacing": ".12em" });
+    t.textContent = txt; g.appendChild(t);
+  };
+  label(W / 2 + 6, -H / 2 - 2, t("quadBigOften"), "end");
+  label(-W / 2 - 6, -H / 2 - 2, t("quadBigStable"), "start");
+  label(W / 2 + 6, H / 2 + 16, t("quadSmallOften"), "end");
+  label(-W / 2 - 6, H / 2 + 16, t("quadSmallStable"), "start");
+  label(0, H / 2 + 34, t("axisChurn")((REPO.churnSince || "12 months").toUpperCase()), "middle");
+  const yl = el("text", { "font-size": 8, fill: "var(--soft)", "letter-spacing": ".12em",
+                          "text-anchor": "middle", transform: `translate(${-W / 2 - 26} 0) rotate(-90)` });
+  yl.textContent = t("axisLoc"); g.appendChild(yl);
+
+  const placed = [];
+  pts.forEach(s => {
+    const x = X(s.commits), y = Y(s.locNow);
+    const hot = s.commits >= mx && s.locNow >= my;
+    const r = Math.max(3, Math.min(16, Math.sqrt(s.locNow) / 9));
+    g.appendChild(el("circle", { cx: x, cy: y, r, class: "struct cellhi", "data-id": s.id,
+      fill: hot ? "var(--accent-dim)" : "var(--surface-0)",
+      stroke: hot ? "var(--accent)" : "var(--line)", "stroke-width": hot ? 1.4 : .8,
+      "data-pay": `${s.name} — ${s.commits} ${t("fileCommits")}, ${s.churn} ${t("linesTouched")}, ${s.loc} ${t("lines")}` }));
+    if (hot || r > 11) {
+      const near = placed.some(p => Math.abs(p.x - x) < 22 && Math.abs(p.y - y) < 14);
+      const ly = near ? y + r + 10 : y - r - 4;
+      placed.push({ x, y: ly });
+      const t = el("text", { x, y: ly, "text-anchor": "middle", "font-size": 8,
+                             fill: hot ? "var(--accent)" : "var(--soft)" });
+      t.textContent = s.code; g.appendChild(t);
+    }
+  });
+  world.appendChild(g);
+}
+
+/* ----------------------------------------------------------------- flow */
+function themeVars() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue(n).trim() || "#888";
+  return { bg: v("--bg"), surf: v("--surface-0"), line: v("--border"),
+           text: v("--text"), accent: v("--accent") };
+}
+
+function mermaidDeps() {
+  const t = themeVars();
+  const init = `%%{init: {'theme':'base','themeVariables':{` +
+    `'primaryColor':'${t.surf}','primaryTextColor':'${t.text}','primaryBorderColor':'${t.line}',` +
+    `'lineColor':'${t.accent}','background':'${t.bg}','mainBkg':'${t.surf}',` +
+    `'clusterBkg':'${t.bg}','clusterBorder':'${t.line}','nodeTextColor':'${t.text}',` +
+    `'edgeLabelBackground':'${t.surf}','fontSize':'12px'}}}%%`;
+  const groups = [...new Set(STRUCTURES.map(s => s.group))];
+  const key = id => id.replace(/[^a-zA-Z0-9]/g, "_");
+  const lines = [init, "flowchart LR"];
+  groups.forEach((grp, i) => {
+    lines.push(`  subgraph g${i}["${grp}"]`);
+    STRUCTURES.filter(s => s.group === grp).forEach(s =>
+      lines.push(`    ${key(s.id)}["${s.code} ${s.name}<br/>${s.loc}"]`));
+    lines.push("  end");
+  });
+  EDGES.filter(e => e.flow || e.mutual).forEach(e => {
+    const arrow = e.mutual ? "<-->" : e.src === "design" ? "-.->" : "-->";
+    lines.push(`  ${key(e.f)} ${arrow}|"${(tPay(e) || "").replace(/"/g, "")}"| ${key(e.t)}`);
+  });
+  return lines.join("\n");
+}
+
+function mermaidTrace() {
+  const t = themeVars();
+  const init = `%%{init: {'theme':'base','themeVariables':{` +
+    `'primaryColor':'${t.surf}','primaryTextColor':'${t.text}','primaryBorderColor':'${t.line}',` +
+    `'lineColor':'${t.accent}','actorBkg':'${t.surf}','actorTextColor':'${t.text}',` +
+    `'actorBorder':'${t.line}','signalColor':'${t.accent}','signalTextColor':'${t.text}',` +
+    `'noteBkgColor':'${t.surf}','noteTextColor':'${t.text}','fontSize':'12px'}}}%%`;
+  const lines = [init, "sequenceDiagram", "  autonumber"];
+  const seen = [];
+  TRACE.forEach(([id]) => { if (!seen.includes(id)) seen.push(id); });
+  seen.forEach(id => lines.push(`  participant ${byId[id].code} as ${byId[id].name}`));
+  TRACE.forEach(([id], i) => {
+    const nxt = TRACE[i + 1];
+    const short = tTrace(i).split(/[.—]/)[0].slice(0, 72).replace(/[:"]/g, "");
+    if (nxt) lines.push(`  ${byId[id].code}->>${byId[nxt[0]].code}: ${short}`);
+    else lines.push(`  Note over ${byId[id].code}: ${short}`);
+  });
+  return lines.join("\n");
+}
+
+/* Le rendu mermaid natif scanne les `pre.mermaid` présents au chargement :
+   on construit donc les cartes au démarrage, pas au clic sur l'onglet. Le
+   diagramme est la vue par défaut, le source vit derrière le bouton Code. */
+
+/* ---------------------------------------------------------------- rendu
+   Le runtime de l'artifact ne transforme pas les <pre class="mermaid">
+   insérés par script, et embarquer mermaid coûterait plusieurs mégaoctets
+   pour deux diagrammes. On les dessine donc en SVG comme le reste de
+   l'atlas : même palette, même pan/zoom, zéro dépendance. Le source
+   mermaid reste sous le bouton, c'est lui qu'on exporte. */
+
+const NODE_W = 150, NODE_H = 38, COL_GAP = 78, ROW_GAP = 16;
+
+/* Rang = plus long chemin depuis une source, sur les seules arêtes dessinées.
+   Les cycles sont coupés par la profondeur maximale, pas par une exception. */
+function ranks(edges, ids) {
+  const rank = Object.fromEntries(ids.map(i => [i, 0]));
+  for (let pass = 0; pass < ids.length; pass++) {
+    let moved = false;
+    for (const e of edges)
+      if (rank[e.t] < rank[e.f] + 1 && rank[e.f] + 1 <= ids.length) {
+        rank[e.t] = rank[e.f] + 1; moved = true;
+      }
+    if (!moved) break;
+  }
+  return rank;
+}
+
+function svgEl(w, h) {
+  const s = el("svg", { viewBox: `0 0 ${w} ${h}`, width: w, height: h,
+                        xmlns: "http://www.w3.org/2000/svg" });
+  s.style.width = w + "px"; s.style.height = h + "px";
+  return s;
+}
+
+function drawFlowchart() {
+  const edges = EDGES.filter(e => e.flow || e.mutual);
+  const ids = [...new Set(edges.flatMap(e => [e.f, e.t]))];
+  const rank = ranks(edges, ids);
+  const cols = {};
+  ids.forEach(id => (cols[rank[id]] ||= []).push(id));
+  Object.values(cols).forEach(c => c.sort((a, b) =>
+    (byId[a].group || "").localeCompare(byId[b].group || "") || a.localeCompare(b)));
+
+  const nCols = Math.max(...Object.keys(cols).map(Number)) + 1;
+  const rows = Math.max(...Object.values(cols).map(c => c.length));
+  const W = nCols * (NODE_W + COL_GAP) + 60, H = rows * (NODE_H + ROW_GAP) + 90;
+  const pos = {};
+  for (const [r, list] of Object.entries(cols)) {
+    const x = 30 + Number(r) * (NODE_W + COL_GAP);
+    const top = (H - list.length * (NODE_H + ROW_GAP)) / 2;
+    list.forEach((id, i) => (pos[id] = { x, y: top + i * (NODE_H + ROW_GAP) }));
+  }
+
+  const svg = svgEl(W, H);
+  const gE = el("g"), gN = el("g");
+
+  for (const e of edges) {
+    const a = pos[e.f], b = pos[e.t];
+    if (!a || !b) continue;
+    const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2;
+    const x2 = b.x, y2 = b.y + NODE_H / 2;
+    const back = x2 < x1;                       // arête qui remonte : on la contourne
+    const mid = back ? Math.max(y1, y2) + 26 : null;
+    const d = back
+      ? `M${x1} ${y1} C${x1 + 40} ${y1}, ${x1 + 40} ${mid}, ${(x1 + x2) / 2} ${mid} `
+        + `C${x2 - 40} ${mid}, ${x2 - 40} ${y2}, ${x2} ${y2}`
+      : `M${x1} ${y1} C${x1 + COL_GAP * .6} ${y1}, ${x2 - COL_GAP * .6} ${y2}, ${x2} ${y2}`;
+    const mutual = e.mutual;
+    gE.appendChild(el("path", {
+      d, fill: "none",
+      stroke: mutual ? "var(--special)" : "var(--line)",
+      "stroke-width": mutual ? 1.4 : 1,
+      "stroke-dasharray": { design: "2 3", runtime: "6 3" }[e.src] || "none",
+      "marker-end": "url(#arrow)", class: "cellhi",
+      "data-pay": `${byId[e.f].name} → ${byId[e.t].name}${tPay(e) ? " : " + tPay(e) : ""}`,
+    }));
+  }
+
+  for (const id of ids) {
+    const s = byId[id], p = pos[id];
+    const g = el("g", { class: "cellhi struct", "data-id": id,
+                        "data-pay": `${s.name} — ${s.loc} ${t("lines")}` });
+    g.appendChild(el("rect", { x: p.x, y: p.y, width: NODE_W, height: NODE_H,
+      fill: "var(--surface-0)", stroke: isHub(id) ? "var(--special)" : "var(--line)",
+      "stroke-width": isHub(id) ? 1.4 : .9 }));
+    const n = el("text", { x: p.x + 9, y: p.y + 16, "font-size": 9.5, fill: "var(--text)" });
+    n.textContent = `${s.code} ${s.name}`.slice(0, 22);
+    const l = el("text", { x: p.x + 9, y: p.y + 28, "font-size": 8, fill: "var(--soft)" });
+    l.textContent = `${s.loc} · ${tGroup(s.group)}`.slice(0, 30);
+    g.append(n, l);
+    gN.appendChild(g);
+  }
+
+  const defs = el("defs");
+  defs.innerHTML = `<marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4"
+      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="var(--line)"/></marker>`;
+  svg.append(defs, gE, gN);
+  return svg;
+}
+
+function drawSequence() {
+  const order = [];
+  TRACE.forEach(([id]) => { if (!order.includes(id)) order.push(id); });
+  const COLW = 132, TOP = 54, STEP = 52;
+  const W = order.length * COLW + 40, H = TOP + TRACE.length * STEP + 40;
+  const svg = svgEl(W, H);
+  const x = id => 20 + order.indexOf(id) * COLW + COLW / 2;
+
+  order.forEach(id => {
+    const s = byId[id], cx = x(id);
+    svg.appendChild(el("line", { x1: cx, y1: TOP, x2: cx, y2: H - 24,
+      stroke: "var(--rule)", "stroke-dasharray": "3 4" }));
+    svg.appendChild(el("rect", { x: cx - COLW / 2 + 8, y: 16, width: COLW - 16, height: 28,
+      fill: "var(--surface-0)", stroke: "var(--line)", "stroke-width": .9 }));
+    const tx = el("text", { x: cx, y: 34, "text-anchor": "middle", "font-size": 9,
+                            fill: "var(--text)" });
+    tx.textContent = `${s.code} ${s.name}`.slice(0, 17);
+    svg.appendChild(tx);
+  });
+
+  const defs = el("defs");
+  defs.innerHTML = `<marker id="seqArrow" viewBox="0 0 8 8" refX="7" refY="4"
+      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="var(--accent)"/></marker>`;
+  svg.appendChild(defs);
+
+  TRACE.forEach(([id], i) => {
+    const y = TOP + 22 + i * STEP;
+    const nxt = TRACE[i + 1];
+    const from = x(id), to = nxt ? x(nxt[0]) : from;
+    const label = tTrace(i).split(/[.—:]/)[0].slice(0, 64);
+    const num = el("text", { x: 8, y: y + 3, "font-size": 8, fill: "var(--soft)" });
+    num.textContent = String(i + 1).padStart(2, "0");
+    svg.appendChild(num);
+    if (nxt && to !== from) {
+      svg.appendChild(el("line", { x1: from, y1: y, x2: to, y2: y,
+        stroke: "var(--accent)", "stroke-width": 1.1, "marker-end": "url(#seqArrow)" }));
+    } else {
+      svg.appendChild(el("rect", { x: from - 6, y: y - 5, width: 12, height: 10,
+        fill: "var(--accent)" }));
+    }
+    const tx = el("text", { x: Math.min(from, to) + Math.abs(to - from) / 2, y: y - 7,
+      "text-anchor": "middle", "font-size": 8.5, fill: "var(--text-dim)",
+      class: "cellhi", "data-pay": tTrace(i) });
+    tx.textContent = label;
+    svg.appendChild(tx);
+  });
+  return svg;
+}
+
+function buildFlow() {
+  const flow = document.getElementById("flow");
+  const card = (title, svg, src, note) => {
+    const c = document.createElement("div");
+    c.className = "card";
+    c.innerHTML = `<div class="head"><h2>${title}</h2>
+        <button data-src>${t("mermaidSrc")}</button>
+        <button data-copy="${encodeURIComponent(src)}">${t("copy")}</button></div>
+      <div class="render"></div>
+      <div class="src"><pre>${esc(src)}</pre></div>`;
+    c.querySelector(".render").appendChild(svg);
+    return { card: c, note };
+  };
+  flow.innerHTML = `<p class="hint">${t("flowHint")}</p>`;
+  for (const { card: c, note } of [
+    card(t("depFlow"), drawFlowchart(), mermaidDeps(), t("flowNote")),
+    card(t("reqTrace"), drawSequence(), mermaidTrace(), ""),
+  ]) {
+    flow.appendChild(c);
+    if (note) {
+      const p = document.createElement("p");
+      p.className = "hint"; p.textContent = note; flow.appendChild(p);
+    }
+  }
+  flow.querySelectorAll("button[data-src]").forEach(b => b.onclick = () => {
+    const box = b.closest(".card").querySelector(".src");
+    box.classList.toggle("on");
+    b.classList.toggle("on", box.classList.contains("on"));
+  });
+  flow.querySelectorAll("button[data-copy]").forEach(b => b.onclick = async () => {
+    const txt = decodeURIComponent(b.dataset.copy);
+    try { await navigator.clipboard.writeText(txt); } catch {
+      const ta = document.createElement("textarea"); ta.value = txt;
+      document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove();
+    }
+    b.textContent = t("copied"); setTimeout(() => (b.textContent = t("copy")), 1400);
+  });
+  flow.querySelectorAll(".card").forEach(makePannable);
+}
+
+/* Mermaid pose un `max-width` inline et laisse le SVG se contraindre à son
+   conteneur : sur un flowchart de 40 nœuds, ça donne un dessin illisible et
+   rien à faire défiler. On lui rend sa taille naturelle et on le pilote au
+   pan/zoom, comme la vue isométrique. */
+function makePannable(card) {
+  const box = card.querySelector(".render");
+  if (!box || box.dataset.pan) return;
+  const svg = box.querySelector("svg");
+  if (!svg) return;
+  box.dataset.pan = "1";
+
+  const vb = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
+  const w = vb[2] || svg.getBoundingClientRect().width || 800;
+  const h = vb[3] || svg.getBoundingClientRect().height || 600;
+  svg.style.maxWidth = "none";
+  svg.removeAttribute("width"); svg.removeAttribute("height");
+  svg.style.width = w + "px"; svg.style.height = h + "px";
+
+  const pan = document.createElement("div");
+  pan.className = "pan";
+  svg.replaceWith(pan); pan.appendChild(svg);
+
+  const st = { x: 0, y: 0, s: 1 };
+  const apply = () => { pan.style.transform = `translate(${st.x}px,${st.y}px) scale(${st.s})`; };
+  const fitIt = () => {
+    if (box.clientWidth < 50 || box.clientHeight < 50) return;   // onglet encore masqué
+    st.s = Math.max(.05, Math.min(1, (box.clientWidth - 24) / w, (box.clientHeight - 24) / h));
+    st.x = (box.clientWidth - w * st.s) / 2;
+    st.y = (box.clientHeight - h * st.s) / 2;
+    apply();
+  };
+
+  const zoom = document.createElement("div");
+  zoom.className = "zoom";
+  zoom.innerHTML = `<button data-z="in" aria-label="Zoomer">+</button>
+    <button data-z="out" aria-label="Dézoomer">−</button>
+    <button data-z="fit" class="wide">${t("fit")}</button>`;
+  box.appendChild(zoom);
+  zoom.onclick = e => {
+    const k = e.target.dataset.z; if (!k) return;
+    if (k === "fit") return fitIt();
+    st.s = Math.min(6, Math.max(.1, st.s * (k === "in" ? 1.25 : 1 / 1.25)));
+    apply();
+  };
+
+  box.addEventListener("wheel", e => {
+    e.preventDefault();
+    const r = box.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const k = Math.min(6, Math.max(.1, st.s * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    st.x = mx - (mx - st.x) * (k / st.s);          // zoom centré sur le curseur
+    st.y = my - (my - st.y) * (k / st.s);
+    st.s = k; apply();
+  }, { passive: false });
+
+  let down = null;
+  box.addEventListener("mousedown", e => {
+    if (e.target.closest(".zoom")) return;
+    down = { x: e.clientX, y: e.clientY, ox: st.x, oy: st.y };
+    box.classList.add("drag"); e.preventDefault();
+  });
+  window.addEventListener("mousemove", e => {
+    if (!down) return;
+    st.x = down.ox + e.clientX - down.x; st.y = down.oy + e.clientY - down.y; apply();
+  });
+  window.addEventListener("mouseup", () => { down = null; box.classList.remove("drag"); });
+  box.addEventListener("dblclick", fitIt);
+  box._fit = fitIt;
+
+  fitIt();
+}
+
+/* ------------------------------------------------------------- bascule */
+/* ==================================================================== */
+/* ==================== ARCHITECTURE + STACK ========================== */
+/* Deux lectures documentaires du même relevé. « Architecture » ne lit   */
+/* que EDGES / STRUCTURES — couches, cycles, hubs, frontières — donc     */
+/* elle ne peut rien raconter d'autre que ce que le graphe mesuré dit.   */
+/* « Stack » ne lit que STACK, produit par `atlas_scan.py --stack-for` : */
+/* manifestes, chaîne d'outils, CI, binaires appelés. Aucune des deux    */
+/* n'a de prose à jour à la main — c'est la condition pour qu'elles ne   */
+/* mentent pas au premier refactor.                                     */
+/* ==================================================================== */
+
+const doc = document.getElementById("doc");
+/* les vues qui recouvrent le stage SVG : les gestes de l'isométrique n'ont
+   rien à y faire (le hash sautait quand le clic remontait jusqu'au stage) */
+const OVERLAY = new Set(["flow", "arch", "stack"]);
+/* `loc` d'une dalle est une étiquette (« 3 keys », « .git/gwm »), pas un nombre :
+   sans l'ancre de fin, « 3 keys » se lisait 3000 et « .git » sortait NaN. */
+const locNum = s => {
+  const m = s.slab ? null : String(s.loc).replace(/\s/g, "").match(/^(\d[\d.]*)(k?)$/);
+  const n = m ? parseFloat(m[1]) * (m[2] ? 1000 : 1) : 0;
+  return Number.isFinite(n) ? Math.round(n) : 0;
+};
+const kfmt = n => n >= 10000 ? (n / 1000).toFixed(0) + "k"
+                             : String(n).replace(/\B(?=(\d{3})+$)/g, " ");
+
+/* Profondeur depuis les feuilles : couche 0 = ne dépend de rien, couche N =
+   il faut traverser N frontières pour toucher le fond. Un cycle est coupé à
+   la première ré-entrée, donc la couche d'un bloc pris dans un cycle dépend
+   de l'ordre de parcours — c'est une lecture, pas une preuve. */
+function depths() {
+  const d = {}, adj = {};
+  EDGES.forEach(e => (adj[e.f] ||= []).push(e.t));
+  const walk = (id, seen) => {
+    if (id in d) return d[id];
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const k = (adj[id] || []).map(x => walk(x, seen) + 1);
+    seen.delete(id);
+    return (d[id] = k.length ? Math.max(...k) : 0);
+  };
+  STRUCTURES.forEach(s => walk(s.id, new Set()));
+  return d;
+}
+
+/* Composantes fortement connexes (Tarjan). Toute composante de plus d'un
+   bloc est un cycle de dépendances : la matrice montre déjà les paires en
+   violet, mais un cycle à trois n'apparaît nulle part ailleurs. */
+function cycles() {
+  const idx = {}, low = {}, on = {}, st = [], out = [], adj = {};
+  let i = 0;
+  // `mutual:1` porte les deux sens sur une seule arête : sans le retour, Tarjan
+  // ne voit jamais les cycles que la matrice affiche déjà en violet
+  EDGES.forEach(e => { (adj[e.f] ||= []).push(e.t); if (e.mutual) (adj[e.t] ||= []).push(e.f); });
+  const strong = v => {
+    idx[v] = low[v] = i++; st.push(v); on[v] = 1;
+    for (const w of adj[v] || []) {
+      if (!(w in idx)) { strong(w); low[v] = Math.min(low[v], low[w]); }
+      else if (on[w]) low[v] = Math.min(low[v], idx[w]);
+    }
+    if (low[v] === idx[v]) {
+      const comp = []; let w;
+      do { w = st.pop(); on[w] = 0; comp.push(w); } while (w !== v);
+      if (comp.length > 1) out.push(comp.reverse());
+    }
+  };
+  STRUCTURES.forEach(s => { if (!(s.id in idx)) strong(s.id); });
+  return out.sort((a, b) => b.length - a.length);
+}
+
+const chip = s => `<button class="chip" data-id="${s.id}"><b>${esc(s.code)}</b>${esc(s.name)}<i>${esc(s.loc)}</i></button>`;
+const chipOf = id => byId[id] ? chip(byId[id]) : `<span class="pill">${esc(id)}</span>`;
+const h2 = (k, n) => `<h2>${t(k)}${n != null ? ` <span>${n}</span>` : ""}</h2>`;
+
+function buildArch() {
+  const d = depths(), rows = new Map();
+  STRUCTURES.forEach(s => {
+    const k = d[s.id] ?? 0;
+    if (!rows.has(k)) rows.set(k, []);
+    rows.get(k).push(s);
+  });
+  const ranks = [...rows.entries()].sort((a, b) => b[0] - a[0]);
+  const rings = cycles();
+  /* `?? 0` transformerait « jamais mesuré » en « personne ne l'importe » : les
+     dalles n'ont pas de fanIn du tout, et une dalle de stockage annoncée comme
+     surface d'entrée est un contresens (7 des 8 « entrées » de gwm). */
+  const measured = (s, k) => Number.isFinite(s[k]);
+  const entries = STRUCTURES.filter(s => measured(s, "fanIn") && s.fanIn === 0);
+  const leaves = STRUCTURES.filter(s => measured(s, "fanOut") && s.fanOut === 0 && s.fanIn > 0);
+  const hubs = STRUCTURES.filter(s => isHub(s.id))
+    .sort((a, b) => ((b.fanIn || 0) + (b.fanOut || 0)) - ((a.fanIn || 0) + (a.fanOut || 0)));
+  const syms = (typeof STACK === "object" && STACK && STACK.edgeSyms) || {};
+  const cross = Object.entries(syms)
+    .filter(([k]) => { const p = k.split(">"); return byId[p[0]] && byId[p[1]]; })
+    .sort((a, b) => b[1].length - a[1].length).slice(0, 14);
+
+  let out = `<p class="hint">${t("archHint")}</p>`;
+
+  out += h2("layers", ranks.length) + `<div class="layers">` + ranks.map(([k, list]) => {
+    const loc = list.reduce((n, s) => n + locNum(s), 0);
+    return `<div class="layer"><div class="lk">${t("layer")(k)}<i>${list.length}${loc ? " · " + kfmt(loc) : ""}</i></div>
+      <div class="chips">${list.slice().sort((a, b) => locNum(b) - locNum(a)).map(chip).join("")}</div></div>`;
+  }).join("") + `</div>`;
+
+  out += h2("cyclesTitle", rings.length) + (rings.length
+    ? `<p class="hint">${t("cyclesHint")}</p><div class="rings">` + rings.map(c =>
+        `<div class="ring">${c.map(chipOf).join('<span class="arr">→</span>')}<span class="arr">↩</span></div>`
+      ).join("") + `</div>`
+    : `<p class="hint">${t("noCycle")}</p>`);
+
+  /* Rien à montrer quand un module *est* sa classe (PHP, Java) : le nom
+     importé est alors le nom du module, que le graphe dit déjà. Une section
+     vide vaudrait moins que pas de section. */
+  if (cross.length) out += h2("crossings", cross.length) +
+    `<p class="hint">${t("crossHint")}</p>` + cross.map(([k, list]) => {
+      const p = k.split(">");
+      return `<div class="kv"><span class="k">${esc(byId[p[0]].name)} → ${esc(byId[p[1]].name)}</span>
+        <span>${list.map(n => `<code>${esc(n)}</code>`).join(" · ")}</span></div>`;
+    }).join("");
+
+  const band = (key, list, hint) => h2(key, list.length) +
+    (hint ? `<p class="hint">${t(hint)}</p>` : "") +
+    `<div class="chips">${list.length ? list.map(chip).join("") : `<span class="pill">—</span>`}</div>`;
+  return out + band("entrySurfaces", entries, "entryHint")
+             + band("foundations", leaves, "leafHint")
+             + band("hubsTitle", hubs, "hubHint");
+}
+
+function buildStack() {
+  const K = typeof STACK === "object" ? STACK : null;
+  if (!K) return `<p class="hint">${t("noStack")}</p>`;
+  const langs = Object.entries(K.langs || {});
+  const total = langs.reduce((a, b) => a + b[1], 0) || 1;
+  let out = `<p class="hint">${t("stackHint")}</p>`;
+
+  out += h2("languages") + `<div class="bar">` + langs.map(([l, n], i) =>
+      `<span class="seg s${i % 4}" style="width:${(n / total * 100).toFixed(1)}%"></span>`).join("")
+    + `</div><div class="chips">` + langs.map(([l, n], i) =>
+      `<span class="pill"><b class="sw s${i % 4}"></b>${esc(l)} · ${kfmt(n)} ${t("lines")} · ${(n / total * 100).toFixed(0)}%</span>`
+    ).join("") + `</div>`;
+
+  const table = deps => `<table><thead><tr><th>${t("dep")}</th><th>${t("version")}</th>` +
+    `<th>${t("scope")}</th><th>${t("usedBy")}</th></tr></thead><tbody>` +
+    deps.map(d => `<tr><td><code>${esc(d.n)}</code></td><td>${esc(d.v || "—")}</td>` +
+      `<td>${d.dev ? t("devDep") : t("runtimeDep")}</td><td>${(d.by || []).map(chipOf).join("")
+        || `<span class="pill dim">${t("noImport")}</span>`}</td></tr>`).join("") + `</tbody></table>`;
+
+  for (const m of K.manifests || []) {
+    const tool = Object.entries(m.toolchain || {}).map(([k, v]) =>
+      `<span class="pill">${esc(k)} ${esc(Array.isArray(v) ? v.join(" ") : v)}</span>`).join("");
+    out += `<h2>${esc(m.eco)} <span>${esc(m.path || m.name)}</span></h2><div class="chips">` +
+      (m.name && m.path ? `<span class="pill">${esc(m.name)}${m.version ? " " + esc(m.version) : ""}</span>` : "") +
+      tool + `</div>`;
+    if ((m.deps || []).length) out += table(m.deps);
+    const sc = Object.entries(m.scripts || {});
+    if (sc.length) out += `<div class="chips">` + sc.map(([k, v]) =>
+      `<span class="pill" title="${esc(v)}">${esc(k)}</span>`).join("") + `</div>`;
+  }
+
+  if ((K.undeclared || []).length)
+    out += h2("undeclared", K.undeclared.length) + `<p class="hint">${t("undeclaredHint")}</p>` +
+      K.undeclared.map(u => `<div class="kv"><span class="k"><code>${esc(u.n)}</code></span>` +
+        `<span>${u.by.map(chipOf).join("")}</span></div>`).join("");
+
+  if ((K.bins || []).length)
+    out += h2("shellsOut", K.bins.length) + `<p class="hint">${t("shellsHint")}</p><div class="chips">` +
+      K.bins.map(b => `<span class="pill"><code>${esc(b.n)}</code> <i>${b.hits}</i></span>`).join("") + `</div>`;
+
+  const mk = Object.entries(K.make || {});
+  if (mk.length) out += h2("commands") + mk.map(([f, list]) =>
+    `<div class="kv"><span class="k"><code>${esc(f)}</code></span><span>` +
+    list.map(x => `<span class="pill">${esc(x)}</span>`).join("") + `</span></div>`).join("");
+
+  if ((K.ci || []).length)
+    out += h2("ci", K.ci.length) + K.ci.map(c =>
+      `<div class="kv"><span class="k">${esc(c.name)}${c.off ? ` <em>${t("ciOff")}</em>` : ""}</span><span>` +
+      c.on.map(x => `<span class="pill">${esc(x)}</span>`).join("") +
+      (c.jobs.length ? `<span class="pill dim">${t("jobs")(c.jobs.length)}</span>` : "") +
+      `</span></div>`).join("");
+
+  if (K.tests) out += h2("testSurface") + `<div class="chips">` +
+    `<span class="pill">${K.tests.files} ${t("files")}</span>` +
+    `<span class="pill">${kfmt(K.tests.loc)} ${t("lines")}</span>` +
+    `<span class="pill">${(K.tests.loc / total * 100).toFixed(0)}% ${t("ofCode")}</span></div>`;
+
+  if ((K.entry || []).length) out += h2("entryPoints") + `<div class="chips">` +
+    K.entry.map(p => REPO.repoUrl
+      ? `<a class="pill" href="${href(p)}" target="_blank" rel="noopener"><code>${esc(p)}</code></a>`
+      : `<span class="pill"><code>${esc(p)}</code></span>`).join("") + `</div>`;
+  return out;
+}
+
+/* Un bloc cité dans une couche, un cycle ou une ligne de dépendance renvoie
+   au dessin : sans ça les deux vues seraient des culs-de-sac. */
+function buildDoc() {
+  if (state.view !== "arch" && state.view !== "stack") return;
+  doc.innerHTML = state.view === "arch" ? buildArch() : buildStack();
+  doc.scrollTop = 0;
+  doc.querySelectorAll(".chip").forEach(b => b.onclick = e => {
+    // sans stopPropagation, le clic remonte jusqu'à #stage — qui, la vue
+    // ayant déjà basculé sur l'isométrique, le lit comme un clic dans le vide
+    // et dépingle aussitôt ce qu'on vient d'épingler
+    e.stopPropagation();
+    setView("iso"); pinTo(b.dataset.id);
+  });
+}
+
+function setView(v) {
+  state.view = v;
+  document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  document.getElementById("viewNote").textContent = VIEW_NOTE()[v] || "";
+  const over = OVERLAY.has(v);
+  document.getElementById("flow").classList.toggle("on", v === "flow");
+  doc.classList.toggle("on", v === "arch" || v === "stack");
+  document.getElementById("hints").style.display = over ? "none" : "";
+  svg.style.display = over ? "none" : "";
+  document.getElementById("zoom").style.display = over ? "none" : "";
+  if (v === "flow") { document.querySelectorAll("#flow .render").forEach(b => b._fit?.()); return; }
+  if (over) return buildDoc();
+  build(); if (v === "iso") sync(); else paint();
+  fit();
+}
+document.querySelectorAll("#views button").forEach(b => b.onclick = () => setView(b.dataset.v));
+
+/* Bascule de thème : la page est dark-first mais le lecteur hérite du thème
+   de l'hôte, et un atlas se lit parfois mieux dans l'autre. On stampe
+   data-theme, ce que la palette gère déjà dans les deux sens. */
+const themeBtn = document.getElementById("btnTheme");
+const effTheme = () => document.documentElement.dataset.theme ||
+  (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+const paintTheme = () => { themeBtn.textContent = effTheme() === "dark" ? "Dark" : "Light"; };
+themeBtn.onclick = () => {
+  document.documentElement.dataset.theme = effTheme() === "dark" ? "light" : "dark";
+  paintTheme();
+};
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paintTheme);
+paintTheme();
+
+/* Les couleurs mermaid sont figées à la génération : on régénère quand le
+   thème change, sinon le diagramme garde la palette de l'autre thème. */
+const reflow = () => buildFlow();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", reflow);
+new MutationObserver(reflow).observe(document.documentElement, { attributeFilter: ["data-theme"] });
+
+
+/* Applique la langue à tout le chrome statique, puis reconstruit ce qui porte
+   du texte (rail, panneau, vue courante, mermaid). */
+function applyLang() {
+  const q = s => document.querySelector(s);
+  document.documentElement.lang = state.lang;
+  q("#btnLang").textContent = state.lang.toUpperCase();
+  document.querySelectorAll("#views button[data-v]").forEach(b => b.textContent = t(b.dataset.v));
+  document.querySelectorAll("#tabs button").forEach(b => b.textContent = t(b.dataset.t));
+  q("#find").placeholder = t("find");
+  q("#back").textContent = t("back");
+  q("#btnTrace").textContent = t("trace");
+  q("#btnCopy").textContent = t("copy");
+  q("#btnReset").textContent = t("reset");
+  q("#btnFlow").textContent = state.flowing ? t("pause") : t("resume");
+  if (q("#btnDiff") && REPO.prevRev) q("#btnDiff").textContent = `${t("diff")} ${REPO.prevRev}`;
+  q("#hints").textContent = state.diff && REPO.prevRev
+    ? t("diffHints")(REPO.prevRev) : t("hints");
+  q("#viewNote").textContent = VIEW_NOTE()[state.view] || "";
+  const lg = t("legend");
+  q("#legend").innerHTML =
+    `<div>${lg[0]}</div><div>${lg[1]}</div>` +
+    `<div><span class="sw"></span>${lg[2]}</div>` +
+    `<div><span class="sw run"></span>${lg[3]}</div>` +
+    `<div><span class="sw dash"></span>${lg[4]}</div>` +
+    `<div><span class="dot"></span>${lg[5]}</div>` +
+    `<div><span style="color:var(--special)">◆</span> ${lg[6]}</div>`;
+  if (q("#topbar") && L().topbar) q("#topbar").innerHTML = L().topbar;
+  else if (q("#topbar")) q("#topbar").innerHTML = TOPBAR_EN;
+  sidebar(); build(); sync(); buildFlow(); buildDoc();
+  if (state.view !== "iso") { paint(); fit(); }
+}
+const TOPBAR_EN = document.getElementById("topbar")?.innerHTML || "";
+document.getElementById("btnLang").onclick = () => {
+  state.lang = state.lang === "en" ? "fr" : "en";
+  applyLang();
+};
+
+/* --- hooks de debug par hash : #s=<id> · #inside=<id> · #trace=<n> -------- */
+function fromHash() {
+  const h = location.hash.slice(1);
+  const mv = h.match(/^view=(\w+)$/);
+  if (mv && VIEW_NOTE()[mv[1]]) { setView(mv[1]); return true; }
+  const mi = h.match(/^inside=(.+)$/), mt = h.match(/^trace=(\d+)$/), ms = h.match(/^s=(.+)$/);
+  if (mi && byId[mi[1]]) { goInside(mi[1]); return true; }
+  if (mt) { state.trace = Math.min(TRACE.length - 1, +mt[1]); state.pin = null; sync(); return true; }
+  if (ms && byId[ms[1]]) { state.pin = ms[1]; state.trace = -1; sync(); return true; }
+  return false;
+}
+
+window.addEventListener("resize", applyTransform);
+window.addEventListener("hashchange", () => { if (!fromHash() && state.inside) comeBack(); });
+sidebar(); build(); sync(); fit(); buildFlow(); applyLang();
+fromHash();
+</script>
