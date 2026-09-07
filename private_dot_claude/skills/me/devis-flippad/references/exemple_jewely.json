@@ -1,0 +1,93 @@
+{
+  "brand": "jewely",
+  "tva_taux": 0.20,
+  "meta": {
+    "numero": "DEV-2026-05-1422",
+    "date_emission": "06 mai 2026",
+    "date_expiration": "05 juin 2026",
+    "type_vente": "Prestations de services"
+  },
+  "emetteur": {
+    "nom": "JEWELY HBJO",
+    "logo_img": "logos/jewely.jpeg",
+    "logo_name": "JEWELY",
+    "logo_sub": "H B J O",
+    "logo_bg": "#0d0d0d",
+    "adresse": ["11 RUE GAMBETTA", "54000 NANCY - France"],
+    "email": "facturation@jewely.fr",
+    "tel": "+33 3 65 67 63 12",
+    "mentions_legales": "FLIPPAD - JEWELY HBJO | SAS, société par actions simplifiée au capital social de 15 000,00 € | N° SIREN 490.940.145 | N° de TVA FR92490940145"
+  },
+  "client": {
+    "nom": "LOUIS JULIAN",
+    "numero": "695821447",
+    "adresse": ["71 Rue d'Antibes", "06400 Cannes - France"],
+    "email": "julian@bijouterie-cannes.com",
+    "tva": "FR06695821447"
+  },
+  "projet": { "titre": "DEVELOPPEMENT MODULE SAV HORLOGERIE" },
+  "lots": [
+    {
+      "intitule": "DÉVELOPPEMENT",
+      "sous_titre": "Dashboard client – Espace « Mes réparations » + timeline + interconnexion",
+      "jours": 13, "prix_unitaire": 700,
+      "lignes": [
+        {"ref": "SAV-1/2", "desc": "Cadrage périmètre fonctionnel SAV + définition/validation statuts et transitions", "acteurs": "PO + Lead + Dev", "jh": 2},
+        {"ref": "SAV-20", "desc": "Interconnexion comptes clients ERP / site e-commerce (sécurisation des données)", "acteurs": "Dev Back", "jh": 2},
+        {"ref": "SAV-5", "desc": "Espace client : rubrique « Mes réparations » – structure", "acteurs": "Dev Front", "jh": 1},
+        {"ref": "SAV-5", "desc": "Composant timeline réutilisable (site client + ERP) + page détail réparation + documents", "acteurs": "Dev Front", "jh": 6},
+        {"ref": "SAV-5", "desc": "Espace client : affichage devis PDF + boutons accepter/refuser", "acteurs": "Dev Front", "jh": 1},
+        {"ref": "SAV-10", "desc": "Historique complet des réparations (déjà en ligne, ajustements)", "acteurs": "Dev Front", "jh": 1}
+      ]
+    },
+    {
+      "intitule": "DÉVELOPPEMENT",
+      "sous_titre": "Intégrations – Formulaire, QR code, API statuts, Brevo email/SMS",
+      "jours": 18, "prix_unitaire": 700,
+      "lignes": [
+        {"ref": "SAV-3", "desc": "Ajustement saisie formulaire pour prendre en compte le dépôt", "acteurs": "Dev Full", "jh": 2},
+        {"ref": "SAV-4", "desc": "Génération QR code unique lié à la réparation (déclare produit déposé)", "acteurs": "Dev Back", "jh": 2},
+        {"ref": "SAV-4", "desc": "Impression QR code (sur la fiche SAV)", "acteurs": "Dev Back", "jh": 1},
+        {"ref": "SAV-6", "desc": "API mise à jour statut SAV dans Jewely (transitions)", "acteurs": "Dev Back", "jh": 6},
+        {"ref": "SAV-7", "desc": "Mise en place envoi email transactionnel + SMS via Brevo", "acteurs": "Dev Back", "jh": 3},
+        {"ref": "SAV-7", "desc": "Création des templates email/SMS pour chaque statut (×6)", "acteurs": "Dev + PO", "jh": 1},
+        {"ref": "", "desc": "Modification API SAV pour acceptations devis et changement statut", "acteurs": "Dev Back", "jh": 3}
+      ]
+    },
+    {
+      "intitule": "DÉVELOPPEMENT",
+      "sous_titre": "Interconnexion ERP/Site – Notifications, workflows devis, rétractation",
+      "jours": 14.5, "prix_unitaire": 700,
+      "lignes": [
+        {"ref": "SAV-7", "desc": "Vue notification ERP sur fiche réparation : timeline + historique notifs + envoi manuel email/SMS", "acteurs": "Dev Full", "jh": 6},
+        {"ref": "SAV-7", "desc": "Notifications internes Stéphane (nouveau dépôt, devis validé, etc.) – via notifications ERP", "acteurs": "Dev Back", "jh": 6},
+        {"ref": "SAV-13", "desc": "Relance automatique J+7 si devis non validé (cron)", "acteurs": "Dev Back", "jh": 6},
+        {"ref": "SAV-8", "desc": "Dashboard interne Stéphane : vue globale dossiers SAV (adaptation listing existant)", "acteurs": "Dev Full", "jh": 6},
+        {"ref": "SAV-9", "desc": "Collecte auto devis PDF dans espace client (ajustements)", "acteurs": "Dev Back", "jh": 6},
+        {"ref": "SAV-3", "desc": "Validation devis en ligne + scénario refus (horodatage, preuve, facturation transport, workflow)", "acteurs": "Dev Back", "jh": 6},
+        {"ref": "SAV-5", "desc": "Droit de rétractation : bouton « Renoncer » + délai 14j (réglementation juin 2026)", "acteurs": "Dev Back", "jh": 6}
+      ]
+    },
+    {
+      "intitule": "DÉVELOPPEMENT",
+      "sous_titre": "Recettage, tests E2E, traduction, KPI, déploiement",
+      "jours": 10.5, "prix_unitaire": 700,
+      "lignes": [
+        {"ref": "Tests E2E", "desc": "parcours complet dépôt → clôture", "acteurs": "QA + Dev", "jh": 1},
+        {"ref": "Tests E2E", "desc": "parcours refus devis → facturation → retour", "acteurs": "QA + Dev", "jh": 0.5},
+        {"ref": "", "desc": "Recette fonctionnelle avec Stéphane en boutique", "acteurs": "PO + Stéphane", "jh": 1},
+        {"ref": "", "desc": "Corrections et ajustements post-recette", "acteurs": "Dev Full", "jh": 3},
+        {"ref": "SAV-18", "desc": "Traduction anglais espace client SAV", "acteurs": "Dev Front", "jh": 1},
+        {"ref": "SAV-15", "desc": "Dashboard KPI + déploiement préprod/prod + validation finale + monitoring", "acteurs": "DevOps + Dev + PO", "jh": 4}
+      ]
+    }
+  ],
+  "cgv": {
+    "texte": "Le client reconnaît avoir pris connaissance des Conditions Générales de Vente jointes en annexe au présent devis, version n°1.0 mise à jour le 04/04/2025, applicables à la date du devis, et les accepter sans réserve. La validation du devis vaut acceptation contractuelle desdites conditions."
+  },
+  "paiement": {
+    "etablissement": "CIC",
+    "iban": "FR76 3008 7336 1900 0203 7980 145",
+    "bic": "CMCIFRPP"
+  }
+}

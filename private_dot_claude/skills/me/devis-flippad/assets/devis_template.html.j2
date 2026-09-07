@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 12mm 12mm 20mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, "Helvetica Neue", sans-serif; color: #1f1f1f; font-size: 9pt; margin: 0; }
+  .accent { color: {{ accent }}; }
+  .muted  { color: #6e6e6e; }
+  .right  { text-align: right; }
+  .b      { font-weight: bold; }
+
+  /* ---------- En-tête ---------- */
+  table.head { width: 100%; border-collapse: collapse; margin-bottom: 6mm; }
+  table.head > tr > td { vertical-align: top; }
+  .logo {
+    width: 88px; height: 88px; background: {{ logo_bg }}; color: #fff;
+    text-align: center; padding-top: 14px;
+  }
+  .logo .diamond {
+    width: 13px; height: 13px; border: 1.5px solid #fff; transform: rotate(45deg);
+    margin: 0 auto 7px auto;
+  }
+  .logo .name { font-size: 13pt; letter-spacing: 3px; font-weight: bold; }
+  .logo .sub  { font-size: 7pt; letter-spacing: 5px; margin-top: 2px; }
+
+  h1.devis { font-size: 17pt; font-weight: bold; margin: 9mm 0 3mm 0; }
+  table.meta { border-collapse: collapse; }
+  table.meta td { padding: 1px 0; font-size: 9pt; }
+  table.meta td.k { font-weight: bold; padding-right: 14px; white-space: nowrap; }
+
+  .party { margin-bottom: 5mm; }
+  .party .label { font-size: 8pt; }
+  .party .who   { font-size: 10.5pt; font-weight: bold; margin: 1px 0; }
+  .party .line  { font-size: 9pt; line-height: 1.35; }
+
+  /* ---------- Titre projet ---------- */
+  h2.project { font-size: 15pt; font-weight: bold; margin: 4mm 0 4mm 0; }
+
+  /* ---------- Tableau prestations ---------- */
+  table.items { width: 100%; border-collapse: collapse; }
+  table.items th {
+    background: {{ head_bg }}; color: {{ head_fg }}; font-weight: bold; font-size: 9pt;
+    text-align: right; padding: 6px 8px; border-bottom: none;
+  }
+  table.items th.l { text-align: left; }
+  table.items td { padding: 6px 8px; vertical-align: top; }
+  td.lot   { font-weight: bold; font-size: 9.5pt; }
+  td.num   { text-align: right; white-space: nowrap; }
+  tr.detailrow td { padding: 0 8px 8px 8px; border-bottom: 1px solid #ececec; }
+  .subtitle { font-weight: bold; margin-bottom: 3px; }
+  .dline { color: #6e6e6e; font-size: 8pt; line-height: 1.5; }
+
+  /* ---------- Bas de page : TVA + récap ---------- */
+  table.bottom { width: 100%; border-collapse: collapse; margin-top: 7mm; }
+  table.bottom td.col-tva   { vertical-align: top; width: 50%; padding-right: 9mm; }
+  table.bottom td.col-recap { vertical-align: top; width: 50%; padding-left: 9mm; }
+  .secttitle { font-size: 13pt; margin-bottom: 3mm; }
+  table.tva { width: 100%; border-collapse: collapse; }
+  table.tva th { text-align: left; font-weight: bold; font-size: 9pt; padding: 2px 0; }
+  table.tva th.r, table.tva td.r { text-align: right; }
+  table.tva td { padding: 2px 0; font-size: 9pt; }
+  table.recap { width: 100%; border-collapse: separate; border-spacing: 0; }
+  table.recap td { padding: 3px 0; font-size: 9.5pt; }
+  table.recap td.r { text-align: right; }
+  .ttc td { background: {{ head_bg }}; color: #111; padding: 8px 10px; font-size: 11pt; font-weight: bold; }
+  .ttc td.lab { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+  .ttc td.r  { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+
+  /* ---------- Paiement ---------- */
+  .pay-box { display: inline-block; background: {{ pay_bg }}; color: {{ pay_fg }}; padding: 5mm; border-radius: 6px; }
+  .pay-box .secttitle { color: {{ accent }}; }
+  .pay-box table.meta td { color: {{ pay_fg }}; }
+</style>
+</head>
+<body>
+
+  <table class="head"><tr>
+    <td style="width:55%">
+      {% if logo_img %}<img src="{{ logo_img }}" style="height:88px">{% else %}
+      <div class="logo"><div class="diamond"></div><div class="name">{{ logo_name }}</div><div class="sub">{{ logo_sub }}</div></div>
+      {% endif %}
+      <h1 class="devis accent">Devis</h1>
+      <table class="meta">
+        <tr><td class="k">Numéro</td><td>{{ meta.numero }}</td></tr>
+        <tr><td class="k">Date d’émission</td><td>{{ meta.date_emission }}</td></tr>
+        <tr><td class="k">Date d’expiration</td><td>{{ meta.date_expiration }}</td></tr>
+        <tr><td class="k">Type de vente</td><td>{{ meta.type_vente }}</td></tr>
+      </table>
+    </td>
+    <td style="width:45%; vertical-align:top; text-align:left">
+      <div class="party">
+        <div class="label">Émetteur ou Émettrice</div>
+        <div class="who accent">{{ emetteur.nom }}</div>
+        {% for l in emetteur.adresse %}<div class="line">{{ l }}</div>{% endfor %}
+        {% if emetteur.email %}<div class="line">{{ emetteur.email }}</div>{% endif %}
+        {% if emetteur.tel %}<div class="line">{{ emetteur.tel }}</div>{% endif %}
+      </div>
+      <div class="party">
+        <div class="label">Client ou Cliente</div>
+        <div class="who accent">{{ client.nom }}</div>
+        {% if client.numero %}<div class="line">{{ client.numero }}</div>{% endif %}
+        {% for l in client.adresse %}<div class="line">{{ l }}</div>{% endfor %}
+        {% if client.email %}<div class="line">{{ client.email }}</div>{% endif %}
+        {% if client.tva %}<div class="line">N° de TVA {{ client.tva }}</div>{% endif %}
+      </div>
+    </td>
+  </tr></table>
+
+  <h2 class="project">{{ projet.titre }}</h2>
+
+  <table class="items">
+    <thead><tr>
+      <th class="l">Produits</th><th>Quantité</th><th>Prix u. HT</th><th>TVA (%)</th><th>Total HT</th>
+    </tr></thead>
+    <tbody>
+    {% for lot in lots %}
+      <tr>
+        <td class="lot">{{ lot.intitule }}</td>
+        <td class="num">{{ lot.qte_str }}</td>
+        <td class="num">{{ lot.pu_str }}</td>
+        <td class="num">{{ tva_pct }}</td>
+        <td class="num b">{{ lot.total_str }}</td>
+      </tr>
+      <tr class="detailrow">
+        <td colspan="5">
+          <div class="subtitle">{{ lot.sous_titre }}</div>
+          {% for d in lot.lignes %}<div class="dline">{{ d }}</div>{% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="bottom"><tr>
+    <td class="col-tva">
+      <div class="secttitle accent">Détails TVA</div>
+      <table class="tva">
+        <tr><th>Taux</th><th class="r">Montant TVA</th><th class="r">Base HT</th></tr>
+        <tr><td>{{ tva_pct }}</td><td class="r">{{ tva_str }}</td><td class="r">{{ base_ht_str }}</td></tr>
+      </table>
+    </td>
+    <td class="col-recap">
+      <div class="secttitle accent">Récapitulatif</div>
+      <table class="recap">
+        <tr><td>Total HT</td><td class="r">{{ total_ht_str }}</td></tr>
+        <tr><td>Total TVA</td><td class="r">{{ tva_str }}</td></tr>
+        <tr class="ttc"><td class="lab">Total TTC</td><td class="r">{{ total_ttc_str }}</td></tr>
+      </table>
+    </td>
+  </tr></table>
+
+  {% if cgv or paiement %}
+  <div style="page-break-before: always;"></div>
+
+  {% if paiement %}
+  <div class="pay-box" style="margin-bottom:9mm">
+    <div class="secttitle" style="font-size:13pt">Paiement</div>
+    <table class="meta">
+      {% if paiement.etablissement %}<tr><td class="k">Établissement</td><td>{{ paiement.etablissement }}</td></tr>{% endif %}
+      {% if paiement.iban %}<tr><td class="k">IBAN</td><td>{{ paiement.iban }}</td></tr>{% endif %}
+      {% if paiement.bic %}<tr><td class="k">BIC</td><td>{{ paiement.bic }}</td></tr>{% endif %}
+    </table>
+  </div>
+  {% endif %}
+
+  {% if cgv %}<div class="line" style="line-height:1.5; margin-bottom:10mm">{{ cgv.texte }}</div>{% endif %}
+
+  <div style="width:55%; font-size:9pt; line-height:1.6">
+    Date et signature précédées de la mention « Bon pour accord » :
+    <div style="margin-top:5mm; height:32mm; border:1px solid #d0d0d0; border-radius:6px;"></div>
+  </div>
+  {% endif %}
+
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "country": "FR",
+  "course_weeks": [
+    {"start": "2025-06-16", "end": "2025-06-20"},
+    {"start": "2025-05-12", "end": "2025-05-16"},
+    {"start": "2025-04-07", "end": "2025-04-11"},
+    {"start": "2025-03-17", "end": "2025-03-21"},
+    {"start": "2025-02-17", "end": "2025-02-21"},
+    {"start": "2025-01-20", "end": "2025-01-24"},
+    {"start": "2024-12-16", "end": "2024-12-20"},
+    {"start": "2024-11-18", "end": "2024-11-22"},
+    {"start": "2024-10-21", "end": "2024-10-25"}
+  ],
+  "branches": {
+    "default_base": "main",
+    "default_compare": "dev"
+  },
+  "output": {
+    "dir": "./changelogs",
+    "pre_release_dir": "pre-releases",
+    "client_dir": "client"
+  }
+}

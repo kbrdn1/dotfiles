@@ -1,0 +1,66 @@
+{
+  "brand": "flippad",
+  "tva_taux": 0.20,
+  "meta": {
+    "numero": "DEV-2026-06-0312",
+    "date_emission": "12 juin 2026",
+    "date_expiration": "12 juillet 2026",
+    "type_vente": "Prestations de services"
+  },
+  "emetteur": {
+    "nom": "FLIPPAD",
+    "logo_name": "FLIPPAD",
+    "adresse": ["11 RUE GAMBETTA", "54000 NANCY - France"],
+    "email": "compta@flippad.com",
+    "tel": "+33 3 65 67 63 12",
+    "mentions_legales": "FLIPPAD | SAS, société par actions simplifiée au capital social de 15 000,00 € | N° SIREN 490.940.145 | N° de TVA FR92490940145"
+  },
+  "client": {
+    "nom": "ÉCOLE PRIMAIRE LES TILLEULS",
+    "adresse": ["8 Rue des Écoles", "54000 Nancy - France"],
+    "email": "direction@ecole-les-tilleuls.fr"
+  },
+  "projet": { "titre": "ÉVOLUTIONS PLATEFORME FICHES PÉDAGOGIQUES" },
+  "lots": [
+    {
+      "intitule": "DÉVELOPPEMENT",
+      "sous_titre": "Éditeur de fiches – blocs, médias, prévisualisation",
+      "jours": 12, "prix_unitaire": 700,
+      "lignes": [
+        {"ref": "FP-1", "desc": "Cadrage du périmètre éditeur + maquettes validées", "acteurs": "PO + Lead", "jh": 2},
+        {"ref": "FP-2", "desc": "Éditeur de blocs réutilisable (texte, image, exercice)", "acteurs": "Dev Front", "jh": 6},
+        {"ref": "FP-3", "desc": "Upload médias + previews auto (JPG/WebP)", "acteurs": "Dev Back", "jh": 3},
+        {"ref": "FP-4", "desc": "Prévisualisation temps réel de la fiche", "acteurs": "Dev Front", "jh": 1}
+      ]
+    },
+    {
+      "intitule": "DÉVELOPPEMENT",
+      "sous_titre": "Espace enseignant – partage, niveaux PS→CM2, export PDF",
+      "jours": 9, "prix_unitaire": 700,
+      "lignes": [
+        {"ref": "FP-5", "desc": "Espace enseignant : bibliothèque de fiches + filtres par niveau", "acteurs": "Dev Full", "jh": 4},
+        {"ref": "FP-6", "desc": "Partage de fiches entre enseignants (droits)", "acteurs": "Dev Back", "jh": 3},
+        {"ref": "FP-7", "desc": "Export PDF de la fiche (mise en page imprimable)", "acteurs": "Dev Back", "jh": 2}
+      ]
+    },
+    {
+      "intitule": "DÉVELOPPEMENT",
+      "sous_titre": "Recette, tests E2E et déploiement",
+      "jours": 5, "prix_unitaire": 700,
+      "lignes": [
+        {"ref": "Tests E2E", "desc": "parcours création → partage → export", "acteurs": "QA + Dev", "jh": 1.5},
+        {"ref": "", "desc": "Recette fonctionnelle avec l'équipe pédagogique", "acteurs": "PO + Client", "jh": 1},
+        {"ref": "", "desc": "Corrections post-recette", "acteurs": "Dev Full", "jh": 1.5},
+        {"ref": "FP-8", "desc": "Déploiement préprod/prod + monitoring", "acteurs": "DevOps", "jh": 1}
+      ]
+    }
+  ],
+  "cgv": {
+    "texte": "Le client reconnaît avoir pris connaissance des Conditions Générales de Vente jointes en annexe au présent devis, version n°1.0 mise à jour le 04/04/2025, applicables à la date du devis, et les accepter sans réserve. La validation du devis vaut acceptation contractuelle desdites conditions."
+  },
+  "paiement": {
+    "etablissement": "CIC",
+    "iban": "FR76 3008 7336 1900 0203 7980 145",
+    "bic": "CMCIFRPP"
+  }
+}

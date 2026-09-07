@@ -25,6 +25,10 @@
 .claude/stats-cache.json
 .claude/.update_check
 .claude/.DS_Store
+# Jeton OAuth claude.ai — NE JAMAIS VERSIONNER (le repo est public)
+.claude/.credentials.json
+.claude/.last-update-result.json
+.claude/.last-cleanup
 
 # Claude Plugins - Auto-generated (too large)
 .claude/plugins/cache/
@@ -49,6 +53,21 @@
 # without this it reports 703 phantom files and would copy 67 MB of
 # dependencies into ~/.claude on the next apply.
 .claude/scripts/**/node_modules/
+
+# Le venv du renderer excalidraw : 133 Mo d'environnement Python reconstructible.
+# Sans cette ligne, ajouter le skill excalidraw-diagram copie tout dans le repo.
+.claude/skills/**/.venv/
+.claude/skills/**/venv/
+.claude/skills/**/node_modules/
+
+# excalidraw-diagram et visual-explainer sont des clones tiers modifies en local.
+# On versionne le contenu (les modifs comptent), jamais leur .git : chezmoi le
+# mappe en dot_git/ et on se retrouve avec des packfiles dans le repo.
+.claude/skills/**/.git/
+
+# Binaire Go reconstructible par scripts/setup.sh (le skill le fait tout seul
+# s'il est absent) — 4 Mo qui n'ont rien a faire dans un repo de dotfiles.
+.claude/skills/changelog-generator/bin/
 
 # Temporary/cache files in all projects
 .claude/projects/**/node_modules/
@@ -128,6 +147,8 @@ CONTRIBUTING.md
 MIGRATION_NIX.md
 MIGRATION_HOMEBREW.md
 MIGRATION-YABAI-TO-AEROSPACE.md
+README.md
+preview.png
 
 # --- Kept in git, not deployed on this machine ----------------------------
 # Archived deliberately: still versioned, but not applied here, so they stop
