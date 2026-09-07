@@ -124,6 +124,17 @@
 # Opencode - not tracked (node_modules)
 .config/opencode/
 
+# Herdr - runtime du multiplexeur : sockets, logs, etat de session, backups.
+# Seuls config.toml / keymaps-remap.md / plugins.json sont versionnes.
+.config/herdr/*.sock
+.config/herdr/*.log
+.config/herdr/session.json
+.config/herdr/session-history.json
+.config/herdr/release-notes.json
+.config/herdr/.plugins.lock
+.config/herdr/config.toml.bak.*
+.config/herdr/proof.png
+
 # Zed - prompts library runtime DB (binary, changes every session)
 .config/zed/prompts/prompts-library-db.0.mdb/
 .config/zed/prompts/index.json
@@ -149,6 +160,9 @@ MIGRATION_HOMEBREW.md
 MIGRATION-YABAI-TO-AEROSPACE.md
 README.md
 preview.png
+KEYBINDINGS.md
+CLAUDE-CODE.md
+scripts/
 
 # --- Kept in git, not deployed on this machine ----------------------------
 # Archived deliberately: still versioned, but not applied here, so they stop

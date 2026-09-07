@@ -1,0 +1,293 @@
+onboarding = false
+
+[theme]
+# Base theme — vesper is the closest builtin to Claude Dark (monochrome + peach/mint).
+# Every Claude Dark token is overridden in [theme.custom] below, so the base only
+# matters for any token we don't set explicitly.
+name = "vesper"
+
+# Claude Dark — Pure (Neutral) variant
+# Source: ~/Projects/Pro/claude-dark-palette/ports/herdr/config.toml
+[theme.custom]
+text         = "#e0e0e0"
+subtext0     = "#b0b0b0"
+overlay0     = "#555555"
+overlay1     = "#666666"
+panel_bg     = "#242424"
+surface0     = "#2a2a2a"
+surface1     = "#383838"
+surface_dim  = "#1a1a1a"
+accent       = "#D4825D"
+mauve        = "#C79BFF"
+green        = "#86E89A"
+yellow       = "#FFDF61"
+red          = "#FF7A7A"
+blue         = "#7AB8FF"
+teal         = "#8ABFB8"
+peach        = "#C15F3C"
+
+[ui]
+accent = "#D4825D"
+
+# ═══════════════════════════════════════════════════════════════════
+# Keybindings — remap prefix-mode propre (prefix = ctrl+b), pattern nvim.
+# Source: keymaps-remap.md. b=previous / n=next ; hjkl=focus pane ;
+# shift+<touche de création> = variante rename/close.
+# ═══════════════════════════════════════════════════════════════════
+show_agent_labels_on_pane_borders = true
+
+agent_panel_sort = "priority"
+[keys]
+# — Panes —
+focus_pane_left     = "prefix+h"
+focus_pane_down     = "prefix+j"
+focus_pane_up       = "prefix+k"
+focus_pane_right    = "prefix+l"
+cycle_pane_next     = "prefix+ctrl+n"
+cycle_pane_previous = "prefix+ctrl+p"   # ctrl+b impossible (= le prefix) → p = previous
+last_pane           = "prefix+$"
+split_vertical      = "prefix+v"
+split_horizontal    = "prefix+s"
+close_pane          = "prefix+x"
+rename_pane         = "prefix+shift+p"
+zoom                = "prefix+z"
+resize_mode         = "prefix+r"
+edit_scrollback     = "prefix+e"
+
+# — Tabs —
+new_tab      = "prefix+c"
+previous_tab = "prefix+b"
+next_tab     = "prefix+n"
+rename_tab   = "prefix+shift+t"
+close_tab    = "prefix+shift+x"
+switch_tab   = "prefix+1..9"
+
+# — Workspaces —
+new_workspace      = "prefix+shift+c"
+rename_workspace   = "prefix+shift+w"
+close_workspace    = "prefix+ctrl+x"
+previous_workspace = "prefix+shift+b"
+next_workspace     = "prefix+shift+n"
+workspace_picker   = "prefix+w"
+switch_workspace   = "prefix+shift+1..9"
+goto               = "prefix+g"
+
+# — Worktrees —
+new_worktree  = "prefix+shift+g"
+open_worktree = "prefix+shift+o"   # déplacé : ctrl+g pris par Lazygit (task)
+# remove_worktree : unset (destructif)
+
+# — Agents — (hors de alt : alt cassé par macos-option-as-alt=false)
+# shift+j/shift+k sans prefix sont en navigate-mode (navigate_workspace_*), donc
+# prefix+shift+j/k restent libres → pattern nvim : j=suivant, k=précédent.
+previous_agent = "prefix+shift+k"
+next_agent     = "prefix+shift+j"
+focus_agent    = "prefix+ctrl+1..9" # indexé (à valider au clavier)
+
+# — Système / UI —
+help                     = "prefix+?"
+settings                 = "prefix+;"
+detach                   = "prefix+q"
+reload_config            = "prefix+shift+r"
+open_notification_target = "prefix+o"
+toggle_sidebar           = "prefix+shift+v"
+
+# — Navigate-mode (mouvement local, sans prefix) —
+navigate_workspace_up   = "shift+k"
+navigate_workspace_down = "shift+j"
+navigate_pane_left      = "h"
+navigate_pane_down      = "j"
+navigate_pane_up        = "k"
+navigate_pane_right     = "l"
+
+# ═══════════════════════════════════════════════════════════════════
+# Tasks rapatriées de Zed (~/.config/zed/tasks.json) — namespace prefix+ctrl+<lettre>.
+# Mnémoniques calquées sur ta couche alt-* de Zed. type="pane" = pane temporaire
+# qui se ferme à la sortie de l'outil ; type="shell" = détaché en arrière-plan.
+# (ctrl+i/m/j/h volontairement évités : octets = Tab/Enter/LF/Backspace.)
+# ═══════════════════════════════════════════════════════════════════
+
+# — AI —
+[[keys.command]]
+key = "prefix+ctrl+a"
+type = "pane"
+command = "claude --dangerously-skip-permissions"
+description = "claude code (skip permissions)"
+
+# — Git —
+[[keys.command]]
+key = "prefix+ctrl+g"
+type = "popup"
+command = "lazygit"
+description = "lazygit — git TUI"
+
+# — gwm (plugin herdr-plugin-gwm) —
+# Namespace prefix+shift+<lettre> : les 7 actions du plugin. gwm reste la source
+# de vérité (herdr adopte), donc ces bindings doublent volontairement le
+# new_worktree/open_worktree natif de herdr — ce sont deux chemins différents.
+# switch/remove ouvrent un popup flottant (herdr ≥ 0.7.4), le reste un split.
+# prefix+ctrl+w garde la TUI gwm, mais via l'action plugin (pane zoomée + cwd
+# du contexte) plutôt qu'un `type = "pane"` brut.
+[[keys.command]]
+key = "prefix+ctrl+w"
+type = "plugin_action"
+command = "gwm.dashboard"
+description = "gwm: dashboard (TUI)"
+
+[[keys.command]]
+key = "prefix+shift+s"
+type = "plugin_action"
+command = "gwm.switch"
+description = "gwm: switch worktree"
+
+[[keys.command]]
+key = "prefix+shift+a"
+type = "plugin_action"
+command = "gwm.create"
+description = "gwm: add worktree"
+
+[[keys.command]]
+key = "prefix+shift+d"
+type = "plugin_action"
+command = "gwm.remove"
+description = "gwm: delete worktree"
+
+[[keys.command]]
+key = "prefix+shift+u"
+type = "plugin_action"
+command = "gwm.review"
+description = "gwm: review a PR (pull)"
+
+[[keys.command]]
+key = "prefix+shift+e"
+type = "plugin_action"
+command = "gwm.exec"
+description = "gwm: exec across worktrees"
+
+[[keys.command]]
+key = "prefix+shift+f"
+type = "plugin_action"
+command = "gwm.clean"
+description = "gwm: clean build artifacts (free space)"
+
+# — Files —
+[[keys.command]]
+key = "prefix+ctrl+y"
+type = "pane"
+command = "yazi"
+description = "yazi — file manager"
+
+[[keys.command]]
+key = "prefix+ctrl+f"
+type = "popup"
+command = "fzf --preview \"bat -n --color=always {}\" --bind \"enter:execute($EDITOR {})\""
+description = "find file → open in $EDITOR"
+
+[[keys.command]]
+key = "prefix+ctrl+e"
+type = "popup"
+command = "FILE=$(find . -type f | fzf --prompt=\"Rename: \") && [ -n \"$FILE\" ] && printf \"New name: \" && read -e NEW && [ -n \"$NEW\" ] && mv \"$FILE\" \"$NEW\""
+description = "rename a file (fzf)"
+
+[[keys.command]]
+key = "prefix+ctrl+l"
+type = "shell"
+command = "eza --tree --level=5 --git-ignore --ignore-glob=\"vendor|node_modules|.git|storage|bootstrap/cache|*.log\" > project-structure.txt"
+description = "dump project tree → project-structure.txt"
+
+# — Database —
+[[keys.command]]
+key = "prefix+ctrl+s"
+type = "pane"
+command = "lazysql"
+description = "lazysql — SQL client"
+
+[[keys.command]]
+key = "prefix+ctrl+r"
+type = "pane"
+command = "redis-cli"
+description = "redis-cli"
+
+# — Network —
+[[keys.command]]
+key = "prefix+ctrl+u"
+type = "pane"
+command = "lazycurl"
+description = "lazycurl — HTTP client"
+
+[[keys.command]]
+key = "prefix+ctrl+o"
+type = "popup"
+command = "lazyssh"
+description = "lazyssh — SSH manager"
+
+# — Infrastructure —
+[[keys.command]]
+key = "prefix+ctrl+d"
+type = "pane"
+command = "lazydocker"
+description = "lazydocker — containers"
+
+[[keys.command]]
+key = "prefix+ctrl+k"
+type = "pane"
+command = "lazykube"
+description = "lazykube — kubernetes"
+
+[[keys.command]]
+key = "prefix+ctrl+t"
+type = "pane"
+command = "lazymake"
+description = "lazymake — make targets"
+
+# — Browser (wrapper tb → --preload vimium) —
+# v = view. b/n/p sont tous pris (previous_tab, cycle_pane_next/previous,
+# rename_pane, previous/next_workspace), ctrl+v est le seul libre côté mnémonique.
+# L'action plugin open-split invoque `terminal-browser` en direct, donc sans
+# --preload : pas de vim motions. type = "pane" ouvre un pane herdr et y lance
+# ~/.local/bin/tb, qui injecte --preload=~/.config/terminal-browser/vimium.js.
+[[keys.command]]
+key = "prefix+ctrl+v"
+type = "pane"
+command = "tb open"
+description = "terminal-browser + vimium"
+
+# — Navigation Vim/herdr (vim-herdr-navigation) —
+# Ctrl+h/j/k/l : navigue entre splits nvim, et au bord du split bascule sur la
+# pane herdr voisine (navigate.sh détecte vim via process-info, sinon focus pane).
+# Chords bare (pas prefix) : ctrl+h=0x08 et ctrl+j=0x0a restent distincts de
+# Backspace(0x7f)/Enter(0x0d) sur un terminal moderne. Sinon → alt+h/j/k/l.
+[[keys.command]]
+key = "ctrl+h"
+type = "plugin_action"
+command = "vim-herdr-navigation.left"
+description = "navigate left (vim/herdr)"
+
+[[keys.command]]
+key = "ctrl+j"
+type = "plugin_action"
+command = "vim-herdr-navigation.down"
+description = "navigate down (vim/herdr)"
+
+[[keys.command]]
+key = "ctrl+k"
+type = "plugin_action"
+command = "vim-herdr-navigation.up"
+description = "navigate up (vim/herdr)"
+
+[[keys.command]]
+key = "ctrl+l"
+type = "plugin_action"
+command = "vim-herdr-navigation.right"
+description = "navigate right (vim/herdr)"
+
+[ui.sound]
+enabled = true
+
+[ui.toast]
+delivery = "terminal"
+
+[experimental]
+kitty_graphics = true
+switch_ascii_input_source_in_prefix = true
+pane_history = true
