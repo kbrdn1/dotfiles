@@ -1,0 +1,443 @@
+[
+  {
+    "plugin_id": "gwm",
+    "name": "gwm worktrees",
+    "version": "0.2.0",
+    "min_herdr_version": "0.7.4",
+    "description": "Drive gwm for git worktree management from herdr — create, switch, remove, review PRs, bootstrap, exec, clean. gwm stays the source of truth; herdr adopts.",
+    "manifest_path": "/Users/kbrdn1/Projects/Perso/herdr-plugin-gwm/herdr-plugin.toml",
+    "plugin_root": "/Users/kbrdn1/Projects/Perso/herdr-plugin-gwm",
+    "enabled": true,
+    "platforms": [
+      "macos",
+      "linux"
+    ],
+    "actions": [
+      {
+        "id": "clean",
+        "title": "gwm: clean build artifacts",
+        "contexts": [
+          "workspace",
+          "global"
+        ],
+        "command": [
+          "bash",
+          "-c",
+          "cwd=$(jq -r '.workspace_cwd // .focused_pane_cwd // empty' <<<\"$HERDR_PLUGIN_CONTEXT_JSON\"); exec \"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint cleaner --placement split --direction down --cwd \"${cwd:-$PWD}\" --focus"
+        ]
+      },
+      {
+        "id": "create",
+        "title": "gwm: create worktree",
+        "contexts": [
+          "workspace",
+          "global"
+        ],
+        "command": [
+          "bash",
+          "-c",
+          "cwd=$(jq -r '.workspace_cwd // .focused_pane_cwd // empty' <<<\"$HERDR_PLUGIN_CONTEXT_JSON\"); exec \"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint creator --placement split --direction down --cwd \"${cwd:-$PWD}\" --focus"
+        ]
+      },
+      {
+        "id": "dashboard",
+        "title": "gwm: dashboard (TUI)",
+        "contexts": [
+          "workspace",
+          "global"
+        ],
+        "command": [
+          "bash",
+          "-c",
+          "cwd=$(jq -r '.workspace_cwd // .focused_pane_cwd // empty' <<<\"$HERDR_PLUGIN_CONTEXT_JSON\"); exec \"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint dashboard --placement zoomed --cwd \"${cwd:-$PWD}\" --focus"
+        ]
+      },
+      {
+        "id": "exec",
+        "title": "gwm: exec across worktrees",
+        "contexts": [
+          "workspace",
+          "global"
+        ],
+        "command": [
+          "bash",
+          "-c",
+          "cwd=$(jq -r '.workspace_cwd // .focused_pane_cwd // empty' <<<\"$HERDR_PLUGIN_CONTEXT_JSON\"); exec \"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint executor --placement split --direction down --cwd \"${cwd:-$PWD}\" --focus"
+        ]
+      },
+      {
+        "id": "remove",
+        "title": "gwm: remove worktree",
+        "contexts": [
+          "workspace"
+        ],
+        "command": [
+          "bash",
+          "-c",
+          "cwd=$(jq -r '.workspace_cwd // .focused_pane_cwd // empty' <<<\"$HERDR_PLUGIN_CONTEXT_JSON\"); exec \"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint remover --cwd \"${cwd:-$PWD}\" --focus"
+        ]
+      },
+      {
+        "id": "review",
+        "title": "gwm: review a PR",
+        "contexts": [
+          "workspace",
+          "global"
+        ],
+        "command": [
+          "bash",
+          "-c",
+          "cwd=$(jq -r '.workspace_cwd // .focused_pane_cwd // empty' <<<\"$HERDR_PLUGIN_CONTEXT_JSON\"); url=$(jq -r '.clicked_url // empty' <<<\"$HERDR_PLUGIN_CONTEXT_JSON\"); exec \"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint reviewer --placement split --direction down --cwd \"${cwd:-$PWD}\" --env \"GWM_REVIEW_URL=$url\" --focus"
+        ]
+      },
+      {
+        "id": "switch",
+        "title": "gwm: switch worktree",
+        "contexts": [
+          "workspace",
+          "global"
+        ],
+        "command": [
+          "bash",
+          "-c",
+          "cwd=$(jq -r '.workspace_cwd // .focused_pane_cwd // empty' <<<\"$HERDR_PLUGIN_CONTEXT_JSON\"); exec \"$HERDR_BIN_PATH\" plugin pane open --plugin \"$HERDR_PLUGIN_ID\" --entrypoint picker --cwd \"${cwd:-$PWD}\" --focus"
+        ]
+      }
+    ],
+    "events": [
+      {
+        "on": "worktree.created",
+        "command": [
+          "bash",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/bin/on_worktree_created.sh\""
+        ]
+      }
+    ],
+    "panes": [
+      {
+        "id": "cleaner",
+        "title": "gwm — clean",
+        "placement": "split",
+        "command": [
+          "bash",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/bin/clean.sh\""
+        ]
+      },
+      {
+        "id": "creator",
+        "title": "gwm — create",
+        "placement": "split",
+        "command": [
+          "bash",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/bin/create.sh\""
+        ]
+      },
+      {
+        "id": "dashboard",
+        "title": "gwm — dashboard",
+        "placement": "zoomed",
+        "command": [
+          "bash",
+          "-c",
+          "exec gwm"
+        ]
+      },
+      {
+        "id": "executor",
+        "title": "gwm — exec",
+        "placement": "split",
+        "command": [
+          "bash",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/bin/exec.sh\""
+        ]
+      },
+      {
+        "id": "picker",
+        "title": "gwm — switch",
+        "placement": "popup",
+        "width": "70%",
+        "height": "60%",
+        "command": [
+          "bash",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/bin/switch.sh\""
+        ]
+      },
+      {
+        "id": "remover",
+        "title": "gwm — remove",
+        "placement": "popup",
+        "width": "70%",
+        "height": "60%",
+        "command": [
+          "bash",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/bin/remove.sh\""
+        ]
+      },
+      {
+        "id": "reviewer",
+        "title": "gwm — review PR",
+        "placement": "split",
+        "command": [
+          "bash",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/bin/review.sh\""
+        ]
+      }
+    ],
+    "link_handlers": [
+      {
+        "id": "github-pr",
+        "title": "gwm: review this PR",
+        "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/[0-9]+$",
+        "action": "review"
+      }
+    ],
+    "source": {
+      "kind": "local"
+    }
+  },
+  {
+    "plugin_id": "rjyo.window-title-sync",
+    "name": "Window Title Sync",
+    "version": "0.1.0",
+    "min_herdr_version": "0.7.0",
+    "description": "Sync the outer terminal title to the focused Herdr workspace, tab, and agent session.",
+    "manifest_path": "/Users/kbrdn1/.config/herdr/plugins/github/rjyo.window-title-sync-aa963fbbc3d9/herdr-plugin.toml",
+    "plugin_root": "/Users/kbrdn1/.config/herdr/plugins/github/rjyo.window-title-sync-aa963fbbc3d9",
+    "enabled": true,
+    "platforms": [
+      "macos",
+      "linux"
+    ],
+    "actions": [
+      {
+        "id": "refresh",
+        "title": "Refresh terminal title",
+        "contexts": [
+          "workspace",
+          "tab",
+          "pane"
+        ],
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      }
+    ],
+    "events": [
+      {
+        "on": "pane.agent_detected",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "pane.agent_status_changed",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "pane.closed",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "pane.created",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "pane.focused",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "pane.moved",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "tab.focused",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "tab.renamed",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "workspace.focused",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "workspace.renamed",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      },
+      {
+        "on": "workspace.updated",
+        "command": [
+          "bun",
+          "sync-title.js"
+        ]
+      }
+    ],
+    "source": {
+      "kind": "github",
+      "owner": "rjyo",
+      "repo": "herdr-window-title-sync",
+      "resolved_commit": "a9fb323db00d0c4365ff8e1b7b13d29990367cb7",
+      "managed_path": "/Users/kbrdn1/.config/herdr/plugins/github/rjyo.window-title-sync-aa963fbbc3d9",
+      "installed_unix_ms": 1782302243680
+    }
+  },
+  {
+    "plugin_id": "vim-herdr-navigation",
+    "name": "Vim Herdr Navigation",
+    "version": "0.1.0",
+    "min_herdr_version": "0.7.0",
+    "description": "Seamless Ctrl+h/j/k/l navigation across herdr panes and Vim/Neovim splits",
+    "manifest_path": "/Users/kbrdn1/.config/herdr/plugins/github/vim-herdr-navigation-a8bf42123d81/herdr-plugin.toml",
+    "plugin_root": "/Users/kbrdn1/.config/herdr/plugins/github/vim-herdr-navigation-a8bf42123d81",
+    "enabled": true,
+    "platforms": [
+      "linux",
+      "macos"
+    ],
+    "actions": [
+      {
+        "id": "down",
+        "title": "Navigate down (Vim/herdr)",
+        "contexts": [
+          "global"
+        ],
+        "command": [
+          "bash",
+          "navigate.sh",
+          "down"
+        ]
+      },
+      {
+        "id": "left",
+        "title": "Navigate left (Vim/herdr)",
+        "contexts": [
+          "global"
+        ],
+        "command": [
+          "bash",
+          "navigate.sh",
+          "left"
+        ]
+      },
+      {
+        "id": "right",
+        "title": "Navigate right (Vim/herdr)",
+        "contexts": [
+          "global"
+        ],
+        "command": [
+          "bash",
+          "navigate.sh",
+          "right"
+        ]
+      },
+      {
+        "id": "up",
+        "title": "Navigate up (Vim/herdr)",
+        "contexts": [
+          "global"
+        ],
+        "command": [
+          "bash",
+          "navigate.sh",
+          "up"
+        ]
+      }
+    ],
+    "source": {
+      "kind": "github",
+      "owner": "paulbkim-dev",
+      "repo": "vim-herdr-navigation",
+      "resolved_commit": "548607d0e417fdb30966846fce7436aa05a6738d",
+      "managed_path": "/Users/kbrdn1/.config/herdr/plugins/github/vim-herdr-navigation-a8bf42123d81",
+      "installed_unix_ms": 1782302558227
+    }
+  },
+  {
+    "plugin_id": "zenbu-labs.terminal-browser",
+    "name": "Terminal Browser",
+    "version": "0.1.1",
+    "min_herdr_version": "0.8.2",
+    "description": "Open a browser inside herdr",
+    "manifest_path": "/Users/kbrdn1/.config/herdr/plugins/github/zenbu-labs.terminal-browser-af24e09053e7/herdr-plugin/herdr-plugin.toml",
+    "plugin_root": "/Users/kbrdn1/.config/herdr/plugins/github/zenbu-labs.terminal-browser-af24e09053e7/herdr-plugin",
+    "enabled": true,
+    "platforms": [
+      "linux",
+      "macos"
+    ],
+    "build": [
+      {
+        "platforms": [
+          "linux",
+          "macos"
+        ],
+        "command": [
+          "bash",
+          "-c",
+          "set -o pipefail; curl -fsSL https://terminal-browser.sh/install | bash"
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "open-split",
+        "title": "Open terminal-browser (right split)",
+        "description": "Split the focused pane and open terminal-browser in it",
+        "contexts": [
+          "global"
+        ],
+        "command": [
+          "bash",
+          "open-split.sh"
+        ]
+      }
+    ],
+    "source": {
+      "kind": "github",
+      "owner": "zenbu-labs",
+      "repo": "terminal-browser",
+      "subdir": "herdr-plugin",
+      "resolved_commit": "cce10b6131d15bf46a3e4b8dc827e0544ff7fc65",
+      "managed_path": "/Users/kbrdn1/.config/herdr/plugins/github/zenbu-labs.terminal-browser-af24e09053e7",
+      "installed_unix_ms": 1787304565332
+    }
+  }
+]
