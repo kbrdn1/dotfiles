@@ -6,3 +6,23 @@ theme = "claude-dark"
 # apparaissent sans `:e`. Rafraîchit aussi les lignes Staged/Unstaged du
 # pane commits. Ignoré en review de PR et en `--all-files`.
 diff_watch_interval_ms = 500
+
+# --- Aligné sur nvim (LazyVim) ---------------------------------------------
+# tuicr n'expose aucun remap de touches : `leader` est le seul knob de bind.
+# Ce qui suit aligne les comportements, pas les touches.
+
+# Édition modale dans la box de commentaire (défaut : emacs/readline).
+comment_vim = true
+
+# = scrolloff. LazyVim : opt.scrolloff = 4
+scroll_offset = 4
+
+# = relativenumber. LazyVim : opt.relativenumber = true
+relative_line_numbers = true
+
+# = wrap. lua/config/options.lua force vim.opt.wrap = true
+wrap = true
+
+# leader laissé à `;` volontairement : le mapleader nvim est Space, mais Space
+# est câblé en dur dans tuicr (toggle dossier dans le file tree, toggle
+# sélection dans les deux commit selectors). Override à tes risques.
