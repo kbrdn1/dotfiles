@@ -1,3 +1,8 @@
 # tuicr — user config. Resolved from $XDG_CONFIG_HOME/tuicr/config.toml.
 # `theme` first checks bundled names, then themes/<name>.toml.
 theme = "claude-dark"
+
+# Watch mode : re-lit le diff local pour que les modifs non commitées
+# apparaissent sans `:e`. Rafraîchit aussi les lignes Staged/Unstaged du
+# pane commits. Ignoré en review de PR et en `--all-files`.
+diff_watch_interval_ms = 500
