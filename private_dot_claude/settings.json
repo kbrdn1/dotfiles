@@ -334,8 +334,9 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "/Users/kbrdn1/.open-island/bin/open-island-statusline",
-    "padding": 2
+    "command": "HERDR_PLUGIN_STATE_DIR='/Users/kbrdn1/.local/state/herdr/plugins/herdr-agent-quota' '/Users/kbrdn1/Projects/Perso/herdr-agent-quota/target/release/herdr-agent-quota' claude-statusline",
+    "padding": 2,
+    "refreshInterval": 60
   },
   "enabledPlugins": {
     "claude-hud@claude-hud": true,

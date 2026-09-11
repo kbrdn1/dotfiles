@@ -1,5 +1,107 @@
 [
   {
+    "plugin_id": "chmarax.herdr-nvim",
+    "name": "herdr-nvim",
+    "version": "1.0.0",
+    "min_herdr_version": "0.7.4",
+    "description": "Full-height nvim sidebar with agent annotations: toggle with one key, comment code, send to any agent.",
+    "manifest_path": "/Users/kbrdn1/.config/herdr/plugins/github/chmarax.herdr-nvim-178624809c23/herdr-plugin.toml",
+    "plugin_root": "/Users/kbrdn1/.config/herdr/plugins/github/chmarax.herdr-nvim-178624809c23",
+    "enabled": true,
+    "platforms": [
+      "macos",
+      "linux"
+    ],
+    "build": [
+      {
+        "command": [
+          "bash",
+          "herdr/install.sh"
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "open-link",
+        "title": "nvim sidebar: open clicked file",
+        "command": [
+          "sh",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/herdr/run.sh\" open-link"
+        ]
+      },
+      {
+        "id": "pick-file",
+        "title": "nvim sidebar: open file from agent output",
+        "contexts": [
+          "pane"
+        ],
+        "command": [
+          "sh",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/herdr/run.sh\" pick-file"
+        ]
+      },
+      {
+        "id": "toggle",
+        "title": "nvim sidebar: toggle",
+        "contexts": [
+          "pane",
+          "workspace"
+        ],
+        "command": [
+          "sh",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/herdr/run.sh\" toggle"
+        ]
+      }
+    ],
+    "panes": [
+      {
+        "id": "picker",
+        "title": "open file",
+        "placement": "popup",
+        "command": [
+          "sh",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/herdr/run.sh\" picker"
+        ]
+      },
+      {
+        "id": "sidebar",
+        "title": "nvim sidebar",
+        "placement": "split",
+        "command": [
+          "sh",
+          "-c",
+          "exec bash \"$HERDR_PLUGIN_ROOT/herdr/run.sh\" sidebar"
+        ]
+      }
+    ],
+    "link_handlers": [
+      {
+        "id": "file-path",
+        "title": "Open in nvim sidebar",
+        "pattern": "^~?[\\w.@/()\\[\\]+-]+/[\\w.@()\\[\\]+-]+\\.[A-Za-z]\\w*(?::\\d+){0,2}$",
+        "action": "open-link"
+      },
+      {
+        "id": "file-url",
+        "title": "Open in nvim sidebar",
+        "pattern": "^file://",
+        "action": "open-link"
+      }
+    ],
+    "source": {
+      "kind": "github",
+      "owner": "ChmaraX",
+      "repo": "herdr-nvim",
+      "resolved_commit": "e652ebf7b3d6713992e68a30aec588822e69fae5",
+      "managed_path": "/Users/kbrdn1/.config/herdr/plugins/github/chmarax.herdr-nvim-178624809c23",
+      "installed_unix_ms": 1789116375225
+    }
+  },
+  {
     "plugin_id": "gwm",
     "name": "gwm worktrees",
     "version": "0.2.0",
@@ -200,6 +302,198 @@
     ],
     "source": {
       "kind": "local"
+    }
+  },
+  {
+    "plugin_id": "herdr-agent-quota",
+    "name": "Herdr Agent Quota",
+    "version": "1.5.4",
+    "min_herdr_version": "0.9.0",
+    "description": "Credential-scoped AI quota and context for Claude, Codex, Grok, Agy, OpenCode, Pi, omp, Devin, and Muse.",
+    "manifest_path": "/Users/kbrdn1/Projects/Perso/herdr-agent-quota/herdr-plugin.toml",
+    "plugin_root": "/Users/kbrdn1/Projects/Perso/herdr-agent-quota",
+    "enabled": true,
+    "platforms": [
+      "macos",
+      "linux"
+    ],
+    "build": [
+      {
+        "command": [
+          "cargo",
+          "build",
+          "--release"
+        ]
+      }
+    ],
+    "startup": [
+      {
+        "command": [
+          "sh",
+          "-c",
+          "exec \"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" startup --provider all"
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "configure",
+        "title": "Install / repair agent quota",
+        "command": [
+          "sh",
+          "-c",
+          "\"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" configure --apply && herdr server reload-config && exec \"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" startup --provider all"
+        ]
+      },
+      {
+        "id": "open-settings",
+        "title": "Open agent quota settings",
+        "command": [
+          "sh",
+          "-c",
+          "exec \"$HERDR_BIN_PATH\" plugin pane open --plugin herdr-agent-quota --entrypoint settings --focus"
+        ]
+      },
+      {
+        "id": "refresh",
+        "title": "Refresh agent quota",
+        "command": [
+          "sh",
+          "-c",
+          "exec \"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" refresh --provider all --force"
+        ]
+      },
+      {
+        "id": "uninstall",
+        "title": "Uninstall agent quota configuration",
+        "command": [
+          "sh",
+          "-c",
+          "\"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" configure --uninstall && herdr server reload-config"
+        ]
+      }
+    ],
+    "events": [
+      {
+        "on": "pane.agent_detected",
+        "command": [
+          "sh",
+          "-c",
+          "exec \"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" event"
+        ]
+      },
+      {
+        "on": "pane.agent_status_changed",
+        "command": [
+          "sh",
+          "-c",
+          "exec \"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" event"
+        ]
+      },
+      {
+        "on": "pane.focused",
+        "command": [
+          "sh",
+          "-c",
+          "exec \"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" focus"
+        ]
+      }
+    ],
+    "panes": [
+      {
+        "id": "dashboard",
+        "title": "Agent quota",
+        "placement": "popup",
+        "command": [
+          "sh",
+          "-c",
+          "exec \"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" dashboard"
+        ]
+      },
+      {
+        "id": "settings",
+        "title": "Agent quota settings",
+        "placement": "popup",
+        "width": 78,
+        "height": 33,
+        "command": [
+          "sh",
+          "-c",
+          "exec \"$HERDR_PLUGIN_ROOT/target/release/herdr-agent-quota\" settings"
+        ]
+      }
+    ],
+    "source": {
+      "kind": "local"
+    }
+  },
+  {
+    "plugin_id": "herdr.auto-title",
+    "name": "Auto Title",
+    "version": "0.5.0",
+    "min_herdr_version": "0.8.2",
+    "description": "Automatically generates contextual tab titles",
+    "manifest_path": "/Users/kbrdn1/.config/herdr/plugins/github/herdr.auto-title-4b7d61f48ce8/herdr-plugin.toml",
+    "plugin_root": "/Users/kbrdn1/.config/herdr/plugins/github/herdr.auto-title-4b7d61f48ce8",
+    "enabled": true,
+    "platforms": [
+      "linux",
+      "macos",
+      "windows"
+    ],
+    "build": [
+      {
+        "platforms": [
+          "linux",
+          "macos"
+        ],
+        "command": [
+          "go",
+          "build",
+          "-o",
+          "herdr-auto-title",
+          "./cmd/herdr-auto-title"
+        ]
+      },
+      {
+        "platforms": [
+          "windows"
+        ],
+        "command": [
+          "go",
+          "build",
+          "-o",
+          "herdr-auto-title.exe",
+          "./cmd/herdr-auto-title"
+        ]
+      }
+    ],
+    "startup": [
+      {
+        "platforms": [
+          "linux",
+          "macos"
+        ],
+        "command": [
+          "./herdr-auto-title"
+        ]
+      },
+      {
+        "platforms": [
+          "windows"
+        ],
+        "command": [
+          "./herdr-auto-title.exe"
+        ]
+      }
+    ],
+    "source": {
+      "kind": "github",
+      "owner": "kryptamine",
+      "repo": "herdr-auto-title",
+      "resolved_commit": "7fcec810280696b8b38b5bd884be2b340c73e02b",
+      "managed_path": "/Users/kbrdn1/.config/herdr/plugins/github/herdr.auto-title-4b7d61f48ce8",
+      "installed_unix_ms": 1789116109624
     }
   },
   {
