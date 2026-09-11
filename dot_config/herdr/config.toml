@@ -282,7 +282,7 @@ command = "vim-herdr-navigation.right"
 description = "navigate right (vim/herdr)"
 
 [[keys.command]]
-key = "prefix+shift+r"
+key = "prefix+shift+m"
 type = "plugin_action"
 command = "herdr-agent-quota.refresh"
 description = "refresh all agent quotas"
