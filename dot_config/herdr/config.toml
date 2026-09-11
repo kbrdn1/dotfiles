@@ -281,6 +281,22 @@ type = "plugin_action"
 command = "vim-herdr-navigation.right"
 description = "navigate right (vim/herdr)"
 
+# — herdr-nvim (plugin chmarax.herdr-nvim) —
+# Le README propose prefix+e / prefix+o, tous deux déjà pris ici par
+# edit_scrollback et open_notification_target : herdr garde la liaison native
+# et désactive celle du plugin sans rien dire à l'usage.
+[[keys.command]]
+key = "prefix+a"
+type = "plugin_action"
+command = "chmarax.herdr-nvim.toggle"
+description = "nvim sidebar"
+
+[[keys.command]]
+key = "prefix+f"
+type = "plugin_action"
+command = "chmarax.herdr-nvim.pick-file"
+description = "open file from agent output"
+
 [[keys.command]]
 key = "prefix+shift+m"
 type = "plugin_action"
