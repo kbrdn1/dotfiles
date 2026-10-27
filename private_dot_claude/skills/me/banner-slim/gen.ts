@@ -1,52 +1,48 @@
-// Banner slim (presque one-line) — promo compacte à embarquer dans un README/profil.
+// Banner slim (presque one-line) — promo compacte à embarquer dans un README/profil : le champ
+// de pixels et ses lignes de construction verticales, un panneau d'une ligne (logo + wordmark, titre et
+// sous-titre, commande et version), d'après les fiches de disarto.co (_banner-kit/card.ts).
 import { readFileSync } from "node:fs";
-import { readArgs, emit, frame, THEMES, type Theme } from "../_banner-kit/kit.ts";
+import { readArgs, emit, type Theme } from "../_banner-kit/kit.ts";
+import { tone, ok } from "../_banner-kit/card.ts";
+import { dither } from "../_banner-kit/kit.ts";
 
 const { cfg, out } = readArgs();
 const W = cfg.width ?? 1600;
-const H = cfg.height ?? 180;
-const PAD = cfg.pad ?? 60;
+const H = cfg.height ?? 240;
 
-// Logo optionnel, avant le wordmark. `logo` accepte un chemin de SVG (inliné, donc
-// aucune requête au rendu headless) ou du markup brut ; `logoLight` sert la variante
-// claire quand le repo en livre une. Taille par défaut calée sur la hauteur du
-// wordmark slim (52px) pour que la ligne reste une ligne.
-function logoHtml(t: Theme, cfg: Record<string, unknown>): string {
-  // `Theme` ne se nomme pas lui-même : on l'identifie par son fond, seul champ
-  // dont les deux thèmes garantissent qu'il diffère.
-  const isLight = t.bg === THEMES.light.bg;
-  const src = (isLight && cfg.logoLight ? cfg.logoLight : cfg.logo) as string | undefined;
+function logoHtml(t: Theme): string {
+  const src = (t.name === "light" && cfg.logoLight ? cfg.logoLight : cfg.logo) as string | undefined;
   if (!src) return "";
   const markup = src.trimStart().startsWith("<") ? src : readFileSync(src, "utf8");
-  const size = (cfg.logoSize as number | undefined) ?? 52;
+  const size = (cfg.logoSize as number | undefined) ?? 46;
   return `<div style="flex-shrink:0;width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;">${markup}</div>`;
 }
 
 function body(t: Theme): string {
-  const wordmark = cfg.wordmark ?? "gwm";
-  const cursor = cfg.cursor === false ? "" : `<span style="color:${t.sub};">_</span>`;
-  const title = cfg.title ?? "";
-  const subtitle = cfg.subtitle ?? "";
-  const install = cfg.install
-    ? `<span style="display:inline-flex;align-items:center;gap:10px;background:${t.boxBg};border:1px solid ${t.boxBorder};border-radius:12px;padding:11px 16px;">
-         <span style="font-size:17px;font-weight:700;color:${t.sub};">$</span>
-         <span style="font-size:17px;font-weight:600;color:${t.fg};">${cfg.install}</span>
-       </span>` : "";
-  const version = cfg.version
-    ? `<span style="font-size:13px;letter-spacing:0.08em;font-weight:700;color:${t.badgeText};border:1px solid ${t.badgeBorder};background:${t.badgeBg};border-radius:9999px;padding:6px 12px;">${cfg.version}</span>` : "";
-
-  return `${frame(t, { pad: PAD, hlineInset: 0 })}
-    <div style="position:absolute;top:0;bottom:0;left:${PAD}px;right:${PAD}px;padding:0 44px;display:flex;align-items:center;justify-content:space-between;gap:32px;">
-      <div style="display:flex;align-items:center;gap:26px;min-width:0;">
-        ${logoHtml(t, cfg)}
-        <span style="font-size:52px;font-weight:700;letter-spacing:-0.02em;color:${t.fg};line-height:1;">${wordmark}${cursor}</span>
-        <span style="width:1px;height:52px;background:${t.divider};"></span>
-        <div style="display:flex;flex-direction:column;gap:5px;min-width:0;">
-          <span style="font-family:'Fenix',serif;font-size:26px;color:${t.sub};line-height:1;">${title}</span>
-          <span style="font-size:14px;letter-spacing:0.03em;color:${t.muted};">${subtitle}</span>
+  const c = tone(t);
+  const dashedV = `background-image:repeating-linear-gradient(to bottom,${c.construct} 0 8px,transparent 8px 14px);`;
+  const X = 150, Y = 44;
+  return `
+    <div style="position:absolute;inset:0;background:${c.page};"></div>
+    ${dither(t)}
+    <div style="position:absolute;top:0;bottom:0;left:${X}px;width:1px;${dashedV}"></div>
+    <div style="position:absolute;top:0;bottom:0;right:${X}px;width:1px;${dashedV}"></div>
+    <div style="position:absolute;top:${Y}px;bottom:${Y}px;left:${X}px;right:${X}px;padding:8px;background:${c.panel};border:1px solid ${c.panelBorder};border-radius:26px;box-shadow:${c.shadow};">
+      <div style="height:100%;padding:0 26px 0 30px;display:flex;align-items:center;justify-content:space-between;gap:28px;background:${c.card};border:1px solid ${c.cardBorder};border-radius:19px;">
+        <div style="min-width:0;display:flex;align-items:center;gap:24px;">
+          ${logoHtml(t)}
+          <span style="font-family:'Inter',system-ui,sans-serif;font-size:50px;font-weight:500;letter-spacing:-0.03em;line-height:1;color:${c.text};">${cfg.wordmark ?? ""}</span>
+          <span style="flex-shrink:0;width:1px;height:46px;background:${c.dash};"></span>
+          <div style="min-width:0;display:flex;flex-direction:column;gap:7px;">
+            <span style="font-family:'Fenix',serif;font-size:27px;line-height:1;color:${c.accent};white-space:nowrap;">${cfg.title ?? ""}</span>
+            <span style="font-family:'Inter',system-ui,sans-serif;font-size:17px;color:${c.muted};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${cfg.subtitle ?? ""}</span>
+          </div>
+        </div>
+        <div style="flex-shrink:0;display:flex;align-items:center;gap:14px;">
+          ${cfg.install ? `<span style="font-family:'Krypton',monospace;font-size:18px;letter-spacing:0.04em;color:${c.text};white-space:nowrap;"><span style="color:${c.accent};">$</span> ${cfg.install}</span>` : ""}
+          ${cfg.version ? ok(t, cfg.version) : ""}
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:14px;flex-shrink:0;">${install}${version}</div>
     </div>`;
 }
 

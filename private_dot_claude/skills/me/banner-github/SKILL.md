@@ -1,7 +1,7 @@
 ---
 name: banner-github
-description: Génère une bannière de profil GitHub (hero, PNG dark + light) au design de kbrdn.dev (panneau arrondi sur champ de pixels) — nom, titre, badge de statut, chips de stack, avatar optionnel. Pour le README de profil (repo user/user). Déclencheurs : "bannière github", "banniere profil", "profile banner", "hero banner profil", /me:banner-github.
-version: 2.0.0
+description: Génère une bannière de profil GitHub (hero, PNG dark + light) au design de kbrdn.dev (panneau sur champ en dither) — nom, titre, badge de statut, chips de stack, avatar optionnel. Pour le README de profil (repo user/user). Déclencheurs : "bannière github", "banniere profil", "profile banner", "hero banner profil", /me:banner-github.
+version: 2.1.0
 allowed-tools: ["Bash", "Read", "Write", "SendUserFile"]
 ---
 
@@ -19,9 +19,9 @@ tirets). Sort deux PNG (dark + light) pour un `<picture>` qui swappe via
 - Variante **réseaux sociaux** (X / LinkedIn) : même design, contenu **centré** → `gen-social.ts` (voir plus bas).
 
 ## Pipeline
-Cette skill s'appuie sur le kit partagé `../_banner-kit/` (fonts embarquées, tokens, cadre, rendu).
+Kit partagé `../_banner-kit/` (`card.ts`, même carte que `banner-repo`).
 
-1. **Rassembler les params** depuis la demande (+ portfolio si dispo). Écrire un `config.json` :
+1. **config.json** :
 
    ```json
    {
@@ -31,32 +31,28 @@ Cette skill s'appuie sur le kit partagé `../_banner-kit/` (fonts embarquées, t
      "handle": "kbrdn1",
      "chips": ["TypeScript", "Laravel", "Nuxt", "Rust", "AWS"],
      "footerLeft": "kbrdn.dev",
-     "footerRight": "Nancy, France",
-     "avatar": "/chemin/absolu/avatar.jpg",
-     "width": 1600,
-     "height": 460
+     "footerRight": "Nancy, France"
    }
    ```
 
-   Tous optionnels sauf `name`/`subtitle` :
-   - `badge` : pastille de statut (point + texte, uppercase). Omis → pas de badge.
-   - `handle` : affiché en haut à droite `@handle`. Omis → rien.
-   - `chips` : puces mono de stack. `[]` → aucune.
-   - `avatar` : chemin local (jpg/png), embarqué en base64. **Omis → pas d'avatar**, texte pleine largeur, hauteur par défaut `460` (avec avatar : `560`).
-   - `width`/`height`/`pad` : override du gabarit (défauts 1600 × 460, pad 90).
+   Champs (tous optionnels sauf `name`) :
+   - `name` (Inter 500, `nameSize` défaut 68), `subtitle` (Fenix, accent).
+   - `handle` : titre de l'en-tête (`@handle`) et ligne GitHub de la fiche.
+   - `badge` : ligne Status en pastille verte. `footerRight` : Location. `footerLeft` : Site, bouton globe et adresse du pied.
+   - `cta` : bouton plein (défaut « Contact »). `footerAction` : bouton du pied (défaut « Portfolio »).
+   - `avatar` : portrait de la vignette (défaut `_banner-kit/assets/portrait.png`).
+   - `chips` + `chipsLabel` (défaut « Stack »).
+   - `width` (1600), `height` (absent → suit le panneau).
 
-2. **Générer les HTML** : `bun gen.ts <config.json> <outdir>` → `dark.html` + `light.html`.
+2. **Générer** (facultatif) : `bun gen.ts <config.json> <outdir>`.
 
-3. **Rendre en PNG** (voir `../_banner-kit/render.md`) — Chrome headless, `--window-size` = width,height :
+3. **Rendre** depuis la racine du repo (les chemins du config y sont relatifs) :
    ```bash
-   CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
-     --virtual-time-budget=1500 --window-size=1600,460 --screenshot="OUT/banner.png"       "file://OUT/dark.html"
-   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
-     --virtual-time-budget=1500 --window-size=1600,460 --screenshot="OUT/banner-light.png" "file://OUT/light.html"
+   ~/.claude/skills/me/_banner-kit/render.sh ~/.claude/skills/me/banner-github/gen.ts banner.config.json OUT banner.png banner-light.png
    ```
+   Sans `height`, la hauteur suit le panneau (voir `../_banner-kit/render.md`).
 
-4. **Vérifier + montrer** : `sips -g pixelWidth -g pixelHeight`, puis Read/`SendUserFile` les 2 PNG pour validation avant tout push.
+4. **Vérifier + montrer** (Read des deux PNG) avant tout push. `oxipng -o 2 --strip safe` avant de committer.
 
 ## Intégration README profil (`user/user`)
 URLs raw absolues (le profil se sert de la branche par défaut) :

@@ -1,7 +1,7 @@
 ---
 name: banner-slim
-description: Génère une bannière promo "slim" (presque one-line, PNG dark + light) au design de kbrdn.dev (panneau arrondi sur champ de pixels) — wordmark, tagline, install, version, sur une seule rangée. Format compact à embarquer dans un README de profil ou de projet (comme le promo gwm sur kbrdn1/kbrdn1). Déclencheurs : "bannière slim", "banniere one-line", "slim banner", "promo compacte", "bannière réduite en hauteur", /me:banner-slim.
-version: 2.0.0
+description: Génère une bannière promo "slim" (presque one-line, PNG dark + light) au design de kbrdn.dev (panneau sur champ en dither) — wordmark, tagline, install, version, sur une seule rangée. Format compact à embarquer dans un README de profil ou de projet (comme le promo gwm sur kbrdn1/kbrdn1). Déclencheurs : "bannière slim", "banniere one-line", "slim banner", "promo compacte", "bannière réduite en hauteur", /me:banner-slim.
+version: 2.1.0
 allowed-tools: ["Bash", "Read", "Write", "SendUserFile"]
 ---
 
@@ -16,7 +16,7 @@ promo gwm affiché sur `kbrdn1/kbrdn1`. Sort dark + light.
 - Bandeau promo discret en tête/pied d'un README.
 
 ## Pipeline
-Kit partagé `../_banner-kit/`.
+Kit partagé `../_banner-kit/` : le champ en dither, les lignes verticales, un panneau d'une ligne.
 
 1. **config.json** :
 
@@ -25,33 +25,27 @@ Kit partagé `../_banner-kit/`.
      "logo": "docs/_assets/logo.svg",
      "wordmark": "gwm",
      "title": "Git Worktree Manager",
-     "subtitle": "One binary · CLI + TUI in Rust · zero runtime deps",
+     "subtitle": "One binary · CLI + TUI in Rust · create from an issue",
      "install": "cargo install gwm-cli",
-     "version": "v1.0",
-     "width": 1600,
-     "height": 180
+     "version": "v1.11.0"
    }
    ```
 
    Champs (tous optionnels sauf `wordmark`) :
-   - `logo` : chemin d'un fichier SVG (inliné au rendu, donc aucune requête réseau depuis le headless) **ou** markup SVG brut. `logoLight` sert la variante claire si le repo en livre une, sinon le même tracé sert aux deux thèmes. `logoSize` ajuste (défaut 52 px). Rendu avant le wordmark ; absent, rien ne bouge.
-   - `wordmark` : nom mono à gauche (curseur `_` orange ; `"cursor": false` pour l'enlever).
-   - `title` : ligne serif Fenix (accent orange). `subtitle` : ligne mono grise en dessous.
-   - `install` : boîte terminal `$ …` à droite. `version` : badge orange.
-   - `width`/`height`/`pad` : défauts 1600 × 180, pad 60.
+   - `logo` / `logoLight` (SVG fichier ou markup), `logoSize`.
+   - `wordmark` (Inter 50). `title` : Fenix, accent. `subtitle` : ligne grise dessous.
+   - `install` : `$ …` en mono à droite. `version` : pastille verte.
+   - `width` (1600), `height` (240).
 
-2. **Générer** : `bun gen.ts <config.json> <outdir>` → `dark.html` + `light.html`.
+2. **Générer** (facultatif) : `bun gen.ts <config.json> <outdir>`.
 
-3. **Rendre** (voir `../_banner-kit/render.md`), `--window-size` = width,height :
+3. **Rendre** depuis la racine du repo (les chemins du config y sont relatifs) :
    ```bash
-   CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
-     --virtual-time-budget=1500 --window-size=1600,180 --screenshot="OUT/gwm-slim.png"       "file://OUT/dark.html"
-   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
-     --virtual-time-budget=1500 --window-size=1600,180 --screenshot="OUT/gwm-slim-light.png" "file://OUT/light.html"
+   ~/.claude/skills/me/_banner-kit/render.sh ~/.claude/skills/me/banner-slim/gen.ts gwm-slim.config.json OUT gwm-slim.png gwm-slim-light.png
    ```
+   Sans `height`, la hauteur suit le panneau (voir `../_banner-kit/render.md`).
 
-4. **Vérifier + montrer** avant push.
+4. **Vérifier + montrer** (Read des deux PNG) avant tout push. `oxipng -o 2 --strip safe` avant de committer.
 
 ## Intégration
 Embarquable, cliquable vers le repo promu. README profil → URLs raw absolues ; README repo → chemins relatifs.
