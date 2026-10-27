@@ -48,7 +48,7 @@ export const THEMES: Record<"dark" | "light", Theme> = {
     boxBg: "#fafafa", boxBorder: "#e5e5e5",
     badgeText: "#c15f3c", badgeBorder: "rgba(193,95,60,0.4)", badgeBg: "rgba(212,130,93,0.1)",
     avatarBorder: "#e5e5e5", glow: "rgba(212,130,93,0.22)",
-    dither: [0xd4, 0x82, 0x5d], ditherAlphas: [0, 0.08, 0.15, 0.22],
+    dither: [0xd4, 0x82, 0x5d], ditherAlphas: [0, 0.05, 0.1, 0.15],
   },
 };
 
