@@ -12,7 +12,7 @@ const avatarMime = hasAvatar && /\.png$/i.test(cfg.avatar) ? "image/png" : "imag
 
 function body(t: Theme): string {
   const badge = cfg.badge
-    ? `<span style="display:inline-flex;align-items:center;gap:9px;padding:7px 15px;font-family:'Krypton',monospace;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${t.badgeText};border:1px solid ${t.badgeBorder};background:${t.badgeBg};">
+    ? `<span style="display:inline-flex;align-items:center;gap:9px;padding:7px 15px;font-family:'Krypton',monospace;font-size:12px;text-transform:uppercase;letter-spacing:0.12em;color:${t.badgeText};border:1px solid ${t.badgeBorder};background:${t.badgeBg};border-radius:9999px;">
          <span style="width:8px;height:8px;border-radius:9999px;background:${t.badgeText};"></span>${cfg.badge}</span>`
     : "<span></span>";
   // logoSlot: "name" (lockup avec le nom, décale le h1) | "top" (en tête de la ligne du haut)
@@ -22,8 +22,7 @@ function body(t: Theme): string {
     : "";
   const chips = (cfg.chips ?? []).map((c: string) => chip(t, c)).join("");
   const avatar = hasAvatar
-    ? `<div style="flex-shrink:0;position:relative;width:210px;height:210px;border:1px solid ${t.avatarBorder};overflow:hidden;">
-         <div style="position:absolute;inset:0;background-image:repeating-linear-gradient(-45deg,transparent,transparent 10px,${t.avatarStripe} 10px,${t.avatarStripe} 10.6px);opacity:0.5;"></div>
+    ? `<div style="flex-shrink:0;position:relative;width:210px;height:210px;border:1px solid ${t.avatarBorder};border-radius:18px;overflow:hidden;background:radial-gradient(circle at 50% 70%,${t.glow} 0%,transparent 70%);">
          <img src="data:${avatarMime};base64,${avatarB64}" style="width:100%;height:100%;object-fit:cover;position:relative;" /></div>`
     : "";
   const middleGap = hasAvatar ? "gap:48px;" : "";

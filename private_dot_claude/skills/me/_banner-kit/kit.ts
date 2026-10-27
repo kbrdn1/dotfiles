@@ -1,7 +1,8 @@
 // Kit partagé pour les 3 skills banner (github / repo / slim).
-// Design system "Claude Dark" du portfolio kbrdn.dev : fond neutre quasi-noir,
-// accent orange chaud, coins nets, mono Monaspace Krypton + serif Fenix,
-// zones rayées en diagonale, triangles d'angle. Rendu dark + light.
+// Design system du portfolio kbrdn.dev (refonte #86) : un champ de pixels orange tramé
+// (Bayer) sur fond quasi noir, et le contenu dans un panneau arrondi qui tient une carte,
+// comme les composants du site. Mono Monaspace Krypton + serif Fenix, pastilles arrondies,
+// filets en tirets. Rendu dark + light.
 import { readFileSync, writeFileSync } from "node:fs";
 
 const FONT_DIR = `${import.meta.dir}/assets/fonts`;
@@ -12,60 +13,92 @@ export const FONT_FACES = `
 @font-face{font-family:'Fenix';src:url(data:font/ttf;base64,${b64(`${FONT_DIR}/Fenix-Regular.ttf`)}) format('truetype');font-weight:400;}`;
 
 export type Theme = {
-  bg: string; stripe: string; line: string; corner: string;
-  fg: string; sub: string; muted: string; dim: string; divider: string; trunk: string;
+  name: "dark" | "light";
+  bg: string; fg: string; sub: string; muted: string; dim: string; divider: string; trunk: string;
+  // panneau (UiPanel) et sa carte (.panel-card)
+  panel: string; panelBorder: string; panelShadow: string; card: string; cardBorder: string;
+  // pastilles (chips), boîte terminal, badge
   chipBg: string; chipText: string; chipBorder: string;
   boxBg: string; boxBorder: string;
   badgeText: string; badgeBorder: string; badgeBg: string;
-  avatarStripe: string; avatarBorder: string;
+  avatarBorder: string; glow: string;
+  // le champ de pixels : couleur et opacités des 4 niveaux de la trame
+  dither: [number, number, number]; ditherAlphas: number[];
 };
 
 export const THEMES: Record<"dark" | "light", Theme> = {
   dark: {
-    bg: "#1a1a1a", stripe: "#333", line: "#2a2a2a", corner: "#3a3a3a",
-    fg: "#e0e0e0", sub: "#d4825d", muted: "#b0b0b0", dim: "#777", divider: "#3a3a3a", trunk: "#3a3a3a",
-    chipBg: "#242424", chipText: "#b0b0b0", chipBorder: "#3a3a3a",
-    boxBg: "#121212", boxBorder: "#3a3a3a",
-    badgeText: "#e8a573", badgeBorder: "rgba(232,165,115,0.4)", badgeBg: "rgba(212,130,93,0.15)",
-    avatarStripe: "#2a2a2a", avatarBorder: "#3a3a3a",
+    name: "dark",
+    bg: "#0a0a0a", fg: "#ececec", sub: "#d4825d", muted: "#a3a3a3", dim: "#737373", divider: "#333333", trunk: "#3a3a3a",
+    panel: "#0f0f0f", panelBorder: "#262626", panelShadow: "0 24px 48px -24px rgba(0,0,0,0.7)",
+    card: "#191919", cardBorder: "#262626",
+    chipBg: "transparent", chipText: "#b5b5b5", chipBorder: "rgba(255,255,255,0.14)",
+    boxBg: "#141414", boxBorder: "#2a2a2a",
+    badgeText: "#e8a573", badgeBorder: "rgba(232,165,115,0.4)", badgeBg: "rgba(212,130,93,0.12)",
+    avatarBorder: "#2a2a2a", glow: "rgba(212,130,93,0.3)",
+    dither: [0xd4, 0x82, 0x5d], ditherAlphas: [0, 0.06, 0.12, 0.18],
   },
   light: {
-    bg: "#f5f5f5", stripe: "#dddddd", line: "#d0d0d0", corner: "#b0b0b0",
-    fg: "#1a1a1a", sub: "#c15f3c", muted: "#555555", dim: "#999999", divider: "#c8c8c8", trunk: "#c8c8c8",
-    chipBg: "#e8e8e8", chipText: "#555555", chipBorder: "#c8c8c8",
-    boxBg: "#eaeaea", boxBorder: "#c8c8c8",
-    badgeText: "#c15f3c", badgeBorder: "rgba(193,95,60,0.4)", badgeBg: "rgba(212,130,93,0.12)",
-    avatarStripe: "#dddddd", avatarBorder: "#c8c8c8",
+    name: "light",
+    bg: "#fafafa", fg: "#171717", sub: "#c15f3c", muted: "#525252", dim: "#a3a3a3", divider: "#d4d4d4", trunk: "#c8c8c8",
+    panel: "#ffffff", panelBorder: "rgba(229,229,229,0.8)",
+    panelShadow: "0 40px 60px rgba(0,0,0,0.06), 0 12px 20px rgba(0,0,0,0.04), 0 3px 4px rgba(0,0,0,0.03)",
+    card: "#ffffff", cardBorder: "rgba(229,229,229,0.9)",
+    chipBg: "transparent", chipText: "#525252", chipBorder: "#d4d4d4",
+    boxBg: "#fafafa", boxBorder: "#e5e5e5",
+    badgeText: "#c15f3c", badgeBorder: "rgba(193,95,60,0.4)", badgeBg: "rgba(212,130,93,0.1)",
+    avatarBorder: "#e5e5e5", glow: "rgba(212,130,93,0.22)",
+    dither: [0xd4, 0x82, 0x5d], ditherAlphas: [0, 0.08, 0.15, 0.22],
   },
 };
 
-// Cadre "Claude Dark" : zones rayées latérales + lignes verticales + (option) lignes
-// horizontales en retrait + triangles d'angle. hlineInset>0 => cadre intérieur avec
-// hlines + coins à ce retrait ; hlineInset=0 => coins aux bords, pas de hlines (slim).
+// Le champ de pixels du site, figé : un bruit lissé à graine fixe (rendu reproductible),
+// seuillé par une matrice de Bayer 4x4 en 4 niveaux d'opacité, une cellule = 4 px, plus
+// dense en haut et éteint vers le bas (comme le fond des pages). Dessiné par un <canvas>
+// au rendu headless, agrandi sans lissage.
+function dither(t: Theme): string {
+  return `<canvas data-dither style="position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;"></canvas>
+<script>(() => {
+  const c = document.querySelector('canvas[data-dither]');
+  const W = c.parentElement.clientWidth, H = c.parentElement.clientHeight, CELL = 4;
+  const cols = Math.ceil(W / CELL), rows = Math.ceil(H / CELL);
+  c.width = cols; c.height = rows;
+  let s = 0x51a7e3c9;
+  const rand = () => ((s = (s + 0x6d2b79f5) | 0), (((s ^ (s >>> 15)) * (1 | s)) >>> 0) / 4294967296);
+  const grid = (n) => Array.from({ length: (n + 2) * (n + 2) }, rand);
+  const smooth = (g, n, x, y) => {
+    const fx = x * n, fy = y * n, x0 = Math.floor(fx), y0 = Math.floor(fy), dx = fx - x0, dy = fy - y0;
+    const at = (i, j) => g[(j % (n + 1)) * (n + 2) + (i % (n + 1))];
+    const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * dx, b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * dx;
+    return a + (b - a) * dy;
+  };
+  const g1 = grid(18), g2 = grid(46);
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => v / 16);
+  const [R, G, B] = ${JSON.stringify(t.dither)}, ALPHAS = ${JSON.stringify(t.ditherAlphas)};
+  const ctx = c.getContext('2d'), img = ctx.createImageData(cols, rows);
+  for (let y = 0; y < rows; y++) {
+    const ty = y / (rows - 1), floor = 0.42 + 0.55 * ty * ty, mask = Math.min(1, Math.max(0, (0.9 - ty) / 0.35));
+    for (let x = 0; x < cols; x++) {
+      const v = smooth(g1, 18, x / cols, y / rows) * 0.65 + smooth(g2, 46, x / cols, y / rows) * 0.35;
+      const u = (v - floor) * 4.2;
+      const level = u > 0 ? Math.min(3, (u * 3 + BAYER[((y & 3) << 2) | (x & 3)]) | 0) : 0;
+      img.data.set([R, G, B, Math.round(ALPHAS[level] * mask * 255)], (y * cols + x) * 4);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+})()</script>`;
+}
+
+// Fond du site + panneau arrondi (UiPanel) + sa carte (.panel-card), aux retraits pad
+// (côtés) et hlineInset (haut/bas ; 0 = slim, un petit retrait quand même). Le contenu des
+// layouts se pose par-dessus, aux mêmes retraits : il tombe dans la carte.
 export function frame(t: Theme, opts: { pad?: number; hlineInset?: number } = {}): string {
   const pad = opts.pad ?? 90;
-  const hi = opts.hlineInset ?? 60;
-  const tri = (pos: string, bw: string, col: string) =>
-    `<span style="position:absolute;${pos};width:0;height:0;border-style:solid;border-width:${bw};border-color:${col};"></span>`;
-  const yTop = hi > 0 ? `${hi}px` : "0";
-  const yBot = hi > 0 ? `${hi}px` : "0";
-  const corners = [
-    tri(`top:${yTop};left:${pad}px`, "9px 9px 0 0", `${t.corner} transparent transparent transparent`),
-    tri(`top:${yTop};right:${pad}px`, "9px 0 0 9px", `${t.corner} transparent transparent transparent`),
-    tri(`bottom:${yBot};left:${pad}px`, "0 9px 9px 0", `transparent transparent ${t.corner} transparent`),
-    tri(`bottom:${yBot};right:${pad}px`, "0 0 9px 9px", `transparent transparent ${t.corner} transparent`),
-  ].join("");
-  const hlines = hi > 0
-    ? `<div style="position:absolute;height:1px;left:${pad}px;right:${pad}px;top:${hi}px;background:${t.line};"></div>
-       <div style="position:absolute;height:1px;left:${pad}px;right:${pad}px;bottom:${hi}px;background:${t.line};"></div>`
-    : "";
-  const zone = (side: string) =>
-    `<div style="position:absolute;top:0;bottom:0;${side}:0;width:${pad}px;background-image:repeating-linear-gradient(-45deg,transparent,transparent 10px,${t.stripe} 10px,${t.stripe} 10.6px);opacity:0.55;"></div>`;
+  const vy = (opts.hlineInset ?? 60) || 14;
   return `
-    ${zone("left")}${zone("right")}
-    <div style="position:absolute;top:0;bottom:0;left:${pad}px;width:1px;background:${t.line};"></div>
-    <div style="position:absolute;top:0;bottom:0;right:${pad}px;width:1px;background:${t.line};"></div>
-    ${hlines}${corners}`;
+    ${dither(t)}
+    <div style="position:absolute;top:${vy - 8}px;bottom:${vy - 8}px;left:${pad - 8}px;right:${pad - 8}px;background:${t.panel};border:1px solid ${t.panelBorder};border-radius:28px;box-shadow:${t.panelShadow};"></div>
+    <div style="position:absolute;top:${vy - 2}px;bottom:${vy - 2}px;left:${pad - 2}px;right:${pad - 2}px;background:${t.card};border:1px solid ${t.cardBorder};border-radius:20px;"></div>`;
 }
 
 // Monogramme @kbrdn1 (miroir de public/favicon.svg du portfolio) : cadre ouvert en rects
@@ -81,9 +114,14 @@ export function logo(t: Theme, size: number): string {
     </svg>`;
 }
 
-// petit helper chip mono (réutilisé par les 3 layouts)
+// Pastille mono arrondie, comme les tags du site (réutilisée par les 3 layouts)
 export function chip(t: Theme, label: string): string {
-  return `<span style="font-family:'Krypton',monospace;font-size:14px;letter-spacing:0.05em;text-transform:uppercase;color:${t.chipText};background:${t.chipBg};border:1px solid ${t.chipBorder};padding:6px 12px;">${label}</span>`;
+  return `<span style="font-family:'Krypton',monospace;font-size:14px;letter-spacing:0.02em;color:${t.chipText};background:${t.chipBg};border:1px solid ${t.chipBorder};border-radius:9999px;padding:6px 14px;">${label}</span>`;
+}
+
+// Filet en tirets, comme les séparateurs des cartes du site
+export function dashed(t: Theme): string {
+  return `<div style="height:1px;background-image:repeating-linear-gradient(90deg,${t.divider} 0 5px,transparent 5px 9px);"></div>`;
 }
 
 export function doc({ w, h, t, inner }: { w: number; h: number; t: Theme; inner: string }): string {

@@ -13,7 +13,7 @@ const mono = (size: number, extra = "") =>
 
 function body(t: Theme): string {
   const badge = cfg.badge
-    ? `<span style="display:inline-flex;align-items:center;gap:9px;padding:7px 15px;${mono(12, `text-transform:uppercase;letter-spacing:0.12em;color:${t.badgeText};`)}border:1px solid ${t.badgeBorder};background:${t.badgeBg};margin-bottom:${k(0.05)}px;">
+    ? `<span style="display:inline-flex;align-items:center;gap:9px;padding:7px 15px;${mono(12, `text-transform:uppercase;letter-spacing:0.12em;color:${t.badgeText};`)}border:1px solid ${t.badgeBorder};background:${t.badgeBg};border-radius:9999px;margin-bottom:${k(0.05)}px;">
          <span style="width:8px;height:8px;border-radius:9999px;background:${t.badgeText};"></span>${cfg.badge}</span>`
     : "";
   const chips = (cfg.chips ?? []).map((c: string) => chip(t, c)).join("");

@@ -1,13 +1,13 @@
 ---
 name: banner-slim
-description: Génère une bannière promo "slim" (presque one-line, PNG dark + light) au thème "Claude Dark" — wordmark, tagline, install, version, sur une seule rangée. Format compact à embarquer dans un README de profil ou de projet (comme le promo gwm sur kbrdn1/kbrdn1). Déclencheurs : "bannière slim", "banniere one-line", "slim banner", "promo compacte", "bannière réduite en hauteur", /me:banner-slim.
-version: 1.0.0
+description: Génère une bannière promo "slim" (presque one-line, PNG dark + light) au design de kbrdn.dev (panneau arrondi sur champ de pixels) — wordmark, tagline, install, version, sur une seule rangée. Format compact à embarquer dans un README de profil ou de projet (comme le promo gwm sur kbrdn1/kbrdn1). Déclencheurs : "bannière slim", "banniere one-line", "slim banner", "promo compacte", "bannière réduite en hauteur", /me:banner-slim.
+version: 2.0.0
 allowed-tools: ["Bash", "Read", "Write", "SendUserFile"]
 ---
 
 # Bannière slim — promo one-line
 
-Bannière **compacte, presque une ligne** au design system **Claude Dark**, à embarquer dans un
+Bannière **compacte, presque une ligne** au design system de **kbrdn.dev**, à embarquer dans un
 README (profil ou projet) pour promouvoir un projet sans manger de place. C'est le format du
 promo gwm affiché sur `kbrdn1/kbrdn1`. Sort dark + light.
 

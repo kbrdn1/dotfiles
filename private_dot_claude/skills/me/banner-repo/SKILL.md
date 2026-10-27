@@ -1,13 +1,13 @@
 ---
 name: banner-repo
-description: Génère une bannière promo de repo (PNG dark + light) au thème "Claude Dark" — générique et adaptable au repo (wordmark, tagline, features, install, + un motif à droite : graphe de branches intégré ou HTML/SVG custom). Pour le haut de README d'un projet. Déclencheurs : "bannière repo", "banniere projet", "repo banner", "promo repo", "banner readme projet", /me:banner-repo.
-version: 1.0.0
+description: Génère une bannière promo de repo (PNG dark + light) au design de kbrdn.dev (panneau arrondi sur champ de pixels) — générique et adaptable au repo (wordmark, tagline, features, install, + un motif à droite : graphe de branches intégré ou HTML/SVG custom). Pour le haut de README d'un projet. Déclencheurs : "bannière repo", "banniere projet", "repo banner", "promo repo", "banner readme projet", /me:banner-repo.
+version: 2.0.0
 allowed-tools: ["Bash", "Read", "Write", "SendUserFile"]
 ---
 
 # Bannière repo — promo (générique & adaptable)
 
-Bannière de promotion d'un projet au design system **Claude Dark**, à mettre en tête d'un
+Bannière de promotion d'un projet au design system de **kbrdn.dev**, à mettre en tête d'un
 README de repo. Générique : on l'**adapte aux particularités du repo** (nom, tagline, features,
 commande d'install, langage) et surtout via le **motif à droite**. C'est le format de la promo
 `gwm-cli`. Sort dark + light.
@@ -57,7 +57,7 @@ Kit partagé `../_banner-kit/`.
 
    **Motif à droite** (l'axe d'adaptabilité) — priorité `branchGraph` > `motif` > rien :
    - `branchGraph` : `[{label, color, fill?}]` → graphe de branches intégré (tronc + branches courbes labellisées, couleurs qui suivent le thème). Idéal pour un outil git/worktree.
-   - `motif` : chaîne HTML/SVG brute → n'importe quel visuel (logo, capture en data-URI, SVG maison). Statique entre dark/light — utiliser des couleurs neutres ou les tokens Claude Dark (`#d4825d`, `#e8a573`, `#6bc97f`, `#7ab8ff`, `#c79bff`).
+   - `motif` : chaîne HTML/SVG brute → n'importe quel visuel (logo, capture en data-URI, SVG maison). Statique entre dark/light — utiliser des couleurs neutres ou les tokens du site (`#d4825d`, `#e8a573`, `#6bc97f`, `#7ab8ff`, `#c79bff`).
    - aucun des deux → colonne texte pleine largeur.
 
 2. **Générer** : `bun gen.ts <config.json> <outdir>` → `dark.html` + `light.html`.

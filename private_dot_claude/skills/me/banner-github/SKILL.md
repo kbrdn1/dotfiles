@@ -1,15 +1,16 @@
 ---
 name: banner-github
-description: Génère une bannière de profil GitHub (hero, PNG dark + light) au thème "Claude Dark" de kbrdn.dev — nom, titre, badge de statut, chips de stack, avatar optionnel. Pour le README de profil (repo user/user). Déclencheurs : "bannière github", "banniere profil", "profile banner", "hero banner profil", /me:banner-github.
-version: 1.0.0
+description: Génère une bannière de profil GitHub (hero, PNG dark + light) au design de kbrdn.dev (panneau arrondi sur champ de pixels) — nom, titre, badge de statut, chips de stack, avatar optionnel. Pour le README de profil (repo user/user). Déclencheurs : "bannière github", "banniere profil", "profile banner", "hero banner profil", /me:banner-github.
+version: 2.0.0
 allowed-tools: ["Bash", "Read", "Write", "SendUserFile"]
 ---
 
 # Bannière GitHub — profil (hero)
 
-Bannière de profil au design system **Claude Dark** (fond neutre quasi-noir, accent orange
-chaud `#d4825d`/`#c15f3c`, coins nets, mono Monaspace Krypton + serif Fenix, zones rayées,
-triangles d'angle). Sort deux PNG (dark + light) pour un `<picture>` qui swappe via
+Bannière de profil au design system de **kbrdn.dev** (refonte #86 : champ de pixels orange
+tramé sur fond quasi noir, contenu dans un panneau arrondi qui tient une carte, accent
+`#d4825d`/`#c15f3c`, mono Monaspace Krypton + serif Fenix, pastilles arrondies, filets en
+tirets). Sort deux PNG (dark + light) pour un `<picture>` qui swappe via
 `prefers-color-scheme`. C'est le format de la bannière de `kbrdn1/kbrdn1`.
 
 ## Quand l'utiliser

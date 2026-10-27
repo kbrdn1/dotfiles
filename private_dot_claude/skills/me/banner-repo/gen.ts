@@ -1,7 +1,7 @@
 // Banner repo (promo générique, adaptable) — logo optionnel, wordmark, tagline, features,
 // install, + un "motif" à droite : graphe de branches intégré (branchGraph) ou HTML/SVG custom.
 import { readFileSync } from "node:fs";
-import { readArgs, emit, frame, chip, THEMES, type Theme } from "../_banner-kit/kit.ts";
+import { readArgs, emit, frame, chip, dashed, THEMES, type Theme } from "../_banner-kit/kit.ts";
 
 const { cfg, out } = readArgs();
 const W = cfg.width ?? 1600;
@@ -52,18 +52,18 @@ function body(t: Theme): string {
   const eyebrow = cfg.eyebrow
     ? `<span style="font-size:13px;letter-spacing:0.16em;text-transform:uppercase;color:${t.muted};">${cfg.eyebrow}</span>` : "";
   const version = cfg.version
-    ? `<span style="font-size:12px;letter-spacing:0.08em;font-weight:700;color:${t.badgeText};border:1px solid ${t.badgeBorder};background:${t.badgeBg};padding:3px 9px;">${cfg.version}</span>` : "";
+    ? `<span style="font-size:12px;letter-spacing:0.08em;font-weight:700;color:${t.badgeText};border:1px solid ${t.badgeBorder};background:${t.badgeBg};border-radius:9999px;padding:3px 10px;">${cfg.version}</span>` : "";
   const cursor = cfg.cursor === false ? "" : `<span style="color:${t.sub};">_</span>`;
   const tagline = cfg.tagline
     ? `<p style="font-family:'Fenix',serif;font-size:31px;color:${t.sub};margin-bottom:22px;">${cfg.tagline}</p>` : "";
   const chips = (cfg.chips ?? []).length
     ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px;">${cfg.chips.map((c: string) => chip(t, c)).join("")}</div>` : "";
   const install = cfg.install
-    ? `<div style="display:inline-flex;align-items:center;gap:12px;background:${t.boxBg};border:1px solid ${t.boxBorder};padding:14px 20px;width:fit-content;">
+    ? `<div style="display:inline-flex;align-items:center;gap:12px;background:${t.boxBg};border:1px solid ${t.boxBorder};border-radius:14px;padding:14px 20px;width:fit-content;">
          <span style="font-size:19px;font-weight:700;color:${t.sub};">$</span>
          <span style="font-size:19px;font-weight:600;color:${t.fg};">${cfg.install}</span></div>` : "";
   const footer = cfg.footer
-    ? `<p style="font-size:13px;letter-spacing:0.04em;color:${t.dim};margin-top:16px;">${cfg.footer}</p>` : "";
+    ? `<div style="margin-top:20px;">${dashed(t)}<p style="font-size:13px;letter-spacing:0.04em;color:${t.dim};margin-top:12px;">${cfg.footer}</p></div>` : "";
 
   // motif à droite : branchGraph intégré > motif HTML/SVG custom > rien
   const motif = cfg.branchGraph

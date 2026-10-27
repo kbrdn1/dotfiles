@@ -28,12 +28,12 @@ function body(t: Theme): string {
   const title = cfg.title ?? "";
   const subtitle = cfg.subtitle ?? "";
   const install = cfg.install
-    ? `<span style="display:inline-flex;align-items:center;gap:10px;background:${t.boxBg};border:1px solid ${t.boxBorder};padding:11px 16px;">
+    ? `<span style="display:inline-flex;align-items:center;gap:10px;background:${t.boxBg};border:1px solid ${t.boxBorder};border-radius:12px;padding:11px 16px;">
          <span style="font-size:17px;font-weight:700;color:${t.sub};">$</span>
          <span style="font-size:17px;font-weight:600;color:${t.fg};">${cfg.install}</span>
        </span>` : "";
   const version = cfg.version
-    ? `<span style="font-size:13px;letter-spacing:0.08em;font-weight:700;color:${t.badgeText};border:1px solid ${t.badgeBorder};background:${t.badgeBg};padding:6px 10px;">${cfg.version}</span>` : "";
+    ? `<span style="font-size:13px;letter-spacing:0.08em;font-weight:700;color:${t.badgeText};border:1px solid ${t.badgeBorder};background:${t.badgeBg};border-radius:9999px;padding:6px 12px;">${cfg.version}</span>` : "";
 
   return `${frame(t, { pad: PAD, hlineInset: 0 })}
     <div style="position:absolute;top:0;bottom:0;left:${PAD}px;right:${PAD}px;padding:0 44px;display:flex;align-items:center;justify-content:space-between;gap:32px;">
