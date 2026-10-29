@@ -192,8 +192,9 @@ for f in "$BUILD"/web/*.pdf; do
 Un `⚠ photo introuvable` ne fait **pas** échouer le gate : le chercher dans la sortie. Puis `ditto`
 vers `Travail/CV/web/` et comparer les tailles, comme à l'étape 4.
 
-**b. Publier** — depuis le build local, jamais depuis la copie iCloud. `main-vps` est l'alias SSH
-d'admin du VPS (`~/.ssh/config`) ; nginx sert `/var/www/cv/` sous `/cv/` (`location ^~ /cv/ { alias
+**b. Publier** — depuis le build local, jamais depuis la copie iCloud. `main-vps` est l'accès SSH
+d'admin du VPS, via `~/.ssh/main-vps` (`~/.ssh` n'est pas lisible depuis une session Claude : ne
+pas chercher à l'inspecter, l'alias suffit) ; nginx sert `/var/www/cv/` sous `/cv/` (`location ^~ /cv/ { alias
 /var/www/cv/; }` dans le site `kbrdn.dev`, déjà en place : ne pas le repatcher). Rien à redéployer,
 l'URL ne change pas. L'ancienne version est gardée dans `/root`, hors de la racine web — tout ce qui
 est posé dans `/var/www/cv/` est public :
