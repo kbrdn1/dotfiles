@@ -163,6 +163,7 @@ preview.png
 KEYBINDINGS.md
 CLAUDE-CODE.md
 scripts/
+docs/
 
 # --- Kept in git, not deployed on this machine ----------------------------
 # Archived deliberately: still versioned, but not applied here, so they stop
