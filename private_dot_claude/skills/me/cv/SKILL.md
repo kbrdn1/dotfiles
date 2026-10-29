@@ -35,6 +35,7 @@ Tout vit dans `~/.claude/skills/me/_candidature-kit/`, partagé avec `me:lettre`
 | `profil.fr.json` / `profil.en.json` | **CV de base**, prêt à rendre, une page, gate vert |
 | `pool.fr.md` | **Réservoir vérifié** : tous les faits sourcés, variantes de titre et d'accroche, état du marché lux, trous connus |
 | `kit.ts` | Rendu HTML → PDF (Chrome headless) + gate ATS |
+| `assets/` | photo, polices copiées du site : Inter statique (`InterOG-400/500.ttf`), Krypton, Fenix |
 
 ```bash
 bun ~/.claude/skills/me/_candidature-kit/kit.ts <profil.json> --out <sortie.pdf> [--theme light|dark] [--keep-html] [--max-pages N]
@@ -42,6 +43,12 @@ bun ~/.claude/skills/me/_candidature-kit/kit.ts <profil.json> --out <sortie.pdf>
 
 Sortie par défaut : thème clair, une page. Le thème sombre existe pour un envoi direct à un humain
 (version « portfolio ») — **jamais** pour une plateforme de candidature.
+
+Le rendu suit le design actuel du portfolio : header en panel gris arrondi portant une card blanche
+(monogramme K de `Logo.vue`, nom en Inter, titre en Fenix orange, pastille de statut), rubriques en
+eyebrow mono dans une bande de panel, dates en eyebrow orange, séparateurs pointillés. Les jetons
+de `THEMES` sont ceux de `app/assets/css/theme.css` (`.light` / `.dark`). Si le site change de
+design, on relit le repo (lecture seule) et on reporte dans `kit.ts` — jamais l'inverse.
 
 ## Règle d'or
 
@@ -55,8 +62,10 @@ Contraintes non négociables héritées du pool :
 - **« Ingénieur » n'apparaît pas dans le titre FR** — le cursus Ingénierie Informatique n'a pas donné
   lieu à diplôme. En EN, « Engineer » reste un intitulé de poste valide.
 - La formation MNS 2023-2025 s'écrit **sans** les mots « Master », « diplômé » ou « titre ».
-- **Confidentialité** : l'employeur actuel n'est pas au courant de la recherche. Rien dans le repo
-  public `kbrdn.dev`, rien de publié en ligne. Livrables dans iCloud `Travail/CV/`.
+- **Confidentialité** : rien de candidature dans le repo public `kbrdn.dev` — ni fichier, ni commit,
+  ni PDF dans `public/`. Livrables dans iCloud `Travail/CV/`. Une seule chose part en ligne : la
+  variante web du **CV de base**, sans téléphone, hébergée sur le VPS hors du repo (étape 6). Un CV
+  adapté à une offre et les lettres ne quittent jamais la machine et iCloud.
 
 ## Déroulé
 
@@ -108,8 +117,9 @@ du contenu, pas rétrécir la typo.
 ### 4. Rendre et vérifier
 
 ```bash
+BUILD=/tmp/cv-build-<date>   # local, hors iCloud (voir plus bas)
 bun ~/.claude/skills/me/_candidature-kit/kit.ts /tmp/.../profil.<slug>.json \
-  --out ~/Library/Mobile\ Documents/com~apple~CloudDocs/Travail/CV/<slug>/CV_Kylian_Bardini_FR.pdf
+  --out "$BUILD/<slug>/CV_Kylian_Bardini_FR.pdf"
 ```
 
 Le gate s'exécute automatiquement et sort en code 1 s'il échoue.
@@ -127,13 +137,18 @@ Tant que le gate est rouge, le fichier se nomme `BROUILLON_*` et ne quitte pas l
 **Ne jamais rendre directement dans un dossier synchronisé iCloud** (`~/Desktop`, `~/Documents` et
 `Travail/CV` le sont tous — « Bureau et Documents dans iCloud » est activé). Chrome y écrit le PDF,
 la synchro se déclenche pendant, et le fichier ressort **à 0 octet** — vécu. Rendre dans le
-scratchpad local, puis `ditto` vers la destination, puis vérifier les tailles :
+scratchpad local, puis `ditto` vers la destination, puis vérifier les tailles (`wc -c` et non
+`stat -f%z` : le `stat` du PATH est celui de coreutils, où `-f` lit le système de fichiers) :
 
 ```bash
+DEST="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Travail/CV"
 ditto "$BUILD" "$DEST"
 find "$BUILD" -type f | while read f; do r="${f#$BUILD/}"
-  [ "$(stat -f%z "$f")" = "$(stat -f%z "$DEST/$r")" ] || echo "✗ $r"; done
+  [ "$(wc -c < "$f")" = "$(wc -c < "$DEST/$r")" ] || echo "✗ $r"; done
 ```
+
+Le CV de base se range dans `Travail/CV/FR/` et `Travail/CV/EN/` (`CV_Kylian_Bardini_<LANG>.pdf` +
+`.docx`) : rendre dans `$BUILD/FR/` et `$BUILD/EN/` pour que `ditto` les pose au bon endroit.
 
 ### 5. Variante .docx si la plateforme l'exige
 
@@ -148,7 +163,77 @@ bun ~/.claude/skills/me/_candidature-kit/kit.ts profil.<slug>.json --out …/CV.
 Sortie structurée (titres, listes), sans mise en page — parfaite pour un ATS, quelconque à l'œil.
 À envoyer seulement quand la plateforme le demande.
 
-### 6. Rendre compte
+### 6. Variante web + publication sur le VPS — CV de base seulement
+
+Le site propose le CV de base en téléchargement (`/experience`, `/contact`). Il ne connaît que son
+URL, fixée par les variables de dépôt `CV_URL_FR` / `CV_URL_EN` :
+`https://kbrdn.dev/cv/CV_Kylian_Bardini_FR.pdf` et `…_EN.pdf`. Ce qui part en ligne n'est **pas** le
+profil de base : c'est une variante **sans téléphone**. Le profil de base garde le numéro pour les
+vraies candidatures — ne pas le retirer du kit. **Régénérer le CV de base = refaire cette étape.**
+Un CV adapté à une offre ne passe jamais par ici.
+
+**a. Rendre la variante web** — copie jq du profil, `photo` en chemin absolu (la copie vit hors du
+kit), rendue dans le build local, gate vert :
+
+```bash
+K=~/.claude/skills/me/_candidature-kit; J=$(mktemp -d); mkdir -p "$BUILD/web"
+PH=$(jq -r .identity.phone "$K/profil.fr.json")   # le numéro vient du profil, jamais écrit ici
+for l in fr en; do L=$(echo $l | tr a-z A-Z)
+  jq --arg photo "$K/assets/photo.jpg" 'del(.identity.phone) | .identity.photo = $photo' \
+    "$K/profil.$l.json" > "$J/profil.web.$l.json"
+  grep -qF "$PH" "$J/profil.web.$l.json" && echo "✗ numéro resté dans le JSON $l"
+  bun "$K/kit.ts" "$J/profil.web.$l.json" --out "$BUILD/web/CV_Kylian_Bardini_$L.pdf" || echo "✗ gate $l"
+done
+# ce que lit un parser : ni ce numéro, ni un autre (doit n'afficher que des 0)
+for f in "$BUILD"/web/*.pdf; do
+  pdftotext "$f" - | grep -cE -e '(\+33|\b0)[1-9]([ .-]?[0-9]{2}){4}' -e "$(printf '%s' "$PH" | sed 's/[+.]/\\&/g')"; done
+```
+
+Un `⚠ photo introuvable` ne fait **pas** échouer le gate : le chercher dans la sortie. Puis `ditto`
+vers `Travail/CV/web/` et comparer les tailles, comme à l'étape 4.
+
+**b. Publier** — depuis le build local, jamais depuis la copie iCloud. `main-vps` est l'alias SSH
+d'admin du VPS (`~/.ssh/config`) ; nginx sert `/var/www/cv/` sous `/cv/` (`location ^~ /cv/ { alias
+/var/www/cv/; }` dans le site `kbrdn.dev`, déjà en place : ne pas le repatcher). Rien à redéployer,
+l'URL ne change pas. L'ancienne version est gardée dans `/root`, hors de la racine web — tout ce qui
+est posé dans `/var/www/cv/` est public :
+
+```bash
+W="$BUILD/web"
+scp -q -o ClearAllForwardings=yes -o BatchMode=yes \
+  "$W/CV_Kylian_Bardini_FR.pdf" "$W/CV_Kylian_Bardini_EN.pdf" main-vps:/tmp/ &&
+ssh -o ClearAllForwardings=yes -o BatchMode=yes main-vps 'bash -s' <<'REMOTE'
+set -e
+P=/root/cv-prev-$(date +%Y%m%d%H%M%S); install -d -m 700 "$P"
+cp -p /var/www/cv/CV_Kylian_Bardini_FR.pdf /var/www/cv/CV_Kylian_Bardini_EN.pdf "$P/"
+install -m 644 /tmp/CV_Kylian_Bardini_FR.pdf /tmp/CV_Kylian_Bardini_EN.pdf /var/www/cv/
+rm -f /tmp/CV_Kylian_Bardini_FR.pdf /tmp/CV_Kylian_Bardini_EN.pdf
+echo "ancienne version : $P"; cd /var/www/cv && sha256sum CV_Kylian_Bardini_FR.pdf CV_Kylian_Bardini_EN.pdf
+REMOTE
+(cd "$W" && shasum -a 256 CV_Kylian_Bardini_FR.pdf CV_Kylian_Bardini_EN.pdf)   # mêmes empreintes
+```
+
+**c. Vérifier en ligne.** Cloudflare met `/cv/` en cache (`cf-cache-status: HIT`) : juste après
+l'upload, l'URL nue sert encore **l'ancien** PDF jusqu'à expiration du cache edge : **1 h au plus**,
+borné par le `Cache-Control: max-age=3600` du bloc nginx (observé le 2026-10-29 : bascule en
+`EXPIRED` à `age` ≈ 3600). Aucun accès API Cloudflare depuis cette machine pour purger ; à défaut,
+purge à la main dans le dashboard. Côté navigateur, Cloudflare annonce `max-age=14400` : un visiteur
+qui l'a déjà téléchargé peut garder l'ancien 4 h.
+Télécharger l'URL nue à ce moment-là testerait l'ancien fichier : la vérification passe donc par
+une URL cache-bustée, qui va à l'origine (`MISS`) :
+
+```bash
+for L in FR EN; do u="https://kbrdn.dev/cv/CV_Kylian_Bardini_$L.pdf"; v="?v=$(date +%s)"
+  curl -sI "$u$v" | grep -iE '^(content-length|cf-cache-status):'   # MISS, taille = wc -c locale
+  curl -s "$u$v" | pdftotext - - | grep -cE '(\+33|\b0)[1-9]([ .-]?[0-9]{2}){4}'   # 0
+  curl -sI "$u" | grep -iE '^(content-length|cf-cache-status|age):'   # URL nue : l'ancien tant que HIT
+done
+```
+
+Repasser `curl -sI` sur l'URL nue après expiration du cache : `content-length` doit valoir la taille
+locale. Tant que ce n'est pas le cas, le dire — ne pas annoncer « en ligne » sur la foi du MISS.
+
+### 7. Rendre compte
 
 Dire à l'utilisateur, sobrement :
 - ce qui a été remonté et pourquoi ;
@@ -161,6 +246,8 @@ Dire à l'utilisateur, sobrement :
 Nouvelle expérience, nouveau projet, nouveau chiffre, nouveau diplôme : on modifie
 `profil.{fr,en}.json` **et** `pool.fr.md`, avec la source du fait. On ne bricole jamais un PDF isolé —
 il serait écrasé au rendu suivant et la prochaine adaptation repartirait de données périmées.
+Une fois la source modifiée, régénérer le CV de base (FR + EN, étape 4) **et** sa variante web
+publiée (étape 6), sinon le site sert un CV en retard.
 
 Les entrées marquées 🔴 dans le pool sont des trous connus à combler avec Kylian : réalisations
 depuis le CDI (déc. 2025), niveau d'anglais, allemand, chiffre des 300 000 utilisateurs, projet Java.
@@ -175,4 +262,12 @@ depuis le CDI (déc. 2025), niveau d'anglais, allemand, chiffre des 300 000 util
 - deux colonnes, tableaux, `letter-spacing` sur du texte de contenu ;
 - `letter-spacing` sur un **titre de rubrique suivi de contenu inline** — vu en vrai sur la rubrique
   Langues : le titre ressortait `L A N G U E S`. Le tracking ne tient que sur un titre seul sur sa ligne ;
-- police à ligatures sur du contenu (`font-variant-ligatures:none` est déjà posé globalement).
+- police à ligatures sur du contenu (`font-variant-ligatures:none` est déjà posé globalement) ;
+- police **variable** pour le contenu : Chrome l'écrit en Type 3, que des parseurs lisent mal. Inter
+  est embarquée en TTF statique (400 et 500, comme le site) — pas de `font-weight:700`, il serait
+  synthétisé. `pdffonts` doit montrer Inter en `CID TrueType` ;
+- capitales sur un libellé **au milieu du contenu** (« LANGUAGES — » dans les compétences) : il se lit
+  comme un titre de rubrique. Les capitales sont réservées aux titres de rubrique — le gate les y
+  cherche — et aux lignes de dates ;
+- décor écrit en glyphe (`▸`, `●`) : il ressort dans le texte. Points et puces sont des
+  pseudo-éléments vides, le logo un SVG — le parser n'en voit rien.

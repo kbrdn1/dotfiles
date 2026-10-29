@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 // Kit partagé des skills me:cv et me:lettre.
 //
-// Rend un CV ou une lettre de motivation en PDF depuis un JSON de profil, à la
-// charte "Claude Dark" du portfolio kbrdn.dev (accent orange chaud, coins nets,
-// rayures diagonales, triangles d'angle) — mais en variante claire, imprimable.
+// Rend un CV ou une lettre de motivation en PDF depuis un JSON de profil, au design
+// actuel du portfolio kbrdn.dev (app/assets/css/theme.css + components.css du repo) :
+// panels gris clair aux coins arrondis portant une card blanche, monogramme K arrondi,
+// nom en Inter, titre en Fenix orange, eyebrows mono en capitales, séparateurs
+// pointillés — en variante claire, imprimable.
 //
 // Contrainte structurante : le PDF doit être PARSABLE par un ATS. D'où :
 //   - une seule colonne, aucun tableau, aucune info dans un en-tête/pied de page
@@ -34,36 +36,42 @@ const FONT_DIR = `${import.meta.dir}/assets/fonts`;
 const b64 = (p: string) => readFileSync(p).toString("base64");
 
 // ─── Thème ────────────────────────────────────────────────────────────────────
-// Le clair est le livrable par défaut (impression, lisibilité, ATS). Le sombre
-// existe pour la version "portfolio" qu'on envoie en direct à un humain.
+// Les jetons de theme.css (.light / .dark). Le clair est le livrable par défaut
+// (impression, lisibilité, ATS). Le sombre existe pour la version "portfolio"
+// qu'on envoie en direct à un humain.
 
 type Theme = {
-  page: string; band: string; stripe: string; rule: string; corner: string;
-  fg: string; accent: string; accentSoft: string; muted: string; dim: string;
-  chipBg: string; chipFg: string; chipBorder: string;
+  page: string; panel: string; panelBorder: string; card: string; cardBorder: string;
+  rule: string; fg: string; muted: string; label: string;
+  accent: string; mark: string; tint: string; ok: string;
 };
 
 const THEMES: Record<"light" | "dark", Theme> = {
+  // accent en primary-700 : primary-500 ne tient que 2,7:1 sur fond clair (Hero.vue)
   light: {
-    page: "#ffffff", band: "#f5f5f5", stripe: "#e8e8e8", rule: "#d0d0d0", corner: "#b0b0b0",
-    fg: "#1a1a1a", accent: "#c15f3c", accentSoft: "#a64d2e", muted: "#3a3a3a", dim: "#666666",
-    chipBg: "#f0f0f0", chipFg: "#3a3a3a", chipBorder: "#d8d8d8",
+    page: "#ffffff", panel: "#f5f5f5", panelBorder: "#dedede", card: "#ffffff", cardBorder: "#dedede",
+    rule: "#d0d0d0", fg: "#1a1a1a", muted: "#3a3a3a", label: "#666666",
+    accent: "#a64d2e", mark: "#d4825d", tint: "#f5f5f5", ok: "#166534",
   },
   dark: {
-    page: "#1a1a1a", band: "#242424", stripe: "#2a2a2a", rule: "#3a3a3a", corner: "#3a3a3a",
-    fg: "#e0e0e0", accent: "#d4825d", accentSoft: "#e8a573", muted: "#b0b0b0", dim: "#999999",
-    chipBg: "#242424", chipFg: "#b0b0b0", chipBorder: "#3a3a3a",
+    page: "#1a1a1a", panel: "#0f0f0f", panelBorder: "#2a2a2a", card: "#191919", cardBorder: "#2a2a2a",
+    rule: "#3a3a3a", fg: "#e0e0e0", muted: "#b0b0b0", label: "#999999",
+    accent: "#d4825d", mark: "#d4825d", tint: "#242424", ok: "#86e89a",
   },
 };
 
+// Inter est embarquée en TTF statique (copie de public/fonts/inter du site, 400 et 500) :
+// Chrome écrit une police variable en Type 3, que des parseurs lisent mal ; une statique
+// sort en TrueType avec sa ToUnicode. Pas de 700 : il serait synthétisé, le site n'en a pas.
 const FONT_FACES = `
-@font-face{font-family:'Krypton';src:url(data:font/woff2;base64,${b64(`${FONT_DIR}/MonaspaceKrypton.woff2`)}) format('woff2');font-weight:400;font-display:block}
+@font-face{font-family:'Inter OG';src:url(data:font/ttf;base64,${b64(`${FONT_DIR}/InterOG-400.ttf`)}) format('truetype');font-weight:400;font-display:block}
+@font-face{font-family:'Inter OG';src:url(data:font/ttf;base64,${b64(`${FONT_DIR}/InterOG-500.ttf`)}) format('truetype');font-weight:500;font-display:block}
+@font-face{font-family:'Krypton';src:url(data:font/woff2;base64,${b64(`${FONT_DIR}/MonaspaceKrypton.woff2`)}) format('woff2');font-weight:200 800;font-display:block}
 @font-face{font-family:'Fenix';src:url(data:font/ttf;base64,${b64(`${FONT_DIR}/Fenix-Regular.ttf`)}) format('truetype');font-weight:400;font-display:block}`;
 
-// Inter est la police de tout le contenu parsable : c'est une sans-serif standard,
-// que Chrome embarque avec une table ToUnicode propre. Krypton et Fenix ne servent
-// qu'aux libellés de rubrique et au nom — vérifié extractible par le gate.
-const SANS = `Inter,-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif`;
+// Inter porte tout le contenu parsable. Krypton et Fenix ne servent qu'aux libellés,
+// aux dates et au titre — vérifié extractible par le gate.
+const SANS = `'Inter OG',Inter,-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif`;
 const MONO = `'Krypton','JetBrains Mono','Courier New',monospace`;
 
 const esc = (s: unknown) =>
@@ -105,35 +113,33 @@ type Profile = {
 
 // ─── Fragments visuels (identité kbrdn.dev) ───────────────────────────────────
 
-const corners = (t: Theme, inset: string) => {
-  const tri = (pos: string, bw: string, col: string) =>
-    `<span style="position:absolute;${pos};width:0;height:0;border-style:solid;border-width:${bw};border-color:${col}"></span>`;
-  const c = t.corner;
-  return [
-    tri(`top:${inset};left:${inset}`, "5px 5px 0 0", `${c} transparent transparent transparent`),
-    tri(`top:${inset};right:${inset}`, "5px 0 0 5px", `${c} transparent transparent transparent`),
-    tri(`bottom:${inset};left:${inset}`, "0 5px 5px 0", `transparent transparent ${c} transparent`),
-    tri(`bottom:${inset};right:${inset}`, "0 0 5px 5px", `transparent transparent ${c} transparent`),
-  ].join("");
-};
+// Le monogramme K du site (app/components/ui/Logo.vue, #101), figé : la barre à la
+// couleur du texte, la branche coupée en deux pièces orange. Un dessin, aucun glyphe :
+// le parser n'en voit rien.
+const logo = (t: Theme) => `<svg width=".8em" height=".8em" viewBox="0 0 96 96" aria-hidden="true"
+  style="vertical-align:-.04em;margin-right:.3em"><path fill="${t.fg}"
+  d="M62.83 1.17A4 4 0 0 1 65.66 0L86.34 0A4 4 0 0 1 89.17 6.83L6.83 89.17A4 4 0 0 1 0 86.34L0 65.66A4 4 0 0 1 1.17 62.83Z"/><path
+  fill="${t.mark}" d="M0 9.66A4 4 0 0 1 6.83 6.83L21.17 21.17A4 4 0 0 1 21.17 26.83L6.83 41.17A4 4 0 0 1 0 38.34Z"/><path
+  fill="${t.mark}" d="M53.17 58.83A4 4 0 0 1 58.83 58.83L89.17 89.17A4 4 0 0 1 86.34 96L65.66 96A4 4 0 0 1 62.83 94.83L42.83 74.83A4 4 0 0 1 42.83 69.17Z"/></svg>`;
 
-const stripes = (t: Theme) =>
-  `repeating-linear-gradient(-45deg,${t.stripe} 0 1px,transparent 1px 7px)`;
-
-// Un libellé de rubrique : intitulé conventionnel (l'ATS s'en sert pour découper
-// le document) + filet accentué. Le mono ne porte que la casse, pas le sens.
-const sectionHead = (t: Theme, title: string) => `
-<h2 style="margin:9px 0 4.5px;padding:0 0 2.5px;border-bottom:1px solid ${t.rule};
-  font-family:${MONO};font-size:8.5pt;font-weight:400;letter-spacing:.14em;
-  text-transform:uppercase;color:${t.accent}">${esc(title)}</h2>`;
+// Un libellé de rubrique : intitulé conventionnel (l'ATS s'en sert pour découper le
+// document), en eyebrow du site (mono, capitales) dans la bande grise d'un panel. Les
+// capitales ne sont pas décoratives : le gate cherche les titres sous cette forme.
+// `inline` : contenu d'une rubrique courte posé dans la même bande — et alors pas de
+// letter-spacing, qui ressortirait en "L A N G U E S" chez le parser.
+const sectionHead = (t: Theme, title: string, inline = "") => `
+<h2 class="sh" style="margin:${inline ? "4px 0 0" : "7px 0 4px"};padding:2px 8px;background:${t.panel};
+  border:1px solid ${t.panelBorder};border-radius:8px;font-family:${MONO};font-size:8pt;
+  font-weight:400;${inline ? "" : "letter-spacing:.08em;"}text-transform:uppercase;color:${t.muted}">${esc(title)}${inline}</h2>`;
 
 // La liste de technos est le passage le plus dense en mots-clés du document : c'est
 // exactement là qu'il ne faut PAS de pastilles. Chaque pastille est une boîte
 // positionnée, que pdftotext ré-ordonne à sa guise — le CV précédent sortait
-// "TypeScript / Stripe / Vue" au lieu de l'ordre écrit. Un seul nœud texte, donc.
+// "TypeScript / Stripe / Vue" au lieu de l'ordre écrit. Un seul nœud texte, donc,
+// dans une bande teintée aux coins arrondis.
 const stackLine = (t: Theme, items: string[], label = "Stack") =>
-  !items?.length ? "" : `<p style="margin:3.5px 0 0;padding:2px 0 2px 6px;background:${t.chipBg};
-    border-left:2px solid ${t.accent};font-size:8.1pt;line-height:1.4;color:${t.chipFg}"><span
+  !items?.length ? "" : `<p style="margin:3.5px 0 0;padding:2px 5px;background:${t.tint};
+    border-radius:6px;font-size:8.1pt;line-height:1.4;color:${t.muted}"><span
     style="font-family:${MONO};color:${t.accent}">${esc(label)} </span>${items.map(esc).join(" · ")}</p>`;
 
 // ─── Rendu CV ─────────────────────────────────────────────────────────────────
@@ -146,44 +152,47 @@ function renderSection(t: Theme, s: Section): string {
   // où on veut qu'elle soit lue. Les dates alignées à droite se faisaient arracher
   // de leur ligne et regrouper en fin de document.
 
+  // La ligne de dates reprend la méta des entrées du parcours (eyebrow orange en
+  // capitales), sans son letter-spacing : c'est du contenu, pas un titre seul.
   if (s.type === "experience") {
     return head + s.items.map((e) => `
-<div style="margin:0 0 7px;break-inside:avoid">
-  <p style="margin:0;font-size:10pt;font-weight:700;color:${t.fg}">${esc(e.role)}<span
-    style="font-weight:400;color:${t.accent}"> — ${esc(e.company)}</span></p>
-  <p style="margin:1px 0 0;font-family:${MONO};font-size:7.9pt;color:${t.dim}">${
+<div class="it" style="margin:0 0 6px;break-inside:avoid">
+  <p style="margin:0;font-size:10pt;font-weight:500;color:${t.fg}">${esc(e.role)}<span
+    style="font-weight:400;color:${t.muted}"> — ${esc(e.company)}</span></p>
+  <p style="margin:1px 0 0;font-family:${MONO};font-size:7.6pt;text-transform:uppercase;color:${t.accent}">${
     [e.period, e.contract, e.location].filter(Boolean).map(esc).join("  ·  ")}</p>
-  ${e.context ? `<p style="margin:2.5px 0 0;font-size:8.5pt;color:${t.muted};font-style:italic">${esc(e.context)}</p>` : ""}
-  ${e.bullets?.length ? `<ul style="margin:3.5px 0 0;padding:0 0 0 12px;list-style:none">${e.bullets.map((b) =>
-    `<li style="margin:0 0 2px;font-size:8.55pt;line-height:1.36;color:${t.muted};position:relative">
-       <span style="position:absolute;left:-10px;color:${t.accent}">▸</span>${esc(b)}</li>`).join("")}</ul>` : ""}
+  ${e.context ? `<p style="margin:2.5px 0 0;font-size:8.5pt;color:${t.label}">${esc(e.context)}</p>` : ""}
+  ${e.bullets?.length ? `<ul style="margin:3px 0 0;padding:0 0 0 11px;list-style:none">${e.bullets.map((b) =>
+    `<li class="b" style="margin:0 0 2px;font-size:8.55pt;line-height:1.36;color:${t.muted}">${esc(b)}</li>`).join("")}</ul>` : ""}
   ${stackLine(t, e.stack ?? [])}
 </div>`).join("");
   }
 
   if (s.type === "projects") {
     return head + s.items.map((p) => `
-<div style="margin:0 0 5px;break-inside:avoid">
-  <p style="margin:0;font-size:9.1pt;color:${t.fg}"><strong>${esc(p.name)}</strong>${
+<div class="it" style="margin:0 0 5px;break-inside:avoid">
+  <p style="margin:0;font-size:9.1pt;color:${t.fg}"><span style="font-weight:500">${esc(p.name)}</span>${
     p.tagline ? `<span style="color:${t.accent}"> — ${esc(p.tagline)}</span>` : ""}${
-    p.url ? `<span style="font-family:${MONO};font-size:7.5pt;color:${t.dim}">  ${esc(p.url)}</span>` : ""}</p>
+    p.url ? `<span style="font-family:${MONO};font-size:7.5pt;color:${t.label}">  ${esc(p.url)}</span>` : ""}</p>
   <p style="margin:1.5px 0 0;font-size:8.5pt;line-height:1.4;color:${t.muted}">${esc(p.description)}</p>
   ${stackLine(t, p.stack ?? [])}
 </div>`).join("");
   }
 
+  // Les libellés gardent leur casse : en capitales, « LANGUAGES — » au milieu des
+  // compétences se lirait comme un titre de rubrique.
   if (s.type === "skills") {
     return head + s.groups.map((g) => `
 <p style="margin:0 0 2px;font-size:8.6pt;line-height:1.4;color:${t.muted}"><span
-  style="font-family:${MONO};font-size:8pt;color:${t.accent}">${esc(g.label)} — </span>${g.items.map(esc).join(" · ")}</p>`).join("");
+  style="font-family:${MONO};font-size:7.9pt;color:${t.accent}">${esc(g.label)} — </span>${g.items.map(esc).join(" · ")}</p>`).join("");
   }
 
   if (s.type === "education") {
     return head + s.items.map((e) => `
-<p style="margin:0 0 2.5px;font-size:8.7pt;line-height:1.38;color:${t.muted}"><strong
-  style="color:${t.fg}">${esc(e.program)}</strong> — ${esc(e.school)}<span
-  style="font-family:${MONO};font-size:7.9pt;color:${t.dim}">  ·  ${esc(e.period)}</span>${
-  e.note ? `<span style="color:${t.dim}"> · ${esc(e.note)}</span>` : ""}</p>`).join("");
+<p style="margin:0 0 2.5px;font-size:8.7pt;line-height:1.38;color:${t.muted}"><span
+  style="font-weight:500;color:${t.fg}">${esc(e.program)}</span> — ${esc(e.school)}<span
+  style="font-family:${MONO};font-size:7.6pt;color:${t.label}">  ·  ${esc(e.period)}</span>${
+  e.note ? `<span style="color:${t.label}"> · ${esc(e.note)}</span>` : ""}</p>`).join("");
   }
 
   // Le compact ne vaut que pour une rubrique qui tient VRAIMENT sur une ligne
@@ -197,11 +206,8 @@ function renderSection(t: Theme, s: Section): string {
     const inline = s.type === "languages"
       ? s.items.map((l) => `${esc(l.label)} ${esc(l.level)}`).join("  ·  ")
       : esc(s.body[0]);
-    return `
-<h2 style="margin:4px 0 0;padding:0 0 2px;border-bottom:1px solid ${t.rule};
-  font-family:${MONO};font-size:8.5pt;font-weight:400;
-  text-transform:uppercase;color:${t.accent}">${esc(s.title)}<span
-  style="font-family:${SANS};font-size:8.7pt;letter-spacing:0;text-transform:none;color:${t.muted}">   ${inline}</span></h2>`;
+    return sectionHead(t, s.title, `<span
+  style="font-family:${SANS};font-size:8.6pt;text-transform:none;color:${t.muted}">   ${inline}</span>`);
   }
 
   return head + s.body.map((p) => `<p style="margin:0 0 4px;font-size:8.9pt;line-height:1.45;color:${t.muted}">${esc(p)}</p>`).join("");
@@ -211,32 +217,42 @@ function renderCV(p: Profile, t: Theme): string {
   const id = p.identity;
   // Toutes les coordonnées sont du texte dans le flux du document : jamais dans un
   // en-tête PDF, que les ATS ignorent systématiquement.
+  const sep = `<span style="color:${t.rule}">  ·  </span>`;
   const contact = [id.location, id.email, id.phone, ...(id.links ?? []).map((l) => l.url.replace(/^https?:\/\//, ""))]
-    .filter(Boolean).map(esc).join("<span style=\"color:" + t.rule + "\">  |  </span>");
-  const facts = [id.mobility, id.nationality, id.availability].filter(Boolean).map(esc)
-    .join("<span style=\"color:" + t.rule + "\">  |  </span>");
+    .filter(Boolean).map(esc).join(sep);
+  const facts = [id.mobility, id.nationality].filter(Boolean).map(esc).join(sep);
 
   const photoPath = id.photo ? fromProfile(id.photo) : null;
   if (id.photo && !existsSync(photoPath!)) console.log(`  ⚠ photo introuvable : ${photoPath}`);
   const photo = photoPath && existsSync(photoPath)
     ? `<img src="data:image/${extname(photoPath).slice(1).replace("jpg", "jpeg") || "jpeg"};base64,${b64(photoPath)}"
-        style="width:26mm;height:32mm;object-fit:cover;border:1px solid ${t.rule};flex:0 0 auto">`
+        style="width:25mm;height:31mm;object-fit:cover;border:1px solid ${t.cardBorder};border-radius:12px;flex:0 0 auto">`
     : "";
 
+  // La pastille de statut du hero (.tag) : un bloc seul sur sa ligne, le point dessiné
+  // en CSS — jamais un inline-block au milieu d'une ligne de texte.
+  const status = id.availability ? `<p style="margin:5px 0 0;width:max-content;padding:1px 8px 1px 7px;
+    border:1px solid ${t.ok}4d;border-radius:9999px;background:${t.ok}1a;font-family:${MONO};
+    font-size:7.4pt;letter-spacing:.06em;text-transform:uppercase;color:${t.ok}"><span class="dot"></span>${esc(id.availability)}</p>` : "";
+
+  // Le header est un panel du site : surface grise, card blanche dedans (coins
+  // concentriques, 20 − 4 = 16), et les coordonnées dans la bande du panel sous la
+  // card. Tout reste du texte dans le flux : jamais dans un en-tête PDF.
   return `
-<div style="position:relative;background:${t.band};background-image:${stripes(t)};
-  border:1px solid ${t.rule};padding:5.5mm 6.5mm;margin:0 0 2.5mm">
-  ${corners(t, "3px")}
-  <div style="display:flex;gap:7mm;align-items:flex-start">
+<div style="background:${t.panel};border:1px solid ${t.panelBorder};border-radius:20px;padding:4px;margin:0 0 2mm">
+  <div style="display:flex;gap:6mm;align-items:flex-start;background:${t.card};
+    border:1px solid ${t.cardBorder};border-radius:16px;padding:4mm 5.5mm">
     <div style="flex:1 1 auto;min-width:0">
-      <h1 style="margin:0;font-family:'Fenix',Georgia,serif;font-size:23pt;font-weight:400;
-        letter-spacing:.01em;color:${t.fg};line-height:1.05">${esc(id.name)}</h1>
-      <p style="margin:2px 0 0;font-family:${MONO};font-size:10pt;color:${t.accent};letter-spacing:.02em">${esc(id.title)}</p>
-      ${id.summary ? `<p style="margin:5px 0 0;font-size:8.7pt;line-height:1.45;color:${t.muted};max-width:164mm">${esc(id.summary)}</p>` : ""}
-      <p style="margin:5.5px 0 0;font-size:8pt;line-height:1.5;color:${t.muted}">${contact}</p>
-      ${facts ? `<p style="margin:1px 0 0;font-size:8pt;line-height:1.5;color:${t.dim}">${facts}</p>` : ""}
+      <h1 style="margin:0;font-size:24pt;font-weight:400;letter-spacing:-.025em;line-height:1.05;color:${t.fg}">${logo(t)}${esc(id.name)}</h1>
+      <p style="margin:3px 0 0;font-family:'Fenix',Georgia,serif;font-size:12.5pt;color:${t.accent}">${esc(id.title)}</p>
+      ${status}
+      ${id.summary ? `<p style="margin:5px 0 0;font-size:8.7pt;line-height:1.45;color:${t.muted}">${esc(id.summary)}</p>` : ""}
     </div>
     ${photo}
+  </div>
+  <div style="padding:1.8mm 5.5mm 1.4mm;font-size:8pt;line-height:1.5;color:${t.muted}">
+    <p style="margin:0">${contact}</p>
+    ${facts ? `<p style="margin:0;color:${t.label}">${facts}</p>` : ""}
   </div>
 </div>
 ${(p.sections ?? []).map((s) => renderSection(t, s)).join("")}`;
@@ -275,7 +291,7 @@ ${p.closing ? `<p style="margin:5.5mm 0 0;font-size:10.1pt;line-height:1.55;colo
 function html(p: Profile, theme: "light" | "dark"): string {
   const t = THEMES[theme];
   const isCV = p.doc === "cv";
-  const pad = isCV ? "9mm 11mm 7mm" : "21mm 22mm";
+  const pad = isCV ? "9mm 10mm 7mm" : "21mm 22mm";
   return `<!doctype html><html lang="${esc(p.lang)}"><head><meta charset="utf-8">
 <title>${esc(p.identity.name)}</title><style>
 ${FONT_FACES}
@@ -291,6 +307,15 @@ p,li,h1{orphans:2;widows:2}
    et bascule tout seul sur une 2e page à moitié vide. */
 h2{orphans:1;widows:1;break-after:avoid}
 a{color:inherit;text-decoration:none}
+/* Décors sans glyphe (pseudo-éléments vides) : le parser n'en voit rien. Le point
+   orange des rubriques et des puces reprend ceux de la timeline du parcours. */
+.sh::before,.dot{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;vertical-align:middle}
+.sh::before{background:${t.mark};margin:0 7px 1px 0}
+.dot{background:currentColor;margin:0 6px 1px 0}
+.b{position:relative}
+.b::before{content:"";position:absolute;left:-9px;top:.5em;width:4px;height:4px;border-radius:50%;background:${t.mark}}
+/* Séparateurs pointillés entre deux entrées, comme les lignes des cards du site */
+.it+.it{border-top:1px dashed ${t.rule};padding-top:4px}
 </style></head><body><div class="page">
 ${isCV ? renderCV(p, t) : renderLettre(p, t)}
 </div></body></html>`;
