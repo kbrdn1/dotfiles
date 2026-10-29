@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/_assets/promo.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/_assets/promo-light.png">
+    <img alt="dotfiles: Nix installs the tools, chezmoi writes the config" src="docs/_assets/promo.png" width="100%">
+  </picture>
+</p>
+
 # Dotfiles
 
 Welcome to my dotfiles repository! This repository is managed using [chezmoi](https://www.chezmoi.io/), a tool designed to manage your dotfiles across multiple machines.

@@ -1,0 +1,59 @@
+{
+  "eyebrow": "chezmoi source",
+  "wordmark": "dotfiles",
+  "tagline": "Nix installs the tools.<br>chezmoi writes the config.",
+  "buttons": [
+    {
+      "label": "GitHub",
+      "icon": "share"
+    },
+    {
+      "label": "Install",
+      "icon": "visit",
+      "filled": true
+    }
+  ],
+  "motif": "<svg width=\"610\" height=\"290\" viewBox=\"0 0 610 290\" xmlns=\"http://www.w3.org/2000/svg\"><text x=\"0\" y=\"16\" font-family=\"'Krypton',monospace\" font-size=\"12.5\" letter-spacing=\"1.5\" fill=\"#8a8a93\">SOURCE · ~/.local/share/chezmoi</text><text x=\"348\" y=\"16\" font-family=\"'Krypton',monospace\" font-size=\"12.5\" letter-spacing=\"1.5\" fill=\"#8a8a93\">TARGET · $HOME</text><line x1=\"0\" y1=\"28\" x2=\"610\" y2=\"28\" stroke=\"#2a2a30\" stroke-width=\"1\"/><text x=\"0\" y=\"66\" font-family=\"'Krypton',monospace\" font-size=\"13\" fill=\"#8a8a93\" xml:space=\"preserve\"><tspan fill=\"#d4825d\">dot_</tspan><tspan fill=\"#8a8a93\">config/ghostty/config</tspan></text><line x1=\"298\" y1=\"61\" x2=\"329\" y2=\"61\" stroke=\"#d4825d\" stroke-width=\"1.5\" stroke-dasharray=\"3 3\"/><polygon points=\"336,61 328,56.5 328,65.5\" fill=\"#d4825d\"/><text x=\"317\" y=\"53\" font-family=\"'Krypton',monospace\" font-size=\"10.5\" fill=\"#8a8a93\" text-anchor=\"middle\">apply</text><text x=\"348\" y=\"66\" font-family=\"'Krypton',monospace\" font-size=\"14\" fill=\"#ececf0\" xml:space=\"preserve\"><tspan fill=\"#ececf0\">~/</tspan><tspan fill=\"#d4825d\">.</tspan><tspan fill=\"#ececf0\">config/ghostty/config</tspan></text><text x=\"0\" y=\"128\" font-family=\"'Krypton',monospace\" font-size=\"13\" fill=\"#8a8a93\" xml:space=\"preserve\"><tspan fill=\"#86e89a\">private_</tspan><tspan fill=\"#d4825d\">dot_</tspan><tspan fill=\"#8a8a93\">claude/</tspan></text><line x1=\"298\" y1=\"123\" x2=\"329\" y2=\"123\" stroke=\"#d4825d\" stroke-width=\"1.5\" stroke-dasharray=\"3 3\"/><polygon points=\"336,123 328,118.5 328,127.5\" fill=\"#d4825d\"/><text x=\"317\" y=\"115\" font-family=\"'Krypton',monospace\" font-size=\"10.5\" fill=\"#8a8a93\" text-anchor=\"middle\">apply</text><text x=\"348\" y=\"128\" font-family=\"'Krypton',monospace\" font-size=\"14\" fill=\"#ececf0\" xml:space=\"preserve\"><tspan fill=\"#ececf0\">~/</tspan><tspan fill=\"#d4825d\">.</tspan><tspan fill=\"#ececf0\">claude/</tspan></text><text x=\"348\" y=\"148\" font-family=\"'Krypton',monospace\" font-size=\"12\" fill=\"#8a8a93\" xml:space=\"preserve\"><tspan fill=\"#86e89a\">drwx------</tspan><tspan fill=\"#8a8a93\">  private_ means 0700</tspan></text><text x=\"0\" y=\"190\" font-family=\"'Krypton',monospace\" font-size=\"13\" fill=\"#8a8a93\" xml:space=\"preserve\"><tspan fill=\"#d4825d\">dot_</tspan><tspan fill=\"#8a8a93\">aws/</tspan><tspan fill=\"#c79bff\">encrypted_</tspan><tspan fill=\"#86e89a\">private_</tspan><tspan fill=\"#8a8a93\">config.age</tspan></text><line x1=\"298\" y1=\"185\" x2=\"329\" y2=\"185\" stroke=\"#d4825d\" stroke-width=\"1.5\" stroke-dasharray=\"3 3\"/><polygon points=\"336,185 328,180.5 328,189.5\" fill=\"#d4825d\"/><text x=\"317\" y=\"177\" font-family=\"'Krypton',monospace\" font-size=\"10.5\" fill=\"#8a8a93\" text-anchor=\"middle\">age</text><text x=\"348\" y=\"190\" font-family=\"'Krypton',monospace\" font-size=\"14\" fill=\"#ececf0\" xml:space=\"preserve\"><tspan fill=\"#ececf0\">~/</tspan><tspan fill=\"#d4825d\">.</tspan><tspan fill=\"#ececf0\">aws/config</tspan></text><text x=\"348\" y=\"210\" font-family=\"'Krypton',monospace\" font-size=\"12\" fill=\"#8a8a93\" xml:space=\"preserve\"><tspan fill=\"#86e89a\">-rw-------</tspan><tspan fill=\"#8a8a93\">  decrypted by age</tspan></text><text x=\"0\" y=\"252\" font-family=\"'Krypton',monospace\" font-size=\"13\" fill=\"#8a8a93\" xml:space=\"preserve\"><tspan fill=\"#7ab8ff\">nix-config/home.nix</tspan></text><line x1=\"298\" y1=\"247\" x2=\"329\" y2=\"247\" stroke=\"#7ab8ff\" stroke-width=\"1.5\" stroke-dasharray=\"3 3\"/><polygon points=\"336,247 328,242.5 328,251.5\" fill=\"#7ab8ff\"/><text x=\"317\" y=\"239\" font-family=\"'Krypton',monospace\" font-size=\"10.5\" fill=\"#8a8a93\" text-anchor=\"middle\">nix</text><text x=\"348\" y=\"252\" font-family=\"'Krypton',monospace\" font-size=\"14\" fill=\"#ececf0\" xml:space=\"preserve\"><tspan fill=\"#7ab8ff\">74 packages</tspan></text><text x=\"348\" y=\"272\" font-family=\"'Krypton',monospace\" font-size=\"12\" fill=\"#8a8a93\" xml:space=\"preserve\"><tspan fill=\"#8a8a93\">home-manager, declared</tspan></text></svg>",
+  "thumbSize": [
+    648,
+    330
+  ],
+  "facts": [
+    {
+      "icon": "sparkles",
+      "label": "Manager",
+      "value": "chezmoi"
+    },
+    {
+      "icon": "terminal",
+      "label": "Packages",
+      "value": "Nix"
+    },
+    {
+      "icon": "status",
+      "label": "Secrets",
+      "value": "age"
+    },
+    {
+      "icon": "scale",
+      "label": "License",
+      "value": "MIT"
+    },
+    {
+      "icon": "user",
+      "label": "Author",
+      "value": "kbrdn1",
+      "person": true
+    }
+  ],
+  "chips": [
+    "2210 files managed",
+    "74 Nix packages",
+    "87 Claude Code skills",
+    "aerospace · sketchybar · karabiner",
+    "ghostty · tmux · zed · nvim",
+    "3 age-encrypted secrets"
+  ],
+  "install": "chezmoi init https://github.com/kbrdn1/dotfiles.git && chezmoi apply",
+  "footer": "github.com/kbrdn1/dotfiles · Shell · MIT"
+}
