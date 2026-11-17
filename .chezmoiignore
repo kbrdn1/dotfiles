@@ -135,6 +135,11 @@
 .config/herdr/config.toml.bak.*
 .config/herdr/proof.png
 
+# Herdr 2 (herdr-app) - seuls les fichiers kbrdn-* / brand/ sont versionnes.
+# L'app reecrit ces types a chaque demarrage, dans chaque dossier de mod.
+.config/herdr-app/mods/*/jsconfig.json
+.config/herdr-app/mods/*/gpui-kit.d.ts
+
 # Zed - prompts library runtime DB (binary, changes every session)
 .config/zed/prompts/prompts-library-db.0.mdb/
 .config/zed/prompts/index.json
