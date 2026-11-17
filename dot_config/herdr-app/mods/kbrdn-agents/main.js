@@ -2,7 +2,10 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
+import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, home, readTextFile, checking } from "herdr";
+
+// kbrdn mascot head by agent status (kbrdn.dev's 31 moods): Herdr's "agents incarnés" pattern.
+const MOOD = { working: "thinking", blocked: "nervous", done: "clap", idle: "content" };
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -90,6 +93,41 @@ export default class Agents extends View {
     if (!this.pendingPins.length) localStorage.removeItem("pins");
     this.migratingPins = new Set();
     cx.timer.every(30000, (cx) => cx.notify());
+    // kbrdn: each local agent's live line (herdr-bridge Claude mod) and model (statusline.ts), every 3 s.
+    this.live = {};
+    if (!checking()) cx.timer.every(3000, (cx) => this.readLive(cx));
+  }
+
+  readLive(cx) {
+    cx.spawn(async (cx) => {
+      const dir = `${home()}/.claude/cache`;
+      const json = async (path) => { try { const s = await readTextFile(path); return s ? JSON.parse(s) : null; } catch { return undefined; } };
+      const next = {};
+      for (const a of agents()) {
+        if (a.address.includes("/")) continue; // another machine's agent: its files are there
+        const [bridge, line] = await Promise.all([json(`${dir}/herdr/${a.address}.json`), json(`${dir}/statusline/herdr-${a.address}.json`)]);
+        next[a.address] = {
+          bridge: bridge === undefined ? this.live[a.address]?.bridge : bridge,
+          line: line === undefined ? this.live[a.address]?.line : line,
+        };
+      }
+      const s = JSON.stringify(next);
+      if (s !== this.liveKey) { this.liveKey = s; this.live = next; cx.notify(); }
+    });
+  }
+
+  // Monocode's second line: what the agent is doing now, in the person's own words for its state.
+  liveLine(a) {
+    const l = this.live?.[a.address];
+    const b = l?.bridge;
+    const model = l?.line?.model ? `${l.line.model}${l.line.effort && l.line.effort !== "high" ? ` · ${l.line.effort}` : ""}` : null;
+    if (a.status === "blocked") return { text: "a besoin de toi", tone: "blocked", model };
+    if (a.status === "working" && b?.action?.what) {
+      const todo = b.todos?.total ? ` · ${b.todos.done}/${b.todos.total}` : "";
+      return { text: `${b.action.what}${todo}`, tone: "muted", model };
+    }
+    if (a.status === "done" && b?.answer) return { text: b.answer, tone: "muted", model };
+    return model ? { text: null, tone: "muted", model } : null;
   }
 
   // Stamps agents whose state changed. Done and idle count as one: looking at a
@@ -339,10 +377,16 @@ export default class Agents extends View {
       // Without a space header above (priority, pinned) the row names its space.
       const full = byPriority || isPinned;
       const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
+      const live = this.liveLine(a);
+      const claude = a.app === "claude-code";
+      // Monocode's detailed session card: title and age, then the live line and the model.
+      const second = live && h_flex().min_w(0).gap(6).items_center().text_size(11)
+        .when(Boolean(live.text), (el) => el.child(div().min_w(0).flex_shrink(1).truncate().text_color(t[live.tone] ?? t.muted).child(live.text)))
+        .when(Boolean(live.model), (el) => el.child(div().flex_none().text_color(t.dim).child(live.text ? `· ${live.model}` : live.model)));
       return h_flex()
         .id(`ag-${a.address}`)
         .px(8)
-        .h(30)
+        .h(second ? 46 : 30)
         .flex_none()
         .rounded(10)
         .items_center()
@@ -358,15 +402,17 @@ export default class Agents extends View {
           cx.notify();
         })
         .on_click(() => run("pane.focus", { pane: a.pane }))
-        .when(Boolean(pic), el => el.child(div().id(`agent-fold-${a.address}`)
+        .when(Boolean(pic) || claude, el => el.child(div().id(`agent-fold-${a.address}`)
           .when(subs.length > 0, el => el.on_click((_e, cx) => {
             cx.stop_propagation();
             this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
             cx.notify();
-          })).child(pic)))
-        .child(h_flex().flex_1().min_w(0).gap(5).items_center()
-          .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
-          .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
+          })).child(claude ? image(`brand/mascot/${MOOD[a.status] ?? "neutral"}.png`).size(second ? 26 : 20) : pic)))
+        .child(v_flex().flex_1().min_w(0).gap(1)
+          .child(h_flex().min_w(0).gap(5).items_center()
+            .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
+            .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
+          .when(Boolean(second), el => el.child(second)))
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .when(this.hovered === a.address, el => el.child(pin))
