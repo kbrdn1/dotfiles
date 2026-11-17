@@ -29,7 +29,7 @@
               "id": "spaces",
               "type": "block",
               "content": {
-                "mod": "spaces"
+                "mod": "kbrdn-spaces"
               },
               "size": {
                 "weight": 1
@@ -40,7 +40,7 @@
               "id": "agents",
               "type": "block",
               "content": {
-                "mod": "agents"
+                "mod": "kbrdn-agents"
               },
               "size": {
                 "weight": 1
@@ -59,7 +59,7 @@
             }
           },
           "size": {
-            "px": 69
+            "px": 87
           }
         }
       ],
@@ -79,7 +79,7 @@
           "id": "tabs",
           "type": "block",
           "content": {
-            "mod": "tabs"
+            "mod": "kbrdn-tabs"
           },
           "size": {
             "px": 42
@@ -93,23 +93,15 @@
             {
               "id": "main",
               "type": "block",
-              "padding": 4,
-              "radius": 20,
-              "background": "chrome",
-              "border": {
-                "width": 1,
-                "color": "border"
-              },
-              "shadow": "md",
               "content": {
                 "tab": "active",
                 "pane": {
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "kbrdn-pane"
                     },
                     "reveal": "always",
-                    "height": 30,
+                    "height": 32,
                     "position": "top"
                   },
                   "background": "background",
@@ -125,19 +117,19 @@
                   "gap": 4,
                   "lone": true
                 }
-              }
-            },
-            {
-              "id": "panel",
-              "type": "column",
-              "padding": 4,
-              "radius": 20,
+              },
               "background": "chrome",
               "border": {
                 "width": 1,
                 "color": "border"
               },
+              "radius": 20,
               "shadow": "md",
+              "padding": 4
+            },
+            {
+              "id": "panel",
+              "type": "column",
               "children": [
                 {
                   "id": "panel-body",
@@ -166,15 +158,23 @@
               },
               "min": 280,
               "max": 900,
-              "hidden": true
+              "hidden": true,
+              "background": "chrome",
+              "border": {
+                "width": 1,
+                "color": "border"
+              },
+              "radius": 20,
+              "shadow": "md",
+              "padding": 4
             }
           ],
-          "padding": 10,
-          "gap": 10,
           "background": {
             "image": "brand/dither-k.png",
             "fit": "cover"
-          }
+          },
+          "padding": 10,
+          "gap": 10
         },
         {
           "id": "status",
@@ -198,8 +198,6 @@
   "font": "OperatorMonoLig Nerd Font",
   "font_weight": 400,
   "ui_font": "Inter",
-  "preview": "layouts/kbrdn.png",
-  "toast": "kbrdn-toast",
   "terminal_padding": [
     14,
     12
@@ -212,5 +210,7 @@
   "traffic_lights": [
     12,
     16
-  ]
+  ],
+  "preview": "layouts/kbrdn.png",
+  "toast": "kbrdn-toast"
 }
