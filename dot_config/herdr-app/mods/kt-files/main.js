@@ -7,7 +7,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, exec, readTextFile, settings, theme, layout } from "herdr";
+import { spaces, panes, exec, readTextFile, settings, theme, layout, home } from "herdr";
 
 const ME = "files"; // this block's id in the layout's "panel-body" stack
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -87,6 +87,16 @@ export default class Files extends View {
           this.open = new Set();
           this.show(null);
         }
+        // kbrdn: outside git, list a folder once (no 5 s rg), and never the whole home folder.
+        if (top.code !== 0) {
+          if (!on && root === home()) {
+            this.paths = []; this.marks = {}; this.note = "Dossier personnel : rien à lister hors d'un dépôt git.";
+            return;
+          }
+          if (this.plain === key) return;
+          this.plain = key;
+        } else this.plain = null;
+        this.note = null;
         const list = top.code === 0 ? await exec("git", ["ls-files", "-co", "--exclude-standard"], { cwd: root, on }) : await exec("rg", ["--files"], { cwd: root, on });
         if (location() !== key) return;
         this.paths = [...new Set(list.stdout.split("\n").filter(Boolean))].sort().slice(0, MAX_FILES);
@@ -230,7 +240,7 @@ export default class Files extends View {
           .pb(8)
           .overflow_y_scrollbar()
           .children(list)
-          .when(this.paths.length === 0, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.root ? "No files." : "No folder."))),
+          .when(this.paths.length === 0, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.note ?? (this.root ? "No files." : "No folder.")))),
       );
     return h_flex()
       .id("kt-files")
