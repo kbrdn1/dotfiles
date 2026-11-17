@@ -335,6 +335,18 @@ const ctxPct = ctx.usedPct !== null ? ctx.usedPct.toFixed(1) : null;
 const ctxWindowLabel = ctx.windowSize >= 1_000_000
   ? `${(ctx.windowSize / 1_000_000).toFixed(0)}M`
   : `${ctx.windowSize / 1_000}K`;
+
+// ── Feed the Herdr app's kbrdn-status mod (one file per Herdr terminal) ─
+// Written before any git/gwm call: herdr-agent-quota runs this script under a
+// deadline, a write at the end could be cut. Quota is per account → one file.
+if (process.env.HC_TERMINAL_ID) {
+  const now = Math.floor(Date.now() / 1000);
+  writeJson(join(CACHE_DIR, `herdr-${process.env.HC_TERMINAL_ID}.json`), {
+    model: modelName, effort: data.effort?.level ?? "", ctx_pct: ctx.usedPct, window: ctx.windowSize,
+    cost_usd: data.cost?.total_cost_usd ?? null, session_id: data.session_id ?? "", updated_at: now,
+  });
+  if (data.rate_limits) writeJson(join(CACHE_DIR, "herdr-quota.json"), { ...data.rate_limits, updated_at: now });
+}
 const is1MContext = ctx.windowSize >= 1_000_000;
 const rawStyle = data.output_style;
 const outputStyle = typeof rawStyle === "string"
