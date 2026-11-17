@@ -87,31 +87,31 @@ export default class KbrdnStatus extends View {
   prChips(t, space, wide) {
     const chips = [];
     const issue = space?.branch?.match(/#(\d+)/)?.[1];
-    if (issue) chips.push(div().text_color(t.ansi11).child(`#${issue}`));
+    if (issue) chips.push(div().text_color(t.ansi3).child(`#${issue}`));
     const pr = space && this.pr[space.id];
     if (!pr) return chips;
-    const state = pr.state === "MERGED" ? ["mergée", t.ansi13] : pr.state === "CLOSED" ? ["fermée", t.dim] : pr.draft ? ["brouillon", t.muted] : ["", t.ansi12];
+    const state = pr.state === "MERGED" ? ["mergée", t.ansi5] : pr.state === "CLOSED" ? ["fermée", t.dim] : pr.draft ? ["brouillon", t.muted] : ["", t.ansi4];
     chips.push(div().id("kbrdn-pr").cursor_pointer().text_color(state[1]).hover((s) => s.text_color(t.foreground))
       .on_click(() => exec("open", [pr.url])).child(`PR #${pr.number}${state[0] ? ` ${state[0]}` : ""}`));
     if (pr.state !== "OPEN") return chips;
     const ci = pr.ci;
     const [text, color] = {
       pass: [`CI ${ci.passed}/${ci.total} ✓`, t.done],
-      fail: [`CI ${ci.failed} ✗ /${ci.total}`, t.ansi9],
-      pending: [`CI ${ci.passed + ci.failed}/${ci.total} …`, t.ansi11],
+      fail: [`CI ${ci.failed} ✗ /${ci.total}`, t.ansi1],
+      pending: [`CI ${ci.passed + ci.failed}/${ci.total} …`, t.ansi3],
       stale: ["CI · HEAD ≠ PR", t.dim],
       none: ["CI —", t.dim],
     }[ci.state];
     chips.push(div().text_color(color).child(text));
     if (wide && pr.review === "APPROVED") chips.push(div().text_color(t.done).child("review ✓"));
-    if (wide && pr.review === "CHANGES_REQUESTED") chips.push(div().text_color(t.ansi9).child("changements demandés"));
+    if (wide && pr.review === "CHANGES_REQUESTED") chips.push(div().text_color(t.ansi1).child("changements demandés"));
     return chips;
   }
 
   // Same thresholds as statusline.ts contextColor(): context rot, not fill.
   ctxColor(t, pct, window) {
     const [warn, alarm] = window >= 1_000_000 ? [20, 50] : [55, 75];
-    return pct >= alarm ? t.ansi9 : pct >= warn ? t.ansi11 : t.ansi13;
+    return pct >= alarm ? t.ansi1 : pct >= warn ? t.ansi3 : t.ansi5;
   }
 
   meter(t, pct, color) {
@@ -138,7 +138,7 @@ export default class KbrdnStatus extends View {
     const now = Date.now() / 1000;
     const chip = (label, w) => {
       const used = w.used_percentage ?? 0;
-      const color = used >= 80 ? t.ansi9 : used >= 50 ? t.ansi11 : t.muted;
+      const color = used >= 80 ? t.ansi1 : used >= 50 ? t.ansi3 : t.muted;
       return div().text_color(color).child(`${label} ${Math.round(used)}%${w.resets_at ? ` · ${left(w.resets_at - now)}` : ""}`);
     };
     const chips = [];
