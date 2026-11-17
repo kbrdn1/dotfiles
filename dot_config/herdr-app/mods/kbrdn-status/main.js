@@ -35,10 +35,7 @@ export default class KbrdnStatus extends View {
     this.loadPr(cx, false);
     cx.spawn(async (cx) => {
       const dir = home() + CACHE;
-      let quota = await this.json(dir + "herdr-quota.json");
-      if (quota === null) { // Open Island's live copy (7-day window only)
-        try { quota = JSON.parse((await exec("cat", ["/tmp/open-island-rl.json"])).stdout); } catch { quota = null; }
-      }
+      const quota = await this.json(dir + "herdr-quota.json");
       if (quota !== undefined) this.quota = quota;
       const t = focused()?.terminal;
       const session = t ? await this.json(`${dir}herdr-${t}.json`) : undefined;
