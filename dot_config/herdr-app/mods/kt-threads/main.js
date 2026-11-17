@@ -153,6 +153,13 @@ export default class Threads extends View {
         } catch {
           if (this.live[p.terminal]) next[p.terminal] = this.live[p.terminal]; // a torn read keeps the last one
         }
+        // claude-flow's timeline (issue, worktree, commits, PR, review, CI, merge), when it publishes one.
+        try {
+          const f = await readTextFile(`${home()}/.claude/cache/herdr/${p.terminal}.flow.json`);
+          if (f) next[p.terminal] = { ...(next[p.terminal] ?? {}), flow: JSON.parse(f) };
+        } catch {
+          if (this.live[p.terminal]?.flow) next[p.terminal] = { ...(next[p.terminal] ?? {}), flow: this.live[p.terminal].flow };
+        }
       }
       this.readingLive = false;
       const key = JSON.stringify(next);
@@ -173,8 +180,16 @@ export default class Threads extends View {
         const dir = repo && owners.find((o) => o.endsWith(`-${repo}`));
         const key = `${repo}|${p.branch}`;
         if (!dir || key in next) continue;
+        // facts.json (the stable contract) first, data.js (the page's own copy) until collect.py writes it.
+        const folder = `${home()}/Reports/${dir}/${p.branch.replace(/[/#]+/g, "-")}`;
         try {
-          const s = await readTextFile(`${home()}/Reports/${dir}/${p.branch.replace(/[/#]+/g, "-")}/data.js`);
+          const facts = await readTextFile(`${folder}/facts.json`).catch(() => null);
+          if (facts) {
+            const d = JSON.parse(facts);
+            next[key] = summarizeReport(d.facts ? d : { facts: d, generatedAt: d.generatedAt });
+            continue;
+          }
+          const s = await readTextFile(`${folder}/data.js`);
           if (s) next[key] = summarizeReport(JSON.parse(s.replace(/^\s*window\.__report\s*=\s*/, "").replace(/;\s*$/, "")));
         } catch { }
       }
@@ -199,6 +214,19 @@ export default class Threads extends View {
       pills.push(ci.fail > 0 ? this.tag(t.ansi1, `CI ✗ ${ci.fail}/${ci.total}`) : ci.pending > 0 ? this.tag(t.ansi3, `CI … ${ci.ok}/${ci.total}`) : this.tag(t.done, `CI ✓ ${ci.ok}/${ci.total}`));
     }
     return pills;
+  }
+
+  // claude-flow's timeline as a strip: one dot per step (done, current pulsing, pending, failed),
+  // then the current step's label.
+  flowStrip(t, lead) {
+    const steps = (lead?.terminal && this.live[lead.terminal]?.flow?.steps) || [];
+    if (!steps.length) return null;
+    const color = { done: t.done, current: t.accent, failed: t.ansi1, pending: t.border };
+    const now = steps.find((s) => s.state === "current") ?? steps.filter((s) => s.state === "done").at(-1);
+    return h_flex().h(16).gap(4).items_center()
+      .children(steps.map((s, i) => div().id(`kt-flow-${lead.terminal}-${i}`).size(6).rounded(3).flex_none().bg(color[s.state] ?? t.border)
+        .when(s.state === "current", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1400 }))))
+      .when(Boolean(now?.label), (el) => el.child(div().min_w(0).truncate().pl(4).font_family(MONO).text_size(10.5).text_color(t.muted).child(now.label)));
   }
 
   // Monocode's live line: what the thread's agent is doing now, or what it needs.
@@ -470,6 +498,7 @@ export default class Threads extends View {
         el
           .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(c.name))
           .when(Boolean(this.liveLine(t, c, lead)), (el) => el.child(this.liveLine(t, c, lead)))
+          .when(Boolean(this.flowStrip(t, lead)), (el) => el.child(this.flowStrip(t, lead)))
           .when(this.reportPills(t, lead, w).length > 0, (el) => el.child(h_flex().gap(4).flex_wrap().children(this.reportPills(t, lead, w))))
           .child(
             h_flex()
