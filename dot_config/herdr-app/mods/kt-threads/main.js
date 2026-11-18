@@ -544,7 +544,7 @@ export default class Threads extends View {
     // One id for both: from a tier to the bar, nothing draws in twice.
     const tier = total > items.length || items.length > TODO_TIER
       ? V.progress(front ? `${TODOS} · ${say(front)}` : TODOS, done, { max: total, figure: `${done} / ${total}`, id: `kt-todos-${id}`,
-        color: items.some((x) => x.status === "in_progress") ? colors.current : colors.done })
+        color: items.some((x) => x.status === "in_progress") ? colors.current : colors.done, live: items.some((x) => x.status === "in_progress") })
       : V.steps(items.map((x) => ({ label: say(x), state: x.status === "completed" ? "done" : x.status === "in_progress" ? "current" : "todo", group: TODOS })),
         { id: `kt-todos-${id}`, colors });
     if (!items.length) return tier;
