@@ -30,7 +30,7 @@
 // A card (Monocode's sidebar): program tile, title, status; model · effort ·
 // branch and the PR; the agent's live action; its sub-agents branching off its tile (kbrdn.dev's
 // Parcours). Every card rings its context; the shown thread alone opens an inner card
-// (context / 5 h / cache rings, cost and lines, flow step, todos, report), fed by
+// (context / 5 h / cache rings, cost and lines, the flow by phase, todos, report), fed by
 // ~/.claude/scripts/statusline.ts, herdr-bridge and /me:report.
 
 import { View, div, svg, image } from "gpui-kit";
@@ -52,6 +52,10 @@ import { motionState, frame, enter, collapse, ink, fade, rows as motionRows } fr
 // kt-keys' roll.js (a byte-identical copy): the nav's counts, the group heads', the focus card's figures,
 // and (12 threads or fewer listed) the cards' ages and durations roll to their new digits.
 import { roll, rollText } from "./roll.js";
+// kt-keys' viz.js and kt-flow's steps.js (byte-identical copies, each with its .strings.js): the focus
+// card's flow in tiers by phase, as kt-flow's head draws it, and its todos' tier.
+import { viz } from "./viz.js";
+import { phasesOf, nameOf, speak } from "./steps.js";
 // Copied byte for byte from mods/kt-keys/bus.js (data/orchestrator/DATA-SYNC.md).
 import { bump, refreshOn } from "./bus.js";
 // Written here, copied byte for byte into mods/kt-head: the halo both draw.
@@ -78,7 +82,11 @@ const SPIN = "mods/workspace-chrome/spinner.svg";
 // corner badge (26 would let the badge touch the next line). An ended one fades after FADE, goes after GONE
 // (threads-model.js).
 const BRANCH_H = 28;
+// The focus card's todos in one tier, a cell each, up to TODO_TIER of them; past that (a cell under
+// ~20 px in the card) or when the bridge read fewer than its total, one bar.
+const TODO_TIER = 8;
 const tr = makeT(strings);
+speak(makeT); // steps.js' step and phase names follow kt.lang too
 // The pages under the navigation's Agents group, in order, as the view stack names them: [icon, label].
 // One the layout's stack doesn't have yet (Workflow, kt-workflow) is left out rather than open a blank.
 // The names are the pages' own, in every language; automation's is words (strings.js' automation).
@@ -507,11 +515,28 @@ export default class Threads extends View {
     setShared("kt.density", shared("kt.density") === "compact" ? "detailed" : "compact");
   }
 
-  // The thread's todos (herdr-bridge's `todos.items`): done checked, the current one in working,
-  // the rest a ring. Six at most, from the last done one, then "+N" for the rest.
-  todoList(t, todos, id) {
+  // The thread's todos (herdr-bridge's `todos.items`). On top, viz.js' steps in one tier (completed done,
+  // in_progress running, pending to do, in the lines' colours) and its line « TODOS · the one in front
+  // n / total »; one bar instead (progress, « TODOS · the one in front », n / total) past TODO_TIER todos
+  // or when the bridge read fewer than its total. Under it the lines: done checked, the current one in
+  // working, the rest a ring. Six at most, from the last done one, then "+N" for the rest.
+  todoList(t, V, todos, id) {
     const items = todos?.items ?? [];
-    if (!items.length) return null;
+    const total = Math.max(items.length, todos?.total ?? 0);
+    if (!total) return null;
+    const done = todos.done ?? items.filter((x) => x.status === "completed").length;
+    const say = (x) => (x.status === "in_progress" ? x.activeForm || x.content : x.content);
+    const colors = { done: t.done, current: t.working };
+    const TODOS = "TODOS"; // i18n: tech
+    // The one in front, as viz.js names it: the running one, else the next to do.
+    const front = items.find((x) => x.status === "in_progress") ?? items.find((x) => x.status !== "completed");
+    // One id for both: from a tier to the bar, nothing draws in twice.
+    const tier = total > items.length || items.length > TODO_TIER
+      ? V.progress(front ? `${TODOS} · ${say(front)}` : TODOS, done, { max: total, figure: `${done} / ${total}`, id: `kt-todos-${id}`,
+        color: items.some((x) => x.status === "in_progress") ? colors.current : colors.done })
+      : V.steps(items.map((x) => ({ label: say(x), state: x.status === "completed" ? "done" : x.status === "in_progress" ? "current" : "todo", group: TODOS })),
+        { id: `kt-todos-${id}`, colors });
+    if (!items.length) return tier;
     const open = items.findIndex((x) => x.status !== "completed");
     const from = Math.max(0, Math.min((open < 0 ? items.length : open) - 1, items.length - 6));
     const shown = items.slice(from, from + 6);
@@ -522,12 +547,7 @@ export default class Threads extends View {
           : div().size(7).rounded(4).flex_none().border(1.5).border_color(t.dim);
     return v_flex()
       .gap(1)
-      .child(
-        h_flex().h(16).gap(6).items_center().font_family(MONO).text_size(10.5)
-          .child(div().flex_none().text_color(t.muted).child("TODOS")) // i18n: tech
-          .child(div().flex_1())
-          .child(rollText(this.m, `kt-todo-n-${id}`, `${todos.done ?? 0}/${todos.total ?? items.length}`, 14).flex_none().text_color(t.dim)),
-      )
+      .child(tier.mb(4))
       .children(shown.map((x) =>
         h_flex().h(18).gap(7).items_center()
           .child(h_flex().w(11).flex_none().items_center().justify_center().child(mark(x.status)))
@@ -609,14 +629,17 @@ export default class Threads extends View {
     return div().flex_none().font_family(MONO).text_size(10.5).text_color(color).child(`CI ${mark}`); // i18n: tech
   }
 
-  // claude-flow's current step: its dot (pulsing while the thread works) and its label.
-  flowStep(t, lead, working) {
-    const now = model.flowOf(lead?.terminal ? this.live[lead.terminal]?.flow : null)?.step;
-    if (!now?.label) return null;
-    return h_flex().h(16).gap(7).items_center()
-      .child(div().id(`kt-flow-${lead.terminal}`).size(6).rounded(3).flex_none().bg(t.accent)
-        .when(working, (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1400 })))
-      .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(now.label));
+  // claude-flow's whole timeline (viz.js steps), as kt-flow's head draws it: a tier per phase (steps.js'
+  // phasesOf and names), a cell per step in kt-flow's colours (done green, running accent, breathing while
+  // the thread works, failed red), the step in front and n / total under it; one bar when too narrow. Its id carries the
+  // thread: another thread's flow draws in afresh, it doesn't morph from this one.
+  flowSteps(t, V, lead, id) {
+    const steps = lead?.terminal ? this.live[lead.terminal]?.flow?.steps : null;
+    const list = Array.isArray(steps) ? steps.filter((s) => s?.id) : [];
+    if (!list.length) return null;
+    const failed = settings().dark !== false ? t.ansi9 : t.ansi1;
+    return V.steps(phasesOf(list).flatMap((p) => p.steps.map((s) => ({ label: nameOf(s.id), state: s.state, group: p.label }))),
+      { id: `kt-steps-${id}`, colors: { done: t.done, current: t.accent, failed } });
   }
 
   // Monocode's live line: what the thread's agent is doing now, or what it needs.
@@ -727,7 +750,7 @@ export default class Threads extends View {
 
   // The shown thread's inner card (radius 8, 4 px inside the card's 12: concentric), dashed on
   // top, with only the rows there's data for: the rings (context, the 5 h window), the numbers
-  // (cost · time · lines · cache TTL, the cache hit under 85 %), claude-flow's step, the todos, the
+  // (cost · time · lines · cache TTL, the cache hit under 85 %), claude-flow's steps by phase, the todos, the
   // sub-agents on their rail, the report's CI and review (its PR is on line 2). The weekly quota
   // stays in the status line.
   focusCard(t, { sl, todos, lead, agent, working, report, c }) {
@@ -773,12 +796,18 @@ export default class Threads extends View {
       rv && rmono(rv.blockers === null ? t.dim : rv.blockers > 0 ? t.blocked : t.done, "rv",
         `R${rv.pass} · ${rv.blockers === null ? tr("notRun") : tr("blockers", { n: rv.blockers })}`),
     ].filter(Boolean);
+    // viz.js on the card's motion (reduced: drawn at once, nothing breathes) and roll (n / total rolls).
+    // The running step's and todo's pulse only while the thread works (no loop for nothing): otherwise a
+    // reduced copy of the motion, sharing its widths and folds (made here first, else the copy's are lost).
+    this.m.widths ??= new Map();
+    this.m.folded ??= new Set();
+    const V = viz(t, working ? this.m : { ...this.m, reduced: true }, { roll });
     const rows = [
       rings.length > 0 && h_flex().gap(8).items_center().children(rings),
       numbers.length > 0 && h_flex().min_h(16).gap_x(8).gap_y(4).items_center().flex_wrap()
         .children(numbers.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
-      this.flowStep(t, lead, working),
-      this.todoList(t, todos, c.id),
+      this.flowSteps(t, V, lead, c.id),
+      this.todoList(t, V, todos, c.id),
       reportLine.length > 0 && h_flex().h(16).gap(8).items_center()
         .children(reportLine.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
     ].filter(Boolean);
@@ -1429,8 +1458,7 @@ export default class Threads extends View {
     const todos = agent?.terminal ? this.live[agent.terminal]?.todos : null;
     const report = th.report;
     const ci = this.ciMark(t, report);
-    const working = c.status === "working";
-    const focus = here && !compact && !short ? this.focusCard(t, { sl, todos, lead, agent, working, report, c }) : null;
+    const focus = here && !compact && !short ? this.focusCard(t, { sl, todos, lead, agent, working: c.status === "working", report, c }) : null;
     // The context everywhere: a ring at the line's right end (16 px compact, 18 detailed).
     const ctxRing = sl?.ctx_pct != null && !short ? ring(t, `kt-ring-${c.id}`, sl.ctx_pct, compact ? 16 : 18) : null;
     // The program's tile, alive (companion-logo.js): its own icon, a bob while working, what it does in
