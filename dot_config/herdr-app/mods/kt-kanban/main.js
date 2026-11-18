@@ -80,6 +80,7 @@ import { viz } from "./viz.js";
 import { costLevel, ctxLevel, levelColor } from "./levels.js";
 import { Vim, keysOf, keyOf } from "./vim.js";
 import { motionState, frame, enter, sharpen, rows, collapse, sheet, leave, leaving, MS } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { roll, rollText } from "./roll.js";
 // kt-threads' ring.js (a byte-identical copy, with ring.strings.js; levels.js its colours): a card's session.
 import { ring, ctxTokens } from "./ring.js";
@@ -1562,6 +1563,9 @@ export default class Kanban extends View {
     const tag = (color, text) => h_flex().flex_none().h(18).px(7).items_center().rounded_full().border(1).border_color(alpha(color, "4d"))
       .bg(alpha(color, "1a")).font_family(MONO).text_size(9.5).text_color(color).child(String(text).toUpperCase());
     const loading = d.loading && !d.at;
+    // While GitHub (or the diff) is read the first time: each value as a bar (skeleton.js), breathing.
+    const S = skeleton(t, this.m);
+    const bar = (id, w, lh = 18) => S.pulse(S.line(w, { h: 8, lh }).id(`kk-dr-${id}-sk-${key}`));
     const bridge = th.terminal ? this.shownLive[th.terminal] : null;
     const tint = th.project.home ? t.muted : paint(t, th.project.color) ?? t.accent;
     // The head (DESIGN-REFERENCE.md: a detail pane's band), 64 px.
@@ -1597,16 +1601,16 @@ export default class Kanban extends View {
       ? h_flex().gap(7).items_center().child(svg(I(d.issue.state === "CLOSED" ? "circle-check" : "circle-dashed")).size(13).flex_none().text_color(d.issue.state === "CLOSED" ? t.ansi5 : t.ansi2))
         .child(mono(t.muted, `#${th.issue}`)).child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(d.issue.title))
         .child(tag(d.issue.state === "CLOSED" ? t.ansi5 : t.ansi2, d.issue.state === "CLOSED" ? "closed" : "open")) // i18n: tech
-      : h_flex().gap(7).items_center().child(mono(t.muted, `#${th.issue}`)).child(dim(loading ? tr("drawer.reading") : tr("drawer.unread"))));
+      : h_flex().gap(7).items_center().child(mono(t.muted, `#${th.issue}`)).child(loading ? bar("issue", 0.6) : dim(tr("drawer.unread"))));
     const pr = d.pr ?? (th.pr ? { ...th.pr, title: null, checks: null } : null);
     const prLook = !pr ? null : pr.state === "OPEN" && pr.draft ? ["git-pull-request", t.dim, "draft"] : pr.state === "MERGED" ? ["git-merge", t.ansi5, "merged"]
       : pr.state === "CLOSED" ? ["git-pull-request-closed", t.ansi1, "closed"] : ["git-pull-request", t.ansi2, "open"]; // i18n: tech
     const checks = pr?.checks ? checkSteps(pr.checks) : null;
     const prBlock = pr && v_flex().gap(8)
       .child(h_flex().gap(7).items_center().child(svg(I(prLook[0])).size(13).flex_none().text_color(prLook[1]))
-        .child(mono(prLook[1], `#${pr.number}`)).child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(pr.title ? t.foreground : t.dim).child(pr.title ?? (loading ? tr("drawer.reading") : "")))
+        .child(mono(prLook[1], `#${pr.number}`)).child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(pr.title ? t.foreground : t.dim).child(pr.title ?? (loading ? bar("pr", 180, 17) : "")))
         .child(tag(prLook[1], prLook[2])))
-      .child(checks == null ? dim(loading ? tr("drawer.reading") : tr("drawer.unread"))
+      .child(checks == null ? (loading ? bar("ck", 0.9, 22) : dim(tr("drawer.unread")))
         : checks.length ? V.steps(checks, { id: `kk-dr-ck-${key}`, width: DRAWER_W - 30, colors: { done: t.done, current: t.ansi3, failed: t.ansi1 },
           words: { done: tr("ck.done"), current: tr("ck.current"), failed: tr("ck.failed"), skipped: tr("ck.skipped") } })
           : dim(tr("drawer.noChecks")));
@@ -1614,7 +1618,8 @@ export default class Kanban extends View {
     const diff = d.diff
       ? h_flex().gap(10).items_center().child(div().text_size(12.5).text_color(t.foreground).child(tr("drawer.files", { n: d.diff.files })))
         .child(mono(t.ansi2, `+${d.diff.added}`)).child(mono(t.ansi1, `−${d.diff.removed}`))
-      : dim(d.diffAt ? tr("drawer.noDiff") : tr("drawer.reading"));
+      // Read once: none readable. The diff comes last in the read (d.loading till then); never read: say so.
+      : d.diffAt ? dim(tr("drawer.noDiff")) : d.loading ? bar("diff", 140) : dim(tr("drawer.unread"));
     // Cost, context, sub-agents (k ended / n, the ones still shown).
     const subs = th.subagents;
     const figures = h_flex().flex_wrap().gap_x(14).gap_y(6).items_center()
