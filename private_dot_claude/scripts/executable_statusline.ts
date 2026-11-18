@@ -259,6 +259,7 @@ if (process.env.HC_TERMINAL_ID) {
   writeJson(join(CACHE_DIR, `herdr-${process.env.HC_TERMINAL_ID}.json`), {
     model: modelName, effort: data.effort?.level ?? "", ctx_pct: ctx.usedPct, window: ctx.windowSize,
     cost_usd: data.cost?.total_cost_usd ?? null, session_id: data.session_id ?? "",
+    transcript_path: data.transcript_path ?? "",
     input_tokens: last ? fresh : null, cache_read_input_tokens: last ? read : null,
     cache_creation_input_tokens: last ? made : null, output_tokens: last ? (u.output_tokens ?? 0) : null,
     hit_pct: read + made + fresh > 0 ? Math.round((read / (read + made + fresh)) * 1000) / 10 : null,
