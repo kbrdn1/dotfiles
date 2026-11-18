@@ -27,13 +27,31 @@ function allowGlobs(): RegExp[] {
   } catch { return []; }
 }
 
-// Les heredocs : leur corps (code python, texte) est mis à part, la ligne shell garde le reste.
+// Les heredocs : leur corps (code python, texte) est mis à part, et l'opérateur `<<TAG` devient un
+// mot `__HD<k>__` à sa place dans la ligne shell. Un corps n'est donc du code que pour la commande
+// simple qui le porte (`python3 - <<PY`), jamais pour un autre interpréteur de la même ligne
+// (`cat > notes <<EOF … EOF; bun run.ts`). Un `<<` entre guillemets n'ouvre pas de heredoc.
 export function splitHeredocs(cmd: string): { shell: string; bodies: string[] } {
   const lines = cmd.split("\n");
   const out: string[] = [], bodies: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    out.push(lines[i]);
-    const tags = [...lines[i].matchAll(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/g)].map((m) => m[2]);
+    let line = "", q: string | null = null;
+    const tags: string[] = [];
+    const src = lines[i];
+    for (let c = 0; c < src.length; c++) {
+      const ch = src[c];
+      if (q) { line += ch; if (ch === q) q = null; continue; }
+      if (ch === "'" || ch === '"') { q = ch; line += ch; continue; }
+      const m = ch === "<" ? /^<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(src.slice(c)) : null;
+      if (m && src[c + 2] !== "<") { // <<< est une here-string, pas un heredoc
+        line += ` __HD${bodies.length + tags.length}__ `;
+        tags.push(m[2]);
+        c += m[0].length - 1;
+        continue;
+      }
+      line += ch;
+    }
+    out.push(line);
     for (const tag of tags) {
       const body: string[] = [];
       while (++i < lines.length && lines[i].trim() !== tag) body.push(lines[i]);
@@ -141,8 +159,10 @@ export function verdict(cmd: string, cwd = process.cwd(), globs: RegExp[] = allo
       const inline: string[] = [];
       for (let j = i + 1; j < ws.length && !SEP.has(ws[j]); j++) {
         if (/^-(c|e|E|-eval)$/.test(ws[j]) && ws[j + 1]) inline.push(ws[j + 1].replace(/^["']|["']$/g, ""));
+        const hd = /^__HD(\d+)__$/.exec(ws[j]); // le heredoc de CETTE commande simple
+        if (hd) inline.push(bodies[Number(hd[1])] ?? "");
       }
-      const code = [...inline, ...bodies].join("\n");
+      const code = inline.join("\n");
       if (code && WRITE_API.some((re) => re.test(code))) {
         const literals = [...code.matchAll(/['"]((?:\/|~\/|\.\.?\/)[^'"\n]+)['"]/g)].map((m) => m[1]);
         const outside = literals.find((p) => !allowed(resolve(p, vars), cwd, globs));

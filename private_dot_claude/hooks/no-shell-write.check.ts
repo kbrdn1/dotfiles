@@ -33,6 +33,11 @@ const cases: [string, boolean][] = [
   [`diff <(sort a) <(sort b)`, false],
   [`cmd >&2`, false],
   [`node -e "process.stdout.write('x')"`, false],
+  // un heredoc ne compte comme code que pour la commande qui le porte (faux positif vu le 2026-11-18)
+  [`S=/private/tmp/s; cat > "$S/notes.txt" <<'EOF'\nopen(p,'w').write(x)\nEOF\nbun "$S/run.ts"`, false],
+  [`git commit -m "voir <<'EOF' dans le doc"`, false],
+  [`echo a; python3 - <<'PY'\nopen("src/x.py","w").write("y")\nPY`, true],
+  [`cat <<< "texte" | wc -l`, false],
 ];
 let bad = 0;
 for (const [cmd, deny] of cases) {
