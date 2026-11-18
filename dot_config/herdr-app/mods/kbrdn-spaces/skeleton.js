@@ -17,6 +17,7 @@
 //   S.swap("kx-body", ready, (first) => content, () => skel, { grow })   // skeleton while !ready, then content fading in
 //   rows(first ? still(m) : m, cx, …)                // in that content: the list lands at rest, no jump
 //   S.arriving("kx-body")                            // that `first`, known before calling swap
+//   readyFor(this.readFor, target)                   // that `ready`: read for the target followed now
 //
 // Its look: flat bars in t.border, cards in t.raised with their border, the interface's dither only on
 // a card's band (DESIGN-REFERENCE.md: not on list rows, too busy). Bricks never move: the region they
@@ -78,8 +79,9 @@ export function skeleton(t, m = null, { band } = {}) {
   // would multiply). Reduced motion or no motion state: still.
   const pulse = (el) => (m ? breathe(m, el, true) : el);
 
-  // The skeleton while !ready (`ready`: the data exists, never "not busy": a reload keeps the old data
-  // on screen, DATA-SYNC.md), breathing under the id `${id}~sk`; `skel` has no id of its own. Then the
+  // The skeleton while !ready (`ready`: readyFor(), the data was read for the target shown now, never
+  // "not busy": a reload keeps the old data on screen, DATA-SYNC.md), breathing under the id `${id}~sk`;
+  // `skel` has no id of its own. Back to the skeleton (another target), the content fades in again. Then the
   // content: at once when no skeleton stood there (content at hand, as before); else faded in (enter,
   // no rise) in a box of its own, so the content keeps its ids and handlers: `grow`, a flex_1 column
   // (a scrolling body, a virtual list), else a full-width column. `content(first)`: `first` on the
@@ -106,6 +108,15 @@ export function skeleton(t, m = null, { band } = {}) {
 
   return { line, circle, block, row, list, pulse, swap, arriving };
 }
+
+// Whether what a panel shows was read for the target it follows now (a terminal, a thread's folder, a
+// repo: any key, compared with ===). `readFor`: the target its last read answered for, a failed read
+// included (an answer: no skeleton left standing), undefined before the first. The data existing is not
+// enough: after a change of target, the previous one's data is still there until the new read answers.
+// So: another target than the one read, not ready (the skeleton, never the previous target's data); the
+// same target read again, ready (what is shown stays); no target (null), ready: there is nothing to read,
+// the panel says why. Pure: skeleton.check.mjs.
+export const readyFor = (readFor, target) => target == null || readFor === target;
 
 // motion.js' state seen as reduced for one call: rows() then shows its rows at rest and records them,
 // so the next (animated) render takes them as they are. For the render content comes in after a

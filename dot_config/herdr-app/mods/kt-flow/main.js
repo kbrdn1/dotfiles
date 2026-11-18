@@ -50,7 +50,7 @@ import { Vim, keyOf, keysOf, step } from "./vim.js";
 // Where the issue, PR, checks and branch buttons and gi gI gp gP go (pure: links.check.mjs).
 import { target, checksOf, stepKind, stepUrl, inHerdr, toBrowser, toPage, toTab, gLink } from "./links.js";
 import { motionState, frame, enter, collapse, stagger } from "./motion.js";
-import { skeleton } from "./skeleton.js";
+import { skeleton, readyFor } from "./skeleton.js";
 import { refreshOn } from "./bus.js";
 // kt-threads' reads (threads-io.js with threads-model.js, pr-pick.js, thread-filter.js: byte-identical
 // copies): the followed agent's herdr-bridge json, for its todos, its live line and its sub-agents.
@@ -473,7 +473,13 @@ export default class Flow extends View {
         this.flow = flow;
         this.report = report;
         cx.notify();
-      } finally { this.reading = false; }
+      } finally {
+        this.reading = false;
+        // An answer for `term` (unchanged or failed alike): its skeleton gives way (readyFor).
+        if (this.readFor !== term) { this.readFor = term; cx.notify(); }
+        // The terminal changed while this read ran (that read was dropped): read the new one now.
+        if (this.follow() !== term) this.read(cx);
+      }
     });
   }
 
@@ -1170,6 +1176,27 @@ export default class Flow extends View {
             .when(!this.copied, (el) => el.child(svg("mods/kt-diff/copy.svg").size(11).text_color(t.dim))))));
   }
 
+  // ---------- loading (skeleton.js) ----------
+
+  // The timeline while it is read, in its real sizes: the header card (workflow, branch, pills, the steps'
+  // tiers and their line), then phase cards of 28 px rows, the running one unfolded. One loop around it all.
+  skel(t, m) {
+    const S = skeleton(t, m);
+    const card = (r) => v_flex().flex_none().rounded(r).border(1).border_color(t.border).bg(t.background);
+    const phase = (n, w) => card(12).p(4).child(S.list(n, { h: 28, icon: 12, lines: [w], px: 6, gap: 8 }));
+    return v_flex().size_full().gap(4)
+      .when(this.keyed, (el) => el.child(h_flex().flex_none().px(14).pt(6).child(div().flex_1()).child(modePill(t, this.vim))))
+      .child(S.pulse(v_flex().id("kf-sk").flex_1().min_h(0).gap(4).overflow_hidden()
+        .child(card(16).px(14).py(12).gap(9)
+          .child(h_flex().gap(8).items_center().child(S.circle(14)).child(S.line(0.45, { h: 9, lh: 18 })))
+          .child(S.line(0.35, { h: 7, lh: 15 }))
+          .child(h_flex().gap(6).children([44, 72, 56].map((w) => S.block(w, 18, { r: 9 }))))
+          .child(v_flex().gap(4).child(S.line(null, { h: 15, lh: 15, r: 2 })).child(S.line(0.5, { h: 6, lh: 14 }))))
+        .child(phase(1, 0.3))
+        .child(phase(4, 0.4))
+        .child(phase(1, 0.35))));
+  }
+
   render(cx) {
     const vis = visible();
     // The panel opens (and the last read is past 10 s, DATA-SYNC.md): look for the report and plans again.
@@ -1191,6 +1218,12 @@ export default class Flow extends View {
     this.keyed = this.handle.is_focused();
     // The same root in both states, so the keyboard stays here (focus, key:, esc, [ ]).
     const root = (el) => el.id("kt-flow").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx));
+    // Before the first read, and after a change of terminal until its own read answers (readyFor): the
+    // timeline's shape, never the previous terminal's flow, nor « pas de flow » before the answer.
+    if (!readyFor(this.readFor, this.follow())) {
+      this.flat = [];
+      return root(this.skel(t, m));
+    }
     const steps = this.flow?.steps ?? [];
     if (!steps.length) {
       this.flat = [];

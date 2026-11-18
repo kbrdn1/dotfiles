@@ -137,4 +137,38 @@ S = skeleton(t, frame(mr, true));
 assert.equal(loops(S.swap("kz", false, () => el(), () => S.list(3))), 0);
 S = skeleton(t, frame(mr, true));
 assert.ok(!("opacity" in S.swap("kz", true, () => el(), () => S.list(3)).props));
+
+// readyFor (#42): ready means read for the target followed NOW, not "some data exists".
+const { readyFor } = await import("./skeleton.js");
+// First opening: nothing read yet, a target: the skeleton.
+assert.equal(readyFor(undefined, "t1"), false);
+// Another target (thread, branch, worktree, folder): the previous one's data must not show.
+assert.equal(readyFor("t1", "t2"), false);
+// The same target read again: what is shown stays.
+assert.equal(readyFor("t1", "t1"), true);
+// A failed read answers too: its target is recorded, no skeleton left standing.
+assert.equal(readyFor("t2", "t2"), true);
+// No target (no terminal, no folder): nothing to read, the panel says why.
+assert.equal(readyFor(undefined, null), true);
+assert.equal(readyFor("t1", null), true);
+// Composite targets compare as their key strings (JSON of [machine, folder]).
+assert.equal(readyFor(JSON.stringify([null, "/a"]), JSON.stringify([null, "/a"])), true);
+assert.equal(readyFor(JSON.stringify([null, "/a"]), JSON.stringify([null, "/b"])), false);
+// swap across a change of target: ready, then not (the skeleton again), then ready: the content fades in
+// again (its fade id was not drawn while the skeleton stood, so it is forgotten).
+const mt = motionState();
+const cnt = () => el().id("cnt");
+S = skeleton(t, frame(mt, false));
+S.swap("kt", false, cnt, () => S.list(2));
+S = skeleton(t, frame(mt, false));
+out = S.swap("kt", true, cnt, () => S.list(2));
+assert.deepEqual(out.props.opacity, [0]);
+out.on.on_size_change({ width: 10, height: 10 }, { notify() {} });
+S = skeleton(t, frame(mt, false));
+assert.deepEqual(S.swap("kt", true, cnt, () => S.list(2)).props.opacity, [1]);
+S = skeleton(t, frame(mt, false));
+assert.deepEqual(S.swap("kt", false, cnt, () => S.list(2)).props.id, ["kt~sk"]);
+S = skeleton(t, frame(mt, false));
+assert.equal(S.arriving("kt"), true);
+assert.deepEqual(S.swap("kt", true, cnt, () => S.list(2)).props.opacity, [0]);
 console.log("ok");
