@@ -120,6 +120,16 @@ If `/sc:git` is available and the user wants it, delegate commit grouping to it.
 
 **Formatter drift guard.** If the repo's format command auto-downloads its formatter (e.g. `composer format` fetching the latest Mago, `bun`/`npm` pulling a newer Prettier/Biome), running it can reformat the **entire repo** when that version differs from the one that last formatted the branch. After formatting, check `git status` and **revert every file you did not touch** (`git add` your real files, then `git checkout -- .`). A `fix`/`feat` PR must never carry unrelated reformatted files. Prefer the repo's **pre-commit hook** (formats only staged files) over a manual repo-wide `format`.
 
+### 3 bis. Docs — first pass, before the PR (when the repo has a docs gate)
+
+If the repo has a `me:loop:docs-sync` `check_command` (an enumerable public surface: a CLI `--help`, an OpenAPI file, a route list — see [[me:loop:docs-sync]]), run the loop **now**, on the code as it stands, on the feature branch:
+
+```
+/me:loop:docs-sync
+```
+
+Commit what it changes as its own `📝 docs(<scope>): …` commit(s). The docs then ship in the PR from its first push: the review's **spec axis** reads them as the intention realised, and a doc/code gap becomes a finding instead of an afterthought. No gate for this repo → skip, say so, and do not invent one.
+
 ### 4. Push + open the PR
 
 ```bash
@@ -174,6 +184,16 @@ gh pr create --base dev --title "..." --body "..."
 
 **Print the final PR URL** so the user can click through.
 
+### End-of-dev report — at review entry (`/me:report`)
+
+The PR is open: development is over, review starts. From the worktree, generate the branch's live HTML report with **`/me:report`** (skill `me:report`). Facts (files, diffs, commits, CI on the exact SHA, the agent working on the branch) are collected by script for 0 token; the model only writes the narrative, section by section, in `notes.json`.
+
+```bash
+~/.claude/skills/me/report/collect.py   # three lines: REPORT / FACTS / NOTES
+```
+
+`NOTES absentes` → write `notes.json` (schema in the skill), rerun, open the page once (`open <REPORT>`, or Sheprd in Herdr): it refreshes itself. The review loop's step (D) fills its review section at every pass. After the review, if the code moved, `/me:report refresh` rewrites only the sections flagged stale.
+
 ### 4 bis. Review, then CI — *this step was missing from this skill until 2026-09-07*
 
 Every other flow (`git-flow-worktree`, both `spec-git-flow-*`) gates the PR before merge; this one went straight from "PR opened" to "note at merge". It no longer does.
@@ -188,7 +208,17 @@ Every other flow (`git-flow-worktree`, both `spec-git-flow-*`) gates the PR befo
 
 For a **sensitive PR** (security, money, multi-tenant isolation, data migration), double up with `/me:loop:codex-review-pr` (local Codex CLI — a **third-party** reviewer with different blind spots; the Claude reviewer shares mine). As a secondary, on-demand step, the user manually triggers `/me:check-reviews [PR#]`.
 
-**Then CI: `/me:loop:ci-until-green`.** It reads the checks for the **exact SHA** of `HEAD` (not "the branch"), refuses to conclude while anything is unpushed, and never reads "zero checks" as a green CI. Do not merge before `CI_FAILED=0 CI_PENDING=0` with `CI_TOTAL ≥ 1`.
+⛔ While the loop runs, **nothing else writes in the working tree** — no `docs-sync`, no formatter, no manual edit: the two reviewers read the tree at every pass, and a concurrent write changes what they judge mid-pass.
+
+**4 ter. Docs — second pass, only when the review moved the code.** The review loop fixes code; the docs of step 3 bis may now describe what no longer exists. One command decides:
+
+```bash
+git log --oneline --since="$(gh pr view --json createdAt -q .createdAt)" -- . ':!docs' ':!**/*.md'
+```
+
+Non-empty (code commits since the PR opened) → run `/me:loop:docs-sync` again, commit `📝 docs(sync): …`, push. Empty → nothing to do, say so. Skipped altogether when the repo has no docs gate (step 3 bis).
+
+**Then CI: `/me:loop:ci-until-green`** — on the final SHA, docs included. It reads the checks for the **exact SHA** of `HEAD` (not "the branch"), refuses to conclude while anything is unpushed, and never reads "zero checks" as a green CI. Do not merge before `CI_FAILED=0 CI_PENDING=0` with `CI_TOTAL ≥ 1`.
 
 🔴 Never make CI green by disabling a job, adding `continue-on-error`, skipping a test or blind-rerunning — a blind CI is worse than a red one.
 

@@ -2,6 +2,22 @@
 
 This is the mandatory color palette for all visual-explainer output. Always use these colors. Do not deviate, do not improvise alternate palettes.
 
+Source of truth: kbrdn.dev v2 (`~/Projects/Perso/kbrdn.dev-v2/app/assets/css/theme.css`, synced 2026-11-17). The live implementation for local reports is `~/.claude/skills/me/report/shell/view.css`.
+
+## Surfaces and typography (kbrdn.dev v2)
+
+| Token | Dark | Light | Usage |
+|-------|------|-------|-------|
+| `--panel` | `#0f0f0f` | `#f5f5f5` | Panels holding cards (sections) |
+| `--card` | `#191919` | `#ffffff` | Cards, tables, diagram boxes |
+| `--line` | `#2a2a2a` | `#e5e5e5` | Panel and card borders |
+| `--label` | `#999999` | `#666666` | Small mono labels (`#666` is 5.3:1 on light, 3.1:1 on dark: never `#666` on dark) |
+| `--accent-text` | `#d4825d` | `#a64d2e` | Accent text on an orange tint (`#c15f3c` only holds 3.6:1 there in light) |
+
+Fonts: `Inter` (sans), `Monaspace Krypton` (mono, labels), `Monaspace Neon` (code), `Monaspace Radon` (comments). All installed locally: a **local** HTML file uses them directly. A **published** artifact cannot load them (CSP): keep a system mono stack there.
+
+Never put a class named `label` on your own elements in a page that renders Mermaid: Mermaid uses `.label` for node text and inherits the styles.
+
 ## Primary Variant: Pure Dark
 
 Use this by default in `:root`.
@@ -58,17 +74,17 @@ Apply inside `@media (prefers-color-scheme: light)`:
 
 | Token | Hex | Notes |
 |-------|-----|-------|
-| `--bg` | `#faf8f6` | Warm off-white |
-| `--surface` | `#f0ece8` | Light warm surface |
-| `--surface-0` | `#e8e2dc` | Light cards |
-| `--surface-1` | `#ddd5cc` | Light active |
-| `--surface-2` | `#d0c6ba` | Light hover |
-| `--border` | `rgba(0, 0, 0, 0.1)` | Subtle dark border |
-| `--text` | `#2a2520` | Dark warm text |
-| `--text-dim` | `#5a4a40` | Medium text |
-| `--text-muted` | `#8a7a70` | Muted text |
+| `--bg` | `#f5f5f5` | Neutral off-white (kbrdn.dev v2, no longer warm) |
+| `--surface` | `#ffffff` | Light surface |
+| `--surface-0` | `#ffffff` | Light cards |
+| `--surface-1` | `#e0e0e0` | Light active |
+| `--surface-2` | `#d0d0d0` | Light hover |
+| `--border` | `#e5e5e5` | Subtle border |
+| `--text` | `#1a1a1a` | Dark text |
+| `--text-dim` | `#3a3a3a` | Medium text |
+| `--text-muted` | `#666666` | Muted text |
 | `--accent` | `#C15F3C` | Orange Dark as primary in light |
-| `--accent-dark` | `#a04e30` | Darker orange for hover in light |
+| `--accent-dark` | `#a64d2e` | Darker orange for hover, and accent text on a tint |
 
 Semantic colors stay the same hex but increase dim variant opacity to 0.18 for visibility on light backgrounds.
 
@@ -110,20 +126,20 @@ Semantic colors stay the same hex but increase dim variant opacity to 0.18 for v
 
 @media (prefers-color-scheme: light) {
   :root {
-    --bg: #faf8f6;
-    --surface: #f0ece8;
-    --surface-0: #e8e2dc;
-    --surface-1: #ddd5cc;
-    --surface-2: #d0c6ba;
-    --border: rgba(0, 0, 0, 0.1);
-    --border-dim: rgba(0, 0, 0, 0.06);
-    --text: #2a2520;
-    --text-dim: #5a4a40;
-    --text-muted: #8a7a70;
-    --muted: #8a7a70;
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --surface-0: #ffffff;
+    --surface-1: #e0e0e0;
+    --surface-2: #d0d0d0;
+    --border: #e5e5e5;
+    --border-dim: #d0d0d0;
+    --text: #1a1a1a;
+    --text-dim: #3a3a3a;
+    --text-muted: #666666;
+    --muted: #666666;
 
     --accent: #C15F3C;
-    --accent-dark: #a04e30;
+    --accent-dark: #a64d2e;
     --accent-dim: rgba(193, 95, 60, 0.12);
 
     --success-dim: rgba(134, 232, 154, 0.18);

@@ -1,0 +1,143 @@
+diff --git a/plugins/codex/scripts/lib/broker-lifecycle.mjs b/plugins/codex/scripts/lib/broker-lifecycle.mjs
+index ef76381..448342b 100644
+--- a/plugins/codex/scripts/lib/broker-lifecycle.mjs
++++ b/plugins/codex/scripts/lib/broker-lifecycle.mjs
+@@ -40,19 +40,47 @@ export async function waitForBrokerEndpoint(endpoint, timeoutMs = 2000) {
+   return false;
+ }
+ 
+-export async function sendBrokerShutdown(endpoint) {
++// Un broker wedgé accepte la connexion et ne répond jamais : sans borne, cette
++// promesse ne se résout sur aucun des trois événements et le hook `SessionEnd`
++// (5 s) meurt là. C'est exactement l'état que `reconcile --force` existe pour
++// nettoyer — le teardown ne doit pas être la victime du désordre qu'il répare.
++//
++// Abandonner l'arrêt courtois ne laisse rien derrière : les appelants
++// enchaînent sur `teardownBrokerSession()`, qui tue le process et démonte
++// socket, pidfile et sessionDir.
++export const BROKER_SHUTDOWN_TIMEOUT_MS = 1000;
++
++export async function sendBrokerShutdown(endpoint, timeoutMs = BROKER_SHUTDOWN_TIMEOUT_MS) {
+   await new Promise((resolve) => {
+-    const socket = connectToEndpoint(endpoint);
++    let socket = null;
++    let settled = false;
++    const finish = () => {
++      if (settled) {
++        return;
++      }
++      settled = true;
++      clearTimeout(timer);
++      try {
++        socket?.destroy();
++      } catch {
++        // Le teardown forcé qui suit s'en charge.
++      }
++      resolve();
++    };
++
++    const timer = setTimeout(finish, timeoutMs);
++
++    socket = connectToEndpoint(endpoint);
+     socket.setEncoding("utf8");
+     socket.on("connect", () => {
+       socket.write(`${JSON.stringify({ id: 1, method: "broker/shutdown", params: {} })}\n`);
+     });
+     socket.on("data", () => {
+       socket.end();
+-      resolve();
++      finish();
+     });
+-    socket.on("error", resolve);
+-    socket.on("close", resolve);
++    socket.on("error", finish);
++    socket.on("close", finish);
+   });
+ }
+ 
+diff --git a/plugins/codex/scripts/session-lifecycle-hook.mjs b/plugins/codex/scripts/session-lifecycle-hook.mjs
+index 9655eae..30adb70 100644
+--- a/plugins/codex/scripts/session-lifecycle-hook.mjs
++++ b/plugins/codex/scripts/session-lifecycle-hook.mjs
+@@ -19,12 +19,69 @@ import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+ export const SESSION_ID_ENV = "CODEX_COMPANION_SESSION_ID";
+ const PLUGIN_DATA_ENV = "CLAUDE_PLUGIN_DATA";
+ 
+-function readHookInput() {
+-  const raw = fs.readFileSync(0, "utf8").trim();
++// Le hook dispose de 5 s (hooks.json). `fs.readFileSync(0)` bloque jusqu'à
++// l'EOF de stdin : si l'appelant garde le tube ouvert sans jamais écrire — une
++// fin de session qui s'interrompt avant d'avoir posé son JSON —, la toute
++// première ligne du hook consomme tout le budget et le hook meurt avant
++// d'atteindre le teardown du broker. Mesuré : 13 s sur un tube ouvert sans
++// données, contre 1,2 s en fonctionnement nominal.
++//
++// Un input absent ou tronqué est déjà un cas prévu : `handleSessionEnd()`
++// retombe sur `process.cwd()` et sur la variable d'environnement de session. On
++// dégrade donc vers cette voie plutôt que d'attendre indéfiniment.
++// Serré volontairement : le budget total est de 5 s et le démarrage de Node en
++// consomme déjà une part variable — mesuré jusqu'à 7 s à lui seul sur une
++// machine chargée, où aucun délai applicatif ne sauve plus rien. Ce qui se joue
++// ici, c'est de ne pas ajouter d'attente évitable à celles qu'on ne contrôle pas.
++const STDIN_TIMEOUT_MS = 1000;
++
++function readStdin(timeoutMs) {
++  return new Promise((resolve) => {
++    let data = "";
++    let settled = false;
++    const finish = () => {
++      if (settled) {
++        return;
++      }
++      settled = true;
++      clearTimeout(timer);
++      // `pause()` + `unref()` et non `destroy()` : il faut que la boucle
++      // d'événements cesse de compter stdin, sinon le process reste vivant
++      // aussi longtemps que l'écrivain garde le tube ouvert — le délai
++      // s'écoule, le travail se fait, et personne ne rend la main.
++      process.stdin.pause();
++      process.stdin.unref?.();
++      resolve(data.trim());
++    };
++
++    const timer = setTimeout(finish, timeoutMs);
++
++    // `process.stdin` et non `fs.createReadStream(fd 0)` : sur un tube, le
++    // second lit via le pool de threads, et un `read()` déjà engagé sur un tube
++    // vide n'est pas interruptible — `destroy()` ne le rappelle pas, Node
++    // attend la fin du travail avant de sortir. `process.stdin` est un socket
++    // non bloquant, donc `unref()` mord réellement.
++    process.stdin.setEncoding("utf8");
++    process.stdin.on("data", (chunk) => {
++      data += chunk;
++    });
++    process.stdin.on("end", finish);
++    process.stdin.on("error", finish);
++    process.stdin.resume();
++  });
++}
++
++async function readHookInput() {
++  const raw = await readStdin(STDIN_TIMEOUT_MS);
+   if (!raw) {
+     return {};
+   }
+-  return JSON.parse(raw);
++  try {
++    return JSON.parse(raw);
++  } catch {
++    // Tronqué par le délai : mieux vaut le teardown dégradé que pas de teardown.
++    return {};
++  }
+ }
+ 
+ function shellEscape(value) {
+@@ -112,7 +169,7 @@ async function handleSessionEnd(input) {
+ }
+ 
+ async function main() {
+-  const input = readHookInput();
++  const input = await readHookInput();
+   const eventName = process.argv[2] ?? input.hook_event_name ?? "";
+ 
+   if (eventName === "SessionStart") {

@@ -8,7 +8,7 @@ description: Loop auto-cadencé — relance une review par agent Claude (spawné
 Loop auto-cadencé. **mode:** closed · **trigger:** self-pace · **exécution:** single · **hardened:** true (bloc anti-triche de `me:run-loop`).
 **Source de review par défaut** (depuis le 2026-09-07). La review est faite par un **agent Claude spawné depuis la session** (tool `Agent`, contexte frais, **effort `high` minimum**), pas par le companion Codex. Plus de broker, plus de wedge, plus de fallback — l'agent tourne ou il ne tourne pas. Applique le **PROTOCOLE SELF-PACE** ci-dessous (canonique dans `me:run-loop`).
 
-> ⚠️ L'agent review l'arbre du **répertoire courant** sur la **branche courante**. Lance ce loop **depuis le checkout/worktree de la PR**, sur sa branche — sinon il review le mauvais arbre.
+> ⚠️ L'agent review l'arbre du **répertoire courant** sur la **branche courante**. Lance ce loop **depuis le checkout/worktree de la PR**, sur sa branche — sinon il review le mauvais arbre. Dans Claude Code, un `cd` vers un worktree hors du répertoire de travail ne tient pas d'un appel Bash à l'autre : préfixer chaque bloc par `cd "$WT" &&`.
 
 > ⚠️ **Honnêteté — la limite structurelle de ce loop.** Le reviewer est du **même modèle que la session**. Contexte frais ≠ angles morts différents : ce qui m'a échappé en écrivant a de bonnes chances d'échapper au reviewer aussi. C'est le prix de ne pas dépendre du companion Codex, et c'est un prix réel, pas une formalité.
 >
@@ -56,7 +56,7 @@ ISSUE=$(gh pr view "$N" --json body -q .body 2>/dev/null | grep -oiE '(closes|fi
 [ -z "$ISSUE" ] && ISSUE=$(git branch --show-current | grep -oE '#[0-9]+' | tr -d '#')
 [ -n "$ISSUE" ] && gh issue view "$ISSUE" --json title,body -q '"# " + .title + "\n\n" + .body' >> "$INTENT" 2>/dev/null
 # spec-driven : la spec fait autorité sur l'issue quand elle existe
-SPEC=$(ls -d .specify/specs/${ISSUE}-* 2>/dev/null | head -1)
+SPEC=$([ -n "$ISSUE" ] && [ -d .specify/specs ] && find .specify/specs -maxdepth 1 -type d -name "${ISSUE}-*" | head -1)  # find : pas de glob, zsh (nomatch) comme bash
 [ -n "$SPEC" ] && [ -f "$SPEC/spec.md" ] && { echo; echo "# spec.md"; cat "$SPEC/spec.md"; } >> "$INTENT"
 if [ -s "$INTENT" ]; then echo "INTENT=$INTENT ($(wc -l < "$INTENT") lignes)"; SPEC_SKIPPED=0
 else echo "⚠️ ni issue ni spec trouvée — axe spec non lançable"; SPEC_SKIPPED=1; fi
@@ -87,7 +87,9 @@ Chaque agent : `subagent_type: "general-purpose"`, `model: "opus"`, `prompt` ave
 ```
 ultrathink
 
-Tu es un reviewer senior STRICT sur une PR. Répertoire courant = le worktree de la PR.
+Tu es un reviewer senior STRICT sur une PR. Worktree de la PR = <WT> : lis TOUT par ce chemin absolu
+(fichiers : <WT>/chemin ; git : git -C "<WT>" …). Ton répertoire courant peut être un autre checkout,
+sur une autre branche : ne t'y fie pas.
 
 Périmètre : UNIQUEMENT le diff de la PR (base <BASE>). Le diff complet est dans <DIFF>.
 Lis-le en entier, puis ouvre les fichiers source du repo pour le contexte réel (appelants,
@@ -141,7 +143,10 @@ Tu ne juges NI le style, NI les conventions, NI la robustesse — un autre revie
 Un diff impeccable qui implémente la mauvaise chose doit ressortir en P0/P1 chez toi.
 ```
 
-Substituer `<BASE>`, `<DIFF>`, `<REPORT>`, `<INTENTION>` par les valeurs de (A).
+Substituer `<WT>` (`git rev-parse --show-toplevel`, lancé depuis le worktree de la PR), `<BASE>`, `<DIFF>`,
+`<REPORT>`, `<INTENTION>` par les valeurs de (A). Le cwd d'un subagent est celui du lead : si le lead n'est pas
+dans le worktree (repli séquentiel, worktree hors du répertoire de travail), l'agent lirait les fichiers d'une
+autre branche en les croyant ceux de la PR. Le chemin absolu dans le prompt ferme ce trou.
 
 ### (C) Parsing — Bash, inline (c'est lui qui fait foi)
 
@@ -204,6 +209,25 @@ PY
 > ⚠️ Si `RESUME:` annonce des bloquants mais que le bloc `blocking` correspondant est vide (ou l'inverse), l'agent a mal formaté : relancer **cet axe** en (B), ne pas trancher au jugé.
 
 > 🔴 `SPEC_SKIPPED=1` n'est pas un axe vert. Il s'annonce dans le rapport final comme « scope creep non contrôlé sur cette PR », et il ne doit jamais devenir l'état par défaut parce que retrouver l'issue demandait un effort.
+
+### (D) Rapport live `me:report` — Bash, inline, 0 token
+
+Juste après (C), à chaque passe : la section review du rapport HTML de la branche se remplit pendant que le loop tourne (passes, deux axes séparés, findings dépliables, ouvrir à la ligne). `collect.py` lit les rapports **tels quels** : rien à reformater.
+
+```bash
+C=~/.claude/skills/me/report/collect.py
+RD=$("$C" --dir) && mkdir -p "$RD/review" && {
+  N=$(( $(ls "$RD/review" | grep -c -- '-standards\.md$') + 1 ))
+  cp "$R_STD" "$RD/review/pass-$N-standards.md"
+  # spec non lancé : JAMAIS le RESUME à zéro écrit plus haut, il s'afficherait « propre »
+  if [ "${SPEC_SKIPPED:-0}" = 1 ]; then echo 'SPEC_SKIPPED=1' > "$RD/review/pass-$N-spec.md"
+  else cp "$R_SPEC" "$RD/review/pass-$N-spec.md"; fi
+  git rev-parse --short HEAD > "$RD/review/pass-$N.sha"
+  "$C" | head -3
+}
+```
+
+Décisions (Step 2), une ligne par finding tranché dans `$RD/review/decisions.tsv`, séparateur tabulation : `p<N>-<axe>-<rang>	fixed	<sha du commit>` après la correction, `p<N>-<axe>-<rang>	discarded	<raison en une phrase>` pour un écartement (`rang` = position de la puce dans le rapport de l'axe, à partir de 1, en comptant **toutes** les puces dans l'ordre du fichier, P3 compris : un rang compté sur les seuls bloquants attache la décision au mauvais finding). Un écartement sans raison s'affiche en rouge dans le rapport.
 
 ## Cycle
 

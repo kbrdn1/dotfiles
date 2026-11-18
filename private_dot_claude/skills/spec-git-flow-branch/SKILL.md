@@ -139,6 +139,16 @@ Emoji↔type: ✨ feat · 🐛 fix · ♻️ refactor · ✅ test · 📝 docs �
 
 Show `git log --oneline @{u}..HEAD` after each commit. Never `git add -A` across multiple themes.
 
+### 5 bis. Docs — first pass, before the PR (when the repo has a docs gate)
+
+If the repo has a `me:loop:docs-sync` `check_command` (an enumerable public surface: a CLI `--help`, an OpenAPI file, a route list — see [[me:loop:docs-sync]]), run the loop **now**, on the code as it stands, on the feature branch:
+
+```
+/me:loop:docs-sync
+```
+
+Commit what it changes as its own `📝 docs(<scope>): …` commit(s), apart from the `docs(spec)` artifacts. The docs then ship in the PR from its first push: the review's **spec axis** reads them beside `spec.md` as the intention realised, and a doc/code gap becomes a finding. No gate for this repo → skip, say so, and do not invent one.
+
 ### 6. Push + open the PR
 
 ```bash
@@ -183,6 +193,16 @@ EOF
 
 If the repo targets a non-`main` integration branch (gwm-cli targets `dev`), add `--base <branch>`. **Print the final PR URL.**
 
+### End-of-dev report — at review entry (`/me:report`)
+
+The PR is open: development is over, review starts. From the worktree, generate the branch's live HTML report with **`/me:report`** (skill `me:report`). Facts (files, diffs, commits, CI on the exact SHA, the agent working on the branch) are collected by script for 0 token; the model only writes the narrative, section by section, in `notes.json`.
+
+```bash
+~/.claude/skills/me/report/collect.py   # three lines: REPORT / FACTS / NOTES
+```
+
+`NOTES absentes` → write `notes.json` (schema in the skill), rerun, open the page once (`open <REPORT>`, or Sheprd in Herdr): it refreshes itself. The review loop's step (D) fills its review section at every pass. After the review, if the code moved, `/me:report refresh` rewrites only the sections flagged stale.
+
 ### 7. Review the PR
 
 Default review source: the **`/me:loop:claude-review-pr`** loop (a Claude agent spawned with **fresh** context, self-paced — fixes relevant blocking findings P0/P1/P2 until clean). For a sensitive PR, double up with `/me:loop:codex-review-pr` (local Codex CLI — a **third-party** reviewer). In branch mode you are already on the feature branch in the current checkout — run it directly:
@@ -193,7 +213,21 @@ Default review source: the **`/me:loop:claude-review-pr`** loop (a Claude agent 
 
 ⚠️ The loop reviews the **current working dir** on the **current branch**: stay on the PR branch (no checkout back to `main`/`dev`) before launching. As a secondary, on-demand step the user triggers `/me:check-reviews [PR#]` manually. See [[check-reviews]].
 
-Once the review loop is clean, run **`/me:loop:ci-until-green`**. It reads the checks for the **exact SHA** of `HEAD` (not "the branch"), refuses to conclude while anything is unpushed, and never reads "zero checks" as a green CI. Do not merge before `CI_FAILED=0 CI_PENDING=0` with `CI_TOTAL ≥ 1`.
+⛔ While the loop runs, **nothing else writes in the working tree** — no `docs-sync`, no `speckit.converge`, no formatter: the two reviewers read the tree at every pass, and a concurrent write changes what they judge mid-pass.
+
+### 7 bis. Docs — second pass, only when the review moved the code
+
+The review loop fixes code; the docs of step 5 bis may now describe what no longer exists. One command decides:
+
+```bash
+git log --oneline --since="$(gh pr view --json createdAt -q .createdAt)" -- . ':!docs' ':!**/*.md' ':!.specify'
+```
+
+Non-empty (code commits since the PR opened) → run `/me:loop:docs-sync` again, commit `📝 docs(sync): …`, push. Empty → nothing to do, say so. Skipped altogether when the repo has no docs gate (step 5 bis).
+
+### Then: CI green
+
+Once the review loop is clean and the docs are settled (7 bis), run **`/me:loop:ci-until-green`**: it runs on the final SHA, docs included. It reads the checks for the **exact SHA** of `HEAD` (not "the branch"), refuses to conclude while anything is unpushed, and never reads "zero checks" as a green CI. Do not merge before `CI_FAILED=0 CI_PENDING=0` with `CI_TOTAL ≥ 1`.
 
 ## Output expected at each step
 

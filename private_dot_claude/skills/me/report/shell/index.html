@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>rapport</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96' width='32' height='32' role='img' aria-label='kbrdn'%3E %3Cstyle%3E .n %7B fill: %231a1a1a %7D %40media %28prefers-color-scheme: dark%29 %7B .n %7B fill: %23f5f5f5 %7D %7D %3C/style%3E %3Cpath class='n' d='M62.83 1.17A4 4 0 0 1 65.66 0L86.34 0A4 4 0 0 1 89.17 6.83L6.83 89.17A4 4 0 0 1 0 86.34L0 65.66A4 4 0 0 1 1.17 62.83Z'/%3E %3Cpath d='M0 9.66A4 4 0 0 1 6.83 6.83L21.17 21.17A4 4 0 0 1 21.17 26.83L6.83 41.17A4 4 0 0 1 0 38.34ZM53.17 58.83A4 4 0 0 1 58.83 58.83L89.17 89.17A4 4 0 0 1 86.34 96L65.66 96A4 4 0 0 1 62.83 94.83L42.83 74.83A4 4 0 0 1 42.83 69.17Z' fill='%23d4825d'/%3E %3C/svg%3E">
+<script>
+  // thème avant le premier rendu : auto (système), clair ou sombre, gardé par la page
+  (function () {
+    var t = 'auto';
+    try { t = localStorage.getItem('me-report:theme') || 'auto'; } catch (e) {}
+    var light = t === 'light' || (t === 'auto' && matchMedia('(prefers-color-scheme: light)').matches);
+    document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fenix&display=swap">
+<link rel="stylesheet" href="view.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="data.js"></script>
+<script src="zed-theme.js"></script>
+</head>
+<body>
+<div id="root"><p style="padding:2rem;font-family:monospace">data.js absent : lancer collect.py depuis le worktree.</p></div>
+<script src="view.js"></script>
+</body>
+</html>

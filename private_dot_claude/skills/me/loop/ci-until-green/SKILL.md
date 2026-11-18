@@ -89,6 +89,11 @@ echo "CI_FAILED=$FAILED"
 [ "$TOTAL" -gt 0 ] || {
   echo "❌ aucun check rapporté sur $SHA — ce n'est pas une CI verte, c'est une absence de CI"
   echo "   (workflow non déclenché ? repo sans CI ? vérifier .github/workflows/)"; exit 2; }
+
+# (5) RAPPORT LIVE me:report : collect.py relit la CI du même sha, 0 token. Seulement si la
+# branche a déjà un rapport : la CI n'en crée pas un de plus pour chaque branche qui passe ici.
+C=~/.claude/skills/me/report/collect.py
+{ RD=$("$C" --dir 2>/dev/null) && [ -f "$RD/data.js" ] && "$C" 2>&1 | sed -n 2p; } || true   # cosmétique : jamais le code de sortie
 ```
 
 ## Cycle
