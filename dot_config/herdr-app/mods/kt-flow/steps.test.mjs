@@ -104,6 +104,40 @@ const goal = phasesOf([{ id: "pr", state: "done" }, { id: "report", state: "curr
 assert.deepEqual(goal.map((p) => [p.id, p.steps.map((s) => s.id)]), [["ship", ["pr", "report", "review"]]]);
 assert.equal(nameOf("report"), "Rapport");
 assert.deepEqual(details({ id: "report", label: "report", state: "current" }), []);
+// #41, /me:release (claude-flow's herdrLabel: "changelog v0.6.0" once done, the bare name before): each
+// step in its phase (changelog in Préparation, bump in Implémentation, tag and release in Clôture after
+// merge), its name, its detail the version alone (never the name again).
+const rel = [
+  { id: "changelog", label: "changelog v0.6.0", state: "done" }, { id: "bump", label: "bump v0.6.0", state: "done" },
+  { id: "push", label: "pushed", state: "done" }, { id: "pr", label: "pr #70", state: "done" }, { id: "ci", label: "ci 9/9", state: "done" },
+  { id: "merge", label: "merged", state: "done" }, { id: "tag", label: "tag", state: "current" }, { id: "release", label: "release", state: "pending" },
+];
+assert.deepEqual(phasesOf(rel).map((p) => [p.id, p.steps.map((s) => s.id)]),
+  [["prep", ["changelog"]], ["impl", ["bump"]], ["ship", ["push", "pr", "ci"]], ["close", ["merge", "tag", "release"]]]);
+assert.deepEqual(["changelog", "bump", "tag", "release"].map(nameOf), ["Changelog", "Version", "Tag", "Release"]);
+assert.deepEqual([d("changelog", "changelog v0.6.0"), d("bump", "bump v0.6.0"), d("tag", "tag"), d("release", "release v0.6.0")],
+  [[{ text: "v0.6.0", mono: true }], [{ text: "v0.6.0", mono: true }], [], [{ text: "v0.6.0", mono: true }]]);
+// #41, a sprint (claude-flow's sprintOf: issue-<n>, its title the label, « · blocked » after it, its
+// group): its groups in their order (Découpage, Exécution, Merge, Fait), the plan's order within each;
+// each issue named #n, its title as its detail, « bloquée » when held; a title-less one: #n alone.
+const sprint = [
+  { id: "issue-64", label: "Le rapport dans chaque workflow · blocked", state: "pending", group: "split" },
+  { id: "issue-62", label: "FlowSignal", state: "pending", group: "split" },
+  { id: "issue-65", label: "Le sprint d'un lead", state: "current", group: "execution" },
+  { id: "issue-26", label: "#26", state: "current", group: "merge" },
+  { id: "issue-59", label: "Publier le flow", state: "done", group: "done" },
+];
+const sp = phasesOf(sprint);
+assert.deepEqual(sp.map((p) => [p.id, p.label, p.steps.map((s) => s.id), p.done, p.total, p.current]), [
+  ["split", "Découpage", ["issue-64", "issue-62"], 0, 2, false], ["execution", "Exécution", ["issue-65"], 0, 1, true],
+  ["merge", "Merge", ["issue-26"], 0, 1, true], ["done", "Fait", ["issue-59"], 1, 1, false]]);
+assert.deepEqual(sprint.map((s) => nameOf(s.id)), ["#64", "#62", "#65", "#26", "#59"]);
+assert.deepEqual(sprint.map(details), [[{ text: "Le rapport dans chaque workflow" }, { text: "bloquée", tone: "dim" }], [{ text: "FlowSignal" }],
+  [{ text: "Le sprint d'un lead" }], [], [{ text: "Publier le flow" }]]);
+// A step with an unknown group, or none: by its id, as before (issue-N out of the table: « Autres »).
+assert.deepEqual(phasesOf([{ id: "issue-9", label: "x", state: "done", group: "later" }, { id: "push", state: "done" }]).map((p) => p.id), ["ship", "other"]);
+// #41, skipped: counted as passed in its phase (as viz.js' tiers), its phase whole.
+assert.deepEqual(phasesOf([{ id: "docs", state: "skipped" }, { id: "commits", state: "done" }]).map((p) => [p.done, p.total]), [[2, 2]]);
 // Review passes: an axis not run never counts as zero; decisions; locations.
 const ok = (p2) => ({ state: "ok", p0: 0, p1: 0, p2, p3: 1 });
 assert.deepEqual(passOf({ standards: ok(0), spec: ok(0) }).clean, true);

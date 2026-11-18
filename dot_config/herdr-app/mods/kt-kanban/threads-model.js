@@ -172,13 +172,14 @@ export function reportOf(lead, space, repos, reports) {
 
 // claude-flow's steps by phase: kt-flow's steps.js PHASES, as ids (keep them in step: kt-kanban's
 // check compares them both ways). `report` (/me:report) is a delivery step: me:goal runs it between pr
-// and review, the live page of the PR under review.
+// and review, the live page of the PR under review. /me:release's changelog, bump, tag and release:
+// changelog prep, bump impl, tag and release close (after merge).
 export const PHASES = {
-  issue: "prep", branch: "prep", worktree: "prep", pin: "prep",
+  issue: "prep", branch: "prep", worktree: "prep", pin: "prep", changelog: "prep",
   spec: "spec", plan: "spec", tasks: "spec",
-  implement: "impl", commits: "impl", docs: "impl",
+  implement: "impl", commits: "impl", bump: "impl", docs: "impl",
   push: "ship", pr: "ship", report: "ship", review: "ship", ci: "ship",
-  merge: "close", "issue-closed": "close", note: "close", // i18n: tech
+  merge: "close", tag: "close", release: "close", "issue-closed": "close", note: "close", // i18n: tech
 };
 
 /** claude-flow's timeline (`<terminal>.flow.json`): its current step and phase, where it stands, and

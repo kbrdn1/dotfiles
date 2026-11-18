@@ -6,8 +6,8 @@ import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
   chipsOf, dropToken, addTerm, filterValues, completions, cardTerms,
   costOf, cleanLimits, stepLimit, sessionOf, ttlText, WIDTH, cleanWidths, stepWidth, laneWidths, cleanHidden, toggleHidden, checkSteps, ciCount, cardMenu, menuStart, takesFocus, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
-import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
-import { PHASES } from "./steps.js";
+import { byStatus, STATUSES, PHASES as STEP_PHASE, flowOf } from "./threads-model.js";
+import { PHASES, GROUPS } from "./steps.js";
 
 const now = 1_800_000_000_000;
 const MIN = 60e3;
@@ -82,6 +82,13 @@ assert.deepEqual(PHASES.map((p) => p.id), ["prep", "spec", "impl", "ship", "clos
 const flowSide = Object.fromEntries(PHASES.flatMap((p) => p.steps.map((s) => [s, p.id])));
 assert.deepEqual(flowSide, { ...STEP_PHASE });
 assert.equal(flowSide.report, "ship");
+// #41: /me:release's steps on both sides too (changelog prep, bump impl, tag and release close); a
+// sprint's groups are kt-flow's own (phasesOf), never one of these phases: its issue-<n> steps are in
+// none (a sprint lead's card: « Autres »).
+assert.deepEqual(["changelog", "bump", "tag", "release"].map((s) => [flowSide[s], STEP_PHASE[s]]), [["prep", "prep"], ["impl", "impl"], ["close", "close"], ["close", "close"]]);
+assert.ok(GROUPS.every((g) => !PHASES.some((p) => p.id === g.id)));
+assert.deepEqual(GROUPS.map((g) => g.id), ["split", "execution", "merge", "done"]);
+assert.equal(FIELDS.phase.of({ flow: flowOf({ steps: [{ id: "issue-65", state: "current", group: "execution" }] }) }), "other");
 
 // Sorts (ties by need, the snoozed still last): the thread's age (first seen, the oldest first), its
 // cost (the dearest first, none last), its title.

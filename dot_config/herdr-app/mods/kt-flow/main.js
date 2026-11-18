@@ -38,7 +38,7 @@
 // as Review's: j k move, l / h unfold / fold (a commit, a check's logs), enter as a click, O
 // opens a check's run, y copies a commit's sha or a check's link.
 
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, Scrollbar } from "gpui-base";
 import { focused, panes, spaces, theme, layout, settings, readTextFile, watchFolder, exec, home, nextCommand, checking, run, notify, openOverlay, shared, setShared } from "herdr";
 import * as fs from "fs/promises";
@@ -70,6 +70,11 @@ const GH = "mods/kt-gwm/github.svg";
 const H = { run, exec, setShared, now: () => Date.now() };
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// A skipped step's dot (#41), in an 8 px box with no border (as ring.js: everything painted): the to-do
+// ring (1 px, radius 3.5) and a disc of radius 3 inside it for the hatch. Built once, at their first use.
+const circle = (b, r) => b.move_to(4, 4 - r).arc_to(r, r, 0, false, true, 4, 4 + r).arc_to(r, r, 0, false, true, 4, 4 - r).build();
+let SKIP_DOT = null;
+const skipDot = () => (SKIP_DOT ??= { ring: circle(PathBuilder.stroke(1), 3.5), disc: circle(PathBuilder.fill(), 3) });
 // The project's color (shared "kt.projects", the registry entry holding `folder`), else the accent.
 function projectColor(t, folder) {
   const e = folder && (shared("kt.projects") ?? []).filter((x) => !x.machine && x.folder && (folder === x.folder || folder.startsWith(`${x.folder}/`)))
@@ -642,6 +647,13 @@ export default class Flow extends View {
     if (s.state === "done") return box.text_color(c.ok).child(svg(I("check")).size(12));
     if (s.state === "failed") return box.text_color(t.ansi1).child(svg(I("x")).size(12));
     if (s.state === "current") return box.child(div().size(8).rounded_full().bg(c.accent).when(pulse, (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1400 })));
+    // Skipped (#41): hatched, as viz.js' tiers draw it: the to-do ring, a slash pattern inside.
+    if (s.state === "skipped") {
+      const { ring, disc } = skipDot(), w = globalThis.window;
+      return box.child(div().relative().size(8)
+        .child(w.paint_path(ring, t.dim).absolute().inset_0())
+        .child(w.paint_path(disc, Background.pattern_slash(t.dim, 1, 3)).absolute().inset_0()));
+    }
     return box.child(div().size(8).rounded_full().border(1).border_color(t.dim));
   }
 
@@ -675,7 +687,7 @@ export default class Flow extends View {
         .on_click((_e, cx) => { if (ci) this.toggleCi(!open, cx); else if (impl) this.implOpen = !open; else this.reviewOpen = !open; cx.notify(); }))
       .child(v_flex().w(14).h_full().flex_none().items_center()
         .child(rail(!first)).child(this.dot(t, c, s, pulse)).child(rail(!last && !open)))
-      .child(div().flex_none().text_size(12.5).text_color(s.state === "pending" ? t.muted : t.foreground).when(on, (el) => el.font_medium())
+      .child(div().flex_none().text_size(12.5).text_color(s.state === "pending" ? t.muted : s.state === "skipped" ? t.dim : t.foreground).when(on, (el) => el.font_medium())
         .child(nameOf(s.id)))
       .when(folds, (el) => el.child(svg(I(open ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(open ? t.accent : t.muted)))
       .child(h_flex().flex_1().min_w(0).gap(5).items_center().overflow_hidden()

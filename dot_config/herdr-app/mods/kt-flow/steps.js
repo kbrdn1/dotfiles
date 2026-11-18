@@ -1,7 +1,8 @@
 // What Flow makes of claude-flow's steps (pure, no imports: `node mods/kt-flow/steps.test.mjs`):
 // the workflow's readable name, the steps grouped in phases, and each label's detail as
 // pieces to draw (claude-flow's herdrLabel: "<name> <detail>", or the detail alone for
-// pin, commits, push, pr and issue-closed).
+// pin, commits, push, pr and issue-closed). A sprint's steps (claude-flow's sprintOf: one `issue-<n>`
+// per issue of the plan, its title the label, its `group` the sprint's phase it is in) go by group.
 
 import words from "./steps.strings.js";
 
@@ -19,21 +20,31 @@ const RAW = {
   issue: "issue", branch: "branch", worktree: "worktree", pin: "pin", spec: "spec", plan: "plan", tasks: "tasks",
   implement: "implement", commits: "commits", docs: "docs", push: "push", pr: "pr", review: "review", ci: "ci",
   merge: "merge", "issue-closed": "issue closed", note: "note", report: "report", // i18n: tech
+  changelog: "changelog", bump: "bump", tag: "tag", release: "release", // i18n: tech
 };
 
-/** A step's shown name (its id when it's not one of claude-flow's). */
-export const nameOf = (id) => (id in RAW ? tr(`name.${id}`) : id);
+// A sprint's step (claude-flow's sprintOf): one per issue of the plan, `issue-<n>`.
+const SPRINT_ID = /^issue-(\d+)$/;
+
+/** A step's shown name: claude-flow's, a sprint's issue as #n, else its id. */
+export const nameOf = (id) => (id in RAW ? tr(`name.${id}`) : SPRINT_ID.test(id) ? `#${SPRINT_ID.exec(id)[1]}` : id);
 
 // A phase's label is read when drawn (phasesOf spreads it): the language shown then.
 const phase = (id, steps) => ({ id, get label() { return tr(`phase.${id}`); }, steps });
 export const PHASES = [
-  phase("prep", ["issue", "branch", "worktree", "pin"]),
+  // changelog, bump, tag and release: /me:release's (changelog, bump, push, pr, ci, merge, tag, release).
+  phase("prep", ["issue", "branch", "worktree", "pin", "changelog"]),
   phase("spec", ["spec", "plan", "tasks"]),
-  phase("impl", ["implement", "commits", "docs"]),
+  phase("impl", ["implement", "commits", "bump", "docs"]),
   // report: /me:report, which me:goal runs between pr and review (the live page of the PR under review).
   phase("ship", ["push", "pr", "report", "review", "ci"]),
-  phase("close", ["merge", "issue-closed", "note"]),
+  phase("close", ["merge", "tag", "release", "issue-closed", "note"]),
 ];
+
+// A sprint's groups (claude-flow's sprintOf: each step's `group`, the phase of the sprint its issue is
+// in), in their order.
+const group = (id) => ({ id, get label() { return tr(`group.${id}`); } });
+export const GROUPS = [group("split"), group("execution"), group("merge"), group("done")];
 
 /** `me:spec-issue-worktree-pr` -> "Spec · Issue → Worktree → PR". */
 export function workflowName(w) {
@@ -62,15 +73,21 @@ export function flowBranch(steps) {
   return word("branch") ?? word("worktree")?.split("/").filter(Boolean).pop() ?? null;
 }
 
-/** The step's phases, empty ones left out; unknown steps go last under "Autres". */
+/** The step's phases, empty ones left out: a sprint's steps by their `group` first (GROUPS' order), the
+ *  others by PHASES; unknown steps go last under "Autres". A skipped step counts as passed (done), as
+ *  viz.js' tiers count it. */
 export function phasesOf(steps) {
+  const grouped = (s) => GROUPS.some((g) => g.id === s.group);
   const known = new Set(PHASES.flatMap((p) => p.steps));
-  const groups = PHASES.map((p) => ({ ...p, steps: steps.filter((s) => p.steps.includes(s.id)) }));
-  const other = steps.filter((s) => !known.has(s.id));
+  const groups = [
+    ...GROUPS.map((g) => ({ id: g.id, label: g.label, steps: steps.filter((s) => s.group === g.id) })),
+    ...PHASES.map((p) => ({ ...p, steps: steps.filter((s) => !grouped(s) && p.steps.includes(s.id)) })),
+  ];
+  const other = steps.filter((s) => !grouped(s) && !known.has(s.id));
   if (other.length) groups.push({ id: "other", label: tr("phase.other"), steps: other });
   return groups.filter((g) => g.steps.length).map((g) => ({
     ...g,
-    done: g.steps.filter((s) => s.state === "done").length,
+    done: g.steps.filter((s) => s.state === "done" || s.state === "skipped").length,
     total: g.steps.length,
     current: g.steps.some((s) => s.state === "current"),
     failed: g.steps.some((s) => s.state === "failed"),
@@ -90,6 +107,16 @@ function rest(step) {
  */
 export function details(step) {
   const r = rest(step);
+  // A sprint's issue: its title (the label; nothing more when it is only its #n), « bloquée » after it
+  // when its dependencies hold it (sprintOf's « · blocked »).
+  if (SPRINT_ID.test(step.id)) {
+    const blocked = / · blocked$/.test(r);
+    const title = blocked ? r.slice(0, -" · blocked".length) : r;
+    return [
+      ...(title && title !== nameOf(step.id) ? [{ text: title }] : []),
+      ...(blocked ? [{ text: tr("blocked"), tone: "dim" }] : []),
+    ];
+  }
   const frac = r.match(/\d+\/\d+/g) ?? [];
   const full = (f) => { const [a, b] = f.split("/").map(Number); return a === b; };
   switch (step.id) {
