@@ -115,6 +115,9 @@ sélecteur claude | codex : deux reviewers, deux séries, jamais mélangées.
 
 Même coquille, `kind: "plan"`, pour un plan de Mono ou d'Orchestrator, un sprint ou une décision à valider.
 
+Invocation : `/me:report plan <slug> [ce que le plan couvre]` ; un sprint passe plutôt par `/me:goal`, qui pose
+le plan lui-même.
+
 ```bash
 $C --plan <slug>   # dans un dépôt : ~/Reports/<owner>-<repo>/plans/<slug>/ ; hors dépôt : ~/Reports/_plans/<slug>/
 ```
@@ -148,8 +151,7 @@ $C --plan <slug>   # dans un dépôt : ~/Reports/<owner>-<repo>/plans/<slug>/ ; 
 
 `collect.py` lit, sans token, les sessions que `gwm list` voit sur le worktree, puis leur transcript Claude
 Code (`~/.claude/projects/*/<id>.jsonl`, fin du fichier) : modèle, effort, dernière action, dernier message,
-mission (`last-prompt`), et la session Monocode correspondante (`monocode.db` en lecture seule) avec son
-rattachement : « sur ce worktree » ou sur le checkout principal (le problème de l'axe 1).
+mission (`last-prompt`).
 
 ## La page
 
@@ -215,4 +217,3 @@ statique n'a pas de serveur de langage), `nvim`, `git grep`.
 - `collect.py` prend ~10 s, surtout `gh` (PR + check-runs). `--offline` saute gh (ni PR ni CI).
 - Mode plan : un plan n'avance qu'avec les collectes des branches de ses issues. Une issue sans branche ni worktree
   ne bouge qu'au `$C --plan <slug>` suivant.
-- Dans Monocode la page ne s'affiche pas (`visual_show` = composants natifs) : donner le chemin.

@@ -85,6 +85,18 @@ printf '%s\n%s\n' "$RUNS" "$ST" | jq -s -r --argjson b "$BAD" '
 echo "CI_PENDING=$PENDING"
 echo "CI_FAILED=$FAILED"
 
+# Un job JAMAIS DÉMARRÉ (facturation, plafond de dépense, runner absent) n'est pas du code cassé :
+# ses annotations le disent. Il a droit à UNE relance (protocole, étape 2bis), rien d'autre.
+NS=$(printf '%s' "$RUNS" | jq -r --argjson b "$BAD" '(.check_runs // [])[] | select((.conclusion // .status) | IN($b[])) | "\(.id)|\(.html_url // "")"' |
+  while IFS='|' read -r id url; do
+    msg=$(gh api "repos/$REPO/check-runs/$id/annotations" --jq '[.[].message] | join(" ")' 2>/dev/null)
+    if printf '%s' "$msg" | grep -qiE "was not started|account payments have failed|spending limit|no runner|waiting for a runner"; then
+      echo "- jamais démarré : run $(printf '%s' "$url" | grep -oE 'runs/[0-9]+' | cut -d/ -f2) : ${msg:0:140}"
+    fi
+  done)
+[ -n "$NS" ] && echo "$NS"
+echo "CI_NOT_STARTED=$(printf '%s' "$NS" | grep -c '^- jamais')"
+
 # (4) GARDE : zéro check n'est pas une CI verte.
 [ "$TOTAL" -gt 0 ] || {
   echo "❌ aucun check rapporté sur $SHA — ce n'est pas une CI verte, c'est une absence de CI"
@@ -102,6 +114,7 @@ C=~/.claude/skills/me/report/collect.py
 - **Planning** : sur échec, identifier le job fautif et cibler la **plus petite cause racine**. Un job rouge par une cause commune (lint global, version de toolchain) se corrige une fois, pas job par job.
 - **Execution** :
   Step 1: lancer le `check_command`, lire le bloc `failing` + `CI_TOTAL` / `CI_PENDING` / `CI_FAILED`.
+  Step 2bis: checks **jamais démarrés** (`CI_NOT_STARTED` > 0, lignes « jamais démarré ») : rien n'a tourné, il n'y a pas de code à corriger. Les relancer **une seule fois par sha** (`gh run rerun <run>`), et le noter dans `$(git rev-parse --path-format=absolute --git-path ci-rerun-$SHA)` pour ne jamais recommencer sur ce sha. Encore « jamais démarré » après cette relance → **STOP** et signaler à l'utilisateur (facturation, plafond de dépense, runners) : ce n'est pas au code de le régler.
   Step 2: pour chaque check en échec, récupérer les logs — `gh run view <run-id> --log-failed` (l'id se déduit de l'URL du check) — et corriger la **cause racine**. Commit atomique Gitmoji + Conventional référençant l'issue, puis **push** (sans push, la passe suivante sortira en erreur sur la garde (1), c'est voulu).
 - **Verification** : relancer le `check_command` sur le nouveau HEAD.
 - **Iteration** : reboucler tant qu'il reste des échecs ; sinon stop/handback.
@@ -121,6 +134,7 @@ Status à chaque passe : `🔁 Itération N/6 — <corrections poussées> → ch
 - 🔴 Ne jamais dépasser `max_iterations`.
 - 🔴 Jamais de succès sans les trois compteurs vus dans la sortie. **`CI_TOTAL=0` n'est pas un succès** — c'est une absence de CI, le check sort en erreur.
 - 🔴 **Jamais désactiver un job, retirer une étape, ajouter `continue-on-error`, marquer un test `skip` ou relancer la run en espérant qu'elle passe** — corriger la cause racine. Une CI rendue verte en la rendant aveugle est le pire résultat possible de cette boucle.
+- 🟢 Seule relance permise : un job **jamais démarré** (annotations : « was not started », paiement, plafond de dépense, runner absent), **une fois par sha** (Step 2bis). Ce n'est pas un pari, aucun code n'a tourné. Un job qui a démarré puis échoué ne se relance jamais.
 - 🟡 Échec **flaky** (passe au relancement sans changement de code) : ne pas le masquer. Le signaler explicitement dans le rapport final comme flaky à traiter à part — un flaky n'est pas une cause racine corrigée.
 - 🟡 Échec d'**environnement** côté CI (secret manquant, quota du runner, service tiers indisponible) : `exit 2` du check ou échec non lié au diff → **stopper et signaler**, ne pas brûler des itérations sur ce que le code ne peut pas corriger.
 - 🟡 Deux passes consécutives avec exactement le même échec sans progrès → le signaler (boucle stérile) au lieu de gaspiller les itérations.

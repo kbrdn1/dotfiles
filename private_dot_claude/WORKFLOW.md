@@ -1,7 +1,7 @@
 # WORKFLOW w/ Claude Code
 
 > Ma façon de travailler avec Claude Code — outils, cascades de priorité et workflows Git.
-> Dernière mise à jour : 2026-07-27.
+> Dernière mise à jour : 2026-11-18.
 
 ---
 
@@ -20,6 +20,8 @@
 | **CI verte (PR)** | boucle `/me:loop:ci-until-green` (checks du **SHA exact** de HEAD, corrige la cause racine, max 6) | `gh pr checks --watch` à la main | ~~`watch-ci`~~ *(déprécié : lit la branche, pas le sha ; 3 essais en dur)* |
 | **Worktrees** | `gwm` (gwm-cli) — **indispensable** | — | — |
 | **Suivi des sessions IA** | `gwm agents attach` après chaque création de worktree | `gwm agents` / pane Agents de la TUI | — |
+| **Orchestration d'agents** | `/me:dispatch` → `hc` (Herdr Core) : lead, un worker par issue dans son worktree, helpers | repli séquentiel dans la session | — |
+| **Rapports & plans** | `/me:report` : page HTML locale et live (`~/Reports/`), mode plan avec kanban | — | — |
 | **Comprendre une codebase** | `graphify` (graph AST + doc, `graphify-out/graph.json`) | `mgrep` / `serena` | lecture directe |
 | **Notes & connaissance** | `tolaria` (MCP multi-vault, `~/Vault/{pro,perso}`) | — | — |
 
@@ -74,6 +76,9 @@ flowchart TD
 | `~/Vault/pro`, `~/Vault/perso` | **pourquoi** : décisions, audits, chiffrages, retex, dailies | **`tolaria`** (MCP multi-vault) |
 | `~/.claude/projects/*/memory/` | leçons de session, par projet, liées aux issues | **Claude, d'elle-même** — 339 notes, contexte riche, on n'y touche pas |
 | git : issues, PR, `changelogs/X.Y.Z.md` | le quoi, daté et versionné | `gh`, `/me:release` |
+
+Les pages de `~/Reports/<owner>-<repo>/` (`/me:report`) ne sont pas un cinquième emplacement : c'est une **vue**
+de git et des loops, régénérée par `collect.py` (0 token). Seul le texte des sections (`notes.json`) y est écrit.
 
 **Ne jamais écrire dans le vault** : doc technique de repo, changelog, tâche, procédure
 (= skill `me:*`). Si git le sait déjà, le vault ne le redit pas.
@@ -158,6 +163,8 @@ le squelette.
 > Quand je suis focus sur une **feature / fix / hotfix / chore** sans worktree.
 
 **Commande :** `/me:issue-branch-pr [desc]`
+**Docs :** si le repo a un gate `me:loop:docs-sync`, un **premier passage** après l'implémentation, avant la PR (les docs partent dans la PR, l'axe spec les lit) ; **rien pendant la review** (les reviewers lisent l'arbre) ; un **second passage** après la review seulement si le code a bougé depuis l'ouverture de la PR.
+**Rapport :** à l'entrée en review, `/me:report` ouvre la page live de la branche (diff, review passe par passe, CI, questions) ; les loops la tiennent à jour.
 **Puis :** review via la boucle `/me:loop:claude-review-pr` (agent Claude frais, auto-cadencé, corrige jusqu'à 0 finding bloquant pertinent) + `/me:loop:ci-until-green`. PR sensible → doubler avec `/me:loop:codex-review-pr` (reviewer tiers). Au besoin, `/me:check-reviews [PR#]` en second plan manuel.
 
 ```mermaid
@@ -165,9 +172,12 @@ flowchart LR
     A["/me:issue-branch-pr [desc]"] --> B[Issue GitHub créée]
     B --> C[Branche feature depuis<br/>la default branch à jour]
     C --> D[Commits atomiques<br/>Gitmoji / Conventional]
-    D --> E[Push + PR<br/>depuis template repo]
-    E --> G["/me:loop:claude-review-pr<br/>🔁 agent Claude frais (auto-cadencé)<br/>tiers si sensible : /me:loop:codex-review-pr"]
-    G --> H{CI verte ?}
+    D --> D2["/me:loop:docs-sync (brouillon)<br/>si le repo a un gate docs"]
+    D2 --> E[Push + PR<br/>depuis template repo]
+    E --> R["/me:report<br/>page live : diff, review, CI"]
+    R --> G["/me:loop:claude-review-pr<br/>🔁 agent Claude frais (auto-cadencé)<br/>tiers si sensible : /me:loop:codex-review-pr"]
+    G --> G2["/me:loop:docs-sync (final)<br/>seulement si le code a bougé"]
+    G2 --> H{CI verte ?}
     H -->|non| G
     H -->|oui| I[✅ PR prête à merge]
 ```
@@ -180,6 +190,8 @@ flowchart LR
 
 **Commande :** `/me:issue-worktree-pr [desc]`
 **Juste après la création du worktree :** `gwm agents attach <slug> <session-id>` — la session a démarré depuis le checkout principal (en général `dev`), donc gwm l'attribue **là** et le worktree où elle bosse vraiment n'affiche aucun agent. Le pin corrige l'attribution ; c'est exactement ce pour quoi `attach` existe.
+**Docs :** si le repo a un gate `me:loop:docs-sync`, un **premier passage** après l'implémentation, avant la PR ; **rien pendant la review** ; un **second passage** après la review seulement si le code a bougé (`git log --since=<createdAt de la PR> -- . ':!docs' ':!**/*.md'` non vide).
+**Rapport :** à l'entrée en review, `/me:report` depuis le worktree (page live de la branche). Hors du répertoire de travail, chaque commande des loops est préfixée par `cd "$WT" &&` : le cwd ne tient pas d'un appel Bash à l'autre.
 **Puis :** review via la boucle `/me:loop:claude-review-pr` (agent Claude frais, auto-cadencé, corrige jusqu'à 0 finding bloquant pertinent) — **lancée depuis le worktree** — + `/me:loop:ci-until-green`. PR sensible → doubler avec `/me:loop:codex-review-pr` (reviewer tiers). Au besoin, `/me:check-reviews [PR#]` en second plan manuel.
 
 📁 *Réf. : `fiches-pedagogiques-front/`, `fiches-pedagogiques-api-rest/`*
@@ -190,9 +202,12 @@ flowchart LR
     B --> C[Worktree isolé via gwm]
     C --> CA["gwm agents attach<br/>🔗 la session se pin<br/>sur le worktree"]
     CA --> D[Commits atomiques<br/>Gitmoji / Conventional]
-    D --> E[Push + PR<br/>depuis template repo]
-    E --> G["/me:loop:claude-review-pr<br/>🔁 agent Claude frais (depuis le worktree)<br/>tiers si sensible : /me:loop:codex-review-pr"]
-    G --> H{CI verte ?}
+    D --> D2["/me:loop:docs-sync (brouillon)<br/>si le repo a un gate docs"]
+    D2 --> E[Push + PR<br/>depuis template repo]
+    E --> R["/me:report<br/>page live : diff, review, CI"]
+    R --> G["/me:loop:claude-review-pr<br/>🔁 agent Claude frais (depuis le worktree)<br/>tiers si sensible : /me:loop:codex-review-pr"]
+    G --> G2["/me:loop:docs-sync (final)<br/>seulement si le code a bougé"]
+    G2 --> H{CI verte ?}
     H -->|non| G
     H -->|oui| I[✅ PR prête à merge]
 ```
@@ -210,6 +225,7 @@ flowchart LR
 **Principe issue-first** : le n° d'issue GitHub pilote la branche (`<type>/#N-slug`, créée par **gwm**/git) **et** le spec dir (`N-slug`, créé par **speckit**). `speckit.specify` tourne en **`--no-branch`** (gwm/git possède déjà la branche) avec `--number N` → la résolution downstream (`feature.json` + préfixe) garde issue = branche = spec.
 **Prérequis** : `.specify/` présent dans le repo (sinon `/speckit.install`).
 **Boucle optionnelle** : `speckit.converge` → réinjecte les écarts spec↔code en tâches, puis `speckit.implement` à nouveau.
+**Docs :** même règle que les deux autres — `me:loop:docs-sync` en brouillon après `implement` (à côté des artefacts `docs(spec)`), rien pendant la review, final seulement si le code a bougé.
 **Puis :** review via la boucle `/me:loop:claude-review-pr` (depuis le worktree en mode worktree) + `/me:loop:ci-until-green`.
 
 📁 *Réf. : repos avec Spec Kit installé (`.specify/`)*
@@ -223,9 +239,11 @@ flowchart LR
     D --> E[speckit.plan → speckit.tasks<br/>+ hydratation Claude Tasks]
     E --> F["speckit.implement<br/>(+ speckit.converge optionnel)"]
     F --> G[Commits atomiques<br/>artefacts spec + code]
-    G --> H[Push + PR<br/>Closes #N]
+    G --> G2["/me:loop:docs-sync (brouillon)<br/>si le repo a un gate docs"]
+    G2 --> H[Push + PR<br/>Closes #N]
     H --> I["/me:loop:claude-review-pr<br/>(depuis le worktree)"]
-    I --> J{CI verte ?}
+    I --> I2["/me:loop:docs-sync (final)<br/>seulement si le code a bougé"]
+    I2 --> J{CI verte ?}
     J -->|non| I
     J -->|oui| K[✅ PR prête à merge]
 ```
@@ -240,24 +258,64 @@ flowchart LR
 
 ⚠️ **Renommé `/goal` → `/me:goal` (2026-09-07)** : `/goal` est depuis la 2.1.139 une **commande native** de Claude Code (condition de complétion évaluée par un modèle qui ne lit que le transcript). Rien à voir avec ce workflow. Le nom est pris, on ne le réutilise pas.
 
-**Commande :** `/me:goal [desc sprint avec issues et hiérarchie blocked]`
-Utilise le **workflow worktree autonome**, merge progressivement dans `dev` après review (boucle `/me:loop:claude-review-pr` — agent Claude frais — prioritaire ; `/me:loop:codex-review-pr` si reviewer tiers voulu ; `/me:check-reviews` en second plan manuel), et résout les conflits.
+**Skill :** `/me:goal [desc sprint]` (skill `me:goal`, écrite le 2026-11-18 : avant, le workflow n'existait que dans ce document).
+Découpe l'objectif en issues avec leurs dépendances, fait valider le découpage, crée les issues, pose le **plan
+`me:report`** (page vivante : kanban, graphe, liste), puis mène chaque issue débloquée jusqu'au merge progressif dans
+`dev` et enchaîne sur celles que ce merge débloque. Parallèle via `/me:dispatch` quand la session tourne dans Herdr
+(un worker hc par issue), sinon séquentiel par le workflow worktree. Reprend un sprint en cours depuis son plan.
 
 📁 *Réf. : `gwm-cli/`, `LazyCurl-rs/`*
 
 ```mermaid
 flowchart TD
-    A["/me:goal [desc sprint]"] --> B[Décomposition<br/>Issues + hiérarchie blocked]
-    B --> C[Pour chaque issue débloquée]
-    C --> D[Workflow worktree autonome<br/>issue → worktree → PR]
-    D --> E{Review /me:loop:claude-review-pr<br/>agent Claude frais · tiers /me:loop:codex-review-pr}
-    E -->|OK| F[Merge progressif dans dev]
-    F --> G{Conflits ?}
-    G -->|oui| H[Résolution des conflits]
-    H --> I
-    G -->|non| I[Issue suivante débloquée]
-    I --> C
-    I --> J[✅ Sprint complété sur dev]
+    A["/me:goal [desc sprint]"] --> B[Découpage validé<br/>issues + dépendances]
+    B --> P["Plan me:report<br/>kanban · graphe · liste"]
+    P --> C[Issues débloquées]
+    C -->|dans Herdr| D["/me:dispatch<br/>un worker hc par issue"]
+    C -->|ailleurs| D2[Workflow worktree<br/>une issue après l'autre]
+    D --> E{Review + CI vertes ?}
+    D2 --> E
+    E -->|oui| F["/me:merge dans dev"]
+    F --> P
+    F --> J[✅ Toutes les issues faites]
+```
+
+---
+
+## 🧭 Orchestration — `/me:dispatch` (hc, Herdr Core)
+
+> Quand le chantier est gros : plusieurs issues en parallèle, chacune avec son agent, sans les surveiller à la main.
+
+**Skill :** `/me:dispatch [issues ou « reprendre le travail en cours »]`, depuis une session lancée dans Herdr
+(`HC_TERMINAL_ID` présent ; sinon repli séquentiel). Monocode est abandonné depuis le 2026-11-18.
+
+| niveau | qui | fait |
+|---|---|---|
+| lead | la session qui lance | état des lieux, worktrees gwm, workers, merge dans `dev` |
+| worker | un Claude par issue, dans son worktree | implémentation, `/me:report`, review, CI ; ne merge pas |
+| helper | lancé par un worker | une tâche bornée (reviewer tiers, tests longs) |
+
+`hc` garde les terminaux vivants et connaît la parenté : il **tape une note chez le parent** à chaque fin de tour,
+blocage ou erreur d'un enfant. Le lead lance, rend la main, et la note le réveille.
+
+```bash
+hc run --bg --name i51 --cwd "$WT" --outlive-parent --label sprint=<slug> env PATH="$PATH" claude
+hc wait i51 --timeout 60          # invite prête
+hc send i51 "<tâche>"             # la tâche, suivie par hc jusqu'à la fin du tour
+hc ls --label sprint=<slug>       # tout le chantier ; hc attach i51 pour prendre la main
+```
+
+Vérifié le 2026-11-18 : sans `env PATH="$PATH"`, les hooks échouent (pas de node) ; une tâche passée en argument de
+`claude` fait revenir `hc wait` avant le tour ; sans `--outlive-parent`, un redémarrage du lead tue les workers.
+
+```mermaid
+flowchart TD
+    L["Lead (session Herdr)<br/>état des lieux · worktrees"] -->|hc run + hc send| W1["worker i51<br/>worktree feat-51"]
+    L -->|hc run + hc send| W2["worker i47<br/>worktree feat-47"]
+    W1 -->|hc run| H1["helper i51-codex<br/>reviewer tiers"]
+    W1 -.->|note hc : tour fini, blocage| L
+    W2 -.->|note hc| L
+    L --> M["/me:merge dans dev<br/>review + CI vertes"]
 ```
 
 ---
@@ -318,6 +376,7 @@ flowchart TD
     DEV -->|Feature spec-driven<br/>worktree| SWT["Spec-driven Worktree<br/>/me:spec-issue-worktree-pr"]
     DEV -->|Feature spec-driven<br/>checkout courant| SBR["Spec-driven Branche<br/>/me:spec-issue-branch-pr"]
     DEV -->|Sprint complet| SP["Workflow Sprint<br/>/me:goal"]
+    DEV -->|Gros chantier<br/>plusieurs issues| DI["Orchestration hc<br/>/me:dispatch"]
     DEV -->|Publication| RE["Workflow Release<br/>/me:release"]
 
     WT --> RV["/me:loop:claude-review-pr<br/>🔁 agent Claude frais (auto-cadencé)<br/>tiers si sensible : /me:loop:codex-review-pr<br/>+ /me:loop:ci-until-green"]
@@ -325,6 +384,7 @@ flowchart TD
     SWT --> RV
     SBR --> RV
     SP --> MERGE[Merge progressif dans dev]
+    DI --> RV
     RV --> MERGE
     MERGE --> RE
 ```
@@ -343,6 +403,8 @@ flowchart TD
 - **Sprint** : merge progressif dans `dev` ; release depuis `main`.
 - **Release** : `/me:release` (skill `me:release`) — bump + changelog **commités sur `dev`**, merge `dev → main` en merge commit, **tag après le merge**, notes = `changelogs/<version>.md`, titre = `vX.Y.Z` seul. Un `/release` per-project (ex. `bijouterie-julian`) fait foi sur le protocole générique.
 - **Worktrees** : gérés via `gwm` (config `.gwm.toml` par repo).
+- **Gros chantier** : hiérarchie d'agents avec `hc` via `/me:dispatch` (lead, workers, helpers) ; jamais `herdr worktree create`, qui crée un worktree hors gwm.
+- **Commandes** : jamais de commande du même nom qu'une skill. La commande masque la skill et reboucle (« Invoke the skill… ») ; une skill `me:x` répond seule à `/me:x`.
 - **Sessions IA** : après chaque `gwm create`, la session courante se pin sur le worktree via `gwm agents attach`. Sans ça, `gwm agents` et le pane Agents de la TUI montrent la session sur le repo principal — l'endroit d'où elle a démarré, pas celui où elle travaille. Claude Code expose l'id exact dans l'environnement :
 
   ```bash
@@ -383,6 +445,19 @@ flowchart TD
 
 ## ✅ Fait récemment
 
+- **Herdr partout, rapports vivants, sprint et orchestration** (2026-11-18) : **Monocode abandonné**, tout passe par
+  Herdr. **`/me:report`** : rapport HTML local et live d'une branche (faits par `collect.py`, 0 token ; texte par
+  section dans `notes.json`), review passe par passe (séries claude et codex), annotations de diff, aperçus images,
+  PDF et markdown, diffs colorés au thème Zed (moteur tree-sitter de Pierre), mode **plan** avec kanban, graphe et
+  liste, relu à chaque collecte de branche. **`/me:goal`** existe enfin (skill). **`/me:dispatch`** orchestre en
+  hiérarchie avec `hc` (lead, workers, helpers), retours d'une session de test sur k-hub intégrés (PR partielles,
+  worktree neuf, PR de bots, accord avant merge, reprise après redémarrage). Loops : `claude-review-pr` et
+  `codex-review-pr` alimentent le rapport (check codex dans `check.sh`), `ci-until-green` relance **une fois** un
+  job jamais démarré (facturation, runner) et rien d'autre. Dix commandes « ref » retirées : elles masquaient leur
+  skill. `scripts/zed-tokens.ts` colore les diffs de Herdr au thème Zed. ⚠️ Un chantier `hc` complet n'a pas encore
+  tourné de bout en bout.
+
+- **`docs-sync` dans les quatre workflows, en deux passages** (2026-09-19) : les skills `git-flow-worktree`, `spec-git-flow-worktree`, `git-flow-branch`, `spec-git-flow-branch` (et la command `/me:issue-worktree-pr`) gagnent une étape **docs — premier passage** après l'implémentation, avant la PR (`/me:loop:docs-sync` si le repo a un `check_command` ; les docs partent dans la PR dès le premier push, l'axe **spec** de la review les lit comme l'intention réalisée), un ⛔ **rien n'écrit dans l'arbre pendant la review** (les deux reviewers lisent le worktree à chaque passe — un `docs-sync` concurrent change leur base en cours de passe, et son résultat serait de toute façon réécrit), et une étape **docs — second passage** après la review, **seulement si le code a bougé** depuis l'ouverture de la PR (`git log --oneline --since="$(gh pr view --json createdAt -q .createdAt)" -- . ':!docs' ':!**/*.md'` non vide), avant `ci-until-green` qui tourne ainsi sur le SHA final, docs comprises. Écarté : le parallèle « docs-sync pendant la review » (arbre mouvant sous les reviewers, deux passes de docs au lieu d'une) ; la seule façon propre serait un second worktree de la même branche, jugée trop lourde pour l'instant. Le gate reste **par projet** : un repo sans surface énumérable saute l'étape en le disant, il n'invente pas de gate. Le mod `claude-flow` gagnera une étape `docs` dans le pane (issue à ouvrir).
 - **Review par défaut = `claude-review-pr` · loop `ci-until-green` · `/goal` → `/me:goal`** (2026-09-07) : trois changements dans le système de loops. **(1) Le reviewer par défaut passe du CLI Codex à l'agent Claude frais** (`/me:loop:claude-review-pr`) — plus de broker, plus de wedge, plus de fallback ; `codex-review-pr` reste pour ce qu'il apporte vraiment, la **diversité adversariale d'un reviewer tiers**, sur les PR sensibles. **(2) Nouveau loop `/me:loop:ci-until-green`**, qui remplace la skill `watch-ci` (dépréciée : elle lit `gh run list` sur la **branche** — donc potentiellement la run d'un commit qui n'est plus HEAD — plafonne à 3 essais en dur et n'a aucune garde anti-faux-vert). Le loop lit les checks du **SHA exact** de HEAD (`repos/{repo}/commits/{sha}/check-runs`), exige que tout soit poussé, ferme les trois faux-verts (checks périmés / zéro check / travail non poussé) et laisse une **fenêtre de décantation** de 2 min pour ne pas confondre « workflow pas encore créé » et « pas de CI ». **(3) `/goal` → `/me:goal`** : `/goal` est une **commande native** depuis la 2.1.139 (condition de complétion jugée par un évaluateur qui ne lit que le **transcript**) — le nom était en collision avec mon workflow sprint, et ce workflow n'existait de toute façon **nulle part** comme fichier. Au passage : `me:run-loop` et `CLAUDE.md` pointaient encore `skills/loop/<name>` → `/loop:<name>` alors que le disque dit `skills/me/loop/` → `/me:loop:` (les 3 descriptions frontmatter annonçaient le mauvais préfixe, or ce sont elles qui pilotent le triggering) ; l'**analyse de convergence** (~80 lignes dupliquées entre les deux loops de review) est extraite dans `skills/me/loop/_shared/convergence.md` ; la **garde anti-faux-propre** (#772/#1008) devient un garde-fou du moteur et un point de validation de `me:create-loop`, au lieu de vivre uniquement dans les deux loops qui l'avaient apprise ; et le gabarit `trigger: stop-hook` gagne une **sentinelle d'armement** — la doc dit noir sur blanc qu'un hook de frontmatter de skill reste enregistré *pour tout le reste de la session*, donc sans sentinelle il relance le `check_command` à chaque `Stop` bien après la fin du loop. ⚠️ `ci-until-green` : pipeline de verdict validé sur données réelles (chemin vert **et** rouge, 20 checks sur `gwm-cli`) et garde « tout poussé » vérifiée ; **le run end-to-end complet n'a pas été fait** — à confirmer au premier usage réel.
 
 - **Vaults tolaria `~/Vault/{pro,perso}` + graphify** (2026-08-28) : le vault Obsidian (282 notes dans iCloud) était **mort depuis juin** — 92 wikilinks pour 282 notes, `04 - Permanent` vide, les « tags » les plus fréquents étaient des couleurs hex fuyant de blocs mermaid, et 132 des 139 notes de `01 - Projects` étaient des copies de `README.md`/`CLAUDE.md` de repos (déjà dérivées : `diff` sort des écarts sur `README.md` et `SECURITY.md`). **Il n'est pas mort, l'écriture avait déménagé** : les vraies notes de juin-juillet sont à la racine des workspaces client (analyses d'intégration, audits d'infra, calculs de charge) et surtout dans **339 mémoires Claude Code** (`~/.claude/projects/*/memory/`, dont 142 gwm-cli et 103 bijouterie-julian) — la courbe des dailies le dit : 7 (nov) → 16 → **19 (jan, pic)** → 13 → 1 → 1 → 0. Deux vaults git **frères** hors iCloud (`kbrdn1/vault-pro`, `kbrdn1/vault-perso`, privés), MCP multi-vault via `VAULT_PATHS`. 12 notes pro **copiées** (pas déplacées) avec frontmatter tolaria, 119 notes perso migrées ciblé. Les mémoires Claude **restent en place** : elles vivent d'elles-mêmes et apportent le contexte riche par projet. ⛔ **Découverte bloquante** : tolaria **ne suit pas les symlinks** — vérifié sur 2026.8.19, source + empirique. Dossier symlinké = invisible (`collectMarkdownFile` teste `isDirectory()`, faux sur un symlink, et le nom ne finit pas par `.md`) ; fichier symlinké = **indexé et cherchable mais `get_note` le rejette** (`realpath` + `isVaultRelativePath`), soit le pire cas, exactement l'issue #234 fermée COMPLETED le 2026-04-24 et contestée depuis par deux users. Les 9 symlinks `01 - Projects/* → <repo>/docs` étaient donc invisibles ; ce rôle passe à **graphify**. ✅ Le bug YAML Templater qui faisait planter `get_vault_context` sur tout le vault (une seule note en cause) est corrigé en 2026.8.19 — mais la règle « valeurs quotées, pas de Templater » reste. ⚠️ Les deux outils sont **pré-1.0** (tolaria en alpha quotidienne, graphify v0.9.51 créé il y a 4 mois, 1142 issues) : rien d'unique ne vit dedans, le vault Obsidian n'est pas supprimé. `search_notes` est du plein-texte basique — bon sur 1-2 termes, il décroche sur une question en langage naturel. Premier run graphify sur `gwm-cli` : 7439 nœuds, 18375 arêtes, 243 communautés, **0 token** en `--code-only` (93 % EXTRACTED) ; le `GRAPH_REPORT.md` est maigre sans la passe docs (les 168 docs sautées sont là où est la valeur « améliorer la doc »), et le nommage des communautés retombe sur le nœud-hub même via `--backend=claude-cli`.

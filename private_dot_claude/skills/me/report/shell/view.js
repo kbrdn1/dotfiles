@@ -595,7 +595,7 @@
     var as = f.agents || [];
     if (!as.length) return null;
     return el('div', { class: 'card agents' }, [el('div', { class: 'eyebrow', style: 'padding:.6rem .85rem 0', text: 'agent sur la tâche' })].concat(as.map(function (a) {
-      var mono = a.monocode, active = a.freshness === 'active' && Date.now() - (a.lastActivity || 0) < AGENT_IDLE_MS;
+      var active = a.freshness === 'active' && Date.now() - (a.lastActivity || 0) < AGENT_IDLE_MS;
       var initials = String(a.name || a.id).replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase();
       return el('div', { class: 'agent' }, [
         el('div', { class: 'avatar', text: initials }, [el('span', { class: 'live' + (active ? '' : ' paused'), 'data-agent-at': a.lastActivity || 0, title: 'gwm : ' + a.freshness + ' à la collecte' })]),
@@ -603,7 +603,6 @@
           el('span', { class: 'c-label', text: [a.kind, a.model, a.effort].filter(Boolean).join(' · ') }),
           a.lastActivity ? el('span', { class: 'c-label', 'data-rel': new Date(a.lastActivity).toISOString(), text: '· ' + rel(new Date(a.lastActivity).toISOString()) }) : null,
           el('span', { class: 'acts' }, [
-            mono ? tag(mono.attached ? 'monocode : ce worktree' : 'monocode : ' + String(mono.cwd).split('/').pop(), mono.attached ? 'c-ok' : 'c-warn', true, { title: (mono.title || '') + ' · ' + mono.cwd + (mono.attached ? '' : ' : Monocode suit la session sur le checkout principal') }) : null,
             a.transcript ? ibtn('transcript', { href: zed(a.transcript), title: a.transcript }) : null,
             ibtn('id', { icon: 'copy', copy: a.id, toast: 'id de session copié' })])]),
         a.lastTool ? el('div', { class: 'agent-line' }, [el('span', { class: 'eyebrow', text: 'dernière action' }), el('span', {}, [el('code', { text: a.lastTool.name }), ' ', a.lastTool.what, ' ', el('span', { class: 'c-label', 'data-rel': a.lastTool.at, text: rel(a.lastTool.at) })])]) : null,

@@ -1,6 +1,6 @@
 ---
 name: me:goal
-description: "Workflow sprint : découpe un objectif en issues avec dépendances (bloquée par), pose le plan me:report en page vivante (kanban, graphe), puis mène chaque issue débloquée par le workflow worktree jusqu'au merge progressif dans dev, conflits compris, jusqu'à ce que le sprint soit fini. En parallèle via /me:dispatch dans un Mono, sinon en séquentiel. Reprend un sprint en cours depuis son plan. Triggers: /me:goal, sprint, objectif de sprint, découper en issues, enchaîner les issues, reprendre le sprint. Ne pas confondre avec /goal, commande native de Claude Code."
+description: "Workflow sprint : découpe un objectif en issues avec dépendances (bloquée par), pose le plan me:report en page vivante (kanban, graphe), puis mène chaque issue débloquée par le workflow worktree jusqu'au merge progressif dans dev, conflits compris, jusqu'à ce que le sprint soit fini. En parallèle via /me:dispatch dans Herdr, sinon en séquentiel. Reprend un sprint en cours depuis son plan. Triggers: /me:goal, sprint, objectif de sprint, découper en issues, enchaîner les issues, reprendre le sprint. Ne pas confondre avec /goal, commande native de Claude Code."
 ---
 
 # me:goal : un sprint, du découpage au merge dans dev
@@ -45,8 +45,8 @@ Puis `$C --plan <slug>` et donner le chemin de la page (dans Herdr : `sheprd bro
 
 Les issues `todo` dont toutes les dépendances sont faites (`status` dans `facts.json` du plan) partent :
 
-- **dans un Mono de Monocode** : `/me:dispatch` avec ces issues ; il crée chaque worktree, lance une session
-  dedans et rend la main. Reprendre ici au retour des sessions ;
+- **dans une session ouverte dans Herdr** : `/me:dispatch` avec ces issues ; il crée chaque worktree, y lance un agent
+  Claude et rend la main. Reprendre ici au retour des agents ;
 - **ailleurs** : en séquentiel, une issue après l'autre, par le workflow worktree (skill `git-flow-worktree`,
   l'issue existe déjà : le lui dire), jusqu'à la PR ; puis `/me:report`, `/me:loop:claude-review-pr`
   (`/me:loop:codex-review-pr` en plus si la PR est sensible), `/me:loop:ci-until-green`. Le cwd ne tient pas

@@ -167,7 +167,7 @@ def parse_review(out, who='claude'):
 
 def agent_facts(repo):
     """Les sessions d'agent que gwm voit sur ce worktree, enrichies de leur transcript Claude Code
-    (modèle, dernière action, dernier message, mission) et de leur rattachement Monocode. 0 token."""
+    (modèle, dernière action, dernier message, mission). 0 token."""
     j = run(['gwm', 'list', '--format=json'], repo)
     if not j:
         return []
@@ -183,7 +183,6 @@ def agent_facts(repo):
              'lastActivity': (s.get('last_activity') or 0) * 1000}
         if s.get('kind') == 'claude' and s.get('id'):
             a.update(transcript_facts(s['id']))
-            a['monocode'] = monocode_session(s['id'], repo)
         out.append(a)
     return out
 
@@ -220,23 +219,6 @@ def transcript_facts(sid):
                 elif c.get('type') == 'text' and c.get('text', '').strip():
                     res['lastText'] = c['text'].strip()[:360]
     return res
-
-
-def monocode_session(sid, repo):
-    db = os.path.expanduser('~/Library/Application Support/com.monocode.desktop/monocode.db')
-    if not os.path.exists(db):
-        return None
-    try:
-        import sqlite3
-        con = sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=1)
-        r = con.execute('select title, cwd, worktree_cwd from sessions where provider_session_id = ?', (sid,)).fetchone()
-        con.close()
-    except Exception:
-        return None
-    if not r:
-        return None
-    attached = os.path.realpath(r[2] or r[1] or '') == os.path.realpath(repo)
-    return {'title': r[0], 'cwd': r[2] or r[1], 'attached': attached}
 
 
 def matches(path, pats):
