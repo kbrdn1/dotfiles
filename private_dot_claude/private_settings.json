@@ -195,6 +195,28 @@
           }
         ]
       }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/kbrdn1/.claude/scripts/worktree-gwm.sh",
+            "timeout": 600
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/kbrdn1/.claude/scripts/worktree-gwm.sh",
+            "timeout": 120
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
