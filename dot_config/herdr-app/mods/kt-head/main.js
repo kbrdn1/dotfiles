@@ -11,12 +11,25 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, run, theme, shared, props, layout, settings, window as win, setShared, exec, home, agents, focused, openOverlay, nextCommand, checking } from "herdr";
+import { motionState, frame, enter, fade } from "./motion.js";
+// Copied byte for byte from mods/kt-threads/halo.js: the halo the brand part draws, kt-threads below.
+import { HALO, haloLayers } from "./halo.js";
 
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const SPIN = "mods/workspace-chrome/spinner.svg";
-// The main view's pages (stack "view"), as the sidebar names them.
-const PAGES = { inbox: ["Inbox", "layers"], skills: ["Skills", "sparkles"], mcp: ["MCP", "plug"], gwm: ["Worktrees", "git-branch"] };
+// The main view's pages (stack "view"), as the sidebar names them: [label, icon, sidebar group].
+// Skills, MCP and Plugins sit in the sidebar's « Agents » group: their crumb reads « Agents › Skills ».
+const PAGES = {
+  inbox: ["Inbox", "layers"],
+  workflow: ["Workflow", "workflow", "Agents"],
+  skills: ["Skills", "sparkles", "Agents"],
+  mcp: ["MCP", "plug", "Agents"],
+  plugins: ["Plugins", "puzzle", "Agents"],
+  gwm: ["Worktrees", "git-branch"],
+  // kt-notes; the sidebar's own icon for it (kt-threads), so the crumb and the line match.
+  notes: ["Notes", "file-text"],
+};
 const alpha = (c, a) => (c ?? "#000000").slice(0, 7) + a;
 
 // kt-threads' label(): a name the person gave stays; else the agent's live title, else the program.
@@ -90,24 +103,27 @@ function toggleDrawer() {
   }
 }
 
-// A toggle on the kbrdn.dev ink when on (transparent border when off: no shift);
+// A toggle on the kbrdn.dev ink when on (transparent border: no shift); the ink is a layer that
+// fades in and out with the toggle (motion.js fade, ANIMATIONS.md: gpui animates no color).
 // framed: the window buttons.
-function button(t, id, icon, onClick, on = false, framed = false, tip = null) {
+function button(m, t, id, icon, onClick, on = false, framed = false, tip = null) {
   return own(
     h_flex()
       .id(id)
+      .relative()
       .h(28)
       .px(7)
       .items_center()
       .rounded(10)
       .border(1)
-      .border_color(framed ? t.border : on ? t.accent + "66" : t.accent + "00")
-      .when(on, (el) => el.bg(t.accent + "24"))
+      .border_color(framed ? t.border : t.accent + "00")
       .text_color(on ? t.accent : t.muted)
       .cursor_pointer()
-      .hover((s) => s.bg(on ? t.accent + "24" : t.hover).text_color(on ? t.accent : t.foreground))
+      .hover((s) => (on ? s.text_color(t.accent) : s.bg(t.hover).text_color(t.foreground)))
       .on_click(onClick)
       .when(Boolean(tip), (el) => el.tooltip(tip))
+      .when(!framed, (el) => el.child(fade(m, div().id(`${id}-ink`).absolute().top(-1).left(-1).right(-1).bottom(-1)
+        .rounded(10).border(1).border_color(t.accent + "66").bg(t.accent + "24"), on)))
       .child(svg(icon.includes("/") ? icon : I(icon)).size(14)),
   );
 }
@@ -154,6 +170,7 @@ function route(c) {
 export default class Head extends View {
   init(_props, cx) {
     this.repos = {}; // folder -> repo name | null
+    this.motion = motionState(); // ANIMATIONS.md: the toggles' ink and the agent's state fade in
     if (checking()) return;
     cx.spawn(async (cx) => {
       for (;;) {
@@ -189,11 +206,16 @@ export default class Head extends View {
     return { name: e?.name ?? (root ? root.split("/").pop() : p.name), logo: logoOf(e), color: c.startsWith("#") ? c : t[c] };
   }
 
+  // The halo's top (halo.js, its color kt-threads' shared HALO), clipped by the block; no background of
+  // its own (the side column's), so it runs on into kt-threads below without a band.
   brand(t, w) {
     const mac = w.platform === "macos" && !w.fullscreen;
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     return h_flex()
       .size_full()
-      .bg(t.chrome)
+      .relative()
+      .overflow_hidden()
+      .children(shared("kt.opt.kt-threads.halo") === false ? [] : haloLayers(m, (this.haloMemo ??= {}), shared(HALO) ?? null, 0))
       .pl(mac ? 80 : 18)
       .gap(8)
       .items_center()
@@ -222,7 +244,7 @@ export default class Head extends View {
     const look = { working: [t.working, "WORKING"], blocked: [t.blocked, "NEEDS YOU"], done: [t.done, "DONE"] }[s];
     if (!look) return null;
     const [color, text] = look;
-    return h_flex().flex_none().h(22).px(8).gap(6).items_center().rounded_full()
+    return enter(this.motion, h_flex().flex_none().h(22).px(8).gap(6).items_center().rounded_full(), `kt-h-st-${s}`, { dy: 0 })
       .border(1).border_color(alpha(color, "4d")).bg(alpha(color, "1a"))
       .font_family(MONO).text_size(10).text_color(color)
       .child(s === "working" ? svg(SPIN).size(10).spin(900) : div().size(6).rounded_full().bg(color)
@@ -237,6 +259,7 @@ export default class Head extends View {
     const page = PAGES[find(layout(), "view")?.active];
     const pr = p ? this.project(t, p, cx) : null;
     const sep = () => svg(I("chevron-right")).size(12).flex_none().text_color(t.dim);
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     // Inside the work card (it paints the background): padding, no rule.
     return h_flex()
       .size_full()
@@ -250,6 +273,10 @@ export default class Head extends View {
           .child(div().flex_none().text_size(13).font_medium().text_color(page ? t.muted : t.foreground).child(pr.name))
           .child(sep())
           .when(Boolean(page), (el) => el
+            // The sidebar group, a plain crumb (a click on it does nothing).
+            .when(Boolean(page?.[2]), (el) => el
+              .child(div().flex_none().text_size(13).font_medium().text_color(t.muted).child(page[2]))
+              .child(sep()))
             .child(svg(I(page?.[1] ?? "layers")).size(14).flex_none().text_color(t.accent))
             .child(div().flex_none().text_size(14).font_medium().text_color(t.foreground).child(page?.[0] ?? ""))
             // Back to the thread the page covers.
@@ -273,19 +300,19 @@ export default class Head extends View {
       .child(
         h_flex()
           .gap(2)
-          .child(button(t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true, false, "Détails du thread"))
-          .child(button(t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, "Terminal à droite"))
-          .child(button(t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open, false, "Terminal en bas"))
-          .child(button(t, "kt-h-panel", "panel-right", () => run("layout.toggle", { id: "panel" }), shown(layout(), "panel"), false, "Panneau latéral")),
+          .child(button(m, t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true, false, "Détails du thread"))
+          .child(button(m, t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, "Terminal à droite"))
+          .child(button(m, t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open, false, "Terminal en bas"))
+          .child(button(m, t, "kt-h-panel", "panel-right", () => run("layout.toggle", { id: "panel" }), shown(layout(), "panel"), false, "Panneau latéral")),
       )
       .when(Boolean(w.buttons), (el) =>
         el.child(
           h_flex()
             .pl(8)
             .gap(6)
-            .child(button(t, "kt-h-min", "minus", () => run("window.minimize"), false, true))
-            .child(button(t, "kt-h-max", "square", () => run("window.maximize"), false, true))
-            .child(button(t, "kt-h-close", "x", () => run("window.close"), false, true)),
+            .child(button(m, t, "kt-h-min", "minus", () => run("window.minimize"), false, true))
+            .child(button(m, t, "kt-h-max", "square", () => run("window.maximize"), false, true))
+            .child(button(m, t, "kt-h-close", "x", () => run("window.close"), false, true)),
         ),
       );
   }

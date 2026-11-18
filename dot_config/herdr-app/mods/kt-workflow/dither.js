@@ -1,5 +1,7 @@
-// The pixel dither band (brand/dither-band.svg, 3840×80 so a 4K-wide window never sees it end; a 128 px
-// tile, 2 px dots on a 4 px grid) inside a card with
+// The pixel dither band (brand/dither-band.svg, a 1536×80 tile: 12 × the pattern's 128 px, 2 px dots on a
+// 4 px grid; tiled side by side as wide as the card, so a 4K window never sees it end. Not one wide svg:
+// GPUI rasterises an svg into its texture atlas, and 3840 px (7680 at 2x) came out empty or in islands)
+// inside a card with
 // rounded corners, cut so that nothing crosses an arc or the border AND nothing is missing in the
 // corners: the band is shown through 2 px rows, each as wide as the arc allows there, merged where
 // rows are equal (so the middle is one window). Every window shows the same band from the card's
@@ -10,7 +12,7 @@
 import { div, svg } from "gpui-kit";
 
 export const DITHER = "brand/dither-band.svg";
-export const BAND_W = 3840; // the svg's own width: drawn 1:1, never stretched
+export const BAND_W = 1536; // the svg's own width, a multiple of its 128 px pattern: drawn 1:1 and tiled
 export const TOP = { tl: true, tr: true };
 export const BOTTOM = { bl: true, br: true };
 export const ALL = { tl: true, tr: true, bl: true, br: true };
@@ -49,5 +51,13 @@ export function ditherBand(w, h, r, color, corners = TOP, src = DITHER) {
   if (!(w > 2 * r)) return null;
   return div().absolute().top(0).left(0).w(w).h(h).children(bandWindows(w, h, r, corners).map(([x, y, ww, hh]) =>
     div().absolute().left(x).top(y).w(ww).h(hh).overflow_hidden()
-      .child(svg(src).absolute().left(-x).top(-y).w(BAND_W).h(80).text_color(color))));
+      .children(tiles(x, ww).map((k) => svg(src).absolute().left(k * BAND_W - x).top(-y).w(BAND_W).h(80).text_color(color)))));
+}
+
+// The tile indexes a window [x, x + w) needs: the tiles abut at multiples of BAND_W, a whole number of
+// pattern periods, so the pattern runs on without a seam or a doubled dot.
+export function tiles(x, w) {
+  const out = [];
+  for (let k = Math.floor(x / BAND_W); k * BAND_W < x + w; k++) out.push(k);
+  return out;
 }

@@ -20,17 +20,17 @@
 // Settling is everyone's.
 // kbrdn (Monocode): a space is a project. On top, the shown project with a
 // picker of every space (by machine, worktrees under their repo) and New
-// project; New thread, Inbox, Skills, MCP and Worktrees (with the shown project's
+// project; New thread, Inbox, Skills, MCP, Plugins and Worktrees (with the shown project's
 // worktree count); the list follows the shown project unless
 // "Tous les projets" (shared "kt.project" = "*"); at the bottom, a bar of
 // project squares. The main area is the layout's "view" stack: "thread" (the
-// tab) or a page ("inbox", "skills", "mcp", "gwm": kt-inbox, kt-skills, kt-mcp,
-// kt-gwm); an entry shows its page, a thread, the project picker and New thread
+// tab) or a page ("inbox", "skills", "mcp", "plugins", "gwm": kt-inbox, kt-skills, kt-mcp,
+// kt-plugins, kt-gwm); an entry shows its page, a thread, the project picker and New thread
 // show the thread again.
 // A card (Monocode's sidebar): program tile, title, status; model · effort ·
-// branch and the PR; the agent's live action; its sub-agents hung under the
-// card on a rail. Every card rings its context; the shown thread alone opens an inner card
-// (context / 5 h / cache rings, cost and lines, flow step, todos, sub-agents, report), fed by
+// branch and the PR; the agent's live action; its sub-agents branching off its tile (kbrdn.dev's
+// Parcours). Every card rings its context; the shown thread alone opens an inner card
+// (context / 5 h / cache rings, cost and lines, flow step, todos, report), fed by
 // ~/.claude/scripts/statusline.ts, herdr-bridge and /me:report.
 
 import { View, div, svg, image } from "gpui-kit";
@@ -39,6 +39,16 @@ import { companion } from "./companion-logo.js";
 import { longLived, pickPr } from "./pr-pick.js";
 import { filterOf, filtering, passes, groupOf, GROUPS, byNeed, byProject, openFirst, moveInGroup } from "./thread-filter.js";
 import { Vim, keysOf, step } from "./vim.js";
+// Copied byte for byte from mods/kbrdn-toast/decide.js (a mod can't import from another folder): edit
+// there, then copy.
+import { decide, decisionButtons, pillKeys, press } from "./decide.js";
+// Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
+import { motionState, frame, enter, collapse, ink, fade } from "./motion.js";
+// Copied byte for byte from mods/kt-keys/bus.js (data/orchestrator/DATA-SYNC.md).
+import { bump, refreshOn } from "./bus.js";
+// Written here, copied byte for byte into mods/kt-head: the halo both draw.
+import { HALO, haloLayers } from "./halo.js";
+import { langSwitch } from "./i18n.js";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder } from "herdr";
 import * as fs from "fs/promises";
@@ -55,6 +65,36 @@ function find(node, id) {
   return null;
 }
 const SPIN = "mods/workspace-chrome/spinner.svg";
+// A sub-agent's branch: 28 px, kbrdn-agents' sub-agent rhythm with room for the 20×16 companion and its
+// corner badge (26 would let the badge touch the next line). An ended one fades after FADE, goes after GONE.
+const BRANCH_H = 28;
+const FADE = 60e3;
+const GONE = 5 * 60e3;
+const startOf = (a) => a.startedAt ?? a.at ?? 0;
+const endOf = (a) => a.endedAt ?? startOf(a);
+const isAlive = (a) => a.state === "running" || a.state === "background";
+// The pages under the navigation's Agents group, in order, as the view stack names them: [icon, label].
+// One the layout's stack doesn't have yet (Workflow, kt-workflow) is left out rather than open a blank.
+const AGENT_PAGES = ["workflow", "skills", "mcp", "plugins", "automation"];
+// automation: refresh-cw until kt-automation gives its own icon.
+const AGENT_PAGE = { workflow: ["workflow", "Workflow"], skills: ["sparkles", "Skills"], mcp: ["plug", "MCP"], plugins: ["puzzle", "Plugins"],
+  automation: ["refresh-cw", "Automatisation"] };
+
+// One branch of a tree (kbrdn.dev's Parcours), the sub-agents' and the navigation's Agents group's: the
+// column drawn before a row's content, 2x wide. Its piece of trunk runs over the row's whole height `h`
+// (to the bend only, on the `last`), and a ╰ bends off it 8 px above the middle, rounded, to the column's
+// right edge. `color`: the bend and the piece leading to it; `rest`: the trunk going on below. `reach`:
+// px the pieces reach past the row's edges, so they still meet across bordered rows.
+function twig(t, { h, x, last, color, rest, reach = 0 }) {
+  const mid = h / 2;
+  return div().w(2 * x).h_full().flex_none().relative()
+    .child(div().absolute().top(-reach).left(x).h(mid - 8 + reach).border_l(1).border_color(color))
+    .when(!last, (el) => el.child(div().absolute().top(mid - 4).bottom(-reach).left(x).border_l(1).border_color(rest)))
+    .child(div().absolute().top(mid - 8).left(x).w(x).h(9).border_l(1).border_b(1).rounded_bl(8).border_color(color));
+}
+// The tree's lines at rest, Parcours' --control-border (neutral-300 light, white at .14 dark): the
+// foreground made translucent, so they read at a glance without shouting, glass mode included.
+const treeLine = (t) => alpha(t.foreground, settings().dark ? "38" : "4d");
 
 // kbrdn-tabs' label(): a name the person gave stays; else the agent's live title
 // (its status glyph dropped), else the program; never a bare tab number.
@@ -168,8 +208,7 @@ function cacheLeft(s) {
 function windowOf(q, name) {
   const w = q?.[name] ?? q?.rate_limits?.[name];
   return w && w.resets_at * 1000 > Date.now() ? w : null;
-}
-const STATUSLINE = () => `${home()}/.claude/cache/statusline`;
+}const STATUSLINE = () => `${home()}/.claude/cache/statusline`;
 
 // The projects registry (shared "kt.projects", kept across restarts): [{ id, name, folder, machine,
 // color, logo, order }], id = [machine, the folder's real path]. kt-projects manages it; the list
@@ -259,6 +298,10 @@ export default class Threads extends View {
     this.seen = new Set(); // spaces whose project color was applied once
     this.homeReal = null; // home()'s real path: its space is "Home", never a project
     this.memos = {}; // terminal -> companion-logo's memo (when done or blocked began, one-shots)
+    this.decisions = {}; // a blocked agent's terminal -> decide.js' { pending, accept, refuse, open }
+    this.motion = motionState(); // motion.js: what has drawn, the folds' heights
+    this.statusOf = {}; // terminal -> its agent's status last render: the `agent:<space>` bumps
+    this.twigsOpen = new Set(); // agents' terminals whose sub-agents show all, not 4 then "+N"
     // Keys (vim.js): ctrl-b h (pane.go, "focus") or `kt-threads.key:<keys>` gives this list the
     // keyboard; a cursor (a thread id, or "snoozed": the shelf's header) moves over the rows shown.
     this.handle = cx.focus_handle();
@@ -281,6 +324,7 @@ export default class Threads extends View {
         this.homeReal = r?.code === 0 ? r.stdout.trim() : home();
       });
       cx.timer.every(3000, (cx) => this.readLive(cx));
+      cx.timer.every(1500, (cx) => this.readDecisions(cx));
       cx.timer.every(15000, (cx) => this.readReports(cx));
       cx.timer.every(5000, (cx) => this.syncProjects(cx));
       // `kt-threads.density` (a key, or `herdr-app do`) flips the cards like the icon by THREADS;
@@ -303,6 +347,13 @@ export default class Threads extends View {
             this.focusIn();
             for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
           }
+          // `cursor:<line id>` takes the keyboard with the cursor on that line (a tab id, `dec:accept:<tab
+          // id>`), for tests.
+          else if (c.startsWith("cursor:")) {
+            this.focusIn();
+            this.cur = c.slice(7);
+            this.reveal = true;
+          }
           else if (c === "density") this.toggleDensity();
           else if (c === "projects") this.openProjects();
           // `bar-move:<name>|<name>`: a drag in the bar from one project onto another (names as the
@@ -323,6 +374,18 @@ export default class Threads extends View {
             }
           }
           else if (c === "every") setShared("kt.project", shared("kt.project") === "*" ? null : "*");
+          // `agents` folds or unfolds the navigation's Agents group (Skills, MCP, Plugins).
+          else if (c === "agents") setShared("kt.nav.agents", !shared("kt.nav.agents"));
+          // `wt-remove:<worktree path>` (settle()'s notification): kt-gwm's guarded removal of it, asked
+          // first, then its page shown (a copy never opened only exists once shown, and reads it then).
+          else if (c.startsWith("wt-remove:")) {
+            setShared("kt-gwm.remove", { path: c.slice(10), at: Date.now() });
+            show("gwm");
+          }
+          // `halo:<color>` draws the halo in that color, `nav-page:<page>` the navigation as if that page
+          // showed; `halo:` / `nav-page:` alone go back. This copy only, nothing shown changes (tests).
+          else if (c.startsWith("halo:")) this.haloTest = c.slice(5) || null;
+          else if (c.startsWith("nav-page:")) this.navTest = c.slice(9) || null;
           else if (c === "archived") {
             const f = filterOf(shared("kt.threadFilter"));
             setShared("kt.threadFilter", { ...f, archived: !f.archived });
@@ -395,6 +458,15 @@ export default class Threads extends View {
   isHome(s) {
     if (s.machine) return false;
     return s.folder === home() || (this.homeReal !== null && this.real[where(s)] === JSON.stringify([null, this.homeReal]));
+  }
+
+  // The halo's color: the accent across every project, neutral at home, else the shown project's (its
+  // registry color, else its space's).
+  haloColor(t, shown) {
+    if (this.haloTest) return paint(t, this.haloTest) ?? t.accent;
+    if (this.everyProject || !shown) return t.accent;
+    if (this.isHome(shown)) return t.muted;
+    return paint(t, this.entryOf(shown, registry())?.color) ?? spaceColor(t, shown);
   }
 
   // Home's name, its square in the bar and its group's header: "Home" or the name it was given.
@@ -612,6 +684,39 @@ export default class Threads extends View {
     });
   }
 
+  // What each blocked agent waits on (decide.js): a permission herdr-bridge publishes, a held message
+  // or a question. Redraws only when what waits changed.
+  readDecisions(cx) {
+    if (this.readingDecisions) return;
+    this.readingDecisions = true;
+    cx.spawn(async (cx) => {
+      const next = {};
+      for (const p of panes()) {
+        if (!p.terminal || p.terminal.includes("/") || !p.program?.agent || p.status !== "blocked") continue;
+        next[p.terminal] = await decide(p.terminal).catch(() => null);
+      }
+      this.readingDecisions = false;
+      const key = JSON.stringify(Object.entries(next).map(([k, d]) => [k, d?.pending]));
+      if (key !== this.decisionsKey) { this.decisionsKey = key; this.decisions = next; cx.notify(); }
+    });
+  }
+
+  // The decision pills under the keys' cursor stop as their own lines (`dec:<key>:<tab id>`), after
+  // their thread's card: enter / o press the one under it.
+  pillStops(r, group, fold) {
+    if (r.c.status !== "blocked" || r.c.settled || this.asleep(r.c)) return [];
+    const d = this.decisions[this.leads(r.c).agent?.terminal];
+    return pillKeys(d).map((key) => ({ id: `dec:${key}:${r.c.id}`, group, fold, r, pill: { d, key } }));
+  }
+
+  // A pill pressed (a click, or enter on it): the cursor back on its thread, a toast when nothing went.
+  decided(res, tab, cx) {
+    if (!res?.ok) notify({ title: "Réponse depuis Herdr", body: res?.reason ?? "Rien envoyé.", level: "warning", timeout: 4000 });
+    if (this.cur?.startsWith("dec:")) this.cur = tab;
+    this.readDecisions(cx);
+    cx.notify();
+  }
+
   // The thread's /me:report facts, when one exists for its branch.
   reportOf(lead, w) {
     const repo = lead?.cwd && this.repos[JSON.stringify([w.machine ?? null, lead.cwd])]?.name;
@@ -649,29 +754,88 @@ export default class Threads extends View {
     return text ? div().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(`↳ ${text}`) : null;
   }
 
-  // Monocode's rails: the agent's sub-agents (herdr-bridge's `agents`), hung under the card
-  // on a 1 px rail, running first; 4 at most, then "+N". A foreground sub-agent holds its
-  // parent: it spins only while the thread works (the bridge can leave a finished one "running").
-  subAgents(t, lead, working) {
-    const list = (lead?.terminal && this.live[lead.terminal]?.agents) || [];
-    if (!list.length) return null;
-    const order = { running: 0, background: 1, done: 2 };
-    const all = [...list].sort((a, b) => (order[a.state] ?? 3) - (order[b.state] ?? 3));
-    const line = () => h_flex().h(22).pl(10).gap(6).items_center();
-    const state = (s) =>
-      s === "running" ? svg(SPIN).size(11).flex_none().text_color(working ? t.working : t.dim).when(working, (el) => el.spin(900))
-        : s === "done" ? div().flex_none().text_size(11).text_color(t.done).child("✓")
-          : div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child("bg");
+  // The thread's sub-agents (herdr-bridge's `agents`, the engine's own list) still shown: the alive
+  // ones, then the ended until GONE after they ended; running, background, then the latest ended.
+  // A 0.3.0 bridge's rows have `at` and no `startedAt` / `endedAt`.
+  shownAgents(terminal) {
+    const list = (terminal && this.live[terminal]?.agents) || [];
+    const now = Date.now();
+    const order = { running: 0, background: 1 };
+    return list.filter((a) => isAlive(a) || now - endOf(a) < GONE)
+      .sort((a, b) => (order[a.state] ?? 2) - (order[b.state] ?? 2) || endOf(b) - endOf(a));
+  }
+
+  // What a branch shows of its age ("now", "3m"), "~" once faded: clocks() redraws when it changes.
+  agentAge(a) {
+    return isAlive(a) ? age(startOf(a)) : `${age(endOf(a))}${Date.now() - endOf(a) > FADE ? "~" : ""}`;
+  }
+
+  // The sub-agents as branches, the Parcours of kbrdn.dev's home (Expériences et Formations): the
+  // trunk from the tile's centre (`x`) runs down, each row drawing its own piece over its whole height
+  // so the pieces meet, and a ╰ bends off it 8 px above the row's middle to 8 px before the text; the
+  // last ends the trunk at its bend. Each sub-agent is its program's companion (companion-logo.js) at
+  // 20×16, the smallest size it draws cleanly (its corner badge is a 10 px PNG): working while alive
+  // (the bob), sparkles once when seen ending, × failed, still once stopped. Its age on the right;
+  // ended ones fade after FADE. 4, then "+N" as one more branch: a click (enter / l on it) shows them all,
+  // unfolding on their height, "Replier" last (h, or its click: back to 4). Kept per thread's agent, here
+  // only (this.twigsOpen). `agent`: the thread's agent; `id`: its tab.
+  branches(t, list, x, id, agent, cx) {
+    const key = agent?.terminal ?? id;
+    const open = this.twigsOpen.has(key);
+    const shown = list.slice(0, 4);
+    const more = list.length - shown.length;
+    const cursor = this.keyed && this.cur === `twigs:${id}`;
+    // The trunk and bend stay whole on a faded branch: only what it says fades. `color`: the bend and the
+    // piece of trunk leading to it; the trunk going on below keeps the resting line. A new branch fades
+    // in, bend and all (enter: once, when it first draws).
+    const rest = treeLine(t);
+    const line = (key, last, faded, color, ...body) => enter(this.m, h_flex().h(BRANCH_H).px(6).gap(8).items_center()
+      .child(twig(t, { h: BRANCH_H, x, last, color, rest }))
+      .child(h_flex().flex_1().min_w(0).gap(8).items_center().when(faded, (el) => el.opacity(0.45)).children(body)),
+      `kt-br-${id}-${key}`, { dy: 0 });
+    // An ending seen within 5 s sparkles (the memo dates it); an older one, seen on a reload, does not.
+    const icon = (a) => companion({
+      program: agent?.program, id: `kt-sa-${id}-${a.id}`, cx, size: 20, height: 16,
+      state: isAlive(a) ? "working" : a.state === "done" ? "done" : a.state === "error" ? "error" : "idle",
+      since: isAlive(a) ? startOf(a) : Date.now() - endOf(a) < 5000 ? undefined : endOf(a),
+      memo: (this.memos[`${agent?.terminal ?? id}:${a.id}`] ??= {}),
+    });
+    const branch = (a, i, last) => {
+      const ended = !isAlive(a);
+      // A live sub-agent's branch in its state's color, a failed one in a muted red, the others at rest.
+      const color = !ended ? alpha(t.working, "99") : a.state === "error" ? alpha(t.ansi1, "80") : rest;
+      return line(a.id ?? i, last, ended && Date.now() - endOf(a) > FADE, color,
+        icon(a),
+        div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ended ? t.muted : t.foreground).child(a.what || a.name || "agent"),
+        div().flex_none().text_size(12).text_color(t.dim).child(age(ended ? endOf(a) : startOf(a))));
+    };
+    if (more <= 0) return v_flex().children(list.map((a, i) => branch(a, i, i === list.length - 1)));
+    // "+N" / "Replier": the last branch, a click (or the keys' cursor on it) folds or unfolds the rest.
+    const toggle = (label, chevron) => line(open ? "fold" : "more", true, false, rest,
+      div().font_family(MONO).text_size(10.5).text_color(cursor ? t.foreground : t.dim).child(label),
+      svg(I(chevron)).size(11).flex_none().text_color(t.dim))
+      .rounded(8).when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+      .cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        if (open) this.twigsOpen.delete(key);
+        else this.twigsOpen.add(key);
+        cx.notify();
+      });
+    const rest4 = collapse(this.m, `kt-twigs-all-${id}`, open, open
+      ? v_flex().children([...list.slice(4).map((a, i) => branch(a, i + 4, false)), toggle("Replier", "chevron-up")]) : null);
     return v_flex()
-      .ml(4)
-      .border_l(1)
-      .border_color(t.border)
-      .children(all.slice(0, 4).map((a) =>
-        line()
-          .child(div().flex_none().text_size(11).text_color(t.dim).child("↳"))
-          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(a.what || "agent"))
-          .child(state(a.state))))
-      .when(all.length > 4, (el) => el.child(line().child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(`+${all.length - 4}`))));
+      .children(shown.map((a, i) => branch(a, i, false)))
+      .when(Boolean(rest4), (el) => el.child(rest4))
+      .when(!open, (el) => el.child(toggle(`+${more}`, "chevron-down")));
+  }
+
+  // The "+N" / "Replier" line of a thread whose sub-agents run past 4: a stop for the keys' cursor too.
+  twigStop(r, group, fold) {
+    if (r.c.settled || this.asleep(r.c)) return [];
+    const agent = this.leads(r.c).agent;
+    if (this.shownAgents(agent?.terminal).length <= 4) return [];
+    return [{ id: `twigs:${r.c.id}`, group, fold, r, twigs: agent?.terminal ?? r.c.id }];
   }
 
   // The shown thread's inner card (radius 8, 4 px inside the card's 12: concentric), dashed on
@@ -715,7 +879,6 @@ export default class Threads extends View {
         .children(numbers.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
       this.flowStep(t, lead, working),
       this.todoList(t, todos),
-      this.subAgents(t, agent, working),
       reportLine.length > 0 && h_flex().h(16).gap(8).items_center()
         .children(reportLine.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
     ].filter(Boolean);
@@ -962,8 +1125,8 @@ export default class Threads extends View {
                 : age(c.settled ? c.settled_at : c.changed_at),
         ),
       )
-      .concat(Object.values(this.live).map((l) => cacheLeft(l.sl)), ["five_hour", "seven_day"].map((n) => windowOf(this.quota, n)?.resets_at ?? 0).map((s) => (s ? resetIn(s) : "")))
-      .join("|");
+      .concat(Object.keys(this.live).flatMap((k) => this.shownAgents(k).map((a) => this.agentAge(a))))
+      .concat(Object.values(this.live).map((l) => cacheLeft(l.sl)), ["five_hour", "seven_day"].map((n) => windowOf(this.quota, n)?.resets_at ?? 0).map((s) => (s ? resetIn(s) : "")))      .join("|");
   }
 
   // New folders only: a folder's repo doesn't change. Asked on render too,
@@ -1003,13 +1166,15 @@ export default class Threads extends View {
     return { key: r.key, name: r.name, first, machine: w.machine };
   }
 
-  // Settling a worktree's last open thread offers to remove the worktree
-  // (the `worktree` dialog; Esc keeps it).
+  // Settling a thread. Settling the last open one of a local worktree offers, in a notification, to
+  // remove it: a click hands it to kt-gwm's guarded removal (wt-remove: its own confirmation, its refusals,
+  // a dry run, never --force). Not a jump to Worktrees on every settle: settling is quick and undone at once.
   settle(w, c) {
     run("tab.settle", { id: c.id });
     const last = w.tabs.every((x) => x.id === c.id || x.settled);
-    if (last && this.repos[JSON.stringify([w.machine ?? null, w.folder])]?.linked)
-      openOverlay({ mod: "worktree", kind: "dialog", width: 440, height: 190, props: { space: w.id, action: "remove" } });
+    if (last && !w.machine && w.folder && this.repos[JSON.stringify([null, w.folder])]?.linked)
+      notify({ title: "Retirer le worktree ?", body: `${w.name} n'a plus de thread ouvert. Worktrees vérifie avant de retirer.`,
+        level: "info", timeout: 8000, action: { name: `kt-threads.wt-remove:${w.folder}`, args: {} } });
   }
 
   snoozed() {
@@ -1123,14 +1288,16 @@ export default class Threads extends View {
 
 
   // Monocode's status, mono 10.5 with no frame: a spinner while working, a pulsing dot when it needs you.
+  // A thread's status tag; a new status fades in where the last one was (its id carries the status).
   status(t, c) {
     const mono = (color) => h_flex().flex_none().gap(5).items_center().font_family(MONO).text_size(10.5).text_color(color);
-    if (c.status === "blocked")
-      return mono(t.blocked).child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 })).child("NEEDS YOU");
-    if (c.status === "done") return mono(t.done).child("DONE");
-    if (c.status === "working")
-      return mono(t.working).child(svg(SPIN).size(11).spin(900)).child(`WORKING${c.working_since ? ` ${duration(c.working_since).toUpperCase()}` : ""}`);
-    return null;
+    const tag = c.status === "blocked"
+      ? mono(t.blocked).child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 })).child("NEEDS YOU")
+      : c.status === "done" ? mono(t.done).child("DONE")
+        : c.status === "working"
+          ? mono(t.working).child(svg(SPIN).size(11).spin(900)).child(`WORKING${c.working_since ? ` ${duration(c.working_since).toUpperCase()}` : ""}`)
+          : null;
+    return tag && enter(this.m, tag, `kt-st-${c.id}-${c.status}`, { dy: 0 });
   }
 
   button(id, label, icon, onClick) {
@@ -1227,7 +1394,7 @@ export default class Threads extends View {
   // Compact: the row under the pointer, the keys' cursor, or the one just left open as a detailed
   // card; detailed cards don't change.
   expanded(id) {
-    return this.compact && (id === this.hover || id === this.keep || (this.keyed && id === this.cur));
+    return this.compact && (id === this.hover || id === this.keep || (this.keyed && id === this.curThread));
   }
 
   // A row the pointer or the cursor just left stays open 150 ms (one timer, the last one wins), so
@@ -1280,7 +1447,7 @@ export default class Threads extends View {
     if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
       const j = step(a, i, flat.length, this.vim.count, this.compact ? 14 : 7);
       if (j >= 0) this.cur = flat[j].id;
-      if (this.cur !== x?.id) this.linger(x?.id, cx);
+      if (this.cur !== x?.id) this.linger(x?.r?.c.id ?? x?.id, cx);
       this.reveal = true;
     } else if (a === "tab-next" || a === "tab-prev") {
       // The next (previous) group's first row: pinned, the date groups, the snoozed shelf.
@@ -1293,8 +1460,13 @@ export default class Threads extends View {
         this.reveal = true;
       }
     } else if (a === "left") {
-      // h folds a project (from its header or one of its threads), or the snoozed shelf.
-      if (x?.fold) {
+      // h folds a project (from its header or one of its threads), the snoozed shelf, or the Agents
+      // group (from its line or one of its pages: the cursor goes back to the group).
+      if (x?.id === "kt-agents" || x?.navChild) {
+        setShared("kt.nav.agents", false);
+        this.cur = "kt-agents";
+      } else if (x?.twigs) this.twigsOpen.delete(x.twigs); // back to 4 sub-agents
+      else if (x?.fold) {
         this.folded.add(x.fold);
         this.cur = `grp:${x.fold}`;
       } else if (x?.group === "snoozed" && this.showSnoozed) {
@@ -1302,7 +1474,13 @@ export default class Threads extends View {
         this.cur = "snoozed";
       }
     } else if (a === "right" || a === "open") {
-      if (x?.group === "nav") this.nav[x.id]();
+      // "+N": enter / o / l show all the sub-agents.
+      if (x?.twigs) this.twigsOpen.add(x.twigs);
+      // A decision pill: enter / o press it (as a click); l does nothing there.
+      else if (x?.pill) {
+        if (a === "open") cx.spawn(async (cx) => this.decided(await press(x.pill.d, x.pill.key), r.c.id, cx));
+      }
+      else if (x?.group === "nav") this.nav[x.id]();
       else if (x?.head) {
         if (a === "right" || this.folded.has(x.fold)) this.folded.delete(x.fold);
         else this.folded.add(x.fold);
@@ -1415,6 +1593,14 @@ export default class Threads extends View {
     const sl = agent?.terminal ? this.live[agent.terminal]?.sl : null;
     const facts = [sl?.model, sl?.effort, lead?.branch || (!this.everyProject && pj.name)].filter(Boolean).join(" · ");
     const live = this.liveLine(t, c, lead);
+    // What a blocked thread's agent waits on (decide.js): its pills at the end of line 3 (the keys'
+    // cursor stops on each, pillStops), what it asks on line 4, whole in its tooltip.
+    const d = c.status === "blocked" && !short ? this.decisions[agent?.terminal] : null;
+    const ask = d?.pending ? [d.pending.title, d.pending.detail].filter(Boolean).join(" · ") : "";
+    const pills = d ? decisionButtons(d, {
+      cursor: pillKeys(d).find((k) => this.keyed && this.cur === `dec:${k}:${c.id}`) ?? null,
+      onDone: (res, cx) => this.decided(res, c.id, cx),
+    }) : null;
     const todos = agent?.terminal ? this.live[agent.terminal]?.todos : null;
     const report = this.reportOf(lead, w);
     const ci = this.ciMark(t, report);
@@ -1431,53 +1617,68 @@ export default class Threads extends View {
       action: bridge?.state ? (bridge.action ?? null) : undefined, since: bridge?.state ? bridge.since : undefined,
       size: compact ? 20 : 24, height: compact ? 16 : 20, memo: (this.memos[agent?.terminal ?? c.id] ??= {}),
     });
-    // Compact: one 36 px line (28 + the card's 4 px around it): tile, title, ring, status.
-    const content = v_flex()
+    // Compact: one 36 px line (28 + the card's 4 px around it): tile, title, ring, status. The tile has
+    // a column of its own down the card (Parcours' tree node): the other lines sit right of it, and with
+    // sub-agents its trunk runs on from under the tile to their branches (through the padding and gap).
+    const lineH = compact ? 28 : 20;
+    const tileW = compact ? 20 : 24;
+    const py = compact ? 0 : short ? 2 : 6;
+    const subs = !short && !compact ? this.shownAgents(agent?.terminal) : [];
+    // Lines 2 to 4 (and, below the card's content, the branches): a compact card opening (the pointer,
+    // the keys' cursor) unfolds them on their height; detailed cards just have them.
+    const unfold = (key, open, build) => (this.compact ? collapse(this.m, `${key}-${c.id}`, open, open ? build() : null) : open ? build() : null);
+    const more = unfold("kt-more", !short && !compact, () =>
+      v_flex()
+        .gap(4)
+        .child(
+          h_flex()
+            .h(16)
+            .gap(6)
+            .items_center()
+            .text_size(11)
+            .text_color(t.muted)
+            .when(this.everyProject, (el) =>
+              el
+                .child(div().size(6).rounded(2).flex_none().bg(spaceColor(t, pj.first)))
+                // kbrdn.dev `.eyebrow`: the project.
+                .child(div().flex_none().max_w(120).truncate().font_family(MONO).text_size(10.5).child(pj.name.toUpperCase())),
+            )
+            .child(div().flex_1().min_w(0).truncate().child(facts))
+            .when(Boolean(pj.machine), (el) => el.child(div().flex_none().px(6).rounded_full().bg(t.raised).text_color(t.dim).child(pj.machine)))
+            .when(Boolean(pr), (el) => el.child(this.badge(t, c, pr)))
+            .when(Boolean(ci), (el) => el.child(ci)),
+        )
+        // Line 3: the last action (or "a besoin de toi"), the todos' count and the decision pills on the right.
+        .when(Boolean(live) || todos?.total > 0 || Boolean(pills), (el) => el.child(
+          h_flex().min_h(16).gap(8).items_center()
+            .child(div().flex_1().min_w(0).when(Boolean(live), (el) => el.child(live)))
+            .when(todos?.total > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(`${todos.done}/${todos.total}`)))
+            .when(Boolean(pills), (el) => el.child(pills)),
+        ))
+        .when(Boolean(ask), (el) => el.child(div().id(`kt-ask-${c.id}`).h(16).min_w(0).truncate().font_family(MONO).text_size(10.5)
+          .text_color(t.muted).tooltip(ask).child(ask))));
+    const twigs = unfold("kt-twigs", subs.length > 0, () => this.branches(t, subs, tileW / 2, c.id, agent, cx));
+    const tile = v_flex().w(tileW).flex_none().self_stretch().relative()
+      // Monocode's program tile, once: the agent's program, else what runs in the thread.
+      .child(h_flex().h(lineH).items_center().child(pet))
+      .when(subs.length > 0, (el) => el.child(div().absolute().top(lineH / 2 + 10).bottom(-(py + 4)).left(tileW / 2)
+        .border_l(1).border_color(treeLine(t))));
+    const lines = v_flex()
       .flex_1()
       .min_w(0)
-      .px(6)
-      .py(compact ? 0 : short ? 2 : 6)
       .gap(4)
       .child(
         h_flex()
-          .h(compact ? 28 : 20)
+          .h(lineH)
           .gap(8)
           .items_center()
-          // Monocode's program tile, once: the agent's program, else what runs in the thread.
-          .child(pet)
           .child(div().flex_1().min_w(0).truncate().text_size(short || compact ? 13 : 13.5).font_medium().text_color(short ? t.muted : t.foreground).child(title))
           .when(pinned && !hovered, (el) => el.child(svg(I("pin")).size(12).flex_none().text_color(t.dim)))
           .when(compact && Boolean(ctxRing), (el) => el.child(ctxRing))
           .when(Boolean(right), (el) => el.child(right))
           .when(!compact && Boolean(ctxRing), (el) => el.child(ctxRing)),
       )
-      .when(!short && !compact, (el) =>
-        el
-          .child(
-            h_flex()
-              .h(16)
-              .gap(6)
-              .items_center()
-              .text_size(11)
-              .text_color(t.muted)
-              .when(this.everyProject, (el) =>
-                el
-                  .child(div().size(6).rounded(2).flex_none().bg(spaceColor(t, pj.first)))
-                  // kbrdn.dev `.eyebrow`: the project.
-                  .child(div().flex_none().max_w(120).truncate().font_family(MONO).text_size(10.5).child(pj.name.toUpperCase())),
-              )
-              .child(div().flex_1().min_w(0).truncate().child(facts))
-              .when(Boolean(pj.machine), (el) => el.child(div().flex_none().px(6).rounded_full().bg(t.raised).text_color(t.dim).child(pj.machine)))
-              .when(Boolean(pr), (el) => el.child(this.badge(t, c, pr)))
-              .when(Boolean(ci), (el) => el.child(ci)),
-          )
-          // Line 3: the last action (or "a besoin de toi"), the todos' count on the right.
-          .when(Boolean(live) || todos?.total > 0, (el) => el.child(
-            h_flex().min_h(16).gap(8).items_center()
-              .child(div().flex_1().min_w(0).when(Boolean(live), (el) => el.child(live)))
-              .when(todos?.total > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(`${todos.done}/${todos.total}`))),
-          )),
-      )
+      .when(Boolean(more), (el) => el.child(more))
       .when(this.snoozing === c.id, (el) =>
         el.child(
           h_flex()
@@ -1493,6 +1694,7 @@ export default class Threads extends View {
             ),
         ),
       );
+    const content = h_flex().flex_1().min_w(0).px(6).py(py).gap(8).child(tile).child(lines);
     // The card: radius 12, padding 10 (4 + the content's 6, so the gauges' inner card sits 4 in).
     const card = v_flex()
       .id(`kt-row-${c.id}`)
@@ -1520,9 +1722,11 @@ export default class Threads extends View {
         run("tab.select", { id: c.id });
       })
       .on_mouse_down("right", () =>
-        openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: w.id, settled: c.settled } } }),
+        // kt-menu: the shipped menu's clone whose closings go through kt-confirm, worktrees through gwm.
+        openOverlay({ mod: "kt-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: w.id, settled: c.settled } } }),
       )
       .child(content)
+      .when(Boolean(twigs), (el) => el.child(twigs))
       .when(Boolean(focus), (el) => el.child(focus));
     return v_flex()
       .mx(8)
@@ -1556,10 +1760,30 @@ export default class Threads extends View {
     this.findRepos(cx);
     this.followGlass(cx);
     const t = (this.t = theme());
+    // Motion (ANIMATIONS.md): a compact card unfolding, sub-agents entering their branch, a status
+    // coming in, the navigation's ink gliding. Nothing loops but an active state's.
+    const m = (this.m = frame(this.motion, Boolean(shared("kt.reducedMotion"))));
     this.ticks = 0;
     this.shownClocks = this.clocks();
     const all = panes();
     const ps = spaces();
+    // The bus (DATA-SYNC.md). kt-threads is the central `agent:<space>` emitter: an agent leaving
+    // `working` (idle, done, blocked) may have changed its repo without Herdr knowing. Once per real
+    // transition, never on an agent's first sight; bumped after the render (setShared re-renders all).
+    const ended = new Set();
+    for (const p of all) {
+      if (!p.terminal || !p.program?.agent) continue;
+      const was = this.statusOf[p.terminal];
+      this.statusOf[p.terminal] = p.status;
+      const space = was === "working" && p.status !== "working" ? ps.find((s) => s.tabs.some((x) => x.id === p.tab)) : null;
+      if (space) ended.add(`agent:${space.id}`);
+    }
+    if (ended.size && !checking()) cx.spawn(async () => bump(...ended, "agents"));
+    // What others change: a commit, a branch, a PR made elsewhere (or by an agent that just stopped)
+    // asks the PR badges again; a worktree made or removed, the project's count; the quota, the rings.
+    refreshOn(this, cx, "prs", ["git", "gh", "agents"], async (cx) => { this.asked = {}; cx.notify(); });
+    refreshOn(this, cx, "worktrees", ["gwm", "git"], async (cx) => { this.wt = null; cx.notify(); });
+    refreshOn(this, cx, "usage", ["usage"], async (cx) => this.readLive(cx));
     // The project filter (shared "kt.project"): "*" lists every project; anything else
     // follows the shown space, with its repo's worktree spaces.
     const everyProject = (this.everyProject = shared("kt.project") === "*");
@@ -1569,7 +1793,9 @@ export default class Threads extends View {
     const every = ps.flatMap((w) => w.tabs.map((c) => ({ w, c, pj: this.project(w, c, all) })));
     const rows = every.filter((r) => !scope || r.w.id === shown.id || this.spaceKey(r.w) === scope);
     const page = find(layout(), VIEW)?.active ?? "thread";
-    const inboxOn = page === "inbox";
+    // The page the navigation marks: the one shown, or `nav-page:`'s (tests).
+    const navPage = this.navTest ?? page;
+    const inboxOn = navPage === "inbox";
     this.paged = page !== "thread";
     const worktrees = this.worktreeCount(shown, cx);
     // The filter (kt-thread-filter, shared "kt.threadFilter"): the archived view or the active one,
@@ -1607,30 +1833,42 @@ export default class Threads extends View {
     // pages, Search; enter runs their click), then the rows in the order shown (a project's header a
     // stop too: h / l fold and unfold it), the snoozed shelf's header too.
     this.keyed = this.handle.is_focused();
+    // The Agents group (Skills, MCP, Plugins): open as last left (shared "kt.nav.agents"), and always
+    // while one of its pages shows. Its pages are cursor stops only while it is open.
+    const stack = find(layout(), VIEW)?.children ?? [];
+    const agentPages = AGENT_PAGES.filter((p) => stack.some((c) => c.id === p));
+    // Notes (kt-notes: the project's and its gwm worktrees' notes), under Worktrees, once the stack has it.
+    const hasNotes = (this.hasNotes = stack.some((c) => c.id === "notes"));
+    const agentsOpen = (this.agentsOpen = Boolean(shared("kt.nav.agents")) || agentPages.includes(navPage));
     this.nav = {
       "kt-project": () => this.openProjects(),
       "kt-new": () => { show("thread"); run("mod.open", { name: "kt-new" }); },
       "kt-inbox": () => show("inbox"),
-      "kt-skills": () => show("skills"),
-      "kt-mcp": () => show("mcp"),
+      "kt-agents": () => setShared("kt.nav.agents", true),
+      ...(agentsOpen ? Object.fromEntries(agentPages.map((p) => [`kt-${p}`, () => show(p)])) : {}),
       "kt-gwm": () => show("gwm"),
+      ...(hasNotes ? { "kt-notes": () => show("notes") } : {}),
       "kt-search": () => run("mod.open", { name: "kt-picker" }),
     };
+    // A thread's line, then its decision pills' (pillStops).
+    const stop = (r, group, fold) => [{ id: r.c.id, group, fold, r }, ...this.pillStops(r, group, fold), ...this.twigStop(r, group, fold)];
     this.flat = [
-      ...Object.keys(this.nav).map((id) => ({ id, group: "nav", r: null })),
-      ...shelf.map((r) => ({ id: r.c.id, group: "pinned", r })),
-      ...listed.flatMap(([name, list]) => list.map((r) => ({ id: r.c.id, group: name, r }))),
+      ...Object.keys(this.nav).map((id) => ({ id, group: "nav", r: null, navChild: AGENT_PAGES.includes(id.slice(3)) })),
+      ...shelf.flatMap((r) => stop(r, "pinned")),
+      ...listed.flatMap(([name, list]) => list.flatMap((r) => stop(r, name))),
       ...projects.flatMap((g) => [
         ...(heads ? [{ id: `grp:${g.key}`, group: g.key, fold: g.key, head: true, r: null }] : []),
-        ...(this.folded.has(g.key) ? [] : g.rows.map((r) => ({ id: r.c.id, group: g.key, fold: g.key, r }))),
+        ...(this.folded.has(g.key) ? [] : g.rows.flatMap((r) => stop(r, g.key, g.key))),
       ]),
       ...(snoozed.length ? [{ id: "snoozed", group: "snoozed", r: null }] : []),
       ...(this.showSnoozed ? snoozed.map((r) => ({ id: r.c.id, group: "snoozed", r })) : []),
     ];
+    // The thread the cursor is in (on its line or one of its pills): its card opens and comes into view.
+    this.curThread = this.flat.find((x) => x.id === this.cur)?.r?.c.id ?? null;
     // The list's children, the cursor's brought into view once after it moved.
     const items = [];
     const put = (id, el) => {
-      if (this.reveal && id === this.cur) {
+      if (this.reveal && (id === this.cur || id === this.curThread)) {
         this.listScroll.scroll_to_item(items.length);
         this.reveal = false;
       }
@@ -1662,35 +1900,78 @@ export default class Threads extends View {
     if (this.showSnoozed) for (const r of snoozed) put(r.c.id, this.row(t, r, all, cx));
     items.push(div().h(12));
 
-    // Monocode's 32 px navigation lines; `on`: the kbrdn.dev ink (transparent border elsewhere: no shift).
-    // The keys' cursor on one: a 1 px accent ring and the ink.
+    // Monocode's 32 px navigation lines; `on`: the page shown, under the kbrdn.dev ink, one layer gliding
+    // from line to line (navInk). The keys' cursor on one: a 1 px accent ring and the ink, in place.
     const navCur = (id) => this.keyed && this.cur === id;
-    const tool = (id, icon, label, onClick, right, on = false) =>
-      h_flex()
-        .id(id)
-        .mx(8)
-        .px(10)
-        .h(32)
-        .gap(10)
-        .items_center()
-        .rounded(12)
-        .border(1)
-        .border_color(navCur(id) ? alpha(t.accent, "99") : on ? t.accent + "66" : t.accent + "00")
-        .when(on || navCur(id), (el) => el.bg(alpha(t.accent, "24")))
-        .text_size(13)
-        .text_color(on || navCur(id) ? t.foreground : t.muted)
-        .cursor_pointer()
-        .when(!on && !navCur(id), (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
-        .on_click(onClick)
-        .child(svg(I(icon)).size(15))
+    // The Agents group as a tree, drawn as the sub-agents' (twig): the trunk leaves from under the group's
+    // icon (`trunk`), each page hangs on a branch (`branch`: its twig column, before its icon), the shown
+    // page's in the accent. 32 px lines, the navigation's rhythm (the sub-agents' 40 px would break it).
+    const NAV_X = 7; // the trunk under the 15 px icons' middle
+    const NAV_BOX = 8 + 11 + 2 * NAV_X; // where a page's box starts: its line's margin, padding, branch
+    const navRest = treeLine(t);
+    // The line's box (its border, the cursor's ring, the hover fill), from `id`: a page of the group has
+    // its branch outside the box, which starts where the bend ends (NAV_BOX), so nothing covers the tree.
+    const box = (id, on, el) => el
+      .id(id)
+      .h(32)
+      .px(10)
+      .gap(10)
+      .items_center()
+      .rounded(12)
+      .border(1)
+      .border_color(navCur(id) ? alpha(t.accent, "99") : t.accent + "00")
+      .when(navCur(id), (el) => el.bg(alpha(t.accent, "24")))
+      .text_size(13)
+      .text_color(on || navCur(id) ? t.foreground : t.muted)
+      .cursor_pointer()
+      .when(!on && !navCur(id), (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)));
+    const tool = (id, icon, label, onClick, right, on = false, { trunk = false, branch = null } = {}) => {
+      const body = (el) => el
+        // The group's icon over its trunk: from under the icon down through the line's border.
+        .child(trunk
+          ? div().w(15).h_full().flex_none().relative().flex().items_center()
+            .child(svg(I(icon)).size(15))
+            .child(div().absolute().top(23).bottom(-1).left(NAV_X).border_l(1).border_color(navRest))
+          : svg(I(icon)).size(15))
         .child(div().flex_1().child(label))
         .when(Boolean(right), (el) => el.child(right));
+      if (!branch) return body(box(id, on, h_flex().mx(8)).on_click(onClick));
+      // A page of the group: its branch where the group's icon is (8 + its line's border and padding, 11),
+      // then its box from the bend's end.
+      return h_flex().id(`${id}-line`).mx(8).pl(11).h(32).items_center()
+        .child(branch)
+        .child(body(box(id, on, h_flex().flex_1().min_w(0)).on_click(onClick)));
+    };
 
+    // The ink under the page's line, the lines counted as drawn (the Agents pages only while the group
+    // is open): it glides to the next page's, and fades out on the thread (no page), staying where it was.
+    const navRows = ["new", "inbox", "agents", ...(agentsOpen ? agentPages : []), "gwm", ...(this.hasNotes ? ["notes"] : []), "search"];
+    const navAt = navPage === "thread" ? -1 : navRows.indexOf(navPage);
+    if (navAt >= 0) this.navAt = navAt;
+    // Under a page of the Agents group it starts where that page's box does, after its branch's bend.
+    if (navAt >= 0) this.navLeft = agentPages.includes(navPage) ? NAV_BOX : 8;
+    const navInk = ink(m, fade(m, div().id("kt-nav-ink").absolute().left(this.navLeft ?? 8).right(8).top((this.navAt ?? 1) * 32).h(32)
+      .rounded(12).border(1).border_color(t.accent + "66").bg(alpha(t.accent, "24")), navAt >= 0));
+    // The Agents group: its line folds and unfolds it (a plain chevron: gpui turns nothing), its pages
+    // unfold on their height (collapse), each on its branch, left of its box.
+    const branchOf = (p) => ({ branch: twig(t, { h: 32, x: NAV_X, last: p === agentPages.at(-1),
+      color: navPage === p ? alpha(t.accent, "99") : navRest, rest: navRest }) });
+    const agentsFold = collapse(m, "kt-agents-fold", agentsOpen, agentsOpen ? v_flex().children(agentPages.map((p) =>
+      tool(`kt-${p}`, AGENT_PAGE[p][0], AGENT_PAGE[p][1], () => show(p), null, navPage === p, branchOf(p)))) : null);
     const bar = this.projectBar(t, ps);
+    // The halo (halo.js), in the shown project's color, softer than the headers' (a large surface),
+    // published for kt-head's brand block above, which draws its top: here it starts that block's height
+    // higher, so the dither runs on across both. Cut on the right by a narrow sidebar, where it has
+    // already died out. No background of its own (the side column's): it would band the brand block.
+    const halo = alpha(this.haloColor(t, shown), settings().dark ? "4d" : "33");
+    if (halo !== shared(HALO) && !checking()) cx.spawn(async () => setShared(HALO, halo));
+    const brandH = find(layout(), "brand")?.size?.px ?? 0;
     return v_flex()
       .id("kt-root")
+      .relative()
+      .overflow_hidden()
       .size_full()
-      .bg(t.chrome)
+      .children(shared("kt.opt.kt-threads.halo") === false ? [] : haloLayers(m, (this.haloMemo ??= {}), halo, -brandH))
       .text_color(t.foreground)
       // No frame of its own when it has the keyboard: the focus shows on the element under the cursor.
       .track_focus(this.handle)
@@ -1731,19 +2012,24 @@ export default class Threads extends View {
           .child(div().flex_1())
           .when(Boolean(shown?.branch), (el) => el.child(div().flex_none().max_w(110).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(shown.branch))),
       )
-      .child(
-        tool("kt-new", "square-pen", "Nouveau thread", () => {
-          show("thread");
-          run("mod.open", { name: "kt-new" });
-        }, div().font_family(MONO).text_size(10.5).text_color(t.dim).child("⌘T")),
-      )
-      .child(tool("kt-inbox", "layers", "Inbox", () => show("inbox"), inboxOn ? null : div().size(6).rounded(3).bg(t.accent), inboxOn))
-      .child(tool("kt-skills", "sparkles", "Skills", () => show("skills"), null, page === "skills"))
-      .child(tool("kt-mcp", "plug", "MCP", () => show("mcp"), null, page === "mcp"))
-      .child(tool("kt-gwm", "git-branch", "Worktrees", () => show("gwm"), worktrees == null ? null
-        : div().flex_none().h(18).px(7).flex().items_center().rounded_full().border(1).border_color(t.border)
-          .font_family(MONO).text_size(10.5).text_color(page === "gwm" ? t.foreground : t.muted).child(String(worktrees)), page === "gwm"))
-      .child(tool("kt-search", "search", "Search", () => run("mod.open", { name: "kt-picker" })))
+      .child(v_flex().relative()
+        .child(navInk)
+        .child(
+          tool("kt-new", "square-pen", "Nouveau thread", () => {
+            show("thread");
+            run("mod.open", { name: "kt-new" });
+          }, div().font_family(MONO).text_size(10.5).text_color(t.dim).child("⌘T")),
+        )
+        .child(tool("kt-inbox", "layers", "Inbox", () => show("inbox"), inboxOn ? null : div().size(6).rounded(3).bg(t.accent), inboxOn))
+        .child(tool("kt-agents", "bot", "Agents", () => setShared("kt.nav.agents", !shared("kt.nav.agents")),
+          svg(I(agentsOpen ? "chevron-down" : "chevron-right")).size(13).flex_none().text_color(t.dim), false, { trunk: agentsOpen }))
+        .when(Boolean(agentsFold), (el) => el.child(agentsFold))
+        .child(tool("kt-gwm", "git-branch", "Worktrees", () => show("gwm"), worktrees == null ? null
+          : div().flex_none().h(18).px(7).flex().items_center().rounded_full().border(1).border_color(t.border)
+            .font_family(MONO).text_size(10.5).text_color(navPage === "gwm" ? t.foreground : t.muted).child(String(worktrees)), navPage === "gwm"))
+        // file-text until kt-notes gives its own icon.
+        .when(this.hasNotes, (el) => el.child(tool("kt-notes", "file-text", "Notes", () => show("notes"), null, navPage === "notes")))
+        .child(tool("kt-search", "search", "Search", () => run("mod.open", { name: "kt-picker" }))))
       // kbrdn.dev `.eyebrow` over the list, and the filter as a `.segment` pill.
       .child(
         h_flex()
@@ -1810,8 +2096,10 @@ export default class Threads extends View {
               .on_click((_e, cx) => {
                 const programs = new Set(all.filter((p) => p.program?.agent).map((p) => p.program.key)).size;
                 openOverlay({ mod: "kt-thread-filter", kind: "popup", at: "pointer", frame: "none", width: 240,
-                  // + 99: its GROUPER PAR section (a rule, an eyebrow, two lines).
-                  height: 334 + 99 + (programs ? 31 + 32 * programs : 0) });
+                  // Its rows: Archivés 32, GROUPER PAR (eyebrow ~27, two 32 lines), STATUT and PÉRIODE
+                  // (eyebrow, one 26 + 2 row each), rules 9, padding and border 10, 4 at the end: ~274.
+                  // PROGRAMME, when an agent runs: a rule, an eyebrow, one row, ~64.
+                  height: 280 + (programs ? 64 : 0) });
                 cx.notify();
               })
               .child(svg(I("list-filter")).size(14)),
@@ -1839,7 +2127,13 @@ export default class Threads extends View {
           .child(this.button("kt-settings", "", "settings", () => run("app.settings")))
           .child(this.button("kt-keys", "", "keyboard", () => run("app.help")))
           .child(this.button("kt-layout", "", "layers", () => run("layout.switch")))
+          // kt-usage's console (its own icon: button() takes its icons from this folder, so as the label).
+          .child(this.button("kt-usage", svg("mods/kt-usage/gauge.svg").size(13), "", () => run("mod.open", { name: "kt-usage" })).tooltip("Abonnements IA"))
+          // kt-mods' console: blocks shown or hidden, root mods, kbrdn options, shared copies.
+          .child(this.button("kt-mods", svg("mods/kt-mods/blocks.svg").size(13), "", () => run("mod.open", { name: "kt-mods" })).tooltip("Mods"))
           .child(div().flex_1())
+          // Language (i18n.js): Auto / FR / EN, the theme switch's twin.
+          .child(langSwitch(t))
           // kbrdn.dev `.segmented` theme switch: the ink on the position now.
           .child(
             h_flex()

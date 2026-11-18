@@ -1,1 +1,4 @@
-{ "place": "none", "title": "kt threads", "focusable": true }
+{ "place": "none", "title": "kt threads", "focusable": true,
+  "options": [
+    { "key": "halo", "label": "Halo de la sidebar", "type": "bool", "default": true, "description": "La trame en halo à la couleur du projet (kt-threads et kt-head)." },
+    { "key": "companion", "label": "Animations du companion", "type": "bool", "default": true, "description": "Rebond pendant le travail, ressort et badges animés des tuiles d'agent." } ] }

@@ -11,7 +11,16 @@
 //   ask first through kt-confirm, which calls back `kt-gwm.confirmed`; remove is refused on a
 //   dirty worktree, an active agent or a Herdr terminal in it, and never forced. On Home, outside
 //   git or with "Global": every repo of the projects registry (shared "kt.projects"), grouped.
-//   Typing filters (the field takes the keyboard while the page shows).
+//   Typing filters (the field takes the keyboard while the page shows). Under it, a state row
+//   (filters.js, FILTERS.md): Tous, Modifiés, PR ouverte, PR mergée, Agent actif.
+//   Selection (select.js, page only): ⌘-click toggles a card, ⇧-click selects from the anchor, the
+//   box left of its name (on hover, or once one is selected) toggles it; a plain click empties it.
+//   While cards are selected, a bar floats at the list's foot: open them as spaces, copy their
+//   paths (one a line), sync, remove, ✕ to empty. Sync and remove ask once through kt-confirm,
+//   listing every worktree; each one is checked with the single action's rules (remove: changes,
+//   an active agent, a Herdr terminal, a lock, the main checkout; sync: changes, no upstream): the
+//   refused ones are listed with their reason and left out. Remove stays one `gwm remove` at a
+//   time, each after its own --dry-run and a fresh check, never --force.
 // - "panel": the "gwm-panel" child of the right panel's "panel-body" stack. It follows the shown
 //   thread's terminal (kt-flow's rule) and its folder: in a linked worktree, that worktree (links,
 //   agents, note, commit prefix, sync); in a main checkout, the repo (branches, worktrees, daemon,
@@ -23,10 +32,30 @@
 // after Herdr quits. Failing that, `gwm list --format=json`. The header says which ("daemon"/"cli").
 // Refresh: watchFolder on the repo's `<git-common-dir>/worktrees` and `refs/heads` (debounced),
 // plus every 15 s for dirty and agent freshness, which no git event announces; only while shown.
+// Keys (vim.js; kt-keys lists them under Pages and Panneau): ctrl-b h/l (pane.go, "focus") or
+// `kt-gwm.key:<keys>` give a copy the keyboard in NORMAL (both copies get a `kt-gwm.<command>` when
+// both show). Page: it opens typing in the filter (INSERT): type to filter, ctrl-n/ctrl-p,
+// ctrl-j/ctrl-k, ↓ ↑ move the cursor, enter opens it, esc: NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N
+// move the cursor over the cards (k on the first card: the filter, INSERT), / the filter, tab /
+// shift-tab the next / previous repo (Global), enter/o/l open as a space (Ouvrir), O its PR (else
+// issue) on GitHub, y copy the path, r refresh, dd remove (kt-confirm, refused when unsafe), ?
+// kt-keys, q back to the thread; x or space toggle the card's selection, V a visual range (j/k
+// extend it), ctrl-a selects every listed card; esc ends the range, then empties the selection,
+// then clears the filter, then back to the thread. `kt-gwm.bulk:<open|copy|sync|remove>` runs a bulk
+// bar button, for tests (sync and remove only open their confirm). Panel (no filter):
+// the same over a worktree's issue and PR lines (enter: the Inbox, O: GitHub) or a repo's linked
+// worktrees (enter: Ouvrir, dd/x: remove); [ / ] the previous / next panel tab, q and esc give the
+// keyboard back (pane.go left). The panel has no selection.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
-import { exec, theme, spaces, panes, focused, run, layout, openOverlay, notify, nextCommand, props, shared, setShared, home, knownAgents, watchFolder, checking } from "herdr";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import { exec, theme, spaces, panes, focused, run, layout, openOverlay, notify, nextCommand, props, shared, setShared, home, knownAgents, watchFolder, checking, settings } from "herdr";
+import { Select, partition, lines } from "./select.js";
+import { filterRow, filterState } from "./filters.js";
+import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
+import { motionState, frame, enter, pulse } from "./motion.js";
+import { bump, gitTopics, refreshOn } from "./bus.js";
+import { Vim, keysOf, keyOf, step } from "./vim.js";
 
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -34,6 +63,8 @@ const G = (name) => `mods/kt-gwm/${name}.svg`;
 // This mod's blocks in kbrdn-threads.json.
 const PAGE = "gwm"; // in the "view" stack
 const PANEL = "gwm-panel"; // in the "panel-body" stack
+// The right panel's tabs, in order, and their mods: [ / ] go round them.
+const PANEL_TABS = [["files", "kt-files"], ["diff", "kt-diff"], ["history", "kt-history"], ["flow", "kt-flow"], ["crosstalk", "kt-crosstalk"], [PANEL, "kt-gwm"]];
 const TICK = 15e3;
 const STATUS_TTL = 10 * 60e3;
 const INFO_TTL = 5 * 60e3;
@@ -72,6 +103,15 @@ const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
 const french = (s) => s.replace(/(\d)\.(\d)/, "$1,$2").replace(/\b([KMGT])iB\b/, "$1o").replace(/\bB$/, "o");
 const isHome = (s) => !s.machine && trim(s.folder) === trim(home());
 const branchOf = (w) => w.branch ?? (w.head ? `HEAD détachée · ${w.head.slice(0, 7)}` : "HEAD détachée");
+// A project's logo for the appearance now (registry `logos: { light, dark }`, or the older single
+// `logo`): its own, else the other mode's; null for none. kt-threads' logoOf().
+function logoOf(e) {
+  const l = e?.logos ?? { light: e?.logo ?? null, dark: e?.logo ?? null };
+  return (settings().dark ? (l.dark ?? l.light) : (l.light ?? l.dark)) ?? null;
+}
+// Claude Code's own worktrees (its WorktreeCreate hooks: subagents in isolation, --worktree,
+// background sessions): <repo>-worktrees/claude-<name> on a claude/<name> branch.
+const isAgent = (w) => String(w.branch ?? "").startsWith("claude/");
 // "owner/repo" from a github.com remote (https, ssh://, scp-like git@…:), else null (kt-inbox's rule).
 function githubRepo(url) {
   const m = String(url ?? "").trim().match(/^(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?github\.com(?::\d+)?[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
@@ -153,6 +193,9 @@ export default class Worktrees extends View {
   init(_props, cx) {
     this.panel = props()?.view === "panel";
     this.handle = cx.focus_handle();
+    this.vim = new Vim({ field: !this.panel });
+    this.cur = null; // the keys' cursor (a stop's id, see stops()); null: the first
+    this.scroll = ScrollHandle.new();
     this.query = "";
     this.global = false; // "Global" pressed in a repo scope; a space change resets it
     this.spaceId = null;
@@ -171,6 +214,15 @@ export default class Worktrees extends View {
     this.busy = null; // { path, label }: the running action
     this.pending = null; // what kt-confirm is asking about
     this.hot = null; // the hovered card's path
+    this.multi = new Select(); // the page's selected cards (paths)
+    this.agentOpen = new Set(); // repos (common dirs) whose agent worktrees are unfolded
+    this.motion = motionState(); // motion.js: the bulk bar fades in, Rafraîchir breathes while it loads
+    this.headW = 0; // the head card's width (its dither)
+    this.panelW = 0; // the panel card's
+    this.more = false; // the head's ⋯ menu
+    this.removeSeen = 0; // the last shared "kt-gwm.remove" request handled (its `at`)
+    this.wf = null; // the page's state filter (WSTATES key), null: every worktree
+    this.wfRow = filterState();
     this.programs = {};
     this.watches = [];
     this.watching = null;
@@ -188,10 +240,34 @@ export default class Worktrees extends View {
       cx.notify();
     });
     cx.timer.every(TICK, (cx) => { if (this.visible()) this.refresh(cx, false); });
+    // The keyboard left without a render (a click on a terminal): the cursor goes out.
+    // On the same tick (timers run while the page is hidden; a hidden page doesn't render): shared
+    // "kt-gwm.remove" ({ path, at }, kt-threads when a worktree's last thread is put away), taken by
+    // the page copy once if under a minute old, through the guarded remove (which shows the page).
+    cx.timer.every(1000, (cx) => {
+      if (this.keyed !== this.handle.is_focused()) cx.notify();
+      const req = shared("kt-gwm.remove");
+      if (!this.panel && req?.path && req.at > this.removeSeen && Date.now() - req.at < 60e3) {
+        this.removeSeen = req.at;
+        this.removeByPath(req.path, cx);
+      }
+    });
+    // `focus` (pane.go) takes the keyboard in NORMAL; `key:<keys>` takes it and types those keys
+    // ("j", "g g", "/ f i x"), for tests.
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
-        if (c === "refresh") this.refresh(cx, true);
+        if (c === "focus") this.focusIn();
+        // The panel's [ / ] land on gwm-panel: only that copy takes the keyboard, not the page's.
+        else if (c === "panel-focus") { if (this.panel) this.focusIn(); }
+        else if (c.startsWith("key:")) {
+          this.focusIn();
+          for (const k of keysOf(c.slice(4))) this.press(k, cx);
+        }
+        // `bulk:<id>`: the page's bulk bar button of that id, as its click, for tests.
+        else if (c.startsWith("bulk:")) { if (!this.panel) this.bulkActions?.find(([id]) => id === c.slice(5))?.[3](cx); }
+        else if (c.startsWith("remove:")) { if (!this.panel) this.removeByPath(c.slice(7), cx); }
+        else if (c === "refresh") this.refresh(cx, true);
         else if (c === "open-first-link") this.openFirstLink();
         // Both views can show at once: only the copy that asked has something pending.
         else if (c === "confirmed" && this.pending) {
@@ -532,14 +608,25 @@ export default class Worktrees extends View {
     if (this.busy) return;
     this.pending = p;
     // kbrdn's confirm draws its own card and veil, full window (its mod.json): frame "none", no size.
-    openOverlay({ mod: "kt-confirm", kind: "dialog", frame: "none",
+    // A list (a bulk action) opens it card-sized instead, its detail scrolling: full window, today's
+    // kt-confirm leaves its detail out.
+    const rows = detail.split("\n").length;
+    openOverlay({ mod: "kt-confirm", kind: "dialog", frame: "none", ...(p.items ? { width: 460, height: Math.min(560, 170 + 21 * rows) } : {}),
       props: { title, detail, label, danger, command: { name: "kt-gwm.confirmed" } } });
   }
 
-  askSync(w) {
+  // Why gwm sync can't run on a worktree now, or null.
+  syncRefusal(w) {
     const s = w.status ?? {};
-    if (s.is_dirty) return this.refuse(w.name, "Sync refusé", "des modifications ne sont pas commitées, gwm sync ne rebase pas dessus");
-    if (!s.has_upstream) return this.refuse(w.name, "Sync impossible", "la branche n'a pas d'upstream");
+    if (s.is_dirty) return "des modifications ne sont pas commitées, gwm sync ne rebase pas dessus";
+    if (!s.has_upstream) return "la branche n'a pas d'upstream";
+    return null;
+  }
+
+  askSync(w) {
+    const why = this.syncRefusal(w);
+    if (why) return this.refuse(w.name, w.status?.is_dirty ? "Sync refusé" : "Sync impossible", why);
+    const s = w.status ?? {};
     this.ask({ kind: "sync", path: w.path, name: w.name }, `Synchroniser ${w.name} ?`,
       `gwm sync : fetch de l'upstream de ${w.branch}, puis rebase${s.behind ? ` (${plural(s.behind, "commit", "commits")} de retard)` : ""}. En cas de conflit, gwm annule le rebase et laisse le worktree tel quel.`,
       "Synchroniser", false);
@@ -552,12 +639,93 @@ export default class Worktrees extends View {
       `${tilde(w.path)} sera supprimé par gwm remove. La branche ${w.branch ?? "(HEAD détachée)"} est conservée.`, "Supprimer", true);
   }
 
-  act(p, cx) {
-    this.busy = { path: p.path, label: p.kind === "sync" ? "Sync" : "Suppression" };
+  // The bulk bar's Sync and Supprimer: each selected worktree checked with the single action's rule
+  // (select.js partition); the refused ones are listed with their reason and left out, the rest asked
+  // about once (kt-confirm, every one listed). Nothing to do: a toast with the reasons, no confirm.
+  askBulk(kind, picked, more = () => null) {
+    if (this.busy) return;
+    const remove = kind === "remove";
+    const plan = partition(picked, (s) => (remove ? this.refusal(s.w) : this.syncRefusal(s.w)) ?? more(s.w));
+    const refused = plan.refused.map(({ item, why }) => `${item.w.name} : ${why}`);
+    if (!plan.ok.length)
+      return notify({ title: remove ? "Suppression refusée" : "Sync refusé", body: lines(refused, 6), level: "warning", timeout: 9000 });
+    const n = plan.ok.length;
+    const names = plan.ok.map((s) => s.w.name);
+    const what = remove
+      ? `gwm remove, un worktree à la fois, chacun après un --dry-run qui doit viser son chemin et un nouvel examen ; jamais --force. Les branches sont conservées.`
+      : `gwm sync, un worktree à la fois : fetch de l'upstream, puis rebase. En cas de conflit, gwm annule le rebase et laisse le worktree tel quel.`;
+    this.ask({ kind, items: plan.ok.map((s) => ({ kind, path: s.w.path, name: s.w.name, repo: s.repo })) },
+      `${remove ? "Supprimer" : "Synchroniser"} ${n <= 3 ? names.join(", ") : plural(n, "worktree", "worktrees")} ?`,
+      [what, lines(plan.ok.map((s) => `${s.w.name} — ${tilde(s.w.path)}`)), refused.length ? `Refusés, laissés de côté :\n${lines(refused)}` : ""].filter(Boolean).join("\n\n"),
+      remove ? "Supprimer" : "Synchroniser", remove);
+  }
+
+  // Nettoyer: a repo's agent worktrees (claude/*) merged into its default branch (origin/HEAD, an
+  // ancestor of it) and clean; the bulk remove's guard and confirm (danger, the list), never --force.
+  // A subagent that ends doesn't remove its own worktree: this is where they go.
+  cleanAgents(repo, d, cx) {
+    if (this.busy) return;
+    const agents = d.rows.filter(isAgent);
+    const main = d.rows.find((w) => w.is_main)?.path ?? repo.folder;
     cx.spawn(async (cx) => {
-      const n = await (p.kind === "sync" ? this.sync(p) : this.remove(p));
+      const def = (await sh("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], { cwd: main })).stdout.trim() || "origin/main";
+      const merged = new Set();
+      for (const w of agents) {
+        const r = await sh("git", ["merge-base", "--is-ancestor", w.branch, def], { cwd: main });
+        if (r.code === 0) merged.add(w.path);
+      }
+      this.askBulk("remove", agents.map((w) => ({ id: w.path, repo, d, w })), (w) => (merged.has(w.path) ? null : `pas encore mergée dans ${def}`));
+      cx.notify();
+    });
+  }
+
+  // `kt-gwm.remove:<path>` and shared "kt-gwm.remove" ({ path, at }, from kt-threads): one worktree
+  // by its path, through exactly the guarded remove (fresh state, refusal, kt-confirm, then remove()'s
+  // re-check and --dry-run, never --force). The page shows itself first, so kt-confirm's answer
+  // (kt-gwm.confirmed, which reaches shown copies only) comes back to it.
+  removeByPath(path, cx) {
+    path = trim(String(path ?? ""));
+    if (!path.startsWith("/") || this.busy) return;
+    show(PAGE);
+    cx.spawn(async (cx) => {
+      const r = await sh("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: path });
+      const common = r.code === 0 ? trim(r.stdout.trim()) : "";
+      if (!common) return notify({ title: "Suppression refusée", body: `${tilde(path)} n'est pas un worktree git.`, level: "warning", timeout: 6000 });
+      const main = common.endsWith("/.git") ? common.slice(0, -5) : null;
+      const repo = { folder: main ?? path, common, main, name: (main ?? common).split("/").pop(), slug: null };
+      const got = await this.list(repo, false);
+      const w = got.rows.map((x) => ({ ...x, path: trim(x.path) })).find((x) => x.path === path);
+      if (!w) return notify({ title: "Suppression refusée", body: `${tilde(path)} n'est pas dans la liste de gwm.`, level: "warning", timeout: 6000 });
+      this.askRemove(repo, w);
+      cx.notify();
+    });
+  }
+
+  // One action, or a bulk one (p.items) worktree after worktree; a bulk one ends with one toast.
+  act(p, cx) {
+    const items = p.items ?? [p];
+    const sync = p.kind === "sync";
+    const label = sync ? "Sync" : "Suppression";
+    this.busy = { path: items[0].path, label };
+    cx.spawn(async (cx) => {
+      const out = [];
+      for (const [i, q] of items.entries()) {
+        this.busy = { path: q.path, label: p.items ? `${label} ${i + 1}/${items.length}` : label };
+        cx.notify();
+        out.push(await (sync ? this.sync(q) : this.remove(q)));
+      }
       this.busy = null;
-      notify({ ...n, timeout: n.level === "success" ? 4000 : 8000 });
+      // The bus (DATA-SYNC.md), even after a partial failure: worktrees and their repos changed.
+      bump("gwm", ...new Set(items.flatMap((q) => gitTopics(q.path))));
+      if (!p.items) notify({ ...out[0], timeout: out[0].level === "success" ? 4000 : 8000 });
+      else {
+        const bad = out.filter((n) => n.level !== "success");
+        notify({ level: !bad.length ? "success" : bad.length === out.length ? "error" : "warning",
+          title: `${out.length - bad.length}/${out.length} ${sync ? "synchronisés" : "supprimés"}`,
+          body: bad.length ? lines(bad.map((n) => `${n.title} : ${n.body}`), 5) : sync ? "Rebasés sur leur upstream." : "Branches conservées.",
+          timeout: bad.length ? 10000 : 5000 });
+        this.multi.clear();
+      }
       this.refresh(cx, false);
       cx.notify();
     });
@@ -652,6 +820,64 @@ export default class Worktrees extends View {
       .child(svg(icon).size(13).when(Boolean(spinning), (el) => el.spin(900)));
   }
 
+  // A card's selection box (select.js): drawn on hover or once a card is selected, its room always
+  // kept so the card never moves; a click toggles the card, as ⌘-click does.
+  check(t, id, on, shown, onClick) {
+    return div().id(id).size(16).flex_none().rounded(5).border(1).flex().items_center().justify_center()
+      .when(!shown, (el) => el.border_color(alpha(t.input, "00")))
+      .when(shown, (el) => el.border_color(on ? t.accent : t.input).bg(on ? t.accent : t.background).cursor_pointer()
+        .hover((s) => s.border_color(t.accent))
+        .on_click((_e, cx) => { cx.stop_propagation(); onClick(); cx.notify(); }))
+      .when(on, (el) => el.child(svg(I("check")).size(11).text_color(t.accent_foreground)));
+  }
+
+  // The bulk bar (select.js): floats over the list's foot while cards are selected: how many, the
+  // actions ([id, label, icon, onClick, danger]) or the running one, ✕ to empty. A card (radius 12,
+  // shadow), its buttons 4 px in: 8.
+  bulkBar(t, n, actions, progress) {
+    // It fades in and rises 6 px when a first card is selected (motion.js).
+    // Narrow, its buttons wrap rather than leave the list.
+    return h_flex().absolute().bottom(12).left(0).right(0).px(8).justify_center()
+      .child(enter(this.m, div().max_w_full(), "kg-bulk-in").child(h_flex().id("kg-bulk").max_w_full().flex_wrap().p(4).gap(2).items_center().rounded(12).border(1).border_color(t.border).bg(t.popover).shadow_lg()
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(`${n} sélectionné${n > 1 ? "s" : ""}`))
+        .child(div().w(1).h(18).flex_none().bg(t.border))
+        .when(Boolean(progress), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
+          .child(svg(I("refresh-cw")).size(13).spin(900)).child(progress ?? "")))
+        .when(!progress, (el) => el.children(actions.map(([id, label, icon, onClick, danger]) => h_flex().id(`kg-bulk-${id}`).h(28).px(10).gap(6).items_center().rounded(8)
+          .text_size(12).text_color(danger ? t.ansi1 : t.foreground).cursor_pointer().hover((s) => s.bg(danger ? alpha(t.ansi1, "1a") : t.hover))
+          .on_click((_e, cx) => { onClick(cx); cx.notify(); })
+          .child(svg(icon).size(13)).child(label))))
+        .child(h_flex().id("kg-bulk-clear").size(28).flex_none().items_center().justify_center().rounded(8).text_color(t.muted)
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Vider la sélection (esc)")
+          .on_click((_e, cx) => { this.multi.clear(); cx.notify(); })
+          .child(svg(I("x")).size(13)))));
+  }
+
+  // The panel's card: the band of the project's color behind its head (DESIGN-REFERENCE.md).
+  panelBox(t, repo) {
+    return this.box(t).id("kg-p-box").relative().flex_1()
+      .on_size_change((s, cx) => { if (s.width !== this.panelW) { this.panelW = s.width; cx.notify(); } })
+      .children([dither(this.panelW, 60, 16, this.projectColor(t, repo))].filter(Boolean));
+  }
+
+  // The bar's actions on the selected worktrees (hidden by the filter or not), in list order.
+  bulk(t) {
+    const picked = this.multi.pick(this.stops(true), (s) => s.id);
+    this.bulkActions = null;
+    if (!picked.length) return null;
+    this.bulkActions = [
+      ["open", "Ouvrir", G("enter"), () => { for (const s of picked) this.openSpace(s.d, s.w); }],
+      ["copy", "Copier les chemins", G("copy"), (cx) => {
+        cx.write_to_clipboard(picked.map((s) => s.w.path).join("\n"));
+        notify({ title: `${plural(picked.length, "chemin copié", "chemins copiés")}`, body: "Un par ligne.", level: "success", timeout: 2500 });
+      }],
+      ["sync", "Sync", G("sync"), () => this.askBulk("sync", picked)],
+      ["remove", "Supprimer", G("trash"), () => this.askBulk("remove", picked), true],
+    ];
+    return this.bulkBar(t, picked.length, this.bulkActions, this.busy && `${this.busy.label} en cours…`);
+  }
+
   // Where the data came from: the daemon (done) or the CLI (warning).
   source(t, sources) {
     if (!sources.size) return null;
@@ -727,16 +953,153 @@ export default class Worktrees extends View {
 
   // ---------- page ----------
 
+  // The filter's matches: name, branch, path, issue, PR, note; then the state row's (wf).
+  matches(w) {
+    const q = this.query.trim().toLowerCase();
+    return (!q || `${w.name} ${w.branch ?? ""} ${tilde(w.path)} #${w.issue ?? ""} #${w.pr ?? ""} ${w.note ?? ""}`.toLowerCase().includes(q))
+      && (!this.wf || this.wstate(w, this.wf));
+  }
+
+  // The state row's filters (FILTERS.md's tints): changes, an open or draft PR, a merged one, an active agent.
+  wstate(w, k) {
+    const pr = String(this.links(w).pr?.state ?? "").toUpperCase();
+    if (k === "dirty") return Boolean(w.status?.is_dirty);
+    if (k === "pr-open") return pr === "OPEN" || pr === "DRAFT";
+    if (k === "pr-merged") return pr === "MERGED";
+    if (k === "agent") return (w.agents?.sessions ?? []).some((s) => s.freshness === "active");
+    return true;
+  }
+
+  // The card's Copier, and y on the cursor.
+  copyPath(w, cx) {
+    cx.write_to_clipboard(w.path);
+    notify({ title: "Chemin copié", body: tilde(w.path), level: "success", timeout: 2500 });
+  }
+
+  // ---------- keys (vim.js; kt-keys lists them) ----------
+
+  // The keyboard comes here (pane.go, a key command): NORMAL, the cursor kept, else the shown
+  // thread's worktree (page), else the first.
+  focusIn() {
+    this.handle.focus();
+    this.vim.normal();
+    const stops = this.stops();
+    if (!stops.some((s) => s.id === this.cur)) this.cur = stops.find((s) => s.here)?.id ?? null;
+    this.reveal = true;
+  }
+
+  // What the cursor walks, in order. Page: each card shown ({ id: path, repo, d, w, here }); `all`:
+  // the filter's misses too (the bulk bar acts on a selection the filter may hide).
+  // Panel: a linked worktree's issue and PR lines ({ id, kind, x, repo, d, w }), else the repo's
+  // linked worktrees ({ id: path, repo, d, w }).
+  stops(all = false) {
+    const sc = this.sc ?? { kind: "wait" };
+    if (this.panel) {
+      const d = sc.kind === "repo" ? this.data[sc.repo.common] : null;
+      if (!d) return [];
+      const w = enclosing(d.rows, sc.cwd);
+      if (w && !w.is_main) {
+        const { issue, pr } = this.links(w);
+        return [issue && { id: "issue", kind: "issue", x: issue }, pr && { id: "pr", kind: "pr", x: pr }]
+          .filter(Boolean).map((s) => ({ ...s, repo: sc.repo, d, w }));
+      }
+      return d.rows.filter((x) => !x.is_main).slice(0, 8).map((x) => ({ id: x.path, repo: sc.repo, d, w: x }));
+    }
+    const groups = sc.kind === "repo" ? [sc.repo] : sc.kind === "workspace" ? sc.repos : [];
+    const cwd = threadCwd();
+    return groups.flatMap((r) => {
+      const d = this.data[r.common];
+      const here = d ? enclosing(d.rows, cwd) : null;
+      return (d?.rows ?? []).filter((w) => all || (this.matches(w) && (!isAgent(w) || this.agentOpen.has(r.common))))
+        .sort((a, b) => isAgent(a) - isAgent(b)) // as drawn: the agent ones after the fold
+        .map((w) => ({ id: w.path, repo: r, d, w, here: w === here }));
+    });
+  }
+
   key(e, cx) {
-    if (e.key === "escape") this.query = "";
-    else if (e.key === "backspace") this.query = this.query.slice(0, -1);
-    else if (e.key_char && !e.modifiers?.control && !e.modifiers?.platform) this.query += e.key_char;
-    else return;
+    if (!this.press(e, cx)) return; // not ours: ctrl-b, cmd-* go on
     cx.stop_propagation();
     cx.notify();
   }
 
-  card(t, repo, d, w, here, cx) {
+  // One key (an event, or a name from `kt-gwm.key:`): on the page, the selection's first (select.js,
+  // NORMAL only: x space V ctrl-a esc), then vim's; a visual range then follows the cursor.
+  press(k, cx) {
+    const cur = () => { const stops = this.stops(); return (stops.find((s) => s.id === this.cur) ?? stops[0])?.id ?? null; };
+    const order = () => this.stops().map((s) => s.id);
+    if (!this.panel && !this.vim.insert && this.multi.key(keyOf(k).name, cur(), order())) {
+      this.vim.normal(); // a `d` or a count typed before it is dropped
+      return true;
+    }
+    if (!this.keyAct(this.vim.handle(k), cx)) return false;
+    if (!this.panel && this.multi.visual) this.multi.follow(cur(), order());
+    return true;
+  }
+
+  // One vim action; false: not one this view has, and the key goes on.
+  keyAct(a, cx) {
+    if (!a) return false;
+    if (a === "pending" || a === "count" || a === "filter" || a === "normal") return true;
+    const stops = this.stops();
+    const s = stops.find((x) => x.id === this.cur) ?? stops[0] ?? null;
+    const i = stops.indexOf(s);
+    if (a === "type" || a === "backspace") {
+      this.query = a === "type" ? this.query + this.vim.char : this.query.slice(0, -1);
+      this.cur = null;
+    } else if (a === "up" && i <= 0 && !this.panel && !this.vim.insert) this.vim.edit(); // k on the first card: the filter
+    else if (["down", "up", "top", "bottom", "half-down", "half-up", "next", "prev"].includes(a)) {
+      const j = step(a === "next" ? "down" : a === "prev" ? "up" : a, i, stops.length, this.vim.count, 8);
+      if (j >= 0) this.cur = stops[j].id;
+      this.reveal = true;
+    } else if (a === "tab-next" || a === "tab-prev") {
+      // The next (previous) repo's first card (Global's groups); one repo: nothing to do.
+      if (this.panel) return false;
+      const groups = [...new Set(stops.map((x) => x.repo.common))];
+      const g = groups.indexOf(s?.repo.common);
+      const to = groups[a === "tab-next" ? Math.min(groups.length - 1, g + 1) : Math.max(0, g - 1)];
+      const first = to !== s?.repo.common && stops.find((x) => x.repo.common === to);
+      if (first) {
+        this.cur = first.id;
+        this.reveal = true;
+      }
+    } else if (a === "open" || a === "right" || a === "submit") {
+      if (s?.kind) this.inInbox(s.repo, s.kind, s.x);
+      else if (s) this.openSpace(s.d, s.w);
+    } else if (a === "open-alt") {
+      // The browser: the line's issue or PR; a worktree's PR, else its issue.
+      const { issue, pr } = s && !s.kind ? this.links(s.w) : {};
+      const kind = s?.kind ?? (pr ? "pr" : issue ? "issue" : null);
+      if (kind) this.onGitHub(s.repo, kind, s.x ?? pr ?? issue);
+    } else if (a === "yank") { if (s) this.copyPath(s.w, cx); }
+    else if (a === "delete") { if (s && !s.kind) this.askRemove(s.repo, s.w); }
+    else if (a === "refresh") this.refresh(cx, true);
+    else if (a === "panel-prev" || a === "panel-next") {
+      if (!this.panel) return false;
+      const k = PANEL_TABS.findIndex(([c]) => c === PANEL);
+      const [child, mod] = PANEL_TABS[(k + (a === "panel-next" ? 1 : PANEL_TABS.length - 1)) % PANEL_TABS.length];
+      run("layout.select", { stack: "panel-body", child });
+      // A moment later: sent at once, the new tab isn't shown yet and no copy gets it.
+      cx.timer.after(120, () => run(`${mod}.focus`));
+    } else if (a === "escape" && this.query) {
+      this.query = "";
+      this.cur = null;
+    } else if (a === "escape" || a === "quit") {
+      if (this.panel) run("pane.go", { direction: "left" });
+      else show("thread");
+    } else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: this.panel ? "panel" : "pages" } });
+    else return false;
+    return true;
+  }
+
+  // NORMAL / INSERT (kt-keys' pill), mono 9 px, while the page has the keyboard.
+  mode(t, typing) {
+    return div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+      .border_color(typing ? alpha(t.accent, "66") : t.border).bg(typing ? alpha(t.accent, "24") : t.background)
+      .font_family(MONO).text_size(9).text_color(typing ? t.accent : t.muted).child(this.vim.label);
+  }
+
+  // `cursor`: "ring" (NORMAL: a 1 px accent ring with the ink), "mark" (INSERT: ctrl-n/p's card) or null.
+  card(t, repo, d, w, here, cx, cursor) {
     if (cx) this.statusOf(w, cx);
     const { issue, pr } = this.links(w);
     const hot = this.hot === w.path;
@@ -747,32 +1110,44 @@ export default class Worktrees extends View {
       this.mini(t, `kg-open-${w.path}`, G("enter"), "Ouvrir", () => this.openSpace(d, w)),
       issue && this.mini(t, `kg-issue-${w.path}`, I("circle-dashed"), "Issue", () => this.inInbox(repo, "issue", issue)),
       pr && this.mini(t, `kg-pr-${w.path}`, I("git-pull-request"), "PR", () => this.inInbox(repo, "pr", pr)),
-      this.mini(t, `kg-copy-${w.path}`, G("copy"), "Copier", (cx) => {
-        cx.write_to_clipboard(w.path);
-        notify({ title: "Chemin copié", body: tilde(w.path), level: "success", timeout: 2500 });
-      }),
+      this.mini(t, `kg-copy-${w.path}`, G("copy"), "Copier", (cx) => this.copyPath(w, cx)),
       this.mini(t, `kg-sync-${w.path}`, G("sync"), "Sync", () => this.askSync(w)),
       !w.is_main && this.mini(t, `kg-rm-${w.path}`, G("trash"), "Supprimer", () => this.askRemove(repo, w), true),
     ].filter(Boolean);
-    // A card (radius 16) on the page; the shown thread's worktree carries the ink.
+    // A card (radius 16) on the page; the shown thread's worktree carries the ink; a selected one a
+    // lighter ink and its box checked. A plain click on it only empties the selection.
+    const picked = this.multi.has(w.path);
     return v_flex().id(`kg-card-${w.path}`).flex_none().rounded(16).border(1)
-      .border_color(here ? alpha(t.accent, "66") : t.border).bg(t.background)
+      .border_color(cursor === "ring" ? alpha(t.accent, "99") : here ? alpha(t.accent, "66") : t.border)
+      .bg(cursor === "ring" ? alpha(t.accent, "24") : picked ? alpha(t.accent, "14") : cursor === "mark" ? t.hover : t.background)
       .on_hover((on, cx) => {
         const next = on ? w.path : this.hot === w.path ? null : this.hot;
         if (next !== this.hot) { this.hot = next; cx.notify(); }
       })
-      .child(v_flex().px(14).py(10).gap(6).rounded(16).when(here, (el) => el.bg(alpha(t.accent, "1a")))
+      .on_click((e, cx) => {
+        this.cur = w.path;
+        this.multi.click(e.modifiers, w.path, this.stops().map((s) => s.id));
+        cx.notify();
+      })
+      .child(v_flex().pl(10).pr(14).py(10).gap(6).rounded(16).when(here, (el) => el.bg(alpha(t.accent, "1a")))
         .child(h_flex().h(22).gap(8).items_center()
-          .child(svg(w.is_main ? I("folder") : I("git-branch")).size(14).flex_none().text_color(w.is_main || here ? t.accent : t.muted))
+          .child(this.check(t, `kg-check-${w.path}`, picked, picked || hot || this.multi.size > 0, () => this.multi.toggle(w.path)))
+          // The project's logo (16 px); the main checkout says so with a tag.
+          .child(this.mark(t, repo, 16))
           .child(div().flex_none().max_w(320).truncate().text_size(13.5).font_medium().text_color(t.foreground).child(w.name))
           .child(div().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(here ? t.accent : t.muted)
             .child(branchOf(w)))
+          .when(isAgent(w), (el) => el.child(this.tag(t, t.accent, "agent")))
+          .when(Boolean(w.is_main), (el) => el.child(this.tag(t, t.dim, "principal")))
+          // gwm's note (kt-notes): gwm list leaves `note` out when the branch carries none.
+          .when(Boolean(w.note), (el) => el.child(this.tag(t, t.ansi3, "note")))
           .child(div().flex_1())
           .children(this.marks(t, w, false))
           .when(Boolean(issue), (el) => el.child(this.link(t, `kg-li-${w.path}`, repo, "issue", issue)))
           .when(Boolean(pr), (el) => el.child(this.link(t, `kg-lp-${w.path}`, repo, "pr", pr)))
           .children(this.agentChips(t, w, d)))
-        .child(h_flex().h(26).gap(8).items_center()
+        // Under the icon: the box's room (16) and its gap (8).
+        .child(h_flex().h(26).pl(24).gap(8).items_center()
           .child(div().flex_none().max_w(420).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(tilde(w.path)))
           .when(Boolean(note), (el) => el.child(div().flex_none().text_color(t.dim).child("·"))
             .child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child(note)))
@@ -784,9 +1159,60 @@ export default class Worktrees extends View {
             .child(`${KIND_NAME[top.kind] ?? top.kind} · ${ago(top.last_activity)}`)))));
   }
 
+  // The fold of a repo's agent worktrees (claude/*): how many, open or not, and Nettoyer (the merged
+  // and clean ones, through the bulk remove's guard).
+  agentFold(t, r, d, n) {
+    const open = this.agentOpen.has(r.common);
+    return h_flex().id(`kg-agents-${r.common}`).flex_none().h(36).px(14).gap(8).items_center().rounded(16).border(1).border_dashed().border_color(t.border)
+      .text_size(12.5).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .on_click((_e, cx) => { if (open) this.agentOpen.delete(r.common); else this.agentOpen.add(r.common); cx.notify(); })
+      .child(svg(I(open ? "chevron-down" : "chevron-right")).size(13).flex_none())
+      .child(this.tag(t, t.accent, "agent"))
+      .child(div().flex_1().min_w(0).truncate().child(`Worktrees d'agent (claude/*) · ${n}`))
+      .child(this.mini(t, `kg-clean-agents-${r.common}`, G("trash"), "Nettoyer", (cx) => this.cleanAgents(r, d, cx), true));
+  }
+
+  // A repo's entry in the projects registry (shared "kt.projects"): by folder (its main checkout's
+  // toplevel), else by the repo's name.
+  projectOf(repo) {
+    const reg = (shared("kt.projects") ?? []).filter((x) => !x.machine);
+    return reg.find((x) => x.folder && [repo.main, repo.folder].includes(trim(x.folder))) ?? reg.find((x) => x.name === repo.name) ?? null;
+  }
+
+  // Its color (a theme color name or #hex), else Worktrees' ansi2 (DESIGN-REFERENCE.md).
+  projectColor(t, repo) {
+    const c = this.projectOf(repo)?.color;
+    return (c && (String(c).startsWith("#") ? c : t[c])) || t.ansi2;
+  }
+
+  // Its mark, `size` px: the logo 1:1 in a rounded tile; without one, its initial on its color; home
+  // (~) the house. 20 px on a repo's head, 16 on a card, 32 in a band.
+  mark(t, repo, size) {
+    const r = Math.max(3, Math.round(size / 4));
+    if (trim(repo.main ?? repo.folder) === trim(home()))
+      return div().size(size).flex_none().rounded(r).bg(t.raised).flex().items_center().justify_center().child(svg(I("house")).size(Math.round(size * 0.6)).text_color(t.muted));
+    const e = this.projectOf(repo);
+    const logo = logoOf(e);
+    if (logo) return div().size(size).flex_none().rounded(r).overflow_hidden().child(image(logo).size(size));
+    return div().size(size).flex_none().rounded(r).bg(this.projectColor(t, repo)).flex().items_center().justify_center()
+      .child(div().text_size(Math.round(size * 0.55)).font_semibold().text_color(t.chrome).child([...(e?.name ?? repo.name ?? "?")][0].toUpperCase()));
+  }
+
+  // The head's ⋯: the rest of the page's actions.
+  moreItems() {
+    const { sc } = this.moreFor ?? {};
+    const d = sc?.kind === "repo" ? this.data[sc.repo.common] : null;
+    return [
+      ["kg-mi-new", I("plus"), "Nouveau worktree (ctrl-b G)", () => run("mod.open", { name: "kt-new" })],
+      (sc?.kind === "repo" || sc?.inRepo) && ["kg-mi-global", I("layers"), this.global ? "Revenir au dépôt" : "Vue globale : tous les projets", () => { this.global = !this.global; }],
+      d?.rows.some(isAgent) && ["kg-mi-clean", G("trash"), "Nettoyer les worktrees d'agent", (cx) => this.cleanAgents(sc.repo, d, cx)],
+      ["kg-mi-keys", I("keyboard"), "Les touches (?)", () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })],
+    ];
+  }
+
   groupHead(t, r, d, n) {
     return h_flex().flex_none().h(28).px(8).pt(6).gap(8).items_center()
-      .child(svg(I("folder")).size(13).flex_none().text_color(t.muted))
+      .child(this.mark(t, r, 20))
       .child(this.eyebrow(t, r.name, t.foreground))
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(String(n)))
       .child(this.source(t, new Set(d?.source ? [d.source] : [])) ?? div());
@@ -795,68 +1221,99 @@ export default class Worktrees extends View {
   pageView(t, sc, cx) {
     const groups = sc.kind === "repo" ? [sc.repo] : sc.kind === "workspace" ? sc.repos : [];
     const cwd = threadCwd();
-    const q = this.query.trim().toLowerCase();
-    const match = (w) => !q || `${w.name} ${w.branch ?? ""} ${tilde(w.path)} #${w.issue ?? ""} #${w.pr ?? ""} ${w.note ?? ""}`.toLowerCase().includes(q);
     const total = groups.reduce((n, r) => n + (this.data[r.common]?.rows.length ?? 0), 0);
     const sources = new Set(groups.map((r) => this.data[r.common]?.source).filter(Boolean));
     const loading = groups.some((r) => this.inflight[`l:${r.common}`]);
+    // The keys' cursor, while the page has the keyboard: its card, brought into view once after it moved.
+    const typing = this.keyed && this.vim.insert;
+    const stops = this.keyed ? this.stops() : [];
+    const cur = (stops.find((s) => s.id === this.cur) ?? stops[0])?.id;
     const list = [];
     let shown = 0;
     for (const r of groups) {
       const d = this.data[r.common];
-      const rows = (d?.rows ?? []).filter(match);
+      const rows = (d?.rows ?? []).filter((w) => this.matches(w));
       shown += rows.length;
       if (sc.kind === "workspace" && (rows.length || d?.error)) list.push(this.groupHead(t, r, d, rows.length));
       if (d?.error) list.push(this.empty(t, `${r.name} : ${d.error}`, t.ansi1));
       const here = d ? enclosing(d.rows, cwd) : null;
-      for (const w of rows) list.push(this.card(t, r, d, w, w === here, cx));
+      const put = (w) => {
+        // A card shown means no "none" box above the list: its index is the list's.
+        if (this.reveal && w.path === cur) {
+          this.scroll.scroll_to_item(list.length);
+          this.reveal = false;
+        }
+        list.push(this.card(t, r, d, w, w === here, cx, w.path === cur ? (typing ? "mark" : "ring") : null));
+      };
+      // Issue worktrees first; Claude Code's own (claude/*: subagents, --worktree, background
+      // sessions) after them, behind one fold, folded until opened.
+      rows.filter((w) => !isAgent(w)).forEach(put);
+      const agents = rows.filter(isAgent);
+      if (agents.length) {
+        list.push(this.agentFold(t, r, d, agents.length));
+        if (this.agentOpen.has(r.common)) agents.forEach(put);
+      }
     }
-    const typing = this.handle.is_focused();
     const label = sc.kind === "repo" ? sc.repo.name : sc.kind === "wait" ? "…" : "Global";
-    const head = this.box(t).flex_none().p(12).gap(10)
-      .child(h_flex().gap(8).items_center()
-        .child(svg(I("git-branch")).size(14).flex_none().text_color(sc.kind === "repo" ? t.accent : t.muted))
-        .child(this.eyebrow(t, label, sc.kind === "repo" ? t.foreground : t.muted).min_w(0).truncate())
-        .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(plural(total, "worktree", "worktrees")))
-        .child(this.source(t, sources) ?? div())
-        .child(div().flex_1())
-        .when(sc.kind === "repo" || Boolean(sc.inRepo), (el) => el.child(this.chip(t, "kg-global", "Global", this.global, () => { this.global = !this.global; })))
-        .child(this.pill(t, "kg-new", "Nouveau worktree", I("plus"), true, () => run("mod.open", { name: "kt-new" })))
-        .child(h_flex().id("kg-refresh").h(30).px(12).gap(6).items_center().rounded_full().border(1).border_color(t.border)
-          .text_size(12).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
-          .on_click((_e, cx) => { this.refresh(cx, true); cx.notify(); })
-          .child(svg(I("refresh-cw")).size(13).when(this.spinning > 0, (el) => el.spin(900)))
-          .child("Rafraîchir")))
-      .child(h_flex().id("kg-filter").h(34).px(13).gap(8).items_center().rounded_full().border(1)
-        .border_color(typing ? t.accent : t.border).cursor_text()
-        .track_focus(this.handle)
-        .on_key_down((e, cx) => this.key(e, cx))
-        .on_click((_e, cx) => { this.handle.focus(); cx.notify(); })
-        .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
-        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
-          .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : "Filtrer par nom, branche, issue, note"))
-        .when(Boolean(this.query), (el) => el.child(div().id("kg-clear").flex_none().text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground))
-          .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; cx.notify(); })
-          .child(svg(I("x")).size(13)))));
+    // DESIGN-REFERENCE.md's head: the band on the dither of the project's color (Global: ansi2).
+    const color = sc.kind === "repo" ? this.projectColor(t, sc.repo) : t.ansi2;
+    this.moreFor = { sc, color };
+    const head = this.box(t).id("kg-head").relative().flex_none().px(4).pb(12).gap(10)
+      .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
+      .children([dither(this.headW, 60, 16, color)].filter(Boolean))
+      .child(bandRow(t, { color, icon: I("git-branch"), mark: sc.kind === "repo" ? this.mark(t, sc.repo, 32) : null,
+        title: sc.kind === "repo" ? label : sc.kind === "wait" ? "Worktrees" : "Worktrees · Global",
+        sub: [plural(total, "worktree", "worktrees"), [...sources].sort().join(" + "), sc.kind === "repo" ? tilde(sc.repo.main ?? sc.repo.folder) : "tous les projets"],
+        buttons: [
+          iconBtn(t, "kg-b-new", I("plus"), "Nouveau worktree (ctrl-b G)", () => run("mod.open", { name: "kt-new" })),
+          pulse(this.m, iconBtn(t, "kg-b-refresh", I("refresh-cw"), "Rafraîchir (r)", (cx) => this.refresh(cx, true), this.spinning > 0), this.spinning > 0),
+          iconBtn(t, "kg-b-more", "mods/kt-crosstalk/ellipsis.svg", "Plus", () => { this.more = !this.more; }, this.more)] }))
+      .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(color, "4d")))
+      // The filter: the keys' ring (and the ink) while typing in it; the mode beside it.
+      .child(h_flex().px(8).gap(8).items_center()
+        .child(h_flex().id("kg-filter").flex_1().min_w(0).h(34).px(13).gap(8).items_center().rounded_full().border(1)
+          .border_color(typing ? alpha(t.accent, "99") : t.border).when(typing, (el) => el.bg(alpha(t.accent, "24"))).cursor_text()
+          .track_focus(this.handle)
+          .on_key_down((e, cx) => this.key(e, cx))
+          .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
+          .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
+          .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
+            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : "Filtrer par nom, branche, issue, note"))
+          .when(Boolean(this.query), (el) => el.child(div().id("kg-clear").flex_none().text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground))
+            .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.cur = null; cx.notify(); })
+            .child(svg(I("x")).size(13)))))
+        .when(Boolean(this.keyed), (el) => el.child(this.mode(t, typing))))
+      // The state row (filters.js): every worktree, or those with changes, a PR open / merged, an agent at work.
+      .child(div().px(8).child(filterRow({ id: "kg-states", t, state: this.wfRow, active: this.wf ?? "all", reduced: Boolean(shared("kt.reducedMotion")),
+        items: [["all", "Tous"], ["dirty", "Modifiés", "ansi3"], ["pr-open", "PR ouverte", "ansi2"], ["pr-merged", "PR mergée", "ansi5"], ["agent", "Agent actif", "working"]]
+          .map(([key, label, tint]) => ({ key, label, tint, count: groups.reduce((n, r) => n + (this.data[r.common]?.rows ?? []).filter((w) => key === "all" || this.wstate(w, key)).length, 0) })),
+        onPick: (k) => { this.wf = k === "all" ? null : k; this.cur = null; } })));
     const none = sc.kind === "wait" || (loading && !total) ? "Chargement…"
       : !groups.length ? "Aucun dépôt dans le registre des projets."
       : total && !shown ? "Aucun worktree ne correspond au filtre." : !total && !list.length ? "Aucun worktree." : null;
-    const body = v_flex().id("kg-list").flex_1().min_h(0).overflow_y_scrollbar().gap(4)
+    // Rows gone (removed, another repo shown) leave the selection, once every repo has its rows.
+    if (groups.every((r) => this.data[r.common])) this.multi.keep(this.stops(true).map((s) => s.id));
+    const bar = this.bulk(t);
+    const body = v_flex().id("kg-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(4)
       .when(Boolean(none), (el) => el.child(this.box(t).child(this.empty(t, none))))
+      .when(Boolean(bar), (el) => el.pb(64)) // room under the last card for the floating bar
       .children(list);
-    const page = v_flex().size_full().gap(4).text_color(t.foreground).child(head).child(body);
-    if (sc.kind !== "repo") return page;
+    const page = v_flex().size_full().gap(4).text_color(t.foreground).child(head)
+      .child(v_flex().flex_1().min_h(0).relative().child(body).when(Boolean(bar), (el) => el.child(bar)));
+    // The head's ⋯, last in the page so that it draws over the list.
+    const more = (el) => el.when(this.more, (p) => p.relative().child(moreMenu(t, "kg-more", 56, this.moreItems(), () => { this.more = false; })));
+    if (sc.kind !== "repo") return more(page);
     // The foot: what `gwm clean --yes` would reclaim (never run here).
     const d = this.data[sc.repo.common];
     if (cx && d) this.loadClean(sc.repo, d, cx);
     const c = this.clean[sc.repo.common];
     const measuring = Boolean(this.inflight[`c:${sc.repo.common}`]);
-    return page.child(h_flex().flex_none().h(40).px(14).gap(8).items_center().rounded(16).border(1).border_color(t.border).bg(t.background)
+    return more(page.child(h_flex().flex_none().h(40).px(14).gap(8).items_center().rounded(16).border(1).border_color(t.border).bg(t.background)
       .child(svg(G("trash")).size(13).flex_none().text_color(t.dim))
       .child(this.eyebrow(t, "gwm clean", t.muted).flex_none())
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(c?.total ? t.foreground : t.dim)
         .child(measuring ? "mesure en cours…" : c?.error ? `échec : ${c.error}` : c?.total ? `${c.total} récupérables (rapport seul, rien n'est supprimé)` : c ? "rien à récupérer" : "—"))
-      .when(measuring, (el) => el.child(svg(I("refresh-cw")).size(12).spin(900).text_color(t.dim))));
+      .when(measuring, (el) => el.child(svg(I("refresh-cw")).size(12).spin(900).text_color(t.dim)))));
   }
 
   // ---------- panel ----------
@@ -878,10 +1335,13 @@ export default class Worktrees extends View {
       .child(this.iconButton(t, "kg-p-refresh", I("refresh-cw"), (cx) => this.refresh(cx, true), this.spinning > 0));
   }
 
-  linkLine(t, id, kind, x, repo, loading) {
+  // `cursor`: the keys' cursor on it (a 1 px accent ring with the ink; transparent border elsewhere).
+  linkLine(t, id, kind, x, repo, loading, cursor) {
     if (!x) return div().h(26).flex().items_center().text_size(12.5).text_color(t.dim).child(kind === "pr" ? "Aucune PR liée" : "Aucune issue liée");
     const lk = look(kind, x.state);
-    return h_flex().id(id).h(30).px(8).mx(-8).gap(8).items_center().rounded(12).cursor_pointer().hover((s) => s.bg(t.hover))
+    return h_flex().id(id).h(30).px(8).mx(-8).gap(8).items_center().rounded(12).border(1)
+      .border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00")).when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+      .cursor_pointer().when(!cursor, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click(() => this.inInbox(repo, kind, x))
       .child(svg(I(lk.icon)).size(14).flex_none().text_color(t[lk.color]))
       .child(div().flex_none().font_family(MONO).text_size(12).text_color(t.foreground).child(`${kind === "pr" ? "PR " : ""}#${x.number}`))
@@ -902,7 +1362,7 @@ export default class Worktrees extends View {
   }
 
   // A linked worktree: everything about it.
-  worktreeCard(t, repo, d, w, cx) {
+  worktreeCard(t, repo, d, w, cx, cur) {
     if (cx) {
       this.statusOf(w, cx);
       this.loadPrefix(w, cx);
@@ -914,18 +1374,17 @@ export default class Worktrees extends View {
       .sort((a, b) => (b.freshness === "active") - (a.freshness === "active") || pins.has(b.id) - pins.has(a.id) || b.last_activity - a.last_activity);
     const prefix = this.prefix[`${w.path}|${w.branch}`];
     const busy = this.busy?.path === w.path;
-    return this.box(t).flex_1().child(v_flex().id("kg-p-wt").flex_1().min_h(0).overflow_y_scrollbar().p(16).gap(12)
-      .child(this.head(t, I("git-branch"), "Worktree", d, cx))
-      .child(v_flex().gap(4)
-        .child(div().text_size(17).font_semibold().text_color(t.foreground).child(w.name))
-        .child(div().truncate().font_family(MONO).text_size(12).text_color(t.accent).child(branchOf(w)))
-        .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(tilde(w.path))))
+    // The head, Crosstalk's (DESIGN-REFERENCE.md): the project's logo (32 px) on its band, the
+    // worktree's name, its branch · path, where the data came from and Rafraîchir.
+    return this.panelBox(t, repo).child(v_flex().id("kg-p-wt").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).px(16).pb(16).gap(12)
+      .child(bandRow(t, { mark: this.mark(t, repo, 32), title: w.name, sub: [branchOf(w), tilde(w.path)],
+        buttons: [this.source(t, new Set(d?.source ? [d.source] : [])), iconBtn(t, "kg-p-refresh", I("refresh-cw"), "Rafraîchir (r)", (cx) => this.refresh(cx, true))] }).mx(-6))
       .child(h_flex().flex_wrap().gap(5).children(this.marks(t, w, true)))
       .child(this.dashed(t))
       .child(v_flex().gap(2)
         .child(this.eyebrow(t, "Liens"))
-        .child(this.linkLine(t, "kg-p-issue", "issue", issue, repo, statusLoading))
-        .child(this.linkLine(t, "kg-p-pr", "pr", pr, repo, statusLoading)))
+        .child(this.linkLine(t, "kg-p-issue", "issue", issue, repo, statusLoading, cur === "issue"))
+        .child(this.linkLine(t, "kg-p-pr", "pr", pr, repo, statusLoading, cur === "pr")))
       .child(this.dashed(t))
       .child(v_flex().gap(2)
         .child(this.eyebrow(t, sessions.length ? `Agents · ${sessions.length}` : "Aucun agent détecté"))
@@ -946,6 +1405,11 @@ export default class Worktrees extends View {
       .child(this.dashed(t))
       .child(h_flex().flex_wrap().gap(6).items_center()
         .child(this.mini(t, "kg-p-sync", G("sync"), "Sync", () => this.askSync(w)))
+        // Its note in kt-notes (shared "kt-notes.open": the repo, the worktree, taken once there).
+        .child(this.mini(t, "kg-p-note", "mods/kt-notes/notebook-pen.svg", "Note", () => {
+          setShared("kt-notes.open", { root: repo.main ?? repo.folder, worktree: w.path, at: Date.now() });
+          show("notes");
+        }))
         .when(Boolean(issue), (el) => el.child(this.mini(t, "kg-p-oi", I("circle-dashed"), "Issue", () => this.inInbox(repo, "issue", issue))))
         .when(Boolean(pr), (el) => el.child(this.mini(t, "kg-p-op", I("git-pull-request"), "PR", () => this.inInbox(repo, "pr", pr))))
         .child(this.mini(t, "kg-p-all", I("layers"), "Tous les worktrees", () => show(PAGE)))
@@ -954,7 +1418,7 @@ export default class Worktrees extends View {
   }
 
   // A main checkout: the repo.
-  repoCard(t, repo, d, w, cx) {
+  repoCard(t, repo, d, w, cx, cur) {
     if (cx) {
       this.loadInfo(repo, d, cx);
       this.loadClean(repo, d, cx);
@@ -971,7 +1435,7 @@ export default class Worktrees extends View {
     const trust = { trusted: ["présent · approuvé", t.done], drift: ["présent · modifié depuis l'approbation", t.ansi3],
       untrusted: ["présent · non approuvé", t.ansi3], absent: ["absent", t.dim], unknown: ["présent · registre illisible", t.dim] }[info?.trust] ?? ["…", t.dim];
     const sock = d.sock ? d.sock.split("/").pop() : null;
-    return this.box(t).flex_1().child(v_flex().id("kg-p-repo").flex_1().min_h(0).overflow_y_scrollbar().p(16).gap(12)
+    return this.panelBox(t, repo).child(v_flex().id("kg-p-repo").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(16).gap(12)
       .child(this.head(t, I("folder"), "Dépôt", d, cx))
       .child(div().text_size(17).font_semibold().text_color(t.foreground).child(repo.name))
       .child(v_flex().gap(4)
@@ -986,8 +1450,9 @@ export default class Worktrees extends View {
       .child(this.dashed(t))
       .child(v_flex().gap(2)
         .child(this.eyebrow(t, linked.length ? `Worktrees · ${linked.length}` : "Aucun worktree lié"))
-        .children(linked.slice(0, 8).map((x) => h_flex().id(`kg-p-w-${x.path}`).h(30).px(8).mx(-8).gap(8).items_center().rounded(12)
-          .cursor_pointer().hover((s) => s.bg(t.hover))
+        .children(linked.slice(0, 8).map((x) => h_flex().id(`kg-p-w-${x.path}`).h(30).px(8).mx(-8).gap(8).items_center().rounded(12).border(1)
+          .border_color(x.path === cur ? alpha(t.accent, "99") : alpha(t.accent, "00")).when(x.path === cur, (el) => el.bg(alpha(t.accent, "24")))
+          .cursor_pointer().when(x.path !== cur, (el) => el.hover((s) => s.bg(t.hover)))
           .on_click(() => this.openSpace(d, x))
           .child(svg(I("git-branch")).size(13).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12).text_color(t.foreground).child(x.branch ?? x.name))
@@ -1002,7 +1467,10 @@ export default class Worktrees extends View {
   }
 
   panelView(t, sc, cx) {
-    const root = v_flex().size_full().gap(4).text_color(t.foreground);
+    // No field here: the whole view takes the keyboard (pane.go), NORMAL only.
+    const root = v_flex().id("kg-panel").size_full().gap(4).text_color(t.foreground)
+      .track_focus(this.handle)
+      .on_key_down((e, cx) => this.key(e, cx));
     const blank = (title, detail) => root.child(this.box(t).flex_1().items_center().justify_center().gap(10).p(24)
       .child(div().size(44).rounded_full().border(1).border_dashed().border_color(t.input).flex().items_center().justify_center()
         .child(svg(I("git-branch")).size(18).text_color(t.dim)))
@@ -1014,14 +1482,31 @@ export default class Worktrees extends View {
     if (!d) return blank("Chargement…", sc.repo.name);
     if (d.error && !d.rows.length) return blank("gwm list a échoué", d.error);
     const w = enclosing(d.rows, sc.cwd);
-    return root.child(w && !w.is_main ? this.worktreeCard(t, sc.repo, d, w, cx) : this.repoCard(t, sc.repo, d, d.rows.find((x) => x.is_main) ?? w, cx));
+    // The keys' cursor, while the panel has the keyboard. Its rows sit in the card's fifth child
+    // (the links, or the linked worktrees): that one is brought into view once after a move.
+    const stops = this.keyed ? this.stops() : [];
+    const cur = (stops.find((s) => s.id === this.cur) ?? stops[0])?.id;
+    if (this.reveal && cur) {
+      // The links are the worktree card's 4th child (its band row), the linked list the repo card's 5th.
+      this.scroll.scroll_to_item(w && !w.is_main ? 3 : 4);
+      this.reveal = false;
+    }
+    return root.child(w && !w.is_main ? this.worktreeCard(t, sc.repo, d, w, cx, cur) : this.repoCard(t, sc.repo, d, d.rows.find((x) => x.is_main) ?? w, cx, cur));
   }
 
   render(cx) {
     const t = theme();
+    this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const vis = this.visible();
     const live = !checking();
+    if (live) {
+      // The bus (DATA-SYNC.md): gwm and git actions anywhere, and an agent of a space that stopped
+      // working (it may have changed a worktree), read the worktrees again.
+      refreshOn(this, cx, "data", ["gwm", "git", ...spaces().map((s) => `agent:${s.id}`)], async (cx) => this.refresh(cx, false));
+    }
     const sc = live ? this.scope(cx) : { kind: "wait" };
+    this.sc = sc; // what the keys' cursor walks (stops())
+    this.keyed = this.handle.is_focused();
     if (vis && live && this.ready) {
       const key = sc.kind === "repo" ? `r:${sc.repo.common}` : sc.kind === "workspace" ? `w:${sc.repos.map((r) => r.common).join("|")}` : sc.kind;
       if (key !== this.scopeKey || !this.shown) {
@@ -1033,8 +1518,15 @@ export default class Worktrees extends View {
     if (!vis && this.shown) this.unwatch();
     if (!this.panel && live) {
       // The thread's terminal is hidden under this page: take the keyboard (typing filters),
-      // after the app has settled its own focus on the switch (kt-inbox's way).
-      if (vis && !this.shown) cx.timer.after(150, (cx) => { if (this.visible()) this.handle.focus(); cx.notify(); });
+      // after the app has settled its own focus on the switch (kt-inbox's way). INSERT then, unless
+      // pane.go or a key command already gave it the keyboard (NORMAL).
+      if (vis && !this.shown) cx.timer.after(150, (cx) => {
+        if (this.visible() && !this.handle.is_focused()) {
+          this.handle.focus();
+          this.vim.edit();
+        }
+        cx.notify();
+      });
       // Back to the thread: the keyboard goes back to its terminal.
       if (!vis && this.shown && this.handle.is_focused()) {
         const tab = spaces().find((s) => s.active)?.tabs.find((c) => c.active)?.id;

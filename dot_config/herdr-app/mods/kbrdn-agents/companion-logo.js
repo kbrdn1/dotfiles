@@ -21,7 +21,7 @@
 // width in css px (24 draws 24x20, 32 draws 32x32; height: o.height). memo: kept by the caller per
 // agent. cx: the render's cx. at: draw as of that time, with no timers (previews).
 import { div, image, svg } from "gpui-kit";
-import { settings, theme } from "herdr";
+import { settings, theme, shared } from "herdr";
 
 const ROOT = "brand/companions/out";
 // <data> written by src/build.py from index.json: do not edit by hand
@@ -48,6 +48,8 @@ export function companion(o) {
   const t = theme();
   const p = o.program ?? {};
   const live = o.at == null;
+  // kt-mods' option (kt-threads' mod.json): off, the tile stays still; the wake timer below is not an animation.
+  const anim = live && shared("kt.opt.kt-threads.companion") !== false;
   const now = o.at ?? Date.now();
   const memo = o.memo ?? {};
   const id = o.id ?? p.key ?? "agent";
@@ -73,7 +75,7 @@ export function companion(o) {
   const top = Math.round((h - g) / 2);
   const bob = Math.max(1, Math.min(2, Math.round(h / 16 * 2) / 2));
   const icon = div().id(`${id}-icon`).absolute().left(Math.round((w - g) / 2)).top(top).w(g).h(g)
-    .when(o.state === "working" && live, (el) => el.loop("top", { from: top, to: top - bob, period: 900, easing: "ease-in-out" }))
+    .when(o.state === "working" && anim, (el) => el.loop("top", { from: top, to: top - bob, period: 900, easing: "ease-in-out" }))
     .child(glyph);
   const tileEl = div().absolute().left(0).top(0).w(w).h(h).rounded(Math.round(h * 0.3)).border(1).border_color("#00000033")
     .bg(p.tile ?? t.raised).child(icon);
@@ -85,7 +87,7 @@ export function companion(o) {
     const s = full ? dot : Math.round(dot * 0.4);
     return div().id(`${id}-${key}`).absolute().right(-1).top(-1).w(s).h(s).rounded_full().bg(bg)
       .border(1).border_color(t.background).flex().items_center().justify_center()
-      .when(pulse && live, (el) => el.spring("width", { response: 420, damping: 0.35 }).spring("height", { response: 420, damping: 0.35 }))
+      .when(pulse && anim, (el) => el.spring("width", { response: 420, damping: 0.35 }).spring("height", { response: 420, damping: 0.35 }))
       .child(div().text_size(Math.round(dot * 0.8)).font_weight(800).line_height(`${dot}px`).text_color(t.background).child(full ? text : ""));
   };
   let corner = null;
@@ -120,7 +122,7 @@ export function companion(o) {
         .child(p.icon ? (p.tint ? svg(p.icon).size(Math.round(m * 0.66)).text_color(p.color ?? "#ffffff") : image(p.icon).w(Math.round(m * 0.66)).h(Math.round(m * 0.66))) : div());
     } else if (name && DATA.accessories[name]) {
       const C = DATA.accessories[name];
-      badge = div().absolute().right(-1).bottom(-1).w(bs).h(bs).child(swap(C, src, bs, `${id}-${name}`, live));
+      badge = div().absolute().right(-1).bottom(-1).w(bs).h(bs).child(swap(C, src, bs, `${id}-${name}`, anim));
     }
   }
 

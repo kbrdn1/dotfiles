@@ -5,7 +5,15 @@ import assert from "node:assert/strict";
 import { plugin } from "bun";
 
 plugin({ setup(b) { b.module("gpui-kit", () => ({ exports: { div: () => ({}), svg: () => ({}) }, loader: "object" })); } });
-const { bandWindows, TOP, BOTTOM, ALL } = await import("./dither.js");
+const { bandWindows, tiles, BAND_W, TOP, BOTTOM, ALL } = await import("./dither.js");
+
+// Tiling: whole pattern periods, and exactly the tiles a window needs (none missing at a 4K width).
+assert.equal(BAND_W % 128, 0);
+assert.deepEqual(tiles(0, 400), [0]);
+assert.deepEqual(tiles(0, BAND_W), [0]);
+assert.deepEqual(tiles(0, BAND_W + 1), [0, 1]);
+assert.deepEqual(tiles(BAND_W - 36, 100), [0, 1]);
+assert.deepEqual(tiles(0, 3840), [0, 1, 2]);
 
 // Is point (px, py) inside the w × h box with radius r on the given corners?
 const inside = (w, h, r, c, px, py) => {

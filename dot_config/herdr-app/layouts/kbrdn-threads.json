@@ -8,6 +8,7 @@
   "font_weight": 400,
   "ui_font": "Inter",
   "toast": "kbrdn-toast",
+  "terminal_menu": "kt-menu",
   "terminal_padding": [14, 12],
   "background": "chrome",
   "preview": "layouts/kbrdn-threads.png",
@@ -91,9 +92,13 @@
                   ]
                 },
                 { "id": "inbox", "type": "block", "content": { "mod": "kt-inbox" } },
+                { "id": "workflow", "type": "block", "content": { "mod": "kt-workflow" } },
                 { "id": "skills", "type": "block", "content": { "mod": "kt-skills" } },
                 { "id": "mcp", "type": "block", "content": { "mod": "kt-mcp" } },
-                { "id": "gwm", "type": "block", "content": { "mod": "kt-gwm" } }
+                { "id": "plugins", "type": "block", "content": { "mod": "kt-plugins" } },
+                { "id": "automation", "type": "block", "content": { "mod": "kt-automation" } },
+                { "id": "gwm", "type": "block", "content": { "mod": "kt-gwm" } },
+                { "id": "notes", "type": "block", "content": { "mod": "kt-notes" } }
               ]
             }
           ]

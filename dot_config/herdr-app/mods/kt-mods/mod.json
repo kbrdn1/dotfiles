@@ -1,0 +1,9 @@
+{ "place": "none", "title": "Mods",
+  "description": "La console des mods : où chacun sert, son état, ses modules partagés, ses options.",
+  "overlay": { "kind": "dialog", "width": 1, "height": 1, "frame": "none" },
+  "options": [
+    { "key": "watch", "label": "Suivre les changements", "type": "bool", "default": true,
+      "description": "Console ouverte, relit mods/ et layouts/ quand un fichier y change (au plus toutes les 2 s). Sinon, seulement à l'ouverture et sur r." },
+    { "key": "sort", "label": "Tri", "type": "enum", "values": ["name", "recent"], "labels": ["Nom", "Récents"], "default": "name",
+      "description": "L'ordre des mods dans chaque groupe." }
+  ] }
