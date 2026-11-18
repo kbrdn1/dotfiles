@@ -9,6 +9,7 @@
   var PIERRE = 'https://esm.sh/@pierre/diffs@1.6.2';
   var MERMAID = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs';
   var root = document.getElementById('root');
+  var DC = window.DitherCharts; // graphes tramés de Monocode (dither-charts.js), chargé avant ce fichier
   var S = { cur: null, sigs: {}, openDiffs: {}, diffs: null, diffsRev: null, first: true, lastOk: Date.now(), lastChange: null,
             filter: { status: 'all', q: '' }, axis: 'all', nits: false, current: null, stats: {}, pierre: [] };
   var UI = {};
@@ -460,24 +461,41 @@
   }
   function cover(f) {
     var files = (f.files || []).slice().sort(function (a, b) { return ((b.add || 0) + (b.del || 0)) - ((a.add || 0) + (a.del || 0)); }).slice(0, 48);
-    var hover = el('span', { class: 'hover', text: 'survoler une colonne : un fichier' });
-    var sky = el('div', { class: 'skyline', role: 'list', 'aria-label': 'ampleur du diff par fichier' });
-    files.forEach(function (x, c) {
-      var tot = (x.add || 0) + (x.del || 0), cells = Math.max(1, Math.min(16, Math.round(Math.log2(tot + 1) * 1.9)));
-      var dels = tot ? Math.round(cells * (x.del || 0) / tot) : 0;
-      var col = el('a', { class: 'col', href: '#f-files', role: 'listitem', 'aria-label': x.path + ' +' + x.add + ' −' + x.del, style: '--c:' + c,
-        onmouseenter: function () { hover.textContent = x.path + '  +' + x.add + ' −' + x.del; }, onclick: function (ev) { ev.preventDefault(); openFile(x.path); } });
-      for (var k = 0; k < cells; k++) col.appendChild(el('i', { class: k < dels ? 'd' : '', style: '--k:' + k }));
-      sky.appendChild(col);
-    });
+    var idle = 'survoler une colonne : un fichier', hover = el('span', { class: 'hover', text: idle });
+    // une barre empilée par fichier (supprimées sous ajoutées), hauteur logarithmique : un petit diff reste visible à côté d'un gros
+    var tall = function (x) { var tot = (x.add || 0) + (x.del || 0); return Math.max(1, Math.min(16, Math.log2(tot + 1) * 1.9)); };
+    var part = function (x, k) { var tot = (x.add || 0) + (x.del || 0); return tot ? tall(x) * (x[k] || 0) / tot : k === 'add' ? tall(x) : 0; };
+    var bars = DC.chart({ kind: 'bar', stacked: true, axis: false, readout: false, legend: false, height: 'fill', id: 'cover:' + f.repo + '@' + f.branch,
+      labels: files.map(function (x) { return x.path; }),
+      series: [{ label: 'supprimées', color: 'err', values: files.map(function (x) { return part(x, 'del'); }) }, { label: 'ajoutées', color: 'ok', values: files.map(function (x) { return part(x, 'add'); }) }],
+      aria: 'ampleur du diff par fichier : ' + files.map(function (x) { return x.path + ' +' + x.add + ' −' + x.del; }).join(', '),
+      onHover: function (i) { hover.textContent = i == null ? idle : files[i].path + '  +' + files[i].add + ' −' + files[i].del; },
+      onSelect: function (i) { openFile(files[i].path); } });
     var cv = el('canvas', { 'aria-hidden': 'true' });
-    var box = el('div', { class: 'cover' }, [cv, sky, el('div', { class: 'legend' }, [el('span', { text: plural((f.files || []).length, 'fichier') + ' · +' + f.totals.add + ' −' + f.totals.del }), hover])]);
+    var box = el('div', { class: 'cover' }, [cv, el('div', { class: 'cover-bars' }, [bars.el]), el('div', { class: 'legend' }, [el('span', { text: plural((f.files || []).length, 'fichier') + ' · +' + f.totals.add + ' −' + f.totals.del }), hover])]);
     requestAnimationFrame(function () { dither(cv, { fade: 'none', alpha: 0.9 }); });
     return box;
   }
   function stat(label, value, key, cls, href, suffix, st) {
     var v = el('div', { class: 'v ' + (cls || '') }, [typeof value === 'number' ? rolling(value, key) : value, suffix ? el('small', { text: suffix }) : null]);
     return el('div', { class: 'kpi' + (st ? ' st-' + st : '') }, [el('div', { class: 'eyebrow', text: label }), href ? el('a', { href: href }, [v]) : v]);
+  }
+  function signed(n) { return (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n); }
+  // garde anti-faux-propre : les axes d'une passe qui n'ont pas tourné (non exécuté, non lancé, absent)
+  function missingAxes(r, p) { return ((r && r.axes) || ['standards', 'spec']).filter(function (a) { return !p[a] || p[a].state !== 'ok'; }); }
+  // bloquants par passe pour l'écart et la tendance : NaN dès qu'un axe n'a pas tourné (non lancé compris), sinon une
+  // passe partielle face à une passe complète afficherait une fausse amélioration
+  function blockingSeries(r) {
+    return ((r && r.passes) || []).map(function (p) { return missingAxes(r, p).length ? NaN : p.p0 + p.p1 + p.p2; });
+  }
+  // la mesure « bloquants » de l'en-tête, avec l'écart à la passe précédente et la tendance des passes
+  function blockingKpi(f, blocking, rv) {
+    var k = stat('bloquants', blocking == null ? el('span', { class: 'c-label', text: '–' }) : blocking, 'blocking', blocking ? 'c-warn' : 'c-ok', '#f-review', rv ? 'passe ' + rv.pass : '', blocking == null ? null : blocking ? 'warn' : 'ok');
+    var r = f.review || f.reviewCodex, vs = blockingSeries(r), a = vs[vs.length - 1], b = vs[vs.length - 2];
+    if (isFinite(a) && isFinite(b)) k.appendChild(el('div', { class: 'kpi-d' }, [DC.delta(signed(a - b), { lowerIsBetter: true }), el('span', { class: 'c-label', text: 'vs passe ' + (rv.pass - 1) })]));
+    if (vs.filter(isFinite).length > 1) k.appendChild(el('div', { class: 'kpi-trend' }, [DC.trend({ values: vs, color: blocking ? 'warn' : 'ok', height: 40, id: 'trend:' + f.repo + '@' + f.branch,
+      aria: 'bloquants par passe : ' + vs.map(function (v, i) { return 'passe ' + (i + 1) + ' ' + (isFinite(v) ? v : 'axe incomplet'); }).join(', ') }).el]));
+    return k;
   }
   function heroBlock(d) {
     var f = d.facts, n = d.notes || {}, rv = lastPass(f), blocking = rv ? rv.p0 + rv.p1 + rv.p2 : null;
@@ -488,7 +506,7 @@
       stat('lignes', el('span', {}, [el('span', { class: 'c-ok' }, ['+', rolling(f.totals.add, 'add')]), ' ', el('span', { class: 'c-err' }, ['−', rolling(f.totals.del, 'del')])])),
       stat('commits', (f.commits || []).length, 'commits', '', '#f-commits'),
       stat('ci', f.ci ? f.ci.ok : 0, 'ciok', f.ci ? (f.ci.fail ? 'c-err' : f.ci.pending ? 'c-warn' : 'c-ok') : 'c-label', '#f-ci', f.ci ? '/ ' + f.ci.total : 'aucun check', f.ci ? (f.ci.fail ? 'err' : f.ci.pending ? 'warn' : 'ok') : null),
-      stat('bloquants', blocking == null ? el('span', { class: 'c-label', text: '–' }) : blocking, 'blocking', blocking ? 'c-warn' : 'c-ok', '#f-review', rv ? 'passe ' + rv.pass : '', blocking == null ? null : blocking ? 'warn' : 'ok')
+      blockingKpi(f, blocking, rv)
     ]);
     var body = el('div', { class: 'head-body' }, [
       el('p', { class: 'eyebrow', style: 'margin:0', text: date + ' · ' + (f.repo || '') + (f.issue ? ' · issue #' + f.issue : '') + ' · ' + plural((f.commits || []).length, 'commit') }),
@@ -522,9 +540,12 @@
       el('h1', { 'aria-label': titleText }, [title]),
       n.subtitle ? el('p', { class: 'serif', text: n.subtitle }) : null,
       is.length ? el('div', { class: 'tags' }, Object.keys(PST).filter(function (k) { return c[k]; }).map(function (k) { return tag(c[k] + ' ' + ({ done: 'faite', blocked: 'bloquée' }[k] ? { done: 'faite', blocked: 'bloquée' }[k] + (c[k] > 1 ? 's' : '') : PST[k][0]), PST[k][1], true, { href: '#f-issues' }); })) : null,
-      is.length ? el('div', { class: 'kpis' }, [stat('issues', is.length, 'pi', '', '#f-issues'), stat('faites', c.done, 'pd', c.done ? 'c-ok' : 'c-label', '#f-issues', '/ ' + is.length, c.done === is.length ? 'ok' : null),
+      is.length ? el('div', { class: 'plan-viz' }, [
+        el('div', { class: 'plan-gauge' }, [DC.gauge({ label: 'avancement', value: Math.round(100 * c.done / is.length), unit: '%', color: c.done === is.length ? 'ok' : 'accent', size: 200,
+          id: 'plan-gauge:' + (f.repo || 'local') + ':' + f.plan, aria: 'avancement : ' + plural(c.done, 'issue') + ' faite' + (c.done > 1 ? 's' : '') + ' sur ' + is.length }).el]),
+        el('div', { class: 'kpis' }, [stat('issues', is.length, 'pi', '', '#f-issues'), stat('faites', c.done, 'pd', c.done ? 'c-ok' : 'c-label', '#f-issues', '/ ' + is.length, c.done === is.length ? 'ok' : null),
         stat('en review', c.review, 'pr', c.review ? 'c-info' : 'c-label', '#f-issues'), stat('en cours', c.wip, 'pw', c.wip ? 'c-accent' : 'c-label', '#f-issues'),
-        stat('bloquées', c.blocked, 'pb', c.blocked ? 'c-err' : 'c-label', '#f-issues', '', c.blocked ? 'err' : null)]) : null,
+        stat('bloquées', c.blocked, 'pb', c.blocked ? 'c-err' : 'c-label', '#f-issues', '', c.blocked ? 'err' : null)])]) : null,
       f.repoPath ? el('div', { class: 'acts' }, [el('a', { class: 'btn btn-sm btn-outline', href: zed(f.repoPath), title: f.repoPath }, [icon('folder'), 'dépôt dans zed']),
         f.repo ? el('a', { class: 'btn btn-sm btn-outline', href: 'https://github.com/' + f.repo + '/issues', target: '_blank', rel: 'noopener' }, ['issues', icon('ext')]) : null]) : null
     ]);
@@ -552,7 +573,9 @@
     var COLS = ['todo', 'blocked', 'wip', 'review', 'done'];
     var kanban = el('div', { class: 'kanban' }, COLS.map(function (k) {
       var cards = is.filter(function (r) { return (PST[r.status] ? r.status : 'todo') === k; });
-      return el('div', { class: 'kcol' }, [el('div', { class: 'khead' }, [tag(PST[k][0], PST[k][1], true), el('span', { class: 'eyebrow', text: String(cards.length) })])].concat(cards.length ? cards.map(function (r) {
+      // la part de la colonne dans le plan, tramée à sa couleur d'état
+      var share = DC.progress({ bare: true, value: cards.length, max: is.length, color: PST[k][1].slice(2), id: 'plan-col:' + (f.repo || 'local') + ':' + f.plan + ':' + k, aria: PST[k][0] + ' : ' + cards.length + ' sur ' + is.length });
+      return el('div', { class: 'kcol' }, [el('div', { class: 'khead' }, [tag(PST[k][0], PST[k][1], true), el('span', { class: 'eyebrow', text: String(cards.length) })]), el('div', { class: 'kshare' }, [share.el])].concat(cards.length ? cards.map(function (r) {
         var deps = depLinks(r);
         return el('div', { class: 'kcard' + (moved[r.n] ? ' moved' : ''), title: r.title }, [
           el('div', { class: 'kn' }, [r.url ? el('a', { href: r.url, target: '_blank', rel: 'noopener', class: PST[k][1], text: '#' + r.n }) : el('span', { class: PST[k][1], text: '#' + r.n }),
@@ -633,9 +656,11 @@
     paths.forEach(function (p) { var q = p.split('/'); var i = 0; while (i < parts.length && parts[i] === q[i]) i++; parts = parts.slice(0, i); });
     return parts.length ? parts.join('/') + '/' : '';
   }
-  function dstat(add, del) {
+  function dstat(add, del, path) {
     var tot = (add || 0) + (del || 0), w = tot ? Math.max(8, Math.min(100, Math.log10(tot + 1) * 40)) : 0;
-    return el('span', { class: 'dstat ticks', title: '+' + add + ' −' + del }, [el('i', { style: 'width:' + (tot ? w * (add || 0) / tot : 0) + '%;background:var(--ok)' }), el('i', { style: 'width:' + (tot ? w * (del || 0) / tot : 0) + '%;background:var(--err)' })]);
+    var m = DC.progress({ bare: true, glow: false, max: 100, track: 'muted', id: 'dstat:' + S.key + ':' + path, aria: '+' + add + ' −' + del,
+      segments: [{ value: tot ? w * (add || 0) / tot : 0, color: 'ok' }, { value: tot ? w * (del || 0) / tot : 0, color: 'err' }] });
+    return el('span', { class: 'dstat', title: '+' + add + ' −' + del }, [m.el]);
   }
   function filesBlock(d, num) {
     var f = d.facts, files = f.files || [], pre = commonDir(files.map(function (x) { return x.path; }));
@@ -756,7 +781,7 @@
       el('span', { class: 'chev', 'aria-hidden': 'true' }, [icon('chev')]),
       el('span', { class: 'icon-box s-' + x.status, text: x.status }),
       el('span', { class: 'name' }, [x.old ? el('span', { class: 'old', text: x.old.slice(x.old.lastIndexOf('/') + 1) + ' → ' }) : null, base]),
-      el('span', { class: 'stat' }, [dstat(x.add, x.del), el('span', { class: 'c-ok', text: '+' + (x.add == null ? '–' : x.add) }), el('span', { class: 'c-err', text: '−' + (x.del == null ? '–' : x.del) })]),
+      el('span', { class: 'stat' }, [dstat(x.add, x.del, x.path), el('span', { class: 'c-ok', text: '+' + (x.add == null ? '–' : x.add) }), el('span', { class: 'c-err', text: '−' + (x.del == null ? '–' : x.del) })]),
       (function () { var a = x.status !== 'D' ? openers(abs, x.line, ghHref) : el('span', { class: 'acts' }, [ghHref ? ibtn('github', { href: ghHref, cls: 'gh' }) : null]); a.appendChild(ibtn('', { icon: 'expand', title: 'diff en grand, côte à côte', onclick: function () { diffViewer(x.path); } })); return a; })()
     ]);
     var wrap = el('div', { class: 'diffwrap expand' }, [el('div', { class: 'expand-content' })]);
@@ -895,7 +920,10 @@
   function ciBlock(d, num) {
     var f = d.facts, c = f.ci, inner;
     if (!c) inner = [el('div', { class: 'empty hatched' }, [el('b', { text: f.pushed ? 'aucun check' : 'HEAD non poussé' }), f.pushed ? ' sur ' + f.headShort : ' : la CI se lit sur le sha exact, poussé.'])];
-    else inner = [el('div', { class: 'meter ticks', title: c.ok + ' ok · ' + c.fail + ' ko · ' + c.pending + ' en cours' }, [el('i', { style: 'width:' + 100 * c.ok / c.total + '%;background:var(--ok)' }), el('i', { style: 'width:' + 100 * c.fail / c.total + '%;background:var(--err)' }), el('i', { style: 'width:' + 100 * c.pending / c.total + '%;background:var(--warn)' })]),
+    else inner = [el('div', { class: 'ci-viz' }, [DC.donut({ label: 'checks', value: c.ok + '/' + c.total, id: 'ci:' + S.key,
+        slices: [{ label: 'ok', value: c.ok, color: 'ok' }, { label: 'ko', value: c.fail, color: 'err' }, { label: 'en cours', value: c.pending, color: 'warn' }]
+          .concat(c.total - c.ok - c.fail - c.pending > 0 ? [{ label: 'autres', value: c.total - c.ok - c.fail - c.pending, color: 'muted' }] : []),
+        aria: 'ci sur ' + f.headShort + ' : ' + c.ok + ' ok, ' + c.fail + ' ko, ' + c.pending + ' en cours, sur ' + c.total }).el]),
       stagger(el('div', { class: 'list' }, c.runs.map(function (x) {
         return el(x.url ? 'a' : 'div', { class: 'lrow row', href: x.url, target: x.url ? '_blank' : null, rel: 'noopener' }, [tag(x.state, x.state === 'ok' ? 'c-ok' : x.state === 'ko' ? 'c-err' : 'c-warn', true), el('div', { class: 'main' }, [el('div', { class: 't', text: x.name })]), x.url ? el('span', { class: 'end' }, ['logs', icon('ext')]) : null]);
       })))];
@@ -917,7 +945,7 @@
     var b = p.p0 + p.p1 + p.p2, pb = prev ? prev.p0 + prev.p1 + prev.p2 : null;
     var verdict = !prev ? ['première passe', 'c-info'] : b < pb ? ['converge', 'c-ok'] : b === pb ? ['stagne', 'c-warn'] : ['remonte', 'c-err'];
     var changes = [];
-    if (prev) changes.push(['mod', 'bloquants ' + pb + ' → ' + b]);
+    if (prev) changes.push(['mod', 'bloquants ' + pb + ' → ' + b, DC.delta(signed(b - pb), { lowerIsBetter: true })]);
     var fixedPrev = before.filter(function (x) { return x.status === 'fixed'; }), discPrev = before.filter(function (x) { return x.status === 'discarded'; });
     if (fixedPrev.length) changes.push(['del', plural(fixedPrev.length, 'finding') + ' de la passe ' + (k - 1) + ' corrigé' + (fixedPrev.length > 1 ? 's' : '') + ' (' + fixedPrev.map(function (x) { return String(x.ref).slice(0, 7); }).filter(function (v, i, a) { return v && a.indexOf(v) === i; }).join(', ') + ')']);
     if (discPrev.length) changes.push(['del', plural(discPrev.length, 'finding') + ' écarté' + (discPrev.length > 1 ? 's' : '') + ' avec raison']);
@@ -931,7 +959,7 @@
       el('h3', { text: k === ps.length ? 'Dernière passe : ' + plural(b, 'bloquant') : 'Passe ' + k + ' : ' + plural(b, 'bloquant') }),
       el('div', { class: 'sp-kpis' }, (r.axes || ['standards', 'spec']).map(function (a) { return axisCell(p[a]); })),
       el('div', { class: 'eyebrow', style: 'margin-top:.6rem', text: prev ? 'ce qui a changé depuis la passe ' + (k - 1) : 'ce que la passe a trouvé' }),
-      el('div', { class: 'changes' }, changes.map(function (c) { return el('div', { class: 'ch ' + c[0] }, [el('span', { class: 'm', text: c[0] === 'add' ? '+' : c[0] === 'del' ? '−' : '~' }), el('span', { text: c[1] })]); })),
+      el('div', { class: 'changes' }, changes.map(function (c) { return el('div', { class: 'ch ' + c[0] }, [el('span', { class: 'm', text: c[0] === 'add' ? '+' : c[0] === 'del' ? '−' : '~' }), el('span', {}, [c[1], c[2] ? ' ' : null, c[2] || null])]); })),
       prev ? el('div', { class: 'path', style: 'margin-top:.35rem', text: 'rapprochement d\'une passe à l\'autre : même fichier, titre proche' }) : null,
       el('div', { class: 'sp-nav' }, [
         el('button', { class: 'btn btn-sm btn-outline', type: 'button', disabled: k === 1, onclick: function () { select(k - 1); } }, ['← passe ' + Math.max(1, k - 1)]),
@@ -944,13 +972,7 @@
     if (!r || !r.passes || !r.passes.length) return panel('f-review', num, 'Review', { body: [el('div', { class: 'card' }, [el('div', { class: 'empty hatched' }, [el('b', { text: 'aucune passe enregistrée. ' }), 'Le loop de review copie ses rapports (', el('code', { text: 'review/pass-N-*.md' }), ') à côté de ce rapport ; la section se remplit pendant qu\'il tourne.'])])] });
     var ps = r.passes, fs = r.findings || [], last = ps[ps.length - 1].pass;
     if (S.rpass && S.rpass > ps.length) S.rpass = null;
-    var max = Math.max.apply(null, ps.map(function (p) { return p.p0 + p.p1 + p.p2 + p.p3; }).concat([1]));
-    var chart = el('div', { class: 'passes' }, [el('div', { class: 'pass eyebrow' }, [el('span', { text: 'passe' }), el('span', { text: 'P0 · P1 · P2 · P3' }), el('span', { text: axes.join(' · ') })])].concat(ps.map(function (p) {
-      var seg = function (n, c, t) { return n ? el('i', { class: 'ticks', style: 'width:' + 100 * n / max + '%;background:' + c, title: n + ' ' + t }) : null; };
-      return el('div', { class: 'pass', style: 'cursor:pointer', onclick: function () { select(p.pass); } }, [el('span', {}, [el('span', { class: 'eyebrow', text: 'passe ' + p.pass }), p.sha ? el('div', { class: 'path', text: p.sha }) : null]),
-        el('div', { class: 'bars' }, [seg(p.p0, 'var(--err)', 'P0'), seg(p.p1, 'var(--warn)', 'P1'), seg(p.p2, 'var(--info)', 'P2'), seg(p.p3, 'var(--label)', 'P3 (nits)')]),
-        el('span', { class: 'axes' }, axes.map(function (a) { return axisCell(p[a]); }))]);
-    })));
+    var chart = reviewViz(r, ps, fs, axes, function (k) { select(k); });
     // frise des passes (In this lesson) : « toutes » puis 1…N
     var stepper = el('div', { class: 'stepper', role: 'tablist', 'aria-label': 'passes de review' }, [el('button', { class: 'st all', type: 'button', role: 'tab', 'data-k': '', onclick: function () { select(null); } }, [el('span', { class: 'dot', text: 'toutes' }), el('span', { text: 'vue globale' })])].concat(ps.map(function (p) {
       var b = p.p0 + p.p1 + p.p2;
@@ -994,6 +1016,46 @@
     select(S.rpass || null);
     var lp = ps[ps.length - 1];
     return panel('f-review', num, 'Review', { sub: plural(ps.length, 'passe') + (lp.sha ? ' · dernière sur ' + lp.sha : ''), acts: acts, body: [el('div', { class: 'card' }, inner)], foot: 'frise = passe par passe (← → au clavier) · clic sur un finding = son explication' });
+  }
+  // vue globale de la review : bloquants par passe (barres P0..P3), puis où tombent les findings (fichier × passe).
+  // Une passe dont un axe n'a pas tourné porte « ? » et le dit au survol et dessous ; aucun axe tourné = pas de barre, jamais un zéro.
+  function reviewViz(r, ps, fs, axes, select) {
+    var who = r === S.cur.facts.reviewCodex ? 'codex' : 'claude', id = S.key + ':' + who;
+    var axisNote = function (p, a) { var x = p[a]; if (!x || x.state !== 'ok') return a + ' : ' + (x ? x.state : 'absent'); var b = x.p0 + x.p1 + x.p2; return a + ' : ' + (b ? plural(b, 'bloquant') : 'propre') + (x.p3 ? ', ' + plural(x.p3, 'nit') : ''); };
+    var none = function (p) { return missingAxes(r, p).length === axes.length; };
+    var val = function (k) { return ps.map(function (p) { return none(p) ? NaN : p[k]; }); };
+    var bars = DC.chart({ kind: 'bar', height: 190, integer: true, id: 'review:' + id,
+      labels: ps.map(function (p) { return 'p' + p.pass + (missingAxes(r, p).length ? ' ?' : ''); }),
+      titles: ps.map(function (p) { return 'passe ' + p.pass + (p.sha ? ' · ' + p.sha : ''); }),
+      notes: ps.map(function (p) { return axes.map(function (a) { return axisNote(p, a); }).concat(missingAxes(r, p).length && !none(p) ? ['comptes partiels'] : []); }),
+      series: [{ label: 'P0', values: val('p0'), color: 'err' }, { label: 'P1', values: val('p1'), color: 'warn' }, { label: 'P2', values: val('p2'), color: 'info' }, { label: 'P3 (nits)', values: val('p3'), color: 'muted' }],
+      onSelect: function (i) { select(ps[i].pass); },
+      aria: 'findings par passe : ' + ps.map(function (p) { return 'passe ' + p.pass + (none(p) ? ' non exécutée' : ' P0 ' + p.p0 + ' P1 ' + p.p1 + ' P2 ' + p.p2 + ' P3 ' + p.p3); }).join(', ') });
+    var kids = [el('div', { class: 'eyebrow', text: 'findings par passe · clic sur une passe = son détail' }), bars.el];
+    var holes = ps.filter(function (p) { return missingAxes(r, p).length; });
+    if (holes.length) kids.push(el('div', { class: 'rv-axes' }, holes.map(function (p) { return el('span', {}, [el('span', { class: 'eyebrow', text: 'p' + p.pass + ' ?' })].concat(missingAxes(r, p).map(function (a) { return axisCell(p[a]); }))); })));
+    // fichier × passe : les huit fichiers les plus touchés, le reste regroupé
+    var byFile = {};
+    fs.forEach(function (x) { var file = String(x.loc || '').split(':')[0] || '(sans fichier)'; (byFile[file] = byFile[file] || []).push(x); });
+    var files = Object.keys(byFile).sort(function (a, b) { return byFile[b].length - byFile[a].length || (a < b ? -1 : 1); });
+    if (files.length) {
+      var top = files.slice(0, 8), rest = files.slice(8);
+      var groups = top.map(function (p) { return byFile[p]; }).concat(rest.length ? [[].concat.apply([], rest.map(function (p) { return byFile[p]; }))] : []);
+      var names = top.map(function (p) { return p.split('/').pop(); }).concat(rest.length ? ['+' + plural(rest.length, 'fichier')] : []);
+      var full = top.concat(rest.length ? [rest.join(', ')] : []);
+      var at = function (g, p) { return g.filter(function (x) { return x.pass === p.pass; }); };
+      var heat = DC.heatmap({ fill: true, color: 'accent', id: 'review-heat:' + id, rows: names, columns: ps.map(function (p) { return 'p' + p.pass; }),
+        values: groups.map(function (g) { return ps.map(function (p) { return none(p) ? NaN : at(g, p).length; }); }),
+        readout: function (ri, ci) {
+          var xs = at(groups[ri], ps[ci]), n = function (pr) { return xs.filter(function (x) { return x.prio === pr; }).length; };
+          var rows = [['err', 'P0'], ['warn', 'P1'], ['info', 'P2'], ['muted', 'P3 (nits)']].filter(function (q) { return n(q[1].slice(0, 2)); }).map(function (q) { return [q[0], q[1], String(n(q[1].slice(0, 2)))]; });
+          return { title: full[ri].length > 60 ? '…' + full[ri].slice(-59) : full[ri], rows: [[null, 'passe ' + ps[ci].pass, '']].concat(rows.length ? rows : [[null, 'aucun finding', '']]) };
+        },
+        onSelect: function (ri, ci) { select(ps[ci].pass); },
+        aria: 'findings par fichier et par passe : ' + full.map(function (p, i) { return p + ' ' + groups[i].length; }).join(', ') });
+      kids.push(el('div', { class: 'eyebrow', style: 'margin-top:.4rem', text: 'où tombent les findings · fichier × passe' }), heat.el);
+    }
+    return el('div', { class: 'rv-viz' }, kids);
   }
   function goFinding(x) {
     useReviewer(x.axis === 'codex' ? 'codex' : 'claude'); goTo('f-review'); if (UI.reviewSelect) UI.reviewSelect(x.pass);
@@ -1256,7 +1318,7 @@
     UI.aside.textContent = '';
     UI.aside.appendChild(el('div', { class: 'panel toc' }, [
       el('div', { class: 'toc-head', onclick: function () { UI.aside.classList.toggle('open'); } }, [el('span', { class: 'chev' }, [icon('chev')]), el('span', { class: 't', text: 'Sommaire' }),
-        el('div', { class: 'progress ticks', role: 'progressbar', 'aria-label': 'lecture' }, [UI.prog = el('div', { style: 'width:0%' })]), UI.stepN = el('span', { class: 'eyebrow', text: '0/' + (bs.length - 1) })]),
+        el('div', { class: 'progress' }, [(UI.prog = DC.progress({ bare: true, value: 0, max: 100, color: 'accent', track: 'muted', id: 'toc:' + S.key, aria: 'lecture' })).el]), UI.stepN = el('span', { class: 'eyebrow', text: '0/' + (bs.length - 1) })]),
       steps]));
     // récap des réponses (You'll learn) : cochée = répondue, clic = la question
     var qs = questions();
@@ -1349,7 +1411,8 @@
     var b = (S.blocks || [])[ci], g = b ? b.group : 'synth';
     Array.prototype.forEach.call(UI.navSeg.querySelectorAll('.segment'), function (s) { s.setAttribute('aria-current', String(s.getAttribute('data-group') === g)); });
   }
-  function progress() { if (!UI.prog) return; var h = document.documentElement.scrollHeight - innerHeight; UI.prog.style.width = (h > 0 ? Math.min(100, 100 * scrollY / h) : 100) + '%'; }
+  // la barre tramée se redessine à la prochaine image : un scroll rapide n'en coûte qu'une par image
+  function progress() { if (!UI.prog) return; var h = document.documentElement.scrollHeight - innerHeight; UI.prog.update({ value: h > 0 ? Math.min(100, 100 * scrollY / h) : 100 }); }
   function tick() {
     if (!UI.msg || !S.cur) return;
     var age = Math.round((Date.now() - S.lastOk) / 1000), hidden = document.visibilityState !== 'visible';

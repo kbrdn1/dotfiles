@@ -10,7 +10,7 @@ Pas sous `~/.claude` : Sheprd (Herdr) refuse de servir une page rangée dans un 
 
 | fichier | écrit par | coût |
 |---|---|---|
-| `index.html`, `view.css`, `view.js` | copiés de `shell/` par `collect.py` | 0 |
+| `index.html`, `view.css`, `dither-charts.js`, `view.js` | copiés de `shell/` par `collect.py` | 0 |
 | `assets/`, `docs.js` | `collect.py` : blobs avant / après des images et PDF modifiés, markdown, pour les aperçus | 0 |
 | `zed-theme.js` | `collect.py` : le thème Zed actif (sombre et clair), lu dans `~/.config/zed` | 0 |
 | `data.js`, `diffs.js` | `collect.py` (git, gh, gwm, TSV de review), écriture atomique | 0 |
@@ -171,6 +171,22 @@ d'abord et reste en secours hors ligne. Clic sur un numéro de ligne = Zed à la
 carte qui l'ouvre dans Zed à `ligne:colonne` (le LSP de Zed donne hover, définition, références : une page
 statique n'a pas de serveur de langage), `nvim`, `git grep`.
 
+- **Graphes** : tous tramés à la Monocode, par `shell/dither-charts.js`. C'est un module vanilla en Canvas 2D,
+  sans dépendance ni build, réutilisable tel quel (MIT, port de `dither.rs` / `charts.rs` au commit
+  `09d0443`, même logique que `viz.js` de Herdr). Sa vérification : `node shell/dither-charts.check.js`.
+  - Principe : cellules de 3 px, Bayer 4x4, couleurs lues dans les variables CSS de la page, en clair et en sombre.
+    Les graphes prennent la largeur de leur conteneur, avec une lueur douce dessous.
+  - Entrée : une seule fois par graphe, même s'il est reconstruit au refresh, et aucune sous `prefers-reduced-motion`.
+  - Où ils servent :
+    - couverture : barres empilées par fichier, cliquables ;
+    - diffstat de chaque fichier ;
+    - « bloquants » : écart signé à la passe précédente et tendance par passe ;
+    - CI : anneau ok / ko / en cours ;
+    - review : barres P0..P3 par passe (clic = la passe), puis carte fichier × passe des findings ;
+    - lecture : progression du sommaire ;
+    - plan : jauge d'avancement et part de chaque colonne du kanban.
+  - Garde anti-faux-propre : une passe dont un axe n'a pas tourné porte « ? » et le dit au survol et sous le
+    graphe ; sans aucun axe tourné, elle n'a pas de barre, jamais un zéro.
 - **Sommaire** fixe en checklist (étape courante, lues, en retard), compteurs live (fichiers, CI, review,
   réponses), progression de lecture ; sur mobile il se replie. Thème auto / clair / sombre.
 - **Mise en page** (motifs de `references/design-patterns.md`) : sommaire à gauche avec le récap à cocher des

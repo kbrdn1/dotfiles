@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SHELL = os.path.join(HERE, 'shell')
+SHELL_FILES = ('view.css', 'dither-charts.js', 'view.js')  # copiés dans chaque rapport ; dither-charts.js : graphes tramés
 ROOT = os.environ.get('ME_REPORTS_ROOT') or os.path.expanduser('~/Reports')
 DIFF_LINES_PER_FILE = 1500
 DIFF_TOTAL_BYTES = 1_500_000
@@ -339,11 +340,11 @@ def previews(repo, base_ref, files, out):
 def install_shell(out):
     os.makedirs(out, exist_ok=True)
     write_atomic(os.path.join(out, 'zed-theme.js'), 'window.__zedThemes=' + json.dumps(zed_themes(), ensure_ascii=False) + ';\n')
-    for name in ('view.css', 'view.js'):
+    for name in SHELL_FILES:
         shutil.copyfile(os.path.join(SHELL, name), os.path.join(out, name))
     # liens versionnés : un rechargement prend toujours la coquille à jour, jamais celle du cache
     html = open(os.path.join(SHELL, 'index.html'), encoding='utf-8').read()
-    for name in ('view.css', 'view.js'):
+    for name in SHELL_FILES:
         v = hashlib.sha1(open(os.path.join(SHELL, name), 'rb').read()).hexdigest()[:8]
         html = html.replace(f'"{name}"', f'"{name}?v={v}"')
     write_atomic(os.path.join(out, 'index.html'), html)
