@@ -19,7 +19,7 @@ import { spaces, panes, exec, readTextFile, settings, theme, layout, home, appHo
 import { ICON_MAP, catIcon } from "./icons.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
-import { skeleton } from "./skeleton.js";
+import { skeleton, readyFor } from "./skeleton.js";
 import { gitTopics, refreshOn } from "./bus.js";
 import { shouldRead } from "./reread.js";
 import { makeT } from "./i18n.js";
@@ -251,7 +251,9 @@ export default class Files extends View {
       } catch { this.paths = []; this.marks = {}; }
       finally {
         this.busy = false;
-        this.listed = true; // a first answer, even a failed one: no skeleton after it
+        // An answer for this place, even a failed one: no skeleton after it (readyFor). Not when the place
+        // moved during the read (it returned without listing): the read again below lists the new one.
+        if (location() === key) this.readFor = key;
         cx.notify();
         if (this.again) { this.again = false; this.refresh(cx); }
       }
@@ -368,14 +370,23 @@ export default class Files extends View {
     const typing = this.keyed && this.vim.insert;
     const onField = this.keyed && this.cur === "search"; // ctrl-n moved it to a row: the caret and INSERT say it types
     const q = this.query.toLowerCase();
+    // Listed for this place (readyFor): before the first listing, and after a change of thread, space or
+    // worktree until its own listing answers, the tree's shape, never the previous place's files nor its
+    // open file. ponytail: the place is the thread's folder, so a cd within the same repo shows the
+    // skeleton for one read too; key it by the repo's root if that flicker bites.
+    // No folder: nothing to read, and nothing of the previous place either (« no folder »).
+    const here = Boolean(folder());
+    const ready = readyFor(this.readFor, here ? loc : null);
+    const paths = ready && here ? this.paths : [];
+    const file = ready && here ? this.file : null;
     // Search files first (k climbs into it), then the rows: tf-list's children are flat[1..].
     const flat = [{ id: "search", field: true }];
     const list = q
-      ? this.paths
+      ? paths
           .filter((p) => p.toLowerCase().includes(q))
           .slice(0, 300)
           .map((p) => this.fileRow(t, p, p, 0, flat, null))
-      : this.rows(t, tree(this.paths), "", 0, [], flat);
+      : this.rows(t, tree(paths), "", 0, [], flat);
     this.flat = flat;
     if (this.reveal) {
       const at = flat.findIndex((x) => x.id === this.cur);
@@ -384,8 +395,8 @@ export default class Files extends View {
     }
     const side = v_flex()
       .h_full()
-      .when(Boolean(this.file), (el) => el.w(240).flex_none().border_l(1).border_dashed().border_color(t.border))
-      .when(!this.file, (el) => el.flex_1())
+      .when(Boolean(file), (el) => el.w(240).flex_none().border_l(1).border_dashed().border_color(t.border))
+      .when(!file, (el) => el.flex_1())
       .min_w(0)
       .child(
         h_flex()
@@ -427,11 +438,11 @@ export default class Files extends View {
             .overflow_y_scroll()
             .track_scroll(this.listScroll)
             .children(list)
-            // Until the first listing answers, a folder being there: file rows (24 px) as bars
-            // (skeleton.js), breathing, rather than « no files » before the answer. A later read keeps
-            // what it had (DATA-SYNC.md).
-            .when(this.paths.length === 0 && !this.listed && Boolean(folder()), (el) => el.child(((S) => S.pulse(S.list(8, { h: 24, icon: 13, lines: [0.45], px: 6, gap: 6 }).id("tf-list-sk")))(skeleton(t, m))))
-            .when(this.paths.length === 0 && (this.listed || !folder()), (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.note ? tr(`note.${this.note}`) : this.root ? tr("noFiles") : tr("noFolder")))),
+            // Not listed for this place yet: file rows (24 px) as bars (skeleton.js), breathing, rather than
+            // « no files » or the previous place's tree. A later read of the same place keeps what it had
+            // (DATA-SYNC.md).
+            .when(!ready, (el) => el.child(((S) => S.pulse(S.list(8, { h: 24, icon: 13, lines: [0.45], px: 6, gap: 6 }).id("tf-list-sk")))(skeleton(t, m))))
+            .when(ready && paths.length === 0, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(!here ? tr("noFolder") : this.note ? tr(`note.${this.note}`) : this.root ? tr("noFiles") : tr("noFolder")))),
         )
         .child(Scrollbar.vertical("tf-list").absolute().inset_0()));
     // The content fades in each time the tab is shown (the root keeps the keyboard), an opened file too.
@@ -442,12 +453,12 @@ export default class Files extends View {
       .size_full()
       .text_color(t.foreground)
       .child(enter(m, h_flex().size_full(), `tf-in-${this.showGen}`, { dy: 0 })
-      .when(Boolean(this.file), (el) =>
+      .when(Boolean(file), (el) =>
         el.child(
           enter(m, v_flex()
             .h_full()
             .flex_1()
-            .min_w(0), `tf-view-${this.file}`, { dy: 0 })
+            .min_w(0), `tf-view-${file}`, { dy: 0 })
             .child(
               h_flex()
                 .h(36)
@@ -457,7 +468,7 @@ export default class Files extends View {
                 .font_family("Monaspace Krypton")
                 .text_size(11)
                 .text_color(t.muted)
-                .child(div().flex_1().truncate().child(this.file.split("/").join("  ›  ")))
+                .child(div().flex_1().truncate().child(file.split("/").join("  ›  ")))
                 .child(
                   div()
                     .id("tf-close")
@@ -472,9 +483,12 @@ export default class Files extends View {
                     .child(svg(I("x")).size(13)),
                 ),
             )
+            // While the file is read (show() drops the previous one's code at once): code lines as bars
+            // (skeleton.js), breathing; the code fades in over them.
             .child(this.code
-              ? enter(m, v_flex().flex_1().min_h(0), `tf-code-${this.file}`, { dy: 0 }).child(Editor.new(this.code).flex_1().min_h(0))
-              : div().flex_1()),
+              ? enter(m, v_flex().flex_1().min_h(0), `tf-code-${file}`, { dy: 0 }).child(Editor.new(this.code).flex_1().min_h(0))
+              : ((S) => S.pulse(v_flex().id("tf-code-sk").flex_1().min_h(0).px(12).overflow_hidden()
+                .children([0.42, 0.7, 0.55, 0.8, 0.35, 0.62, 0.48, 0.74, 0.3, 0.58].map((w) => S.line(w, { h: 7, lh: 18 })))))(skeleton(t, m))),
         ),
       )
       .child(side));

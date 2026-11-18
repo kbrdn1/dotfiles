@@ -26,7 +26,7 @@ import { ICON_MAP } from "./icons.js";
 import { fileItems, sectionHead, action, zed, firstLine, palette, alpha, MONO, IMAGE, loadPreview, cleanPreviews, colorize, cleanTokens } from "./diffview.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
-import { skeleton } from "./skeleton.js";
+import { skeleton, readyFor } from "./skeleton.js";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { shouldRead } from "./reread.js";
 import { makeT } from "./i18n.js";
@@ -248,12 +248,13 @@ export default class Changes extends View {
     if (this.loading) { this.again = true; return; }
     if (!visible() || this.busy) return;
     const { cwd, on } = where();
-    if (!cwd) return;
+    const at = JSON.stringify({ cwd, on }); // the place this read answers for (render's loc)
     this.loading = true;
     this.readAt = Date.now(); // DATA-SYNC.md: back on the tab, read again only past 10 s
     cx.spawn(async (cx) => {
       try {
-        const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
+        // No folder at all: no repo, said as such (an answer, no skeleton left standing).
+        const top = cwd ? await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }) : { code: 1 };
         if (top.code !== 0) {
           if (this.root !== null) { this.root = null; this.branch = null; this.staged = []; this.changes = []; this.key = null; cx.notify(); }
           return;
@@ -297,9 +298,13 @@ export default class Changes extends View {
         cx.notify();
       } catch (e) {
         this.error = String(e);
+        // Failed on another place than the one shown: its error, never the previous repo's files.
+        if (this.readFor !== at) { this.root = undefined; this.branch = null; this.staged = []; this.changes = []; this.key = null; }
         cx.notify();
       } finally {
         this.loading = false;
+        // An answer for this place, unchanged or failed alike: its skeleton gives way (readyFor).
+        if (this.readFor !== at) { this.readFor = at; cx.notify(); }
         if (this.again) { this.again = false; this.key = null; this.refresh(cx); }
       }
     });
@@ -401,7 +406,8 @@ export default class Changes extends View {
 
   commit(cx, all) {
     const msg = this.message.trim();
-    if (!msg || this.busy || !this.root) return;
+    // Not ready (another place, not read yet): this.root is still the previous repo's.
+    if (!msg || this.busy || !this.root || !this.ready) return;
     if (!all && !this.staged.length) { this.error = tr("nothingStaged"); cx.notify(); return; }
     this.menu = false;
     // The staged files' latest content, and only theirs (deletions stage with add too).
@@ -424,7 +430,7 @@ export default class Changes extends View {
       cx.spawn(async () => { const pid = (await fs.readFile(g.pid, "utf8").catch(() => "")).trim(); if (/^\d+$/.test(pid)) await exec("kill", [pid]).catch(() => {}); });
       return;
     }
-    if (!this.staged.length || !this.root || this.on || this.busy) return;
+    if (!this.staged.length || !this.root || this.on || this.busy || !this.ready) return;
     const root = this.root, token = {};
     const dir = `${appHome()}/data/kt-diff`;
     const file = `${dir}/commit-prompt.txt`, pid = `${dir}/commit-gen.pid`;
@@ -462,7 +468,7 @@ export default class Changes extends View {
   // ✨ in the message field: off until something is staged; a spinner (click: cancel) while it runs.
   sparkle(t) {
     const running = Boolean(this.gen);
-    const ready = running || (this.staged.length > 0 && Boolean(this.root) && !this.on && !this.busy);
+    const ready = running || (this.ready && this.staged.length > 0 && Boolean(this.root) && !this.on && !this.busy);
     return h_flex().id("cg-generate").flex_none().size(26).items_center().justify_center().rounded_full()
       .text_color(running ? t.accent : ready ? t.muted : t.dim)
       .when(!ready, (el) => el.opacity(0.5))
@@ -566,19 +572,26 @@ export default class Changes extends View {
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
     const S = skeleton(t, m);
+    // Read for this place (readyFor): before the first read, and after a change of thread, space or
+    // worktree until its own read answers, the skeleton, never the previous repo's branch and files; and
+    // nothing acts on that repo meanwhile (commit, PR, the sections' actions). ponytail: the place is the
+    // thread's folder, so a cd within the same repo shows the skeleton for one read too; key it by the
+    // repo's root if that flicker bites.
+    const ready = (this.ready = readyFor(this.readFor, loc));
+    const staged = ready ? this.staged : [], changes = ready ? this.changes : [];
     this.keyed = this.handle.is_focused();
     const p = palette(t);
     const hasMsg = Boolean(this.message.trim());
-    const canCommit = hasMsg && this.staged.length > 0 && !this.busy;
-    const add = [...this.staged, ...this.changes].reduce((n, f) => n + f.add, 0);
-    const del = [...this.staged, ...this.changes].reduce((n, f) => n + f.del, 0);
+    const canCommit = hasMsg && staged.length > 0 && !this.busy;
+    const add = [...staged, ...changes].reduce((n, f) => n + f.add, 0);
+    const del = [...staged, ...changes].reduce((n, f) => n + f.del, 0);
     const card = () => v_flex().rounded(16).border(1).border_color(t.border).bg(t.background);
     const commitZone = card().flex_none().p(12).gap(8)
       .child(h_flex().h(22).gap(8).items_center()
         .child(svg(I("git-branch")).size(14).flex_none().text_color(t.muted))
-        // Not read yet: the branch as a bar (skeleton.js), breathing.
+        // Not read for this place yet: the branch as a bar (skeleton.js), breathing. No repo: a dash.
         .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground)
-          .child(this.branch === "" ? tr("detached") : this.branch ?? S.pulse(S.line(110, { h: 7, lh: 16 }).id("cg-branch-sk"))))
+          .child(!ready ? S.pulse(S.line(110, { h: 7, lh: 16 }).id("cg-branch-sk")) : this.branch === "" ? tr("detached") : this.branch ?? "—"))
         .child(div().flex_1())
         .when(add + del > 0, (el) => el.child(h_flex().flex_none().gap(6).font_family(MONO).text_size(11)
           // Their ids carry the repo: another repo's totals show at once, not rolling.
@@ -602,10 +615,10 @@ export default class Changes extends View {
       .when(this.menu, (el) => el.child(v_flex().p(4).gap(2).rounded(12).border(1).border_color(t.border).bg(t.popover)
         .child(h_flex().id("cg-commit-all").h(30).px(10).gap(8).items_center().rounded(8).text_size(12.5)
           .text_color(hasMsg ? t.foreground : t.dim)
-          .when(hasMsg && !this.busy, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.commit(cx, true)))
+          .when(hasMsg && ready && !this.busy, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.commit(cx, true)))
           .child(svg(I("plus")).size(13)).child(tr("stageAllCommit")))
         .child(div().px(10).pb(4).text_size(11).text_color(t.dim).child(tr("commitNote")))))
-      .child(h_flex().child(this.button(t, "cg-pr", tr("createPr"), I("git-pull-request"), false, Boolean(this.root) && !this.busy && !this.on,
+      .child(h_flex().child(this.button(t, "cg-pr", tr("createPr"), I("git-pull-request"), false, ready && Boolean(this.root) && !this.busy && !this.on,
         (cx) => this.git(tr("createPr"), [["gh", ["pr", "create", "--fill", "--web"], 60e3]], cx))))
       .when(Boolean(this.error), (el) => el.child(div().px(12).py(8).rounded(12).border(1).border_color(alpha(p.err, "4d")).bg(alpha(p.err, "1a"))
         .font_family(MONO).text_size(11.5).text_color(p.err).child(this.error)))
@@ -621,10 +634,9 @@ export default class Changes extends View {
         action(t, `${id}:refresh`, I("refresh-cw"), tr("refresh"), (cx) => { this.key = null; this.refresh(cx); }),
       ];
     };
-    // Not read yet: file rows (28 px, skeleton.js), breathing, in place of the « clean » line.
-    // A read that failed before the repo was known says so (no skeleton for ever).
+    // Not read for this place yet: file rows (28 px, skeleton.js), breathing, in place of the sections
+    // (no « Changes 0 » before the answer). A read that failed there says so (no skeleton for ever).
     const empty = this.root === null ? tr("noRepo") : this.root === undefined ? this.error : tr("clean");
-    const unread = this.root === undefined && !this.error;
     // cg-list's children, flat (6 px between the sections, 1 inside), the cursor's brought into
     // view once after it moved; the message is the cursor's first stop, above the list.
     const flat = [{ id: "message" }];
@@ -634,8 +646,8 @@ export default class Changes extends View {
       items.push(el);
     };
     // i18n: tech (Staged: git's word; Changes: the panel's name)
-    if (this.staged.length > 0) this.section(t, "staged", "Staged", this.staged, head("staged"), flat, put, false, cx);
-    this.section(t, "changes", "Changes", this.changes, head("changes"), flat, put, this.staged.length > 0, cx); // i18n: tech
+    if (staged.length > 0) this.section(t, "staged", "Staged", staged, head("staged"), flat, put, false, cx);
+    if (ready) this.section(t, "changes", "Changes", changes, head("changes"), flat, put, staged.length > 0, cx); // i18n: tech
     this.flat = flat;
     this.reveal = false;
     const list = card().flex_1().min_h(0)
@@ -643,7 +655,7 @@ export default class Changes extends View {
       .child(div().relative().flex_1().min_h(0)
         .child(v_flex().id("cg-list").size_full().overflow_y_scroll().track_scroll(this.listScroll).p(4).gap(1)
           .children(items)
-          .when(!this.staged.length && !this.changes.length, (el) => el.child(unread
+          .when(!staged.length && !changes.length, (el) => el.child(!ready
             ? S.pulse(S.list(4, { h: 28, icon: 14, lines: [0.5], px: 8, gap: 8, gap_y: 1 }).mt(5).id("cg-list-sk"))
             : div().mt(5).px(12).py(6).text_size(12.5).text_color(t.dim).child(empty))))
         .child(Scrollbar.vertical("cg-list").absolute().inset_0()));

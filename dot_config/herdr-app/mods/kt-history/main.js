@@ -25,7 +25,7 @@ import { ICON_MAP } from "./icons.js";
 import { fileItems, palette, alpha, action, MONO, IMAGE, loadPreview, cleanPreviews, viewImages, colorize, cleanTokens } from "./diffview.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
-import { skeleton } from "./skeleton.js";
+import { skeleton, readyFor } from "./skeleton.js";
 import { gitTopics, refreshOn } from "./bus.js";
 import { makeT, date } from "./i18n.js";
 import strings from "./strings.js";
@@ -329,12 +329,13 @@ export default class History extends View {
     if (this.loading) { this.again = true; return; }
     if (!visible()) return;
     const { cwd, on } = where();
-    if (!cwd) return;
+    const at = JSON.stringify({ cwd, on }); // the place this read answers for (render's loc)
     this.loading = true;
     this.readAt = Date.now(); // DATA-SYNC.md: back on the tab, read again only past 10 s
     cx.spawn(async (cx) => {
       try {
-        const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
+        // No folder at all: no repo, said as such (an answer, no skeleton left standing).
+        const top = cwd ? await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }) : { code: 1 };
         if (top.code !== 0) {
           // Not a repo (a thread on ~): forget the key and the branch too, as kt-diff does, or coming back
           // to the same repo would find the same key and keep « pas de dépôt git ici ».
@@ -369,9 +370,15 @@ export default class History extends View {
         this.rows = graph(this.commits);
         this.activity = perDay(act?.code === 0 ? act.stdout.split("\n").filter(Boolean).map(Number) : [], win.index);
         cx.notify();
-      } catch (e) { this.error = String(e); cx.notify(); }
-      finally {
+      } catch (e) {
+        this.error = String(e);
+        // Failed on another place than the one shown: its error, never the previous repo's commits.
+        if (this.readFor !== at) { this.root = undefined; this.key = null; this.branch = null; this.commits = []; this.rows = []; this.activity = null; this.sel = null; this.detail = null; }
+        cx.notify();
+      } finally {
         this.loading = false;
+        // An answer for this place, unchanged or failed alike: its skeleton gives way (readyFor).
+        if (this.readFor !== at) { this.readFor = at; cx.notify(); }
         if (this.again) { this.again = false; this.refresh(cx, true); }
       }
     });
@@ -561,12 +568,17 @@ export default class History extends View {
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
     const S = (this.S = skeleton(t, m)); // details() too
+    // Read for this place (readyFor): before the first read, and after a change of thread, space or
+    // worktree until its own read answers, the skeleton, never the previous repo's branch, curve, commits
+    // or open commit. ponytail: the place is the thread's folder, so a cd within the same repo shows the
+    // skeleton for one read too; key it by the repo's root if that flicker bites.
+    const ready = readyFor(this.readFor, loc);
     this.keyed = this.handle.is_focused();
-    if (!this.detail) this.zone = "commits";
+    if (!ready || !this.detail) this.zone = "commits";
     const colors = this.laneColors(t);
     const lanes = Math.min(MAX_LANES, Math.max(1, ...this.rows.map((r) => r.width)));
     const gw = 12 + lanes * LANE;
-    const n = this.commits.length;
+    const n = ready ? this.commits.length : 0;
     // The cursor's commit brought into view once after it moved, only when it left the rows last
     // drawn. ponytail: "drawn" may count a half-shown row; ask the list for its visible range if that bites.
     if (this.reveal && this.zone === "commits") {
@@ -576,7 +588,7 @@ export default class History extends View {
     }
     // DESIGN-REFERENCE.md: the project's pixel band behind the header, inside its border (width less 2,
     // radius 16 less 1), measured on the card itself.
-    const reg = this.root && (shared("kt.projects") ?? []).filter((x) => !x.machine && x.folder && !this.on && (this.root === x.folder || this.root.startsWith(`${x.folder}/`)))
+    const reg = ready && this.root && (shared("kt.projects") ?? []).filter((x) => !x.machine && x.folder && !this.on && (this.root === x.folder || this.root.startsWith(`${x.folder}/`)))
       .sort((a, b) => b.folder.length - a.folder.length)[0];
     const tint = !reg?.color ? t.accent : reg.color.startsWith("#") ? reg.color : t[reg.color] ?? t.accent;
     // Under the branch, the commits per day over DAYS days (viz.js' trend) in the band's tint, the period
@@ -584,7 +596,11 @@ export default class History extends View {
     // (reduced motion: at once). No repo: nothing (the list says it). No commit in the window: said in
     // words at the same height (a flat line would read as steady work).
     const total = this.activity?.reduce((s, v) => s + v, 0) ?? 0;
-    const activity = !this.activity ? null : div().px(14).pb(12).child(total
+    // Not read for this place yet: the period's line and the curve (56 px) as bars, the 76 px both take,
+    // so the header doesn't grow when they come.
+    const activity = !ready ? div().px(14).pb(12).child(S.pulse(v_flex().id("hi-trend-sk").gap(6)
+      .child(S.line(0.4, { h: 6, lh: 14 })).child(S.line(null, { h: 56, lh: 56, r: 4 }))))
+      : !this.activity ? null : div().px(14).pb(12).child(total
       ? v_flex().gap(6)
         .child(div().h(14).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(tr("activity", { n: total, days: DAYS })))
         .child(viz(t, m).trend(this.activity, { color: tint, id: `hi-trend:${this.on ?? ""}:${this.root}` }))
@@ -594,19 +610,19 @@ export default class History extends View {
       .when(Boolean(band), (el) => el.child(band))
       .child(h_flex().h(40).px(14).gap(8).items_center()
         .child(svg(I("git-branch")).size(14).flex_none().text_color(t.muted))
-        // Not read yet: the branch as a bar (skeleton.js), breathing.
+        // Not read for this place yet: the branch as a bar (skeleton.js), breathing. No repo: a dash.
         .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground)
-          .child(this.branch === "" ? tr("detached") : this.branch ?? S.pulse(S.line(110, { h: 7, lh: 16 }).id("hi-branch-sk"))))
+          .child(!ready ? S.pulse(S.line(110, { h: 7, lh: 16 }).id("hi-branch-sk")) : this.branch === "" ? tr("detached") : this.branch ?? "—"))
         .child(div().flex_1())
         .when(this.keyed, (el) => el.child(modePill(t, this.vim)))
         .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(n ? `${n}${n >= COUNT ? "+" : ""} commits` : "")) // i18n: tech
         .child(action(t, "hi-refresh", I("refresh-cw"), tr("refresh"), (cx) => this.refresh(cx, true))))
       .when(Boolean(activity), (el) => el.child(activity));
-    // Not read yet: commit rows (ROW px: graph dot, subject, author · time) as bars (skeleton.js), breathing.
-    const unread = this.root === undefined && !this.error;
+    // Not read for this place yet: commit rows (ROW px: graph dot, subject, author · time) as bars
+    // (skeleton.js), breathing.
     const empty = this.root === null ? tr("noRepo") : this.error ?? tr("noCommits");
     const list = v_flex().flex_1().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background).p(4)
-      .when(!n, (el) => el.child(unread ? S.pulse(S.list(6, { h: ROW, icon: 10, round: true, lines: [0.6, 0.3] }).id("hi-list-sk"))
+      .when(!n, (el) => el.child(!ready ? S.pulse(S.list(6, { h: ROW, icon: 10, round: true, lines: [0.6, 0.3] }).id("hi-list-sk"))
         : div().p(12).text_size(13).text_color(t.dim).child(empty)))
       .when(n > 0, (el) => el.child(div().flex_1().min_h(0).relative()
         .child(v_virtual_list("hi-list", n, ROW, (i) => this.commits[i].hash,
@@ -626,6 +642,6 @@ export default class History extends View {
       .child(enter(m, v_flex().size_full().gap(4), `hi-in-${this.showGen}`, { dy: 0 })
         .child(head)
         .child(list)
-        .when(Boolean(this.detail), (el) => el.child(this.details(t, cx))));
+        .when(ready && Boolean(this.detail), (el) => el.child(this.details(t, cx))));
   }
 }
