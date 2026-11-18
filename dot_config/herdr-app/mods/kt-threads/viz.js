@@ -1,5 +1,6 @@
 // viz.js: Monocode's dithered visuals (its /visualize SDK) for the kt-* / kbrdn-* mods: gauge, donut,
-// progress, chart (bar, line, area), heatmap, stat with its trend sparkline, swatch, marker.
+// progress, chart (bar, line, area), heatmap, calendar (#45: a year in plain squares), stat with its
+// trend sparkline, swatch, marker.
 //
 // Ported from Monocode, crates/monocode-gpui/src/visuals/dither.rs and charts.rs, at commit
 // 09d04436babb39ad72198cdf22f735067027fc04 (github.com/hardbeat920/monocode). Its licence:
@@ -40,6 +41,7 @@
 //           V.steps([{ label: "Issue", state: "done", group: "Préparation" }, …], { id: "kf-steps" })   // a tier per group
 //           V.chart("bar" | "line" | "area", [{ label, values: [..], color }], { labels, width, height })
 //           V.heatmap(values /* rows of numbers */, { rows: ["Lun", …], columns: ["nov", …], width })
+//           V.calendar(quartileLevels(perDay), { start: "2026-01-01", months: ["janv.", …], weekdays: ["Lun", "Mer", "Ven"], legend: ["Moins", "Plus"] })
 //           V.stat("Coût du mois", "$412", { detail: "+12.4% vs oct.", trend: [..], better: "lower" })
 //           viz(theme(), m, { roll })   // roll.js handed in: the gauge's, progress' and stat's figures roll
 // Colors: Monocode's tokens (ink, muted, faint, accent, positive, negative, warning, series1..6),
@@ -593,6 +595,45 @@ export function heatmapGeometry(values, width, cell = CELL) {
   return { rects: [...tracks, ...ink], height: values.length * PITCH * cell, pitch: PITCH * cell, skip, square: SQUARE * cell, cell };
 }
 
+/** Values to levels 0..4: 0 for none, then the non-zero values' quartiles, as GitHub does. With `split`
+ * >= 0, each side of that index has its own quartiles (two sources that don't count alike: a step in
+ * the data isn't a rise in activity). null stays null (outside the range). */
+export function quartileLevels(values, split = -1) {
+  const cut = split >= 0 ? split : values.length;
+  const side = (a, b) => {
+    const nz = values.slice(a, b).filter((v) => v > 0).sort((x, y) => x - y);
+    return nz.length ? [0.25, 0.5, 0.75].map((p) => nz[Math.max(0, Math.ceil(p * nz.length) - 1)]) : null;
+  };
+  const q = [side(0, cut), side(cut, values.length)];
+  return values.map((v, i) => {
+    if (v == null) return null;
+    if (!(v > 0)) return 0;
+    const [q1, q2, q3] = q[i < cut ? 0 : 1];
+    return v <= q1 ? 1 : v <= q2 ? 2 : v <= q3 ? 3 : 4;
+  });
+}
+
+/** A calendar (GitHub's contributions): one square per day of `levels` (0..4, null outside the range),
+ * Monday on top, a column per week from day 0's (`offset`: its weekday, Monday 0). The pitch follows the
+ * width, CAL_PITCH px at most and at least; narrower, the latest weeks that fit. ONE rectangle per day,
+ * each level one path: a year is 371 rectangles at most, at any width. */
+export const CAL_PITCH = [9, 16];
+export function calendarGeometry(levels, offset, width) {
+  const all = Math.max(1, Math.ceil((offset + levels.length) / 7));
+  const pitch = clamp(Math.floor(width / all), CAL_PITCH[0], CAL_PITCH[1]);
+  const gap = pitch >= 12 ? 3 : 2;
+  const skip = Math.max(0, all - Math.max(1, Math.floor((width + gap) / pitch)));
+  const sq = pitch - gap;
+  const rects = [];
+  levels.forEach((lv, i) => {
+    const col = Math.floor((offset + i) / 7) - skip;
+    if (lv == null || col < 0) return;
+    rects.push([col * pitch, ((offset + i) % 7) * pitch, sq, sq, clamp(Math.round(lv), 0, 4)]);
+  });
+  const cols = all - skip;
+  return { rects, pitch, gap, sq, cols, skip, width: cols * pitch - gap, height: 7 * pitch - gap };
+}
+
 const gaugeGeometry = (ratio, size, cell) => memo(`g|${ratio}|${size}|${cell}`, () => capped((c) => {
   const g = gaugeInk(ratio, size, c);
   return Object.assign(g, { rects: runs(g.cols, g.rows, g.ink, c), cell: c });
@@ -982,6 +1023,75 @@ export function viz(t, m = null, { roll } = {}) {
     ]);
   }
 
+  // A year as GitHub draws it, in plain squares: `levels` per day (0..4, null outside the range;
+  // quartileLevels makes them) from `start` ("YYYY-MM-DD", any weekday). The caller says the words:
+  // `months` (12 short names) over the week where each begins, `weekdays` (3: Monday, Wednesday,
+  // Friday) beside their rows, `legend` ([less, more]) around the five levels under it. `mark`: a day
+  // index where two sources meet, a step line before it (its tooltip `markTip`). `tip(from, to)`: a
+  // week's tooltip, from the indexes of its first and last day.
+  const CAL_TONES = light ? [0.35, 0.55, 0.8, 1] : [0.3, 0.5, 0.75, 1];
+  function calendar(levels, { start, months = [], weekdays = [], legend, mark, markTip, tip, color: token = "accent", width, id = "viz-cal" } = {}) {
+    const [y, mo, d] = String(start ?? "").split("-").map(Number);
+    if (!levels?.length || !d) return empty(t, width, 120);
+    const offset = (new Date(y, mo - 1, d, 12).getDay() + 6) % 7;
+    const box = { gutter: weekdays.length ? 30 : 0, top: months.length ? 16 : 0, foot: legend ? 26 : 0 };
+    return fluid(id, width, box.top + 7 * 13 + box.foot, (w) => calendarAt(levels, { y, mo, d, offset, months, weekdays, legend, mark, markTip, tip, token, w, id, ...box }));
+  }
+
+  function calendarAt(levels, { y, mo, d, offset, months, weekdays, legend, mark, markTip, tip, token, w, id, gutter, top, foot }) {
+    const gw = Math.max(1, w - gutter);
+    const g = memo(`cal|${levels.map((v) => v ?? "-").join("")}|${y}-${mo}-${d}|${gw}`, () => {
+      const c = calendarGeometry(levels, offset, gw);
+      c.paths = rectPath(c.rects);
+      // The 1st of each month in range (and the range's first day), at its week's column; the first
+      // one goes when the next is under 3 weeks away (a few days of the month before, unlabelled).
+      const starts = [];
+      for (let i = 0; i < levels.length; i++) {
+        const day = new Date(y, mo - 1, d + i, 12);
+        const col = Math.floor((offset + i) / 7) - c.skip;
+        if (col >= 0 && (day.getDate() === 1 || !starts.length)) starts.push([col, day.getMonth()]);
+      }
+      if (starts.length > 1 && starts[1][0] - starts[0][0] < 3) starts.shift();
+      c.months = starts;
+      return c;
+    });
+    const tint = color(t, token);
+    const fill = [content(0.07), ...CAL_TONES.map((a) => faint(tint, a))];
+    const tiles = div().relative().w(g.width).h(g.height).children([...g.paths].map(([k, p]) => paint(p, fill[k])));
+    const kids = [
+      ...g.months.map(([col, k]) => label(months[k] ?? "", gutter + col * g.pitch, top / 2, { ...axis, w: 60 })),
+      ...weekdays.slice(0, 3).map((l, k) => label(l, 0, top + 2 * k * g.pitch + g.sq / 2, { ...axis, w: gutter })),
+      div().absolute().left(gutter).top(top).child(reveal(m, id, g.width, g.height, tiles)),
+    ];
+    // Where two sources meet: the line between the days before and after, a step in a week cut there.
+    if (mark != null && mark > 0 && mark < levels.length) {
+      const col = Math.floor((offset + mark) / 7) - g.skip;
+      const row = (offset + mark) % 7;
+      const x = (c) => gutter + c * g.pitch - Math.ceil(g.gap / 2);
+      const ink = content(0.45);
+      if (col >= 0) {
+        const seg = (k, l, tp, ww, h) => div().id(`${id}-mark${k}`).absolute().left(l).top(tp).w(ww).h(h).bg(ink).when(Boolean(markTip), (e) => e.tooltip(markTip));
+        kids.push(seg(0, x(col), top + row * g.pitch - Math.ceil(g.gap / 2), 1, (7 - row) * g.pitch));
+        if (row > 0) {
+          kids.push(seg(1, x(col), top + row * g.pitch - Math.ceil(g.gap / 2), g.pitch + 1, 1));
+          kids.push(seg(2, x(col + 1), top - Math.ceil(g.gap / 2), 1, row * g.pitch));
+        }
+      }
+    }
+    // A tooltip per week (a square each would be 371 elements): its first and last day in range.
+    if (tip) for (let c = 0; c < g.cols; c++) {
+      const from = Math.max(0, (c + g.skip) * 7 - offset), to = Math.min(levels.length - 1, (c + g.skip) * 7 - offset + 6);
+      if (from <= to) kids.push(div().id(`${id}-w${c}`).absolute().left(gutter + c * g.pitch).top(top).w(g.pitch).h(g.height).tooltip(tip(from, to)));
+    }
+    if (legend) {
+      const s = Math.min(g.sq, 10);
+      kids.push(div().absolute().left(gutter).top(top + g.height + 10).w(g.width).flex().justify_end().items_center().gap(4)
+        .text_size(10).font_family(MONO).text_color(content(0.45))
+        .children([div().mr(2).child(String(legend[0] ?? "")), ...fill.map((c) => div().size(s).flex_none().bg(c)), div().ml(2).child(String(legend[1] ?? ""))]));
+    }
+    return div().relative().w(w).h(top + g.height + foot).flex_none().children(kids);
+  }
+
   // `snap`: with roll, the value's last characters that change at once (a cost's cents: 2).
   function stat(name, value, { detail, delta, trend: series, better = "higher", color: token = "accent", width, snap = 0, id = `viz-s-${slug(name)}` } = {}) {
     const split = delta == null ? splitDelta(detail) : [String(delta), detail ?? ""];
@@ -999,5 +1109,5 @@ export function viz(t, m = null, { roll } = {}) {
     ]);
   }
 
-  return { gauge, donut, progress, steps, chart, trend, heatmap, stat, swatch, color: (name) => color(t, name) };
+  return { gauge, donut, progress, steps, chart, trend, heatmap, calendar, stat, swatch, color: (name) => color(t, name) };
 }

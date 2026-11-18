@@ -474,4 +474,57 @@ const fdrawn = V.viz(t, frame(fsm, false)).steps(long, { id: "fm" });
 const fids = []; (function walk(n) { if (n?.props?.id) fids.push(n.props.id[0]); n?.kids?.forEach(walk); })(fdrawn);
 assert.deepEqual([texts(fdrawn), fids.filter((i) => i === "fm~w").length, new Set(fids).size], [["S10", "10 / 24"], 1, fids.length], "measured: folded, one wrapper, no id twice");
 
+// #45, the calendar: levels by quartiles of the non-zero values (each side of a split its own); one
+// square per day, Monday on top, a column per week; a year under MAX_RECTS at any width (the dithered
+// heatmap was 1 735 rectangles at 800 px); narrow, the latest weeks; months, weekdays, the legend's five
+// levels; the step line where two sources meet; a tooltip per week; drawn in from the left once.
+assert.deepEqual(V.quartileLevels([0, 1, 2, 3, 4, 5, 6, 7, 8, null]), [0, 1, 1, 2, 2, 3, 3, 4, 4, null]);
+assert.deepEqual(V.quartileLevels([1, 1, 1, 1, 40, 80, 120, 160], 4), [1, 1, 1, 1, 1, 2, 3, 4], "each side of the split its own quartiles");
+assert.deepEqual(V.quartileLevels([0, 0]), [0, 0]);
+const year = Array.from({ length: 365 }, (_, i) => (i % 11 === 0 ? 0 : 1 + ((i * 37) % 23)));
+const lv = V.quartileLevels(year);
+const cg = V.calendarGeometry(lv, 3, 770); // 2026-01-01 is a Thursday
+assert.equal(cg.rects.length, 365, "one rectangle per day");
+assert.deepEqual(cg.rects[0].slice(0, 2), [0, 3 * cg.pitch], "day 0, a Thursday: column 0, row 3");
+assert.deepEqual(cg.rects[4].slice(0, 2), [cg.pitch, 0], "day 4, a Monday: the next column, on top");
+assert.equal(cg.cols, 53);
+assert.ok(cg.pitch >= 9 && cg.pitch <= 16 && cg.width <= 770);
+assert.deepEqual([...new Set(cg.rects.map((r) => r[4]))].sort(), [0, 1, 2, 3, 4]);
+const narrow = V.calendarGeometry(lv, 3, 300);
+assert.ok(narrow.skip > 0 && narrow.pitch === 9 && narrow.width <= 300, "narrow: the smallest squares, the latest weeks");
+assert.deepEqual(narrow.rects.at(-1).slice(0, 2), [(narrow.cols - 1) * 9, ((3 + 364) % 7) * 9], "the last day stays");
+assert.equal(V.calendarGeometry([null, 2, null], 0, 300).rects.length, 1, "outside the range: no square");
+const MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+const tipsAsked = [];
+const calOpts = (o = {}) => ({ start: "2026-01-01", months: MONTHS, weekdays: ["Lun", "Mer", "Ven"], legend: ["Moins", "Plus"], mark: 291, markTip: "avant : history", tip: (a, b) => (tipsAsked.push([a, b]), `${a}-${b}`), ...o });
+const cal = V.viz(t, frame(motionState(), false)).calendar(lv, calOpts({ width: 800 }));
+const calTexts = texts(cal);
+assert.deepEqual(calTexts.filter((x) => MONTHS.includes(x)), MONTHS, "each month once, in order");
+assert.deepEqual(calTexts.filter((x) => ["Lun", "Mer", "Ven", "Moins", "Plus"].includes(x)), ["Lun", "Mer", "Ven", "Moins", "Plus"]);
+const calPaints = []; (function walk(n) { if (n?.kind === "paint") calPaints.push(n); n?.kids?.forEach(walk); })(cal);
+assert.equal(calPaints.length, 5, "one path per level");
+assert.equal(calPaints.reduce((s, p) => s + p.path.moves, 0), 365);
+const calIds = []; (function walk(n) { if (n?.props?.id) calIds.push(n.props.id[0]); n?.kids?.forEach(walk); })(cal);
+// Day 291 (2026-10-19, a Monday): one line before its week, no step.
+assert.deepEqual(calIds.filter((i) => i.includes("-mark")), ["viz-cal-mark0"]);
+const midweek = V.viz(t, null).calendar(lv, calOpts({ width: 800, mark: 298 + 2 }));
+const midIds = []; (function walk(n) { if (n?.props?.id) midIds.push(n.props.id[0]); n?.kids?.forEach(walk); })(midweek);
+assert.equal(midIds.filter((i) => i.includes("-mark")).length, 3, "cut mid-week: a step");
+assert.equal(calIds.filter((i) => /-w\d+$/.test(i)).length, 53, "a tooltip per week");
+assert.deepEqual([tipsAsked[0], tipsAsked.at(-1)], [[0, 3], [361, 364]], "a week's first and last day in range");
+assert.ok(find(cal, (n) => n.tr?.includes("width")), "drawn in from the left");
+assert.equal(find(V.viz(t, frame(motionState(), true)).calendar(lv, calOpts({ width: 800 })), (n) => n.tr?.includes("width")), null, "reduced motion: at once");
+assert.ok(said(one.calendar([], { start: "2026-01-01" })));
+assert.ok(count(cal) < 120, `calendar: ${count(cal)} elements`);
+// Its budget at any width, and without `width` once measured.
+for (const px of [320, 800, 1904, 3000]) {
+  const cm = motionState();
+  const first = V.viz(t, frame(cm, false)).calendar(lv, calOpts({ id: `cal-${px}` }));
+  find(first, (n) => n.on?.on_size_change && n.props.w_full).on.on_size_change({ width: px, height: 10 }, { notify() {} });
+  const r = rectsOf(V.viz(t, frame(cm, false)).calendar(lv, calOpts({ id: `cal-${px}` })));
+  assert.ok(r > 0 && r <= 371 && r <= V.MAX_RECTS, `calendar at ${px}: ${r} rects`);
+}
+const dithered = V.heatmapGeometry(Array.from({ length: 7 }, (_, r) => Array.from({ length: 53 }, (_, c) => year[c * 7 + r] ?? null)), 770).rects.length;
+console.log(`calendar: ${calPaints.reduce((s, p) => s + p.path.moves, 0)} rects, ${count(cal)} elements at 800 px (the dithered heatmap: ${dithered} rects)`);
+
 console.log("viz.js: ok");
