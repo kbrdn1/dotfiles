@@ -162,6 +162,18 @@
   },
   "model": "opus",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /Users/kbrdn1/.claude/hooks/no-shell-write.ts",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "Notification": [
       {
         "matcher": "",

@@ -1,0 +1,6 @@
+# Cibles générées que le shell a le droit d'écrire (un glob par ligne, * = un segment, ** = tout).
+# Le hook no-shell-write.ts refuse toute autre écriture de fichier par une commande shell.
+# Copie glass du layout, régénérée par jq depuis le layout principal (data/orchestrator).
+**/.config/herdr-app/layouts/*-glass.json
+# Graphe graphify, écrit par l'outil
+**/graphify-out/**
