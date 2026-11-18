@@ -211,7 +211,8 @@ WT=$(gwm path <slug>)
 gwm agents attach <slug> "$CLAUDE_CODE_SESSION_ID"   # rattache cette session au worktree (gwm, pane Agents)
 ```
 
-- **PR en review** : son worktree (sinon le créer comme à l'étape 2), puis `/me:loop:claude-review-pr`,
+- **PR en review** : son worktree (sinon le créer comme à l'étape 2), puis `/me:report` (son `notes.json` s'il
+  manque : sans lui, la page de la branche reste à « NOTES absentes »), `/me:loop:claude-review-pr`,
   `/me:loop:ci-until-green` et `/me:merge` quand tout est vert, chaque commande préfixée par `cd "$WT" &&`.
 - **Worktree sans PR** : reprendre dans le worktree (issue, `git log <base>..HEAD`, rapport), finir
   l'implémentation, `/me:report`, PR depuis le template, puis comme une PR en review.
