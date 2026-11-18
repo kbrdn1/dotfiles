@@ -249,3 +249,29 @@ export function ciLine(pushed) {
 
 /** What's running, in one line: each current step's label up to its first " · ". */
 export const runningLine = (steps) => steps.filter((s) => s.state === "current").map((s) => String(s.label ?? s.id).split(" · ")[0]).join(" · ");
+
+// ---------- the session's todos (herdr-bridge's, under Implémentation) ----------
+
+/**
+ * The todos as Flow lists them (herdr-bridge's `todos`: { done, total, items: its first 20, [{ content,
+ * status: "completed" | "in_progress" | "pending", activeForm? }] }), each as { key (its text, a repeat
+ * numbered: the bridge keeps no id), text, active (its activeForm, else null), state: "done" | "current"
+ * | "todo" }: { open, done, unread, n, total }. Up to `max` items: all of them in the session's order in
+ * `open`, `done` empty. Past it: the running and pending ones in `open` (that order), the done ones in
+ * `done` (folded behind « +N »). unread: past the bridge's 20, their state unknown. n / total: done and
+ * all, the bridge's counts.
+ */
+export function taskList(todos, max = 12) {
+  const seen = new Map();
+  const rows = (Array.isArray(todos?.items) ? todos.items : []).filter(Boolean).map((x) => {
+    const text = String(x.content ?? ""), k = seen.get(text) ?? 0;
+    seen.set(text, k + 1);
+    return { key: k ? `${text}#${k}` : text, text, active: x.activeForm ? String(x.activeForm) : null,
+      state: x.status === "completed" ? "done" : x.status === "in_progress" ? "current" : "todo" };
+  });
+  const total = Math.max(rows.length, Number(todos?.total) || 0);
+  const n = Math.max(rows.filter((r) => r.state === "done").length, Number(todos?.done) || 0);
+  const unread = total - rows.length;
+  if (rows.length <= max) return { open: rows, done: [], unread, n, total };
+  return { open: rows.filter((r) => r.state !== "done"), done: rows.filter((r) => r.state === "done"), unread, n, total };
+}

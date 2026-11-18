@@ -10,13 +10,20 @@
 // folded to one line, each step one 28 px row with its details as pills.
 // Read-only. Follows the cache folder with watchFolder (10 s fallback), only
 // while shown; loop animations only on the running step: its row's pulse and its segment's.
+// Implémentation unfolds like Review (#36), open while it runs: « Maintenant », what its agent runs now
+// (the sidebar's live line « ↳ … », its running sub-agents and their k / n), then its todos, a row a task
+// in the session's order (past 12: the open ones, then « +N faites »), their n / total on the step's row,
+// the running one breathing while its agent works only. No todo and nothing running: no fold. All from
+// its agent's herdr-bridge json (<terminal>.json) read as the sidebar's focus card reads it (threads-io.js
+// readLive and threads-model.js lineOf / shownAgents, byte-identical copies), when that file changes, at
+// most every 3 s as the sidebar.
 // Keys (vim.js; kt-keys lists them, group "panel"): ctrl-b l (pane.go, "focus") or
 // `kt-flow.key:<keys>` gives Flow the keyboard: a cursor (an accent ring on the ink), first on the
 // header of the phase running (else the first unfolded one). j k gg G ctrl-d ctrl-u move over
 // phases, steps, Review's passes and their findings; h folds (a phase, Review, a pass, a finding;
 // on a row that doesn't fold: folds its parent and goes there), l unfolds; enter / o as a click
-// (a phase, Review, a pass, a finding; the PR step opens the PR); O opens a finding in Zed; y copies
-// (a finding's place, a pass's sha, a step's label); r reads again; esc gives the keyboard back to
+// (a phase, Review, the tasks, « +N faites », a pass, a finding; the PR step opens the PR); O opens a
+// finding in Zed; y copies (a finding's place, a pass's sha, a task's text, a step's label); r reads again; esc gives the keyboard back to
 // the terminal; [ ] the panel's previous / next tab; ? the keys. While Flow has the keyboard it
 // keeps following the same terminal.
 // CI unfolds like Review: the PR's pushed commits (its last 10, read by `gh` on unfold, on r and
@@ -31,12 +38,16 @@ import { v_flex, h_flex, ScrollHandle, Scrollbar } from "gpui-base";
 import { focused, panes, spaces, theme, layout, settings, readTextFile, watchFolder, exec, home, nextCommand, checking, run, notify, openOverlay, shared } from "herdr";
 import * as fs from "fs/promises";
 import { nameOf, speak, workflowName, issueOf, flowBranch, phasesOf, details, findPlans, passOf, decisionOf, locOf,
-  checkState, checkMs, tally, checkOrder, duration, runIdOf, logTail, ciLine } from "./steps.js";
+  checkState, checkMs, tally, checkOrder, duration, runIdOf, logTail, ciLine, taskList } from "./steps.js";
 import { makeT, relative } from "./i18n.js";
 import strings from "./strings.js";
 import { Vim, keysOf, step } from "./vim.js";
-import { motionState, frame, enter, collapse } from "./motion.js";
+import { motionState, frame, enter, collapse, stagger } from "./motion.js";
 import { refreshOn } from "./bus.js";
+// kt-threads' reads (threads-io.js with threads-model.js, pr-pick.js, thread-filter.js: byte-identical
+// copies): the followed agent's herdr-bridge json, for its todos, its live line and its sub-agents.
+import { readLive } from "./threads-io.js";
+import { lineOf, shownAgents, isAlive } from "./threads-model.js";
 // Monocode's dithered visuals (kt-keys' viz.js) and the header's pixel band (dither.js), byte-identical copies.
 import { viz } from "./viz.js";
 // kt-keys' roll.js (a byte-identical copy): viz's figures and the CI pill's count roll to their new digits.
@@ -125,6 +136,12 @@ export default class Flow extends View {
     this.ciRuns = {}; // "owner/repo@sha" -> { runs, done } | { error }: a done one is never read again
     this.openCommit = null; // the CI commit unfolded into its checks
     this.ciLog = null; // a failed check's log extract: { key, loading } | { key, lines } | { key, error }
+    this.bridge = null; // { term, b: { todos, action, answer, agents }, key }: that terminal's herdr-bridge (readBridge)
+    this.bridgeAt = 0; // its last read: at most one every 3 s, as the sidebar
+    this.list = null; // taskList() of the followed terminal's todos, this render's; null without any
+    this.now = null; // what its agent runs now, this render's: { line, agents (alive), done, total }; null: nothing
+    this.implOpen = undefined; // Implémentation unfolded (its activity and tasks; default: while it runs)
+    this.doneOpen = false; // past 12 tasks, the done ones unfolded
     this.logScroll = ScrollHandle.new(); // the extract opens on its last lines
     this.handle = cx.focus_handle();
     this.vim = new Vim();
@@ -146,6 +163,9 @@ export default class Flow extends View {
         try { changed = await watchFolder(CACHE()); } catch { return; } // the 10 s timer carries on
         const mine = this.term && `/${this.term}.flow.json`;
         if (changed.some((p) => p === CACHE() || (mine && p.endsWith(mine)))) this.read(cx);
+        // herdr-bridge rewrites its file on each tool call: only it is read again then.
+        const bridge = this.term && `/${this.term}.json`;
+        if (bridge && changed.some((p) => p.endsWith(bridge))) this.readBridge(cx, this.term);
       }
     });
     cx.timer.every(10000, (cx) => this.read(cx));
@@ -208,6 +228,11 @@ export default class Flow extends View {
       if (folded) return;
       for (const s of p.steps) {
         out.push({ id: `s:${s.id}`, kind: "step", s, phase: p.id, card });
+        if (this.isImplOpen(s) && this.list) {
+          for (const x of this.list.open) out.push({ id: `task:${x.key}`, kind: "task", x, card });
+          if (this.list.done.length) out.push({ id: "tasks:done", kind: "tasks-done", card });
+          if (this.list.done.length && this.doneOpen) for (const x of this.list.done) out.push({ id: `task:${x.key}`, kind: "task", x, done: true, card });
+        }
         if (s.id === "ci" && this.isCiOpen(s)) {
           for (const pc of this.pushed()) {
             out.push({ id: `ci:${pc.sha}`, kind: "commit", pc, card });
@@ -234,7 +259,7 @@ export default class Flow extends View {
     const i = flat.findIndex((x) => x.id === this.cur);
     const x = flat[i];
     const to = (id) => { this.cur = id; this.reveal = true; };
-    if (this.ciAct(a, x, cx, to)) return true;
+    if (this.ciAct(a, x, cx, to) || this.tasksAct(a, x, cx, to)) return true;
     const review = flat.find((y) => y.id === "s:review");
     const reviewOpen = review ? this.isReviewOpen(review.s) : false;
     if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
@@ -285,6 +310,32 @@ export default class Flow extends View {
     return true;
   }
 
+  // Implémentation's rows under the keys, as Review's: l / h unfold / fold it and « +N faites »; h on a
+  // task folds its parent and goes there; enter as a click; y copies a task's text. false: not one of
+  // their rows (the timeline's keys go on). « Maintenant » has no stop: it changes at every tool call.
+  tasksAct(a, x, cx, to) {
+    const step = x?.kind === "step" && this.implFolds(x.s);
+    if (!step && x?.kind !== "task" && x?.kind !== "tasks-done") return false;
+    const open = step && this.isImplOpen(x.s);
+    if (a === "left") {
+      if (step && !open) return false; // folds its phase, as any step
+      if (step) this.implOpen = false;
+      else if (x.kind === "tasks-done" && this.doneOpen) this.doneOpen = false;
+      else if (x.done) { this.doneOpen = false; to("tasks:done"); }
+      else { this.implOpen = false; to("s:implement"); }
+    } else if (a === "right") {
+      if (step) this.implOpen = true;
+      else if (x.kind === "tasks-done") this.doneOpen = true;
+    } else if (a === "open") {
+      if (step) this.implOpen = !open;
+      else if (x.kind === "tasks-done") this.doneOpen = !this.doneOpen;
+    } else if (a === "yank" && x.kind === "task") {
+      cx.write_to_clipboard(x.x.text);
+      notify({ title: tr("copied"), body: x.x.text, level: "success", timeout: 2000 });
+    } else return false;
+    return true;
+  }
+
   // Follows the report folder: collect.py rewrites facts.json atomically, read it again then.
   watchReport(cx, folder) {
     if (folder === this.watchedReport) return;
@@ -309,6 +360,7 @@ export default class Flow extends View {
     if (!visible() || this.reading) return;
     this.readAt = Date.now(); // DATA-SYNC.md: back on the tab, read again only past 10 s
     const term = this.follow();
+    this.readBridge(cx, term);
     const pane = term ? panes().find((p) => p.terminal === term) : null;
     const cwd = pane?.cwd ?? null;
     let branch = pane?.branch ?? null;
@@ -386,6 +438,8 @@ export default class Flow extends View {
           this.ciOpen = false; // another terminal: its CI is read when unfolded
           this.openCommit = null;
           this.ciLog = null;
+          this.implOpen = undefined;
+          this.doneOpen = false;
         }
         this.key = key;
         this.term = term;
@@ -396,6 +450,64 @@ export default class Flow extends View {
         cx.notify();
       } finally { this.reading = false; }
     });
+  }
+
+  // The terminal's herdr-bridge json as the sidebar's focus card reads it (threads-io readLive): its
+  // todos, its last action and answer, its sub-agents. With each read() and when that file changes, at
+  // the sidebar's cadence: one read every 3 s at most (another terminal: at once), a wake in between or
+  // during a read reads once at its end (one one-shot timer). A redraw only when what Flow shows changed.
+  readBridge(cx, term) {
+    // A late wake for a terminal no longer followed (its 3 s timer) would replace the one shown.
+    if (!term || term !== this.follow() || !visible()) return;
+    const wait = term === this.bridge?.term ? this.bridgeAt + 3000 - Date.now() : 0;
+    if (this.readingBridge || wait > 0) {
+      this.bridgeAgain = term;
+      if (!this.readingBridge && !this.bridgeWait) {
+        this.bridgeWait = true;
+        cx.timer.after(wait, (cx) => {
+          this.bridgeWait = false;
+          const again = this.bridgeAgain;
+          this.bridgeAgain = null;
+          if (again) this.readBridge(cx, again);
+        });
+      }
+      return;
+    }
+    this.readingBridge = true;
+    this.bridgeAt = Date.now();
+    cx.spawn(async (cx) => {
+      try {
+        const pane = panes().find((p) => p.terminal === term);
+        const { live } = await readLive(pane ? [pane] : [], { home: home(), readTextFile }, { live: this.live });
+        this.live = live;
+        const l = live[term];
+        const b = { todos: l?.todos ?? null, action: l?.action ?? null, answer: l?.answer ?? null, agents: l?.agents ?? [], pending: l?.pending ?? null };
+        const key = JSON.stringify([term, b]);
+        if (key !== this.bridge?.key) { this.bridge = { term, b, key }; cx.notify(); }
+      } finally {
+        this.readingBridge = false;
+        const again = this.bridgeWait ? null : this.bridgeAgain;
+        if (again) { this.bridgeAgain = null; this.readBridge(cx, again); }
+      }
+    });
+  }
+
+  // Its agent's status now (live data: a redraw comes with each change), null without one.
+  status() {
+    return panes().find((p) => p.terminal === this.term)?.status ?? null;
+  }
+  // Only while it works does the running task breathe.
+  working() {
+    return this.status() === "working";
+  }
+
+  // Implémentation folds when its agent has todos, or, while it runs, does something now (« Maintenant »).
+  implFolds(s) {
+    return s.id === "implement" && Boolean(this.list || (s.state === "current" && this.now));
+  }
+  // Open by default while it runs.
+  isImplOpen(s) {
+    return this.implFolds(s) && (this.implOpen ?? s.state === "current");
   }
 
   colors(t) {
@@ -488,15 +600,17 @@ export default class Flow extends View {
     const toneOf = (d) => (d.tone === "ok" ? c.ok : d.tone === "err" ? c.err : d.tone === "dim" ? t.dim : t.muted);
     const rail = (show) => div().w(1).flex_1().when(show, (el) => el.bg(t.border));
     const ci = s.id === "ci" && this.ciFolds();
-    const folds = ci || (s.id === "review" && Boolean(this.report?.review?.passes?.length));
-    const open = folds && (ci ? this.isCiOpen(s) : this.isReviewOpen(s));
+    const impl = this.implFolds(s); // « Maintenant » and the todos below, their n / total here
+    const tasks = impl && Boolean(this.list);
+    const folds = ci || impl || (s.id === "review" && Boolean(this.report?.review?.passes?.length));
+    const open = folds && (ci ? this.isCiOpen(s) : impl ? this.isImplOpen(s) : this.isReviewOpen(s));
     const cursor = this.ring(`s:${s.id}`);
     return h_flex().id(`kf-s-${s.id}`).h(28).px(6).gap(8).items_center().rounded(8)
       .border(1).border_color(cursor ? alpha(t.accent, "99") : on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
       .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
       .when(on && !cursor, (el) => el.bg(alpha(t.accent, "14")))
       .when(folds, (el) => el.cursor_pointer().when(!on && !cursor, (e) => e.hover((st) => st.bg(t.hover)))
-        .on_click((_e, cx) => { if (ci) this.toggleCi(!open, cx); else this.reviewOpen = !open; cx.notify(); }))
+        .on_click((_e, cx) => { if (ci) this.toggleCi(!open, cx); else if (impl) this.implOpen = !open; else this.reviewOpen = !open; cx.notify(); }))
       .child(v_flex().w(14).h_full().flex_none().items_center()
         .child(rail(!first)).child(this.dot(t, c, s, pulse)).child(rail(!last && !open)))
       .child(div().flex_none().text_size(12.5).text_color(s.state === "pending" ? t.muted : t.foreground).when(on, (el) => el.font_medium())
@@ -509,9 +623,95 @@ export default class Flow extends View {
             ? this.pill(t, `kf-d-${s.id}-${i}`, d.text, toneOf(d))
             : div().min_w(0).truncate().when(Boolean(d.mono), (el) => el.font_family(MONO).text_size(11)).when(!d.mono, (el) => el.text_size(11.5))
               .text_color(t.muted).child(d.text))))
+      // The todos done / all; the terminal in its id: another agent's count shows at once, not rolling.
+      .when(tasks, (el) => el.child(rollText(this.motion, `kf-todo-n-${this.term}`, `${this.list.n} / ${this.list.total}`, 14)
+        .flex_none().font_family(MONO).text_size(10.5).text_color(this.list.n === this.list.total ? c.ok : t.dim)))
       .when(s.source === "host", (el) => el.child(div().id(`kf-h-${s.id}`).flex_none().text_color(t.dim).tooltip(tr("hostTip"))
         .child(svg("mods/kt-flow/scan-eye.svg").size(12))))
       .when(live && Boolean(s.tool), (el) => el.child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(s.tool)));
+  }
+
+  // ---------- Implémentation: what runs now, the session's tasks ----------
+
+  // What its agent runs now (herdr-bridge, readBridge), as the sidebar says it: the live line (lineOf:
+  // a working agent's last action, a done one's answer), or while it waits on Kylian what it asks
+  // (`ask`: its pending dialog's title and detail, "" without one: the fold stays while it's blocked);
+  // its sub-agents still running and their k / n (ended / all, as kt-kanban's). null: nothing to show.
+  nowOf(b) {
+    const agents = b?.agents ?? [];
+    const blocked = this.status() === "blocked";
+    const ask = blocked ? [b?.pending?.title, b?.pending?.detail].filter(Boolean).map(String) : null;
+    const line = b && !blocked ? lineOf(this.status(), b) : null;
+    const running = shownAgents(agents, Date.now()).filter(isAlive);
+    return blocked || line || running.length
+      ? { line, ask, agents: running, done: agents.filter((a) => !isAlive(a)).length, total: agents.length } : null;
+  }
+
+  // Under an open Implémentation, as Review's body. « Maintenant » while it runs: the live line « ↳ … »
+  // (its whole text on hover), or « En attente : » and what it asks while blocked, and a row a running sub-agent (4, then « +N »), k / n on its head. Then
+  // « Tâches »: a 24 px row a task, in the session's order (done a check, the running one an accent dot
+  // that breathes only while its agent works, to do a ring), its text on one line, all of it on hover.
+  // Past 12 (taskList): the open ones, then « +N faites », which unfolds the done ones; « +N autres
+  // tâches » for those past the bridge's 20. The block and each new row fade in (a row keeps its id when
+  // its state changes: a task done behind « +N faites » only moves the count), a row gone goes at once,
+  // and the phase's fold follows their height (ANIMATIONS.md: one level).
+  implBody(t, c, s) {
+    if (!this.isImplOpen(s)) return [];
+    const L = this.list, N = s.state === "current" ? this.now : null, m = this.motion, term = this.term;
+    const head = (label, right) => h_flex().h(24).px(6).gap(8).items_center()
+      .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(label))
+      .child(div().flex_1()).when(Boolean(right), (el) => el.child(right));
+    const box = enter(m, v_flex().ml(13).pl(10).pb(4).gap(2).border_l(1).border_color(t.border), `kf-impl-${term}`, { dy: 0 });
+    return [box
+      .when(Boolean(N), (el) => el.child(head(tr("now"), N.total > 0 && h_flex().id(`kf-now-k-${term}`).flex_none().gap(4).items_center()
+        .text_color(t.dim).tooltip(tr("subagents", { n: N.done, total: N.total }))
+        .child(svg(I("bot")).size(11)).child(div().font_family(MONO).text_size(10.5).child(`${N.done}/${N.total}`))))
+        .when(Boolean(N.line), (el) => el.child(div().id(`kf-now-line-${term}`).h(22).px(6).flex().items_center().tooltip(N.line)
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(this.working() ? t.muted : t.dim).child(`↳ ${N.line}`))))
+        // Waiting on Kylian: what it asks, as the Kanban's card and the sidebar (title · detail on hover).
+        .when(Boolean(N.ask), (el) => el.child(div().id(`kf-now-ask-${term}`).h(22).px(6).flex().items_center()
+          .when(N.ask.length > 0, (e) => e.tooltip(N.ask.join(" · ")))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.blocked)
+            .child(N.ask.length ? tr("waiting", { title: N.ask[0] }) : tr("waitingBare")))))
+        .children(N.agents.slice(0, 4).map((a, i) => enter(m, h_flex().h(22).px(6).gap(8).items_center(), `kf-now-a-${term}-${a.id ?? i}`, { dy: 0, delay: stagger(i, 4) })
+          .child(h_flex().size(14).flex_none().items_center().justify_center().child(div().size(6).rounded_full().bg(t.working)))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(a.what || a.name || "agent")))) // i18n: tech
+        .when(N.agents.length > 4, (el) => el.child(div().h(18).pl(28).font_family(MONO).text_size(10.5).text_color(t.dim)
+          .child(tr("agentsMore", { n: N.agents.length - 4 })))))
+      // « Tâches » even alone: the list doesn't move by a head when « Maintenant » comes and goes.
+      .when(Boolean(L), (el) => el.child(head(tr("tasks"))).children(this.taskRows(t, c, L, term)))];
+  }
+
+  // The tasks' rows (implBody).
+  taskRows(t, c, L, term) {
+    const m = this.motion;
+    const pulse = this.working() && !m.reduced;
+    const items = [...L.open, ...(L.done.length ? [null] : []), ...(L.done.length && this.doneOpen ? L.done : [])];
+    const mark = (st) => h_flex().size(14).flex_none().items_center().justify_center()
+      .child(st === "done" ? svg(I("check")).size(11).text_color(c.ok)
+        : st === "current" ? div().size(7).rounded_full().bg(c.accent).when(pulse, (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1400 }))
+          : div().size(7).rounded_full().border(1).border_color(t.dim));
+    const row = (id, cursor, el, i) => enter(m, el.h(24).px(6).gap(8).items_center().rounded(8)
+      .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+      .when(cursor, (e) => e.bg(alpha(t.accent, "24"))), `kf-t-${term}-${id}`, { dy: 0, delay: stagger(i, items.length) });
+    const rows = items.map((x, i) => {
+      if (!x) {
+        // « +N faites »: the done ones, folded past 12.
+        const cursor = this.ring("tasks:done"), open = this.doneOpen;
+        return row("~done", cursor, h_flex(), i).cursor_pointer().when(!cursor, (e) => e.hover((st) => st.bg(t.hover)))
+          .on_click((_e, cx) => { this.doneOpen = !open; cx.notify(); })
+          .child(h_flex().size(14).flex_none().items_center().justify_center()
+            .child(svg(I(open ? "chevron-down" : "chevron-right")).size(11).text_color(open ? t.accent : t.dim)))
+          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("tasksDone", { n: L.done.length })));
+      }
+      const say = x.state === "current" ? x.active ?? x.text : x.text;
+      return row(x.key, this.ring(`task:${x.key}`), h_flex(), i).tooltip(say)
+        .child(mark(x.state))
+        .child(div().flex_1().min_w(0).truncate().text_size(12)
+          .text_color(x.state === "current" ? t.foreground : x.state === "done" ? t.dim : t.muted).child(say));
+    });
+    if (L.unread > 0) rows.push(div().h(18).pl(28).font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("tasksMore", { n: L.unread })));
+    return rows;
   }
 
   // ---------- review passes ----------
@@ -819,7 +1019,8 @@ export default class Flow extends View {
       .child(v_flex().px(6).pt(2).pb(10).gap(12)
         .when(Boolean(head?.pending), (el) => el.child(V.progress(tr("checksRunning"), head.total - head.pending, {
           max: head.total, detail: tr("checksDone", { done: head.total - head.pending, total: head.total, sha: String(last).slice(0, 7) }),
-          color: head.fail ? "negative" : "warning", id: "kf-ci-progress" })))
+          // live (#37): its front works while checks run, and the bar only shows then.
+          color: head.fail ? "negative" : "warning", id: "kf-ci-progress", live: true })))
         .child(V.chart("bar", [
           { label: tr("green"), values: pushed.map((p) => p.tally.ok), color: "positive" },
           { label: tr("red"), values: pushed.map((p) => p.tally.fail), color: "negative" },
@@ -838,7 +1039,8 @@ export default class Flow extends View {
     const cursor = this.ring(`p:${p.id}`);
     // Its steps unfold and fold on their height (motion.js collapse, given a builder: the fold closes too).
     const body = collapse(this.motion, `kf-pb-${p.id}`, !folded, () => v_flex()
-      .children(p.steps.flatMap((s, i) => [this.step(t, c, s, i === 0, i === p.steps.length - 1, s.id === pulseId), ...this.reviewBody(t, c, s), ...this.ciBody(t, c, s)])), { cx });
+      .children(p.steps.flatMap((s, i) => [this.step(t, c, s, i === 0, i === p.steps.length - 1, s.id === pulseId),
+        ...this.implBody(t, c, s), ...this.reviewBody(t, c, s), ...this.ciBody(t, c, s)])), { cx });
     return v_flex().flex_none().rounded(12).border(1).border_color(t.border).bg(t.background).p(4)
       .child(h_flex().id(`kf-p-${p.id}`).h(28).px(6).gap(8).items_center().rounded(8).cursor_pointer()
         .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
@@ -910,6 +1112,12 @@ export default class Flow extends View {
     if (this.ciOpen && !checking() && this.ciKey() && this.ci?.key !== this.ciKey()) this.loadCi(cx, false);
     const pulseId = steps.find((s) => s.state === "current")?.id;
     const phases = phasesOf(steps);
+    // The followed terminal's herdr-bridge (readBridge): its todos as listed, what it runs now; neither:
+    // Implémentation has no fold, no count, no block.
+    const b = this.bridge?.term === this.term ? this.bridge.b : null;
+    const L = b ? taskList(b.todos) : null;
+    this.list = L?.total ? L : null;
+    this.now = this.nowOf(b);
     this.flat = this.walk(phases);
     // The cursor's phase card brought into view once after it moved. ponytail: kf-phases' children
     // are the cards, so a row deep in a card taller than the panel may stay below; flatten if it bites.

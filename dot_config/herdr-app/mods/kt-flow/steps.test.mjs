@@ -1,6 +1,43 @@
 // node mods/kt-flow/steps.test.mjs: steps.js on labels from real claude-flow flows.
 import assert from "node:assert/strict";
-import { workflowName, issueOf, flowBranch, phasesOf, nameOf, details, runningLine, findPlans, passOf, decisionOf, locOf, checkState, tally, checkOrder, duration, runIdOf, logTail, ciLine } from "./steps.js";
+import { workflowName, issueOf, flowBranch, phasesOf, nameOf, details, runningLine, findPlans, passOf, decisionOf, locOf, checkState, tally, checkOrder, duration, runIdOf, logTail, ciLine, taskList } from "./steps.js";
+
+// The session's todos, as herdr-bridge publishes them (its first 20 items, no id).
+{
+  const T = (content, status, activeForm) => ({ content, status, ...(activeForm ? { activeForm } : {}) });
+  const texts = (l) => l.map((x) => x.text);
+  assert.deepEqual(taskList(undefined), { open: [], done: [], unread: 0, n: 0, total: 0 });
+  assert.deepEqual(taskList({ done: 0, total: 0, items: [] }), { open: [], done: [], unread: 0, n: 0, total: 0 });
+  // Three: every one in the session's order, nothing folded.
+  const three = taskList({ done: 1, total: 3, items: [T("Lire", "completed"), T("Écrire", "in_progress", "Écriture"), T("Tester", "pending")] });
+  assert.deepEqual(three.open, [
+    { key: "Lire", text: "Lire", active: null, state: "done" },
+    { key: "Écrire", text: "Écrire", active: "Écriture", state: "current" },
+    { key: "Tester", text: "Tester", active: null, state: "todo" },
+  ]);
+  assert.deepEqual([three.done, three.unread, three.n, three.total], [[], 0, 1, 3]);
+  // Twelve stay as they are, done ones included.
+  const twelve = Array.from({ length: 12 }, (_, i) => T(`t${i}`, i % 2 ? "completed" : "pending"));
+  assert.deepEqual(texts(taskList({ items: twelve }).open), twelve.map((x) => x.content));
+  // Fifteen: the running and pending ones first (the session's order), then the done ones folded.
+  const fifteen = Array.from({ length: 15 }, (_, i) => T(`t${i}`, [1, 4, 9].includes(i) ? "completed" : i === 5 ? "in_progress" : "pending"));
+  const cut = taskList({ done: 3, total: 15, items: fifteen });
+  assert.deepEqual(texts(cut.open), ["t0", "t2", "t3", "t5", "t6", "t7", "t8", "t10", "t11", "t12", "t13", "t14"]);
+  assert.deepEqual(texts(cut.done), ["t1", "t4", "t9"]);
+  assert.equal(cut.open.find((x) => x.text === "t5").state, "current");
+  assert.deepEqual([cut.n, cut.total, cut.unread], [3, 15, 0]);
+  // Fifteen to do: nothing to fold. Fifteen done: all folded.
+  const pending = taskList({ items: Array.from({ length: 15 }, (_, i) => T(`t${i}`, "pending")) });
+  assert.deepEqual([pending.open.length, pending.done.length], [15, 0]);
+  const finished = taskList({ items: Array.from({ length: 15 }, (_, i) => T(`t${i}`, "completed")) });
+  assert.deepEqual([finished.open.length, finished.done.length, finished.n], [0, 15, 15]);
+  // Past the bridge's 20: the rest is unread, never counted done; its counts win.
+  const many = taskList({ done: 4, total: 23, items: Array.from({ length: 20 }, (_, i) => T(`t${i}`, i < 2 ? "completed" : "pending")) });
+  assert.deepEqual([many.unread, many.n, many.total, many.done.length], [3, 4, 23, 2]);
+  // A repeat keeps a key of its own; an unknown status is to do.
+  assert.deepEqual(taskList({ items: [T("Tests", "pending"), T("Tests", "odd"), null] }).open.map((x) => [x.key, x.state]), [["Tests", "todo"], ["Tests#1", "todo"]]);
+  console.log("tasks ok");
+}
 
 assert.equal(workflowName("me:issue-worktree-pr"), "Issue → Worktree → PR");
 assert.equal(workflowName("me:spec-issue-worktree-pr"), "Spec · Issue → Worktree → PR");
