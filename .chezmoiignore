@@ -139,6 +139,18 @@
 # L'app reecrit ces types a chaque demarrage, dans chaque dossier de mod.
 .config/herdr-app/mods/*/jsconfig.json
 .config/herdr-app/mods/*/gpui-kit.d.ts
+.config/herdr-app/layouts/kbrdn-threads-glass.json
+.config/herdr-app/layouts/kbrdn-threads.png
+.config/herdr-app/layouts/.state
+.config/herdr-app/brand/companions/out
+.config/herdr-app/data
+.config/herdr-app/telemetry
+.config/herdr-app/shared.json
+.config/herdr-app/view.json
+.config/herdr-app/window.json
+.config/herdr-app/seen.json
+# caches Python des skills (scripts lancés en local)
+.claude/skills/**/__pycache__
 
 # Zed - prompts library runtime DB (binary, changes every session)
 .config/zed/prompts/prompts-library-db.0.mdb/

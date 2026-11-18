@@ -5,14 +5,17 @@
 // --files` finds. Read-only: the agent edits, you read. Polls only while the
 // right panel shows Files.
 
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, exec, readTextFile, settings, theme, layout, home } from "herdr";
+import { spaces, panes, exec, readTextFile, settings, theme, layout, home, appHome, checking } from "herdr";
+import { ICON_MAP, catIcon } from "./icons.js";
 
 const ME = "files"; // this block's id in the layout's "panel-body" stack
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const MAX_FILES = 5000;
 const MAX_BYTES = 400e3;
+// A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
+const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 // File endings the highlighter doesn't know, read as one it does.
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 
@@ -67,6 +70,11 @@ export default class Files extends View {
     this.typing = false;
     this.shown = false;
     this.handle = cx.focus_handle();
+    this.map = null; // Catppuccin's map.json
+    if (!checking()) cx.spawn(async (cx) => {
+      try { this.map = JSON.parse(await readTextFile(`${appHome()}/${ICON_MAP}`)); } catch { this.map = null; }
+      cx.notify();
+    });
     this.refresh(cx);
     cx.timer.every(5000, (cx) => this.refresh(cx));
   }
@@ -145,14 +153,14 @@ export default class Files extends View {
       .rounded(10)
       // kbrdn.dev SegmentInk on the open file (transparent border elsewhere: no shift).
       .border(1)
-      .border_color(on ? t.accent + "66" : t.accent + "00")
+      .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
       .text_size(12)
       .cursor_pointer()
       .text_color(m === "U" ? t.ansi2 : m === "M" ? t.ansi3 : t.muted)
-      .when(on, (el) => el.bg(t.accent + "24").text_color(t.foreground))
+      .when(on, (el) => el.bg(alpha(t.accent, "24")).text_color(t.foreground))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => this.show(path, cx))
-      .child(svg(I("file")).size(13).flex_none())
+      .child(image(catIcon(this.map, path.split("/").pop(), { dark: settings().dark !== false })).size(14).flex_none())
       .child(div().flex_1().truncate().child(name))
       .when(Boolean(m), (el) => el.child(div().font_family("Monaspace Krypton").text_size(10.5).child(m)));
   }
@@ -178,7 +186,8 @@ export default class Files extends View {
             else this.open.add(path);
             cx.notify();
           })
-          .child(svg(I(open ? "chevron-down" : "chevron-right")).size(13).text_color(t.dim))
+          .child(svg(I(open ? "chevron-down" : "chevron-right")).size(13).flex_none().text_color(t.dim))
+          .child(image(catIcon(this.map, name, { folder: true, open, dark: settings().dark !== false })).size(14).flex_none())
           .child(div().truncate().child(name)),
       );
       if (open) this.rows(t, child, path + "/", depth + 1, out);
@@ -202,7 +211,7 @@ export default class Files extends View {
       : this.rows(t, tree(this.paths), "", 0, []);
     const side = v_flex()
       .h_full()
-      .when(Boolean(this.file), (el) => el.w(240).flex_none().border_l(1).border_color(t.border))
+      .when(Boolean(this.file), (el) => el.w(240).flex_none().border_l(1).border_dashed().border_color(t.border))
       .when(!this.file, (el) => el.flex_1())
       .min_w(0)
       .child(
@@ -261,7 +270,6 @@ export default class Files extends View {
         cx.notify();
       })
       .size_full()
-      .bg(t.chrome)
       .text_color(t.foreground)
       .when(Boolean(this.file), (el) =>
         el.child(
@@ -275,8 +283,6 @@ export default class Files extends View {
                 .px(12)
                 .gap(4)
                 .items_center()
-                .border_b(1)
-                .border_color(t.border)
                 .font_family("Monaspace Krypton")
                 .text_size(11)
                 .text_color(t.muted)

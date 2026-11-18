@@ -2,16 +2,15 @@
   "id": "root",
   "type": "row",
   "titlebar": "none",
-  "traffic_lights": [18, 17],
+  "traffic_lights": [18, 24],
   "theme": { "light": "kbrdn-light", "dark": "kbrdn-dark" },
   "font": "OperatorMonoLig Nerd Font",
   "font_weight": 400,
   "ui_font": "Inter",
   "toast": "kbrdn-toast",
   "terminal_padding": [14, 12],
-  "background": "canvas",
+  "background": "chrome",
   "preview": "layouts/kbrdn-threads.png",
-  "divider": { "width": 1, "color": "border" },
   "resizable": true,
   "children": [
     {
@@ -25,7 +24,7 @@
         {
           "id": "brand",
           "type": "block",
-          "size": { "px": 48 },
+          "size": { "px": 62 },
           "window_drag": true,
           "content": { "mod": "kt-head", "props": { "part": "brand" } }
         },
@@ -33,83 +32,104 @@
       ]
     },
     {
-      "id": "center",
-      "type": "column",
+      "id": "desk",
+      "type": "row",
+      "background": { "image": "brand/dither-k.png", "fit": "cover" },
+      "padding": 8,
+      "gap": 8,
       "children": [
         {
-          "id": "crumbs",
-          "type": "block",
-          "size": { "px": 48 },
-          "window_drag": true,
-          "background": "chrome",
-          "content": { "mod": "kt-head", "props": { "part": "crumbs" } }
-        },
-        {
-          "id": "center-body",
+          "id": "center",
           "type": "column",
-          "background": { "image": "brand/dither-k.png", "fit": "cover" },
-          "padding": 10,
-          "gap": 10,
+          "background": "chrome",
+          "border": { "width": 1, "color": "border" },
+          "radius": 20,
+          "shadow": "md",
+          "padding": 4,
+          "gap": 4,
           "children": [
             {
-              "id": "main",
+              "id": "crumbs",
               "type": "block",
-              "content": {
-                "tab": "active",
-                "pane": {
-                  "background": "background",
-                  "border": { "width": 1, "color": "border" },
-                  "focus": { "width": 1, "color": "accent" },
-                  "radius": 16,
-                  "gap": 4,
-                  "lone": true
-                }
-              },
-              "background": "chrome",
-              "border": { "width": 1, "color": "border" },
-              "radius": 20,
-              "shadow": "md",
-              "padding": 4,
-              "floating": [{ "id": "details", "content": { "mod": "kt-details" }, "edge": "right", "align": "start" }]
+              "size": { "px": 36 },
+              "window_drag": true,
+              "content": { "mod": "kt-head", "props": { "part": "crumbs" } }
             },
             {
-              "id": "composer",
-              "type": "block",
-              "size": { "px": 46 },
-              "content": { "mod": "kt-composer" },
-              "background": "chrome",
-              "border": { "width": 1, "color": "border" },
-              "radius": 20,
-              "shadow": "md",
-              "padding": 4
+              "id": "view",
+              "type": "stack",
+              "active": "thread",
+              "children": [
+                {
+                  "id": "thread",
+                  "type": "column",
+                  "gap": 4,
+                  "children": [
+                    {
+                      "id": "main",
+                      "type": "block",
+                      "content": {
+                        "tab": "active",
+                        "pane": {
+                          "background": "background",
+                          "border": { "width": 1, "color": "border" },
+                          "focus": { "width": 1, "color": "accent" },
+                          "radius": 16,
+                          "gap": 4,
+                          "lone": true
+                        }
+                      },
+                      "floating": [{ "id": "details", "content": { "mod": "kt-details" }, "edge": "right", "align": "start" }]
+                    },
+                    {
+                      "id": "composer",
+                      "type": "block",
+                      "size": { "px": 36 },
+                      "content": { "mod": "kt-composer" }
+                    }
+                  ]
+                },
+                { "id": "inbox", "type": "block", "content": { "mod": "kt-inbox" } },
+                { "id": "skills", "type": "block", "content": { "mod": "kt-skills" } },
+                { "id": "mcp", "type": "block", "content": { "mod": "kt-mcp" } },
+                { "id": "gwm", "type": "block", "content": { "mod": "kt-gwm" } }
+              ]
             }
           ]
-        }
-      ]
-    },
-    {
-      "id": "panel",
-      "type": "column",
-      "hidden": true,
-      "size": { "px": 560 },
-      "min": 320,
-      "max": 1100,
-      "background": "chrome",
-      "children": [
-        {
-          "id": "panel-head",
-          "type": "block",
-          "size": { "px": 48 },
-          "window_drag": true,
-          "content": { "mod": "kt-panel-head" }
         },
         {
-          "id": "panel-body",
-          "type": "stack",
-          "active": "diff",
+          "id": "panel",
+          "type": "column",
+          "size": { "px": 560 },
+          "min": 320,
+          "max": 1100,
+          "background": "chrome",
+          "border": { "width": 1, "color": "border" },
+          "radius": 20,
+          "shadow": "md",
+          "padding": 4,
+          "gap": 4,
           "children": [
-            { "id": "files", "type": "block", "content": { "mod": "kt-files" } },
-            { "id": "diff", "type": "block", "content": { "mod": "kt-diff" } }
+            {
+              "id": "panel-head",
+              "type": "block",
+              "size": { "px": 36 },
+              "window_drag": true,
+              "content": { "mod": "kt-panel-head" }
+            },
+            {
+              "id": "panel-body",
+              "type": "stack",
+              "active": "files",
+              "children": [
+                { "id": "files", "type": "block", "content": { "mod": "kt-files" } },
+                { "id": "diff", "type": "block", "content": { "mod": "kt-diff" } },
+                { "id": "history", "type": "block", "content": { "mod": "kt-history" } },
+                { "id": "flow", "type": "block", "content": { "mod": "kt-flow" } },
+                { "id": "crosstalk", "type": "block", "content": { "mod": "kt-crosstalk" } },
+                { "id": "gwm-panel", "type": "block", "content": { "mod": "kt-gwm", "props": { "view": "panel" } } }
+              ]
+            }
           ]
         }
       ]

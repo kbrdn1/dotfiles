@@ -12,10 +12,15 @@
 // Esc closes.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
-import { spaces, run, theme, props, closeOverlay, shared, setShared, exec } from "herdr";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import { spaces, run, theme, props, closeOverlay, shared, setShared, exec, settings } from "herdr";
 
 const MONO = "Monaspace Krypton";
+// The dialog is the whole window (mod.json): the card keeps its 680 px.
+const CARD = 680;
+// A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
+const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+const veil = () => (settings().dark ? alpha("#000000", "8c") : alpha("#0a0a0a", "59"));
 // Name on the chip, and the command. Edit to taste.
 const AGENTS = [
   ["Claude", ["claude"]],
@@ -67,13 +72,16 @@ export default class NewThread extends View {
     this.project = 0;
     this.agent = Math.max(0, AGENTS.findIndex(([n]) => n === localStorage.getItem("agent")));
     this.type = Math.max(0, TYPES.indexOf(localStorage.getItem("type")));
-    this.worktree = localStorage.getItem("worktree") === "yes";
+    // props.worktree (ctrl-b shift-g, kt-head): a new worktree this time.
+    this.worktree = props()?.worktree === true || localStorage.getItem("worktree") === "yes";
     this.nudge = null; // "name" | "issue"
     this.busy = false;
     this.error = "";
     this.repos = {}; // folder -> { key, name, main } | null
     this.handle = cx.focus_handle();
     this.handle.focus();
+    // The project and type groups scroll sideways when they're longer than the dialog.
+    this.scrolls = { project: ScrollHandle.new(), type: ScrollHandle.new() };
     cx.spawn(async (cx) => {
       for (const s of spaces()) {
         try {
@@ -121,6 +129,8 @@ export default class NewThread extends View {
     const [label, argv] = AGENTS[this.agent];
     localStorage.setItem("agent", label);
     localStorage.setItem("worktree", this.worktree ? "yes" : "no");
+    // kbrdn-threads' main "view" stack: show the thread (⌘T may come from the Inbox page).
+    run("layout.select", { stack: "view", child: "thread" });
     if (!(this.worktree && p.git)) {
       this.close();
       run("tab.new", { space: p.space.id, argv: argv ?? undefined, name });
@@ -159,18 +169,20 @@ export default class NewThread extends View {
     });
   }
 
-  // A choice; the picked one sits on the kbrdn.dev ink (transparent border elsewhere: no shift).
+  // A `.segment` of a `.segmented` pill: mono uppercase; the picked one sits on the kbrdn.dev ink
+  // (transparent border elsewhere: no shift).
   chip(t, id, label, on, onClick, color) {
     return h_flex()
       .id(id)
-      .h(26)
+      .h(24)
       .gap(6)
+      .flex_none()
       .items_center()
-      .px(10)
-      .rounded(10)
+      .px(9)
+      .rounded_full()
       .border(1)
       .border_color(on ? t.accent + "66" : t.accent + "00")
-      .bg(on ? t.accent + "24" : t.raised)
+      .when(on, (el) => el.bg(t.accent + "24"))
       .font_family(MONO)
       .text_size(11)
       .text_color(on ? t.accent : t.muted)
@@ -181,6 +193,23 @@ export default class NewThread extends View {
       .child(label.toUpperCase());
   }
 
+  // kbrdn.dev `.segmented`: one bordered pill holding the segments; `scroll` lets a long one slide.
+  segmented(t, id, chips, scroll) {
+    return h_flex()
+      .id(id)
+      .min_w(0)
+      .flex_shrink(1)
+      .p(3)
+      .gap(2)
+      .items_center()
+      .rounded_full()
+      .border(1)
+      .border_color(t.border)
+      .bg(t.background)
+      .when(Boolean(scroll), (el) => el.overflow_x_scroll().track_scroll(scroll))
+      .children(chips);
+  }
+
   render() {
     const t = theme();
     const ps = this.projects();
@@ -189,38 +218,191 @@ export default class NewThread extends View {
     const git = Boolean(p?.git);
     const tree = git && this.worktree;
     const spec = tree ? issueOf(this.name) : null;
-    const key = (k) => div().px(5).rounded(4).border(1).border_color(t.border).text_color(t.dim).child(k);
-    const hint = (k, what) => h_flex().gap(5).items_center().child(key(k)).child(div().child(what));
-    // kbrdn.dev `.eyebrow` labels.
-    const row = (label, ...chips) =>
+    // kbrdn.dev `kbd`: a small mono pill.
+    const kbd = (k) => div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
+    const hint = (k, what) => h_flex().gap(5).items_center().child(kbd(k)).child(div().child(what));
+    // kbrdn.dev `.eyebrow` label, then its `.segmented` group.
+    const row = (label, group) =>
       h_flex()
-        .gap(6)
+        .h(32)
+        .gap(10)
         .items_center()
-        .flex_wrap()
-        .child(div().w(84).flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(label.toUpperCase()))
-        .children(chips);
+        .child(div().w(76).flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(label.toUpperCase()))
+        .child(group);
     const pick = (field, i) => (_e, cx) => {
       this[field] = i;
       cx.notify();
     };
-    const placeholder = tree ? `#issue what should we build${p ? ` in ${p.name}` : ""}?` : `What should we build${p ? ` in ${p.name}` : ""}?`;
-    const nudge = this.nudge === "issue" ? "A new worktree needs an issue: “#42 fix the login”" : null;
-    return v_flex()
+    const placeholder = tree ? `#issue que construit-on${p ? ` dans ${p.name}` : ""} ?` : `Que construit-on${p ? ` dans ${p.name}` : ""} ?`;
+    const nudge = this.nudge === "issue" ? "Un nouveau worktree demande une issue : « #42 fix the login »" : null;
+    const focused = this.handle.is_focused();
+    const dashed = () => div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border);
+    const shown = Boolean(this.size);
+    // The card (radius 20, 4 px around) and its inner card (16): frame "none" (mod.json), so it's ours.
+    const card = v_flex()
       .id("kt-new")
-      .track_focus(this.handle)
-      .w_full()
+      // A press in the card never reaches the veil.
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .w(CARD)
+      .max_w_full()
+      .relative()
+      .top(shown ? 0 : 8)
+      .transition("top", { duration: 180, easing: "ease-out" })
+      .p(4)
+      .rounded(20)
       .bg(t.popover)
+      .border(1)
+      .border_color(t.border)
+      .shadow_lg()
+      .child(
+        v_flex()
+          .rounded(16)
+          .bg(t.surface)
+          .border(1)
+          .border_color(t.border)
+          .child(
+            v_flex()
+              .p(12)
+              .gap(10)
+              // The field (radius 12) in its accent ring (3 px, radius 15) while the dialog has the keyboard.
+              .child(
+                div()
+                  .p(3)
+                  .rounded(15)
+                  .bg(focused ? t.accent + "33" : t.accent + "00")
+                  .child(
+                    h_flex()
+                      .h(44)
+                      .px(14)
+                      .gap(10)
+                      .items_center()
+                      .rounded(12)
+                      .bg(t.background)
+                      .border(1)
+                      .border_color(focused ? t.accent : t.input)
+                      .text_size(16)
+                      .child(svg("mods/kt-threads/square-pen.svg").size(15).flex_none().text_color(t.dim))
+                      .child(
+                        h_flex()
+                          .flex_1()
+                          .min_w(0)
+                          .items_center()
+                          .when(Boolean(this.name), (el) => el.child(div().min_w(0).truncate().text_color(t.foreground).child(this.name)))
+                          .child(div().flex_none().w(2).h(20).rounded(1).bg(t.accent))
+                          .when(!this.name, (el) => el.child(div().pl(6).min_w(0).truncate().text_color(this.nudge === "name" ? t.blocked : t.dim).child(placeholder))),
+                      )
+                      // The worktree's branch to be, gwm's way.
+                      .when(Boolean(spec), (el) => el.child(div().flex_none().max_w(260).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`${TYPES[this.type]}/#${spec.issue}-${kebab(spec.desc)}`))),
+                  ),
+              )
+              .child(
+                v_flex()
+                  .px(4)
+                  .child(row("Projet", this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space))), this.scrolls.project)))
+                  .when(git, (el) =>
+                    el.child(
+                      row(
+                        "Checkout",
+                        this.segmented(t, "kt-n-co", [
+                          this.chip(t, "kt-n-cur", "Checkout actuel", !this.worktree, pick("worktree", false)),
+                          this.chip(t, "kt-n-wt", "Nouveau worktree", this.worktree, pick("worktree", true)),
+                        ]),
+                      ),
+                    ),
+                  )
+                  .when(tree, (el) => el.child(row("Type", this.segmented(t, "kt-n-ts", TYPES.map((n, i) => this.chip(t, `kt-n-t${i}`, n, i === this.type, pick("type", i))), this.scrolls.type))))
+                  .child(row("Agent", this.segmented(t, "kt-n-as", AGENTS.map(([n], i) => this.chip(t, `kt-n-a${i}`, n, i === this.agent, pick("agent", i)))))),
+              )
+              .when(Boolean(nudge || this.error), (el) =>
+                el.child(div().px(4).text_size(12).text_color(this.error ? t.ansi1 : t.blocked).child(this.error || nudge)),
+              ),
+          )
+          // The foot, under a dashed rule: the keys, the branch to be, Start.
+          .child(dashed())
+          .child(
+            h_flex()
+              .px(14)
+              .py(10)
+              .gap(12)
+              .items_center()
+              .text_size(11)
+              .text_color(t.dim)
+              .when(this.busy, (el) =>
+                el.child(
+                  h_flex()
+                    .gap(6)
+                    .items_center()
+                    .font_family(MONO)
+                    .text_color(t.working)
+                    .child(svg("mods/workspace-chrome/spinner.svg").size(12).spin(900))
+                    .child("GWM CREATE…"),
+                ),
+              )
+              .when(!this.busy, (el) =>
+                el
+                  .child(hint("ctrl+p", "projet"))
+                  .when(git, (el) => el.child(hint("ctrl+w", "checkout")))
+                  .when(tree, (el) => el.child(hint("ctrl+t", "type")))
+                  .child(hint("ctrl+a", "agent"))
+                  .child(hint("esc", "annuler")),
+              )
+              .child(div().flex_1())
+              // kbrdn.dev primary button: solid ink, round.
+              .child(
+                h_flex()
+                  .id("kt-n-start")
+                  .flex_none()
+                  .h(30)
+                  .px(14)
+                  .gap(6)
+                  .items_center()
+                  .rounded_full()
+                  .bg(this.busy ? t.raised : t.solid)
+                  .text_color(this.busy ? t.dim : t.solid_foreground)
+                  .font_family(MONO)
+                  .text_size(11)
+                  .cursor_pointer()
+                  .hover((s) => s.opacity(0.88))
+                  .on_click((_e, cx) => {
+                    this.start(cx);
+                    cx.notify();
+                  })
+                  .child("START")
+                  .child(div().text_size(12).child("↵")),
+              ),
+          ),
+      );
+    // The whole window: a veil (a click on it closes), the card in its middle. Fades in once.
+    return div()
+      .id("kt-new-veil")
+      .size_full()
+      .flex()
+      .items_center()
+      .justify_center()
+      .bg(veil())
+      .opacity(shown ? 1 : 0)
+      .transition("opacity", { duration: 160, easing: "ease-out" })
+      .on_size_change((size, cx) => {
+        this.size = size;
+        cx.notify();
+      })
+      .on_click(() => this.close())
+      .track_focus(this.handle)
       .on_key_down((e, cx) => {
         const k = e.key;
         const m = e.modifiers;
         if (k === "escape") return this.close();
         if (this.busy) return;
         if (k === "enter") this.start(cx);
-        else if (k === "p" && m.control) this.project = (this.project + 1) % Math.max(1, ps.length);
-        else if (k === "a" && m.control) this.agent = (this.agent + 1) % AGENTS.length;
+        else if (k === "p" && m.control) {
+          this.project = (this.project + 1) % Math.max(1, ps.length);
+          this.scrolls.project.scroll_to_item(this.project);
+        } else if (k === "a" && m.control) this.agent = (this.agent + 1) % AGENTS.length;
         else if (k === "w" && m.control) this.worktree = !this.worktree;
-        else if (k === "t" && m.control) this.type = (this.type + 1) % TYPES.length;
-        else if (k === "backspace") this.name = this.name.slice(0, -1);
+        else if (k === "t" && m.control) {
+          this.type = (this.type + 1) % TYPES.length;
+          this.scrolls.type.scroll_to_item(this.type);
+        } else if (k === "backspace") this.name = this.name.slice(0, -1);
         else if (e.key_char && !m.control && !m.alt) {
           if (this.name.length < MAX_NAME) this.name += e.key_char;
           this.nudge = null;
@@ -228,103 +410,6 @@ export default class NewThread extends View {
         cx.stop_propagation();
         cx.notify();
       })
-      .child(
-        div()
-          .px(18)
-          .pt(18)
-          .pb(14)
-          .text_size(20)
-          .border_b(1)
-          .border_color(t.border)
-          .child(
-            this.name
-              ? div().text_color(t.foreground).child(this.name + "▏")
-              : div()
-                  .text_color(this.nudge === "name" ? t.blocked : t.dim)
-                  .child(`▏${placeholder}`),
-          ),
-      )
-      .child(
-        v_flex()
-          .px(18)
-          .py(12)
-          .gap(10)
-          .border_b(1)
-          .border_color(t.border)
-          .text_size(12)
-          .child(row("Project", ...ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space)))))
-          .when(git, (el) =>
-            el.child(
-              row(
-                "Checkout",
-                this.chip(t, "kt-n-cur", "Current checkout", !this.worktree, pick("worktree", false)),
-                this.chip(t, "kt-n-wt", "New worktree", this.worktree, pick("worktree", true)),
-              ),
-            ),
-          )
-          .when(tree, (el) => el.child(row("Type", ...TYPES.map((n, i) => this.chip(t, `kt-n-t${i}`, n, i === this.type, pick("type", i))))))
-          .child(row("Agent", ...AGENTS.map(([n], i) => this.chip(t, `kt-n-a${i}`, n, i === this.agent, pick("agent", i))))),
-      )
-      .when(Boolean(nudge || this.error), (el) =>
-        el.child(
-          div()
-            .px(18)
-            .pt(9)
-            .text_size(12)
-            .text_color(this.error ? t.ansi1 : t.blocked)
-            .child(this.error || nudge),
-        ),
-      )
-      .child(
-        h_flex()
-          .px(18)
-          .py(9)
-          .gap(16)
-          .items_center()
-          .text_size(11)
-          .text_color(t.dim)
-          .when(this.busy, (el) =>
-            el.child(
-              h_flex()
-                .gap(6)
-                .items_center()
-                .font_family(MONO)
-                .text_color(t.working)
-                .child(svg("mods/workspace-chrome/spinner.svg").size(12).spin(900))
-                .child("GWM CREATE…"),
-            ),
-          )
-          .when(!this.busy, (el) =>
-            el
-              .child(hint("ctrl+p", "project"))
-              .when(git, (el) => el.child(hint("ctrl+w", "checkout")))
-              .when(tree, (el) => el.child(hint("ctrl+t", "type")))
-              .child(hint("ctrl+a", "agent"))
-              .child(hint("esc", "cancel")),
-          )
-          .child(div().flex_1())
-          .when(Boolean(spec), (el) => el.child(div().min_w(0).truncate().font_family(MONO).child(`${TYPES[this.type]}/#${spec.issue}-${kebab(spec.desc)}`)))
-          // kbrdn.dev primary button: solid ink, round.
-          .child(
-            div()
-              .id("kt-n-start")
-              .flex_none()
-              .h(26)
-              .px(12)
-              .flex()
-              .items_center()
-              .rounded_full()
-              .bg(this.busy ? t.raised : t.solid)
-              .text_color(this.busy ? t.dim : t.solid_foreground)
-              .font_family(MONO)
-              .text_size(11)
-              .cursor_pointer()
-              .on_click((_e, cx) => {
-                this.start(cx);
-                cx.notify();
-              })
-              .child("START ↵"),
-          ),
-      );
+      .child(card);
   }
 }

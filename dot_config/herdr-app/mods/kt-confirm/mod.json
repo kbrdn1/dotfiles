@@ -1,0 +1,9 @@
+{
+  "place": "none",
+  "title": "Confirm",
+  "overlay": { "kind": "dialog", "width": 1, "height": 1, "frame": "none" },
+  "cloned_from": {
+    "name": "confirm",
+    "version": "0.1.16"
+  }
+}

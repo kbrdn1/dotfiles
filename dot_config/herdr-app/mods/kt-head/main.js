@@ -10,10 +10,36 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, theme, shared, props, layout, settings, window as win, setShared, exec } from "herdr";
+import { spaces, panes, run, theme, shared, props, layout, settings, window as win, setShared, exec, home, agents, focused, openOverlay, nextCommand, checking } from "herdr";
 
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
+const SPIN = "mods/workspace-chrome/spinner.svg";
+// The main view's pages (stack "view"), as the sidebar names them.
+const PAGES = { inbox: ["Inbox", "layers"], skills: ["Skills", "sparkles"], mcp: ["MCP", "plug"], gwm: ["Worktrees", "git-branch"] };
+const alpha = (c, a) => (c ?? "#000000").slice(0, 7) + a;
+
+// kt-threads' label(): a name the person gave stays; else the agent's live title, else the program.
+const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}\p{Ps}\p{Pi}]+/u, "").replace(/^\[ [!.] \] /, "").trim();
+function label(tab, lead) {
+  const prog = lead?.program?.name;
+  const base = tab?.named ? tab.name : prog ?? "Terminal";
+  if (!lead?.program?.agent) return base;
+  const live = clean(lead.title);
+  const path = /^[~/]|^[A-Za-z]:\\/.test((lead.title ?? "").replace(/^[^\p{L}\p{N}~/]+/u, ""));
+  const telling = live && live !== lead.terminal && live !== prog && !path && !live.includes("@") && live.toLowerCase() !== lead.program.key;
+  return (tab?.name === prog || !tab?.named) && telling ? live : base;
+}
+// kt-threads' logoOf(): the registry logo for the appearance now, else the other mode's.
+function logoOf(e) {
+  const l = e?.logos ?? { light: e?.logo ?? null, dark: e?.logo ?? null };
+  return (settings().dark ? (l.dark ?? l.light) : (l.light ?? l.dark)) ?? null;
+}
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const c of node?.children ?? []) { const f = find(c, id); if (f) return f; }
+  return null;
+}
 
 function own(el) {
   return el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
@@ -36,11 +62,6 @@ function spaceColors() {
   }
   if (changed) setShared("space.colors", kept);
   return kept;
-}
-function spaceColor(t, p) {
-  if (p.name === "~") return t.dim;
-  const c = spaceColors()[p.id] ?? PROJECT_COLORS[0];
-  return c.startsWith("#") ? c : t[c];
 }
 
 // Whether a layout node is shown.
@@ -71,7 +92,7 @@ function toggleDrawer() {
 
 // A toggle on the kbrdn.dev ink when on (transparent border when off: no shift);
 // framed: the window buttons.
-function button(t, id, icon, onClick, on = false, framed = false) {
+function button(t, id, icon, onClick, on = false, framed = false, tip = null) {
   return own(
     h_flex()
       .id(id)
@@ -86,17 +107,65 @@ function button(t, id, icon, onClick, on = false, framed = false) {
       .cursor_pointer()
       .hover((s) => s.bg(on ? t.accent + "24" : t.hover).text_color(on ? t.accent : t.foreground))
       .on_click(onClick)
-      .child(svg(I(icon)).size(14)),
+      .when(Boolean(tip), (el) => el.tooltip(tip))
+      .child(svg(icon.includes("/") ? icon : I(icon)).size(14)),
   );
+}
+
+// A shell beside the thread's agent (a split to the right of its pane).
+function splitRight() {
+  const { lead } = drawer();
+  if (lead) run("pane.split", { direction: "right", pane: lead.pane });
+}
+
+// The ctrl-b keys that are more than one command (keys.json `kt-head.<command>`), run by the crumbs
+// copy only: both copies get them, and the crumbs one is always shown (the sidebar can be hidden).
+// `panel:<child>` shows the right panel on that surface; `attention` shows the first agent that
+// needs you, else the first done; `picker:<group>` opens Search on a group (0 all, 2 projects);
+// `worktree` opens New thread on a new worktree; `close-pane` / `close-tab` ask kt-confirm first.
+const confirm = (title, detail, label, command) =>
+  openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { title, detail, label, danger: true, command } });
+function route(c) {
+  const [name, arg] = [c.split(":")[0], c.slice(c.indexOf(":") + 1)];
+  if (name === "panel") {
+    run("layout.show", { id: "panel" });
+    run("layout.select", { stack: "panel-body", child: arg });
+  } else if (name === "attention") {
+    const all = agents();
+    const a = all.find((x) => x.status === "blocked") ?? all.find((x) => x.status === "done");
+    if (!a) return;
+    run("layout.select", { stack: "view", child: "thread" });
+    run("agent.focus", { terminal: a.address });
+  } else if (name === "picker") {
+    openOverlay({ mod: "kt-picker", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: Number(arg) || 0 } });
+  } else if (name === "worktree") {
+    run("layout.select", { stack: "view", child: "thread" });
+    openOverlay({ mod: "kt-new", kind: "dialog", width: 1, height: 1, frame: "none", props: { worktree: true } });
+  } else if (name === "close-pane") {
+    const p = panes().find((x) => x.pane === focused()?.pane);
+    if (p) confirm("Fermer ce pane ?", `${p.title || p.program?.name || "Terminal"} : son terminal s'arrête.`, "Fermer", { name: "pane.close", args: { pane: p.pane } });
+  } else if (name === "close-tab") {
+    const s = spaces().find((x) => x.active);
+    const c = s?.tabs.find((x) => x.active);
+    if (c) confirm("Fermer ce thread ?", `${c.name} : ses terminaux s'arrêtent.${s.tabs.length === 1 ? " C'est le dernier : le projet se ferme." : ""}`, "Fermer", { name: "tab.close", args: { id: c.id } });
+  }
 }
 
 export default class Head extends View {
   init(_props, cx) {
     this.repos = {}; // folder -> repo name | null
+    if (checking()) return;
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (props()?.part === "crumbs") route(c);
+        cx.notify();
+      }
+    });
   }
 
-  // Name the repo where the thread's terminal is now, else the space's folder.
-  project(p, cx) {
+  // The repo's main checkout where the thread's terminal is now (null outside git), once per folder.
+  root(p, cx) {
     const at = drawer().lead?.cwd || p.folder;
     const location = JSON.stringify([p.machine ?? null, at]);
     if (!(location in this.repos)) {
@@ -104,11 +173,20 @@ export default class Head extends View {
       cx.spawn(async (cx) => {
         const r = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: at, on: p.machine }).catch(() => ({ code: 1 }));
         const key = r.code === 0 ? r.stdout.trim() : null;
-        this.repos[location] = key && (key.endsWith("/.git") ? key.slice(0, -5) : key).split("/").pop();
+        this.repos[location] = key ? (key.endsWith("/.git") ? key.slice(0, -5) : key) : null;
         cx.notify();
       });
     }
-    return this.repos[location] ?? p.name;
+    return this.repos[location] ?? null;
+  }
+
+  // The project as the sidebar shows it: Home, else its registry entry (name, logo, color), else the repo.
+  project(t, p, cx) {
+    if (!p.machine && p.folder === home()) return { home: true, name: "Home" };
+    const root = this.root(p, cx);
+    const e = (shared("kt.projects") ?? []).find((x) => (x.machine ?? null) === (p.machine ?? null) && (x.folder === root || x.folder === p.folder));
+    const c = e?.color ?? spaceColors()[p.id] ?? PROJECT_COLORS[0];
+    return { name: e?.name ?? (root ? root.split("/").pop() : p.name), logo: logoOf(e), color: c.startsWith("#") ? c : t[c] };
   }
 
   brand(t, w) {
@@ -116,8 +194,6 @@ export default class Head extends View {
     return h_flex()
       .size_full()
       .bg(t.chrome)
-      .border_b(1)
-      .border_color(t.border)
       .pl(mac ? 80 : 18)
       .gap(8)
       .items_center()
@@ -132,33 +208,75 @@ export default class Head extends View {
       );
   }
 
+  // Project tile: Home's house, else the registry logo, else the initial on the project's color.
+  tile(t, pr) {
+    const box = div().size(20).flex_none().rounded(6).flex().items_center().justify_center().overflow_hidden();
+    if (pr.home) return box.bg(t.raised).border(1).border_color(t.border).child(svg(I("house")).size(12).text_color(t.muted));
+    if (pr.logo) return box.child(image(pr.logo).size(18));
+    return box.bg(pr.color).child(div().font_family(MONO).font_bold().text_size(11).text_color("#ffffff").child((pr.name[0] ?? "?").toUpperCase()));
+  }
+
+  // The agent's state, written: a spinner while it works, one pulse when it needs you.
+  status(t, lead) {
+    const s = lead?.status;
+    const look = { working: [t.working, "WORKING"], blocked: [t.blocked, "NEEDS YOU"], done: [t.done, "DONE"] }[s];
+    if (!look) return null;
+    const [color, text] = look;
+    return h_flex().flex_none().h(22).px(8).gap(6).items_center().rounded_full()
+      .border(1).border_color(alpha(color, "4d")).bg(alpha(color, "1a"))
+      .font_family(MONO).text_size(10).text_color(color)
+      .child(s === "working" ? svg(SPIN).size(10).spin(900) : div().size(6).rounded_full().bg(color)
+        .when(s === "blocked", (el) => el.loop("opacity", { from: 0.3, to: 1, period: 1200 })))
+      .child(text);
+  }
+
   crumbs(t, w, cx) {
     const p = spaces().find((x) => x.active);
     const c = p?.tabs.find((x) => x.active);
+    const lead = drawer().lead;
+    const page = PAGES[find(layout(), "view")?.active];
+    const pr = p ? this.project(t, p, cx) : null;
+    const sep = () => svg(I("chevron-right")).size(12).flex_none().text_color(t.dim);
+    // Inside the work card (it paints the background): padding, no rule.
     return h_flex()
       .size_full()
-      .bg(t.chrome)
-      .border_b(1)
-      .border_color(t.border)
-      .pl(20)
-      .pr(10)
-      .gap(10)
+      .pl(10)
+      .pr(4)
+      .gap(8)
       .items_center()
       .when(Boolean(p), (el) =>
         el
-          .child(div().w(10).h(10).rounded(3).flex_none().bg(spaceColor(t, p)))
-          // kbrdn.dev `.eyebrow`: the project.
-          .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(this.project(p, cx).toUpperCase()))
-          .child(div().flex_none().text_size(14).text_color(t.dim).child("/"))
-          .child(div().flex_1().min_w(0).truncate().text_size(14).font_medium().text_color(t.foreground).child(c?.name ?? "")),
+          .child(this.tile(t, pr))
+          .child(div().flex_none().text_size(13).font_medium().text_color(page ? t.muted : t.foreground).child(pr.name))
+          .child(sep())
+          .when(Boolean(page), (el) => el
+            .child(svg(I(page?.[1] ?? "layers")).size(14).flex_none().text_color(t.accent))
+            .child(div().flex_none().text_size(14).font_medium().text_color(t.foreground).child(page?.[0] ?? ""))
+            // Back to the thread the page covers.
+            .child(own(h_flex().id("kt-h-back").flex_none().h(24).px(9).gap(6).items_center().rounded_full()
+              .border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted)
+              .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+              .on_click(() => run("layout.select", { stack: "view", child: "thread" }))
+              .child(div().flex_none().text_color(t.dim).child("←"))
+              .child(div().max_w(180).truncate().child(label(c, lead)))))
+            .child(div().flex_1()))
+          .when(!page, (el) => el
+            .child(div().flex_shrink(1).min_w(0).truncate().text_size(14).font_medium().text_color(t.foreground).child(label(c, lead)))
+            .when(Boolean(lead?.branch), (el) => el.child(h_flex().flex_none().h(22).px(8).gap(5).items_center().rounded_full()
+              .border(1).border_color(t.border).font_family(MONO).text_size(10.5).text_color(t.muted)
+              .child(svg(I("git-branch")).size(11).text_color(t.dim))
+              .child(div().max_w(220).truncate().child(lead.branch))))
+            .when(Boolean(this.status(t, lead)), (el) => el.child(this.status(t, lead)))
+            .child(div().flex_1())),
       )
       .when(!p, (el) => el.child(div().flex_1()))
       .child(
         h_flex()
           .gap(2)
-          .child(button(t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true))
-          .child(button(t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open))
-          .child(button(t, "kt-h-panel", "panel-right", () => run("layout.toggle", { id: "panel" }), shown(layout(), "panel"))),
+          .child(button(t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true, false, "Détails du thread"))
+          .child(button(t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, "Terminal à droite"))
+          .child(button(t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open, false, "Terminal en bas"))
+          .child(button(t, "kt-h-panel", "panel-right", () => run("layout.toggle", { id: "panel" }), shown(layout(), "panel"), false, "Panneau latéral")),
       )
       .when(Boolean(w.buttons), (el) =>
         el.child(

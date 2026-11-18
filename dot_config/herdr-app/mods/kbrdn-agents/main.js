@@ -3,13 +3,10 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, home, readTextFile, checking } from "herdr";
-
-// Monocode's provider tile: the program's icon on its own color (Herdr's program table).
-function tile(t, p) {
-  const glyph = p?.icon ? (p.tint ? svg(p.icon).size(14).text_color(p.color ?? "#ffffff") : image(p.icon).size(14)) : svg("mods/workspace-chrome/terminal.svg").size(13).text_color(t.muted);
-  return div().w(24).h(20).flex_none().rounded(6).border(1).border_color("#00000033").bg(p?.tile ?? t.raised)
-    .flex().items_center().justify_center().child(glyph);
-}
+// kt-threads' context ring and program tile (copies of its ring.js and companion-logo.js), so both
+// lists read the same.
+import { ring } from "./ring.js";
+import { companion } from "./companion-logo.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -99,6 +96,7 @@ export default class Agents extends View {
     cx.timer.every(30000, (cx) => cx.notify());
     // kbrdn: each local agent's live line (herdr-bridge Claude mod) and model (statusline.ts), every 3 s.
     this.live = {};
+    this.memos = {}; // address -> companion-logo's memo (when done or blocked began, one-shots)
     if (!checking()) cx.timer.every(3000, (cx) => this.readLive(cx));
   }
 
@@ -381,7 +379,8 @@ export default class Agents extends View {
       // Without a space header above (priority, pinned) the row names its space.
       const full = byPriority || isPinned;
       const name = full ? a.space_name || label(a) : more ?? (/^\d+$/.test(label(a)) ? a.program?.name || label(a) : label(a));
-      const live = this.liveLine(a);
+      // kt-threads' density (shared "kt.density"): compact cards keep the one line.
+      const live = shared("kt.density") === "compact" ? null : this.liveLine(a);
       const claude = a.app === "claude-code";
       // Monocode's detailed session card: title and age, then the live line and the model.
       const second = live && h_flex().min_w(0).gap(6).items_center().text_size(11)
@@ -411,7 +410,14 @@ export default class Agents extends View {
             cx.stop_propagation();
             this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
             cx.notify();
-          })).child(tile(t, a.program))))
+          // The program's tile, alive (24×20): its icon, a bob while working, what it does in a corner
+          // (herdr-bridge's action), "!" blocked, sparkles once done; a click hops it, the row still focuses.
+          })).child(companion({
+            program: a.program, state: a.status, id: `ag-c-${a.address}`, cx, size: 24, height: 20,
+            action: this.live?.[a.address]?.bridge?.state ? (this.live[a.address].bridge.action ?? null) : undefined,
+            since: this.live?.[a.address]?.bridge?.state ? this.live[a.address].bridge.since : undefined,
+            memo: (this.memos[a.address] ??= {}),
+          }))))
         .child(v_flex().flex_1().min_w(0).gap(1)
           .child(h_flex().min_w(0).gap(5).items_center()
             .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
@@ -421,7 +427,9 @@ export default class Agents extends View {
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .when(this.hovered === a.address, el => el.child(pin))
         .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
-        .child(this.status(t, a, byPriority && !isPinned));
+        .child(this.status(t, a, byPriority && !isPinned))
+        // The context, as on kt-threads' cards: a ring at the right end (16 px compact, 18 detailed).
+        .when(this.live?.[a.address]?.line?.ctx_pct != null, el => el.child(ring(t, `ag-ring-${a.address}`, this.live[a.address].line.ctx_pct, second ? 18 : 16)));
     };
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a

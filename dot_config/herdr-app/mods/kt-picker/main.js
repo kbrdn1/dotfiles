@@ -1,0 +1,636 @@
+// kbrdn Threads' Search (a clone of the shipped `picker`, kt-new's look): one field to go anywhere.
+// Results in groups, each under its eyebrow and count: the threads (those that need you first), the
+// projects (busy ones, the calm ones folded, the registry's closed ones), the pages of the layout's
+// "view" stack, and a few actions. Fuzzy search on title, project, branch and prompt, the matched
+// letters in accent. ↑/↓ and Enter, ⌘1-4 (or the pills) narrow to a group, ctrl+d closes the
+// selected thread's tab after kt-confirm, Esc leaves. For keys and debugging, `kt-picker.query:<text>`
+// types into the field, `kt-picker.filter:<1-4>` picks a group, `kt-picker.next` / `.prev` move.
+
+import { View, div, svg, image } from "gpui-kit";
+import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
+import { spaces, panes, run, theme, settings, props, closeOverlay, openOverlay, shared, home, readTextFile, nextCommand, checking, layout } from "herdr";
+import { search } from "./fuzzy.js";
+
+const MONO = "Monaspace Krypton";
+const I = (name) => `mods/kt-threads/${name}.svg`;
+// Replaces the alpha (Glass colors are already #rrggbbaa).
+const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+const show = (child) => run("layout.select", { stack: "view", child });
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const c of node?.children ?? []) {
+    const f = find(c, id);
+    if (f) return f;
+  }
+  return null;
+}
+
+// kt-threads' label() (copied: that file moves under other hands): a name the person gave stays;
+// else the agent's live title (its status glyph dropped), else the program; never a bare number.
+const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}\p{Ps}\p{Pi}]+/u, "").replace(/^\[ [!.] \] /, "").trim();
+function label(tab, lead) {
+  const prog = lead?.program?.name;
+  const base = tab.named ? tab.name : prog ?? "Terminal";
+  if (!lead?.program?.agent) return base;
+  const live = clean(lead.title);
+  const path = /^[~/]|^[A-Za-z]:\\/.test((lead.title ?? "").replace(/^[^\p{L}\p{N}~/]+/u, ""));
+  const telling = live && live !== lead.terminal && live !== prog && !path && !live.includes("@") && live.toLowerCase() !== lead.program.key;
+  return (tab.name === prog || !tab.named) && telling ? live : base;
+}
+// A prompt's first line, unless it's a placeholder ("[Image #12]", "[Pasted text …]").
+function firstLine(s) {
+  const l = (s ?? "").split("\n").map((x) => x.trim()).find(Boolean) ?? "";
+  return /^\[(Image|Pasted)\b/.test(l) ? "" : l.slice(0, 160);
+}
+function duration(ms) {
+  const m = Math.max(0, Math.floor((Date.now() - ms) / 60e3));
+  return m < 1 ? "<1M" : m < 60 ? `${m}M` : `${Math.floor(m / 60)}H${String(m % 60).padStart(2, "0")}`;
+}
+
+// Monocode's program tile (kt-threads): the program's icon on its own color.
+function tile(t, p) {
+  const g = p?.icon ? (p.tint ? svg(p.icon).size(13).text_color(p.color ?? "#ffffff") : image(p.icon).size(13)) : svg("mods/workspace-chrome/terminal.svg").size(12).text_color(t.muted);
+  return div().size(20).flex_none().rounded(6).border(1).border_color("#00000033").bg(p?.tile ?? t.raised).flex().items_center().justify_center().child(g);
+}
+
+// The projects registry (shared "kt.projects", kt-projects manages it), its logo for the appearance
+// now, and a color name or #hex.
+const registry = () => [...(shared("kt.projects") ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+function logoOf(e) {
+  const l = e?.logos ?? { light: e?.logo ?? null, dark: e?.logo ?? null };
+  return (settings().dark ? (l.dark ?? l.light) : (l.light ?? l.dark)) ?? null;
+}
+const paint = (t, c) => (!c ? null : c.startsWith("#") ? c : t[c] ?? null);
+
+const RANK = { blocked: 0, done: 1, working: 2, idle: 3 };
+const STATUS = { blocked: "NEEDS YOU", done: "DONE", working: "WORKING", idle: "IDLE" };
+const GROUPS = [["all", "Tout"], ["threads", "Threads"], ["projects", "Projets"], ["pages", "Pages"]];
+const PAGES = [["inbox", "layers", "Inbox"], ["skills", "sparkles", "Skills"], ["mcp", "plug", "MCP"], ["gwm", "git-branch", "Worktrees"]];
+// Row heights, so the list has a definite height (a scroll area without one lays out at zero).
+const H = { eyebrow: 28, thread: 48, project: 36, closed: 36, fold: 30, page: 36, action: 36, empty: 72 };
+
+export default class Search extends View {
+  init(_props, cx) {
+    this.query = "";
+    this.group = 0;
+    this.selKey = null;
+    this.showCalm = false;
+    this.typing = false;
+    this.live = {}; // terminal -> { bridge, sl }
+    this.rowsShown = [];
+    this.slots = [];
+    this.scroll = ScrollHandle.new();
+    this.input = InputState.new({ placeholder: "Aller à un thread, un projet, une page…" });
+    this.input.on("change", (_e, cx) => {
+      this.setQuery(this.input.value());
+      cx.notify();
+    });
+    this.input.on("submit", (_e, cx) => this.go(this.selected(), cx));
+    this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
+    this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
+    // The popup isn't keyed yet in init, so the field asks again, briefly, only while it hasn't got
+    // the keyboard. Not the shipped picker's blind refocus at 600 ms: until then the first keys land
+    // in the terminal under it, and then it takes the keyboard back from wherever it went.
+    this.input.focus();
+    for (const ms of [16, 50, 120, 250, 500]) cx.timer.after(ms, () => { if (!this.typing) this.input.focus(); });
+    // props.group (ctrl-b w: Projets, kt-head): opened on that group.
+    if (props()?.group) this.group = Number(props().group) || 0;
+    if (checking()) return;
+    this.readLive(cx);
+    cx.timer.every(3000, (cx) => this.readLive(cx));
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        const name = c.split(/[:\s]/)[0];
+        const arg = c.slice(name.length + 1);
+        if (name === "query") {
+          this.input.set_value(arg);
+          this.setQuery(arg);
+        } else if (name === "filter") this.setGroup(Number(arg) - 1);
+        else if (name === "next" || name === "prev") this.move(name === "next" ? 1 : -1);
+        cx.notify();
+      }
+    });
+  }
+
+  // Each agent's herdr-bridge facts (prompt, last action, answer) and statusline (model).
+  readLive(cx) {
+    if (this.reading) return;
+    this.reading = true;
+    cx.spawn(async (cx) => {
+      const one = async (path) => {
+        try { return JSON.parse(await readTextFile(path)); } catch { return null; }
+      };
+      const next = {};
+      for (const p of panes()) {
+        if (!p.terminal || p.terminal.includes("/") || !p.program?.agent || next[p.terminal]) continue;
+        next[p.terminal] = {
+          bridge: await one(`${home()}/.claude/cache/herdr/${p.terminal}.json`),
+          sl: await one(`${home()}/.claude/cache/statusline/herdr-${p.terminal}.json`),
+        };
+      }
+      this.reading = false;
+      const key = JSON.stringify(next);
+      if (key !== this.liveKey) { this.liveKey = key; this.live = next; cx.notify(); }
+    });
+  }
+
+  dismiss() {
+    closeOverlay(props().overlay);
+  }
+
+  setQuery(q) {
+    if (q === this.query) return;
+    this.query = q;
+    this.moved = false; // the best match, at the next render
+    this.scroll.scroll_to_item(0);
+  }
+
+  setGroup(i) {
+    if (!(i >= 0 && i < GROUPS.length)) return;
+    this.group = i;
+    this.moved = false;
+    this.scroll.scroll_to_item(0);
+  }
+
+  selected() {
+    return this.rowsShown.find((r) => r.key === this.selKey) ?? this.rowsShown[0] ?? null;
+  }
+
+  move(d) {
+    const rows = this.rowsShown;
+    if (!rows.length) return;
+    const i = Math.max(0, rows.findIndex((r) => r.key === this.selKey));
+    const n = (i + d + rows.length) % rows.length;
+    this.selKey = rows[n].key;
+    this.moved = true;
+    // The selected row stays in view; the first one brings its eyebrow along.
+    this.scroll.scroll_to_item(n === 0 ? 0 : this.slots[n]);
+  }
+
+  isHome(s) {
+    return !s.machine && (s.name === "~" || !s.folder || s.folder === home());
+  }
+
+  // A space's registry entry: same machine, its folder or one under it.
+  entryOf(s, reg) {
+    if (this.isHome(s)) return null;
+    return reg.find((e) => (e.machine ?? null) === (s.machine ?? null) && e.folder && (s.folder === e.folder || s.folder.startsWith(`${e.folder}/`))) ?? null;
+  }
+
+  projectName(s, reg) {
+    return this.isHome(s) ? (s.named ? s.name : "Home") : this.entryOf(s, reg)?.name ?? s.name;
+  }
+
+  // Every row of every group, filtered and scored by the query.
+  rows(reg) {
+    const q = this.query.trim();
+    const all = panes();
+    const match = (r, fields) => {
+      const m = search(q, fields);
+      return m && Object.assign(r, { score: m.score, marks: m.marks });
+    };
+    const byScore = (list, tie) => (q ? list.sort((a, b) => b.score - a.score || tie(a, b)) : list.sort(tie));
+
+    const threads = [];
+    for (const w of spaces()) {
+      for (const c of w.tabs) {
+        const mine = all.filter((p) => p.tab === c.id && p.terminal);
+        const lead = mine.find((p) => p.focused) ?? mine.find((p) => p.program?.agent) ?? mine[0];
+        const agent = mine.find((p) => p.program?.agent) ?? lead;
+        const live = (agent?.terminal && this.live[agent.terminal]) || {};
+        const b = live.bridge ?? {};
+        const prompt = firstLine(b.prompt);
+        let title = label(c, agent);
+        if (!c.named && title === (agent?.program?.name ?? "Terminal") && prompt) title = prompt;
+        const action = firstLine(c.status === "working" || c.status === "blocked" ? b.action?.what : (b.answer ?? b.action?.what));
+        const r = { kind: "thread", key: `t:${c.id}`, w, c, agent, title, prompt, action, project: this.projectName(w, reg), branch: lead?.branch ?? w.branch ?? "", model: live.sl?.model ?? "" };
+        if (match(r, [r.title, r.project, r.branch, r.prompt])) threads.push(r);
+      }
+    }
+    const urgency = (r) => (r.c.settled ? 9 : RANK[r.c.status] ?? 4);
+    byScore(threads, (a, b) => urgency(a) - urgency(b) || (b.c.changed_at ?? 0) - (a.c.changed_at ?? 0));
+
+    const ps = spaces();
+    const open = ps
+      .map((s) => ({ kind: "project", key: `p:${s.id}`, s, e: this.entryOf(s, reg), home: this.isHome(s), name: this.projectName(s, reg), branch: s.branch ?? "" }))
+      .filter((r) => match(r, [r.name, r.branch, r.s.machine ?? ""]));
+    const closed = reg
+      .filter((e) => !ps.some((s) => this.entryOf(s, reg) === e))
+      .map((e) => ({ kind: "closed", key: `c:${e.id}`, e, name: e.name, branch: "" }))
+      .filter((r) => match(r, [r.name, "", r.e.machine ?? ""]));
+    const busy = byScore(open.filter((r) => r.s.status), (a, b) => (RANK[a.s.status] ?? 4) - (RANK[b.s.status] ?? 4));
+    const calm = byScore(open.filter((r) => !r.s.status), () => 0);
+    // Calm projects fold under one line, unless searching.
+    const projects = q
+      ? byScore([...open, ...closed], () => 0)
+      : [...busy, ...(calm.length ? [{ kind: "fold", key: "fold", count: calm.length }] : []), ...(this.showCalm ? calm : []), ...closed];
+
+    const pages = byScore(PAGES.map(([id, icon, name]) => ({ kind: "page", key: `g:${id}`, id, icon, name })).filter((r) => match(r, [r.name, r.id])), () => 0);
+
+    const actions = byScore(
+      [
+        { id: "new", icon: "square-pen", name: "Nouveau thread", kbd: "⌘T", go: () => { show("thread"); run("mod.open", { name: "kt-new" }); } },
+        // As kt-gwm's "Nouveau worktree": kt-new, whose Checkout pill makes it with gwm.
+        { id: "worktree", icon: "folder-tree", name: "Nouveau worktree", go: () => { show("thread"); run("mod.open", { name: "kt-new" }); } },
+        { id: "palette", icon: "layout-list", name: "Palette de commandes", kbd: "⌘⇧P", go: () => run("app.palette") },
+        { id: "panel", icon: "panel-right", name: "Basculer le panneau droit", go: () => run("layout.toggle", { id: "panel" }) },
+      ].map((a) => ({ kind: "action", key: `a:${a.id}`, ...a })).filter((r) => match(r, [r.name])),
+      () => 0,
+    );
+    return { threads, projects, pages, actions, counts: [threads.length + open.length + closed.length + pages.length + actions.length, threads.length, open.length + closed.length, pages.length] };
+  }
+
+  go(r, cx) {
+    if (!r) return;
+    if (r.kind === "fold") {
+      this.showCalm = !this.showCalm;
+      this.input.focus();
+      cx?.notify();
+      return;
+    }
+    // The popup goes first, as the shipped picker does; then what was picked.
+    this.dismiss();
+    if (r.kind === "thread") {
+      // The sidebar's way (tab.select, any space), then the keyboard on its agent.
+      show("thread");
+      if (!r.w.active) run("space.select", { id: r.w.id });
+      run("tab.select", { id: r.c.id });
+      if (r.agent?.terminal && r.agent.program?.agent) run("agent.focus", { terminal: r.agent.terminal });
+    } else if (r.kind === "project") {
+      show("thread");
+      run("space.select", { id: r.s.id });
+    } else if (r.kind === "closed") {
+      show("thread");
+      run("space.new", { folder: r.e.folder, name: r.e.name, machine: r.e.machine ?? "" });
+    } else if (r.kind === "page") show(r.id);
+    else if (r.kind === "action") r.go();
+  }
+
+  // ctrl+d on a thread: closes its tab, after kbrdn's confirm (this popup goes first, so its focus
+  // can't fight the confirm's). Confirmed there, so tab.close doesn't ask again on a last tab.
+  closeTab() {
+    const r = this.selected();
+    if (r?.kind !== "thread") return;
+    const last = r.w.tabs.length === 1;
+    this.dismiss();
+    openOverlay({
+      mod: "kt-confirm",
+      kind: "dialog",
+      width: 1,
+      height: 1,
+      frame: "none",
+      props: {
+        title: "Fermer ce thread ?",
+        detail: `« ${r.title} » (${r.project}) : son tab et ses terminaux s'arrêtent.${last ? ` C'est le dernier tab de « ${r.w.name} » : le space se ferme aussi.` : ""}`,
+        label: "Fermer",
+        danger: true,
+        command: { name: "tab.close", args: { id: r.c.id, confirmed: true } },
+      },
+    });
+  }
+
+  // Text with its matched letters in accent: runs of letters, the last one truncating.
+  hl(t, text, marks) {
+    const s = text ?? "";
+    if (!marks?.size) return div().min_w(0).truncate().child(s);
+    const runs = [];
+    for (let k = 0; k < s.length; k++) {
+      const on = marks.has(k);
+      if (runs.length && runs[runs.length - 1].on === on) runs[runs.length - 1].s += s[k];
+      else runs.push({ on, s: s[k] });
+    }
+    return h_flex()
+      .min_w(0)
+      .overflow_hidden()
+      .children(runs.map((r, i) => {
+        const d = div().child(r.s.replace(/ /g, " "));
+        return (i === runs.length - 1 ? d.min_w(0).truncate() : d.flex_none()).when(r.on, (el) => el.text_color(t.accent));
+      }));
+  }
+
+  kbd(t, k) {
+    return div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
+  }
+
+  // A picked row: the kbrdn.dev ink (transparent border elsewhere: no shift).
+  line(t, r, on, h) {
+    return h_flex()
+      .id(`kp-${r.key}`)
+      .flex_none()
+      .h(h)
+      .px(10)
+      .gap(10)
+      .items_center()
+      .rounded(12)
+      .border(1)
+      .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
+      .when(on, (el) => el.bg(alpha(t.accent, "24")))
+      .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+      .cursor_pointer()
+      .on_click((_e, cx) => this.go(r, cx));
+  }
+
+  // Status, mono 10.5: a colored dot (only "needs you" pulses) and what it is.
+  status(t, c) {
+    const st = c.status ?? (c.settled ? "settled" : null);
+    if (!st) return null;
+    const color = st === "settled" || st === "idle" ? t.dim : t[st];
+    const text = st === "settled" ? "SETTLED" : st === "working" && c.working_since ? `WORKING ${duration(c.working_since)}` : STATUS[st];
+    return h_flex()
+      .flex_none()
+      .gap(5)
+      .items_center()
+      .font_family(MONO)
+      .text_size(10.5)
+      .text_color(color)
+      .child(div().id(`kp-dot-${c.id}`).size(6).rounded(3).flex_none().bg(color).when(st === "blocked", (el) => el.loop("opacity", { from: 0.3, to: 1, period: 1200 })))
+      .child(text);
+  }
+
+  threadRow(t, r, on) {
+    const m = r.marks ?? [];
+    const dot = () => div().flex_none().px(5).child("·");
+    const meta = [
+      r.project && this.hl(t, r.project.toUpperCase(), m[1]).flex_none().max_w(140),
+      r.branch && this.hl(t, r.branch, m[2]).flex_shrink(1),
+      r.model && div().flex_none().child(r.model),
+    ].filter(Boolean);
+    // The last action; the prompt instead when the search found it there (and it isn't the title).
+    const why = m[3]?.size && r.prompt !== r.title ? this.hl(t, `“${r.prompt}”`, new Set([...m[3]].map((k) => k + 1))) : r.action ? div().min_w(0).truncate().child(`↳ ${r.action}`) : null;
+    const st = this.status(t, r.c);
+    return this.line(t, r, on, H.thread)
+      .child(tile(t, r.agent?.program))
+      .child(
+        v_flex()
+          .flex_1()
+          .min_w(0)
+          .gap(2)
+          .child(
+            h_flex()
+              .h(20)
+              .gap(8)
+              .items_center()
+              .child(this.hl(t, r.title, m[0]).flex_1().text_size(13.5).font_medium().text_color(r.c.settled ? t.muted : t.foreground))
+              .when(Boolean(st), (el) => el.child(st)),
+          )
+          .child(
+            h_flex()
+              .h(16)
+              .gap(10)
+              .items_center()
+              .child(h_flex().flex_none().max_w(330).min_w(0).overflow_hidden().items_center().font_family(MONO).text_size(10.5).text_color(t.dim)
+                .children(meta.flatMap((x, i) => (i ? [dot(), x] : [x]))))
+              .when(Boolean(why), (el) => el.child(why.flex_1().text_size(11.5).text_color(t.muted))),
+          ),
+      );
+  }
+
+  // A project's mark: Home's house, its logo, else its initial on its color.
+  mark(t, r) {
+    if (r.home) return h_flex().size(20).flex_none().items_center().justify_center().child(svg(I("house")).size(15).text_color(t.muted));
+    const logo = logoOf(r.e);
+    if (logo) return image(logo).size(20).flex_none().rounded(5);
+    const c = (r.s && (shared("space.colors") ?? {})[r.s.id]) ?? r.e?.color;
+    return h_flex().size(20).flex_none().rounded(6).bg(paint(t, c) ?? t.dim).items_center().justify_center()
+      .text_size(11).font_semibold().text_color(t.chrome).child([...(r.name ?? "?")][0]?.toUpperCase() ?? "?");
+  }
+
+  projectRow(t, r, on) {
+    const m = r.marks ?? [];
+    const mono = (color, text) => div().flex_none().font_family(MONO).text_size(10.5).text_color(color).child(text);
+    if (r.kind === "closed") {
+      return this.line(t, r, on, H.closed)
+        .child(div().opacity(0.5).child(this.mark(t, r)))
+        .child(this.hl(t, r.name, m[0]).flex_1().text_size(13).text_color(t.dim))
+        .when(Boolean(r.e.machine), (el) => el.child(mono(t.dim, r.e.machine)))
+        .child(mono(t.dim, "FERMÉ"));
+    }
+    const s = r.s;
+    return this.line(t, r, on, H.project)
+      .child(this.mark(t, r))
+      .child(this.hl(t, r.name, m[0]).flex_none().max_w(220).text_size(13).text_color(s.active ? t.foreground : t.muted))
+      .child(h_flex().flex_1().min_w(0).font_family(MONO).text_size(10.5).text_color(t.dim).child(this.hl(t, r.branch, m[1])))
+      .when(Boolean(s.machine), (el) => el.child(div().flex_none().px(6).rounded_full().bg(t.raised).font_family(MONO).text_size(10.5).text_color(t.dim).child(s.machine)))
+      .children(["working", "blocked", "done"].filter((st) => s.tabs.some((c) => c.status === st)).map((st) => div().size(6).rounded(3).flex_none().bg(t[st])))
+      .child(mono(t.muted, String(s.tabs.length)))
+      .when(s.active, (el) => el.child(mono(t.accent, "ICI")));
+  }
+
+  render(cx) {
+    const t = theme();
+    const reg = registry();
+    const { threads, projects, pages, actions, counts } = this.rows(reg);
+    const g = GROUPS[this.group][0];
+    const sections = [
+      (g === "all" || g === "threads") && ["Threads", threads, threads.length],
+      (g === "all" || g === "projects") && ["Projets", projects, counts[2]],
+      (g === "all" || g === "pages") && ["Pages", pages, pages.length],
+      g === "all" && ["Actions", actions, actions.length],
+    ].filter((x) => x && x[1].length);
+    const pickable = sections.flatMap(([, list]) => list);
+    // Until you move, the selection is the top row (the one that needs you, or the best match),
+    // even as live data reorders the list; after that it stays on its row.
+    if (!this.moved || !pickable.some((r) => r.key === this.selKey)) {
+      const best = this.query.trim() ? [...pickable].sort((a, b) => b.score - a.score)[0] : pickable[0];
+      this.selKey = best?.key ?? null;
+    }
+    this.rowsShown = pickable;
+    const view = find(layout(), "view")?.active;
+    const sel = this.selKey;
+
+    // The list: eyebrows and rows as direct children (scroll_to_item counts them), fixed heights.
+    const children = [];
+    const slots = [];
+    let total = 0;
+    for (const [name, list, count] of sections) {
+      children.push(
+        h_flex().flex_none().h(H.eyebrow).px(10).pt(8).gap(8).items_center().font_family(MONO).text_size(10.5).text_color(t.muted)
+          .child(name.toUpperCase())
+          .child(div().text_color(t.dim).child(String(count)))
+          .child(div().flex_1().h(1).bg(t.border)),
+      );
+      total += H.eyebrow;
+      for (const r of list) {
+        const on = r.key === sel;
+        slots.push(children.length);
+        total += H[r.kind];
+        if (r.kind === "thread") children.push(this.threadRow(t, r, on));
+        else if (r.kind === "project" || r.kind === "closed") children.push(this.projectRow(t, r, on));
+        else if (r.kind === "fold") {
+          children.push(this.line(t, r, on, H.fold)
+            .child(h_flex().size(20).flex_none().items_center().justify_center().child(svg(I(this.showCalm ? "chevron-down" : "chevron-right")).size(13).text_color(t.dim)))
+            .child(div().flex_1().font_family(MONO).text_size(10.5).text_color(t.muted).child(`${r.count} PROJET${r.count > 1 ? "S" : ""} CALME${r.count > 1 ? "S" : ""}`)));
+        } else {
+          const here = r.kind === "page" && view === r.id;
+          children.push(this.line(t, r, on, H[r.kind])
+            .child(h_flex().size(20).flex_none().items_center().justify_center().child(svg(I(r.icon)).size(15).text_color(here ? t.accent : t.muted)))
+            .child(this.hl(t, r.name, r.marks?.[0]).flex_1().text_size(13).text_color(t.foreground))
+            .when(here, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.accent).child("AFFICHÉE")))
+            .when(Boolean(r.kbd), (el) => el.child(this.kbd(t, r.kbd))));
+        }
+      }
+    }
+    this.slots = slots;
+    if (!pickable.length) {
+      children.push(h_flex().flex_none().h(H.empty).items_center().justify_center().text_size(13).text_color(t.muted)
+        .child(this.query.trim() ? `Rien pour « ${this.query.trim()} »` : "Rien ici"));
+      total = H.empty;
+    }
+    // The list takes up to 440 px, less in a short window (56 above the card, ~190 for its field,
+    // pills and foot, 24 below).
+    const listH = Math.min(total + 6, 440, Math.max(120, (this.winH ?? 900) - 270));
+
+    const typing = this.typing;
+    const hint = (k, what) => h_flex().gap(5).items_center().child(this.kbd(t, k)).child(div().child(what));
+    const card = v_flex()
+      .id("kp-card")
+      .flex_none()
+      .w_full()
+      .max_w(680)
+      // Clicks in the card stay in it (the veil around it closes).
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .p(4)
+      .rounded(20)
+      .bg(t.popover)
+      .border(1)
+      .border_color(t.border)
+      .shadow_lg()
+      .text_size(13)
+      .text_color(t.foreground)
+      .child(
+        v_flex()
+          .rounded(16)
+          .bg(t.surface)
+          .border(1)
+          .border_color(t.border)
+          .child(
+            v_flex()
+              .p(12)
+              .pb(4)
+              .gap(10)
+              // The field (radius 12) in its accent ring (3 px, radius 15) while it has the keyboard.
+              .child(
+                div()
+                  .p(3)
+                  .rounded(15)
+                  .bg(typing ? alpha(t.accent, "33") : alpha(t.accent, "00"))
+                  .child(
+                    h_flex()
+                      .h(44)
+                      .px(14)
+                      .gap(10)
+                      .items_center()
+                      .rounded(12)
+                      .bg(t.background)
+                      .border(1)
+                      .border_color(typing ? t.accent : t.input)
+                      .child(svg(I("search")).size(15).flex_none().text_color(t.dim))
+                      .child(Input.new(this.input).flex_1().h_full().text_size(15).text_color(t.foreground))
+                      .child(div().id("kp-esc").flex_none().cursor_pointer().on_click(() => this.dismiss()).child(this.kbd(t, "esc"))),
+                  ),
+              )
+              // kbrdn.dev `.segmented`: the group, ⌘1-4.
+              .child(
+                h_flex()
+                  .gap(10)
+                  .items_center()
+                  .child(
+                    h_flex()
+                      .flex_none()
+                      .p(3)
+                      .gap(2)
+                      .items_center()
+                      .rounded_full()
+                      .border(1)
+                      .border_color(t.border)
+                      .bg(t.background)
+                      .children(GROUPS.map(([id, name], i) => {
+                        const on = i === this.group;
+                        return h_flex()
+                          .id(`kp-g-${id}`)
+                          .h(24)
+                          .px(9)
+                          .gap(6)
+                          .flex_none()
+                          .items_center()
+                          .rounded_full()
+                          .border(1)
+                          .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
+                          .when(on, (el) => el.bg(alpha(t.accent, "24")))
+                          .font_family(MONO)
+                          .text_size(11)
+                          .text_color(on ? t.accent : t.muted)
+                          .cursor_pointer()
+                          .hover((s) => s.text_color(on ? t.accent : t.foreground))
+                          .on_click((_e, cx) => {
+                            this.setGroup(i);
+                            this.input.focus();
+                            cx.notify();
+                          })
+                          .child(name.toUpperCase())
+                          .child(div().text_color(on ? t.accent : t.dim).child(String(counts[i])));
+                      })),
+                  ),
+              ),
+          )
+          .child(
+            v_flex()
+              .id("kp-list")
+              .h(listH)
+              .min_h(0)
+              .px(6)
+              .pb(6)
+              .overflow_y_scrollbar()
+              .track_scroll(this.scroll)
+              .children(children),
+          )
+          // The foot, under a dashed rule: the keys.
+          .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
+          .child(
+            h_flex()
+              .px(14)
+              .py(10)
+              .gap(12)
+              .items_center()
+              .text_size(11)
+              .text_color(t.dim)
+              .child(hint("↑↓", "naviguer"))
+              .child(hint("↵", "ouvrir"))
+              .child(hint("⌘1-4", "filtrer"))
+              .when(this.selected()?.kind === "thread", (el) => el.child(hint("ctrl+d", "fermer le thread")))
+              .child(div().flex_1())
+              .child(hint("esc", "fermer")),
+          ),
+      );
+
+    // A full-window dialog (mod.json): our own veil, darker than the native dim (which barely
+    // shows in Glass), the card on top of it, centered, 56 px down. A click on the veil closes.
+    const dark = settings().dark;
+    return v_flex()
+      .id("kt-picker")
+      .size_full()
+      .items_center()
+      .px(16)
+      .pt(56)
+      .bg(alpha(dark ? "#000000" : "#0a0a0a", dark ? "8c" : "59"))
+      .on_size_change((size, cx) => {
+        this.winH = size.height / (settings().zoom || 1);
+        cx.notify();
+      })
+      .on_click(() => this.dismiss())
+      .on_key_down((e, cx) => {
+        const k = e.key;
+        const m = e.modifiers;
+        // Stopped here, so Herdr's own Esc doesn't close a second dialog under this one.
+        if (k === "escape") this.dismiss();
+        else if (k === "down" || k === "up") this.move(k === "down" ? 1 : -1);
+        else if (m.platform && /^[1-4]$/.test(k)) this.setGroup(Number(k) - 1);
+        else if (m.control && k === "d") this.closeTab();
+        else return;
+        cx.stop_propagation();
+        cx.notify();
+      })
+      .child(card);
+  }
+}
