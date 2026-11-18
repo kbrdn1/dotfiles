@@ -43,7 +43,11 @@
 // again, with their counts), the cards' density (D, the header's fifth button: normal, compact, the
 // title and status only, or detailed). A card the pointer rests on, or the keys' cursor, unfolds its
 // session as the sidebar's focus card shows it (#38: model · effort, context and quota rings, cost, run
-// time, lines, the cache's TTL and hit; compact: everything), always shown in detailed. The cost is the drawer's (and, with the columnCost option, off by default, the
+// time, lines, the cache's TTL and hit; compact: everything), always shown in detailed. The filter
+// (#35): typing a token completes its field, then its values (the board's projects, agents, branches;
+// kt-new's keys); its terms show as chips under the toolbar (a click, or F then x, removes one; one set
+// aside in the warning color); a card's agent, PR, project, branch or a column's name clicked adds its
+// term (alt: negated), f the cursor's card's « filter by… ». The cost is the drawer's (and, with the columnCost option, off by default, the
 // column heads'). It lists every project's threads, whatever the sidebar's scope or filter: its
 // views decide (GitHub Projects), through the filter typed after `/` (the archived only with
 // is:archived), then the slice. A click or enter: back to the thread, on that agent (agent.focus).
@@ -66,7 +70,7 @@ import * as io from "./threads-io.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
   costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
-  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart, takesFocus, sessionOf, ttlText, WIDTH, stepWidth, laneWidths, toggleHidden } from "./kanban.js";
+  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart, takesFocus, sessionOf, ttlText, termText, chipsOf, dropToken, addTerm, filterValues, completions, cardTerms, WIDTH, stepWidth, laneWidths, toggleHidden } from "./kanban.js";
 // The sidebar's decisions (a byte-identical copy of kbrdn-toast's decide.js): what a blocked agent waits
 // on, its pills, and its answer (press, the sidebar's and the toast's path).
 import { decide, decisionButtons, press as answer } from "./decide.js";
@@ -126,6 +130,10 @@ const AUTO_ARCHIVED = "kt.kanban.autoArchived"; // { since, done: { tab id: when
 const WAIT = 600; // vim.js' time between the two keys of gt / gT
 const HOVER_IN = 200; // #38: the pointer resting on a card this long unfolds it (passing over doesn't)
 const HOVER_OUT = 150; // and it folds back this long after the pointer left (the sidebar's linger)
+// #35: a filter chip's color, by its field (a word: muted; set aside: the warning color).
+const FIELD_TINT = { status: "accent", phase: "ansi5", project: "ansi4", agent: "ansi6", branch: "ansi2", pr: "ansi2", is: "ansi3", cost: "ansi3", age: "ansi3" }; // i18n: tech
+const FIELD_ICON = { project: "folder", agent: "bot", branch: "git-branch", pr: "git-pull-request", status: "circle-dashed", phase: "workflow", is: "square-pen" };
+const COMP_ROWS = 8; // the completion's rows shown (it scrolls past them; the Popup keeps clear of the window's edges)
 const toks = (n) => (n < 1000 ? String(n) : n < 1e6 ? `${Math.floor(n / 1000)}k` : `${(n / 1e6).toFixed(1)}M`); // the sidebar's
 
 // The board's choices as stored (the key strings in full: kt-mods finds who reads them by a grep).
@@ -178,7 +186,13 @@ export default class Kanban extends View {
     this.snoozing = false;
     this.details = {};
     this.decisions = {}; // a blocked agent's terminal -> decide.js' { pending, … } (readDecisions)
-    this.menu = null; // a card's menu: { id (its thread), key (the item under the keys' cursor), anim (its motion id) }
+    this.menu = null; // a card's menu: { id (its thread), key (the item under the keys' cursor), anim (its motion id), kind ("card" | "filter": f) }
+    // #35, the filter: its completion's highlighted row and scroll, the text esc closed it on; the chip
+    // under the keys' cursor (F), else null.
+    this.compAt = 0;
+    this.compScroll = ScrollHandle.new();
+    this.compShut = null;
+    this.chipAt = null;
     this.menus = 0;
     this.cur = null; // the keys' cursor: a thread id
     this.at = null; // where it last was, { l, c, i } (kanban.js locate)
@@ -372,6 +386,7 @@ export default class Kanban extends View {
         this.shown = false;
         this.menu = null; // a card's menu doesn't wait for the page to come back
         this.hover = this.keep = this.entering = null; // nor a card unfolded under the pointer (#38)
+        this.chipAt = null; // nor the filter's chip cursor (#35)
         // Left for another page or the thread with the keyboard still here: back to the thread's terminal.
         if (this.handle.is_focused()) this.toTerminal();
       }
@@ -420,6 +435,8 @@ export default class Kanban extends View {
     this.limits = { ...v.limits };
     this.widths = { ...v.widths };
     this.hidden = [...v.hidden];
+    this.chipAt = null;
+    this.compShut = null;
     this.limitEdit = null;
     this.renaming = null; // another tab, a copy, a discard, a delete: no tab stays a field
     this.reveal = true;
@@ -541,18 +558,66 @@ export default class Kanban extends View {
       const list = th ? this.menuItems(th) : [];
       const i = Math.max(0, list.findIndex((it) => it.key === menu.key));
       if (["j", "down", "k", "up"].includes(name)) menu.key = list[(i + (name === "j" || name === "down" ? 1 : list.length - 1)) % list.length]?.key ?? null;
-      else if (name === "enter") this.runItem(th, list[i], cx);
+      // The filter's menu (f): - or alt-enter adds the term negated (keyOf names alt-enter « enter »).
+      else if (name === "enter") this.runItem(th, list[i], cx, menu.kind === "filter" && Boolean(typeof e === "object" && e?.modifiers?.alt));
+      else if (menu.kind === "filter" && name === "-") this.runItem(th, list[i], cx, true);
       else if (name === "escape" || name === "q") this.closeMenu(cx);
       else if (list.some((it) => it.hint === name)) this.runItem(th, list.find((it) => it.hint === name), cx);
       else if (/^(ctrl|cmd)-/.test(name)) return false;
       return true;
     }
+    // #35, the filter's chips under the keys' cursor (F): h / l (← / →) move, x or backspace removes the
+    // term, esc, q, F or enter leave them, / leaves them for the filter; the rest stops here.
+    if (this.chipAt != null) {
+      const list = chipsOf(this.query);
+      if (name === "h" || name === "left") this.chipAt = Math.max(0, this.chipAt - 1);
+      else if (name === "l" || name === "right") this.chipAt = Math.min(list.length - 1, this.chipAt + 1);
+      else if (name === "x" || name === "backspace") {
+        const c = list[this.chipAt];
+        if (c) this.query = dropToken(this.query, c.i);
+        this.chipAt = list.length > 1 ? Math.min(this.chipAt, list.length - 2) : null;
+      } else if (["escape", "q", "F", "enter"].includes(name)) this.chipAt = null;
+      else if (name === "/") {
+        this.chipAt = null;
+        return this.act(this.vim.handle(e), cx);
+      } else if (/^(ctrl|cmd)-/.test(name)) return false;
+      return true;
+    }
+    // The filter's completion, while typing (it takes ↓ ↑, ctrl-n / p / j / k, shift-tab, tab, enter and
+    // esc before vim's INSERT: kt-new's list): tab or enter takes the row, esc closes the list (once more:
+    // NORMAL).
+    const comp = this.vim.insert ? this.compOf() : [];
+    if (comp.length) {
+      const k = comp.length;
+      const by = ["down", "ctrl-n", "ctrl-j"].includes(name) ? 1 : ["up", "ctrl-p", "ctrl-k", "shift-tab"].includes(name) ? -1 : 0;
+      if (by) {
+        this.compAt = (Math.min(this.compAt, k - 1) + by + k) % k;
+        this.compScroll.scroll_to_item(this.compAt);
+        return true;
+      }
+      if (name === "tab" || name === "enter") {
+        this.query = comp[Math.min(this.compAt, k - 1)].query;
+        this.compAt = 0;
+        return true;
+      }
+      if (name === "escape") {
+        this.compShut = this.query;
+        return true;
+      }
+    }
     if (this.vim.insert) return this.act(this.vim.handle(e), cx);
-    // m: the cursor's card's menu.
-    if (name === "m") {
+    // m: the cursor's card's menu; f: its « filter by… » (kanban.js cardTerms).
+    if (name === "m" || name === "f") {
       const th = atCard(this.board, this.at ?? { l: 0, c: 0, i: -1 });
       this.vim.normal();
-      if (th) this.openMenu(th, cx);
+      if (th) this.openMenu(th, cx, name === "f" ? "filter" : "card");
+      return true;
+    }
+    // F: the filter's chips under the keys' cursor (the last one first).
+    if (name === "F") {
+      this.vim.normal();
+      const n = chipsOf(this.query).length;
+      if (n) this.chipAt = n - 1;
       return true;
     }
     // n: a new draft (its drawer opens, its title typed at once).
@@ -699,17 +764,41 @@ export default class Kanban extends View {
     exec("zed", [th.cwd]).catch(() => exec("open", [`zed://file${th.cwd}`]).catch(() => {}));
   }
 
+  // ---------- the filter, refined (#35: kanban.js chipsOf, completions, addTerm) ----------
+
+  // Entering it (`/`, a click): a space after what it holds (trimmed in the view: no dot), the chip cursor gone.
+  editFilter() {
+    if (this.query && !/\s$/.test(this.query)) this.query += " ";
+    this.chipAt = null;
+    this.compAt = 0;
+  }
+
+  // The completion for what is typed: only a token being typed (nothing on an empty one, nor after a
+  // space), and not once esc closed it on this very text.
+  compOf() {
+    const q = this.query;
+    return /\S$/.test(q) && q !== this.compShut ? completions(q, this.values ?? {}) : [];
+  }
+
+  // A card's value clicked (alt: negated), or f's choice: its term in the filter.
+  addFilter(field, value, neg = false) {
+    this.query = addTerm(this.query, field, value, neg);
+    this.reveal = true;
+  }
+
   // ---------- a card's menu (kanban.js cardMenu; anchored to the card: withMenu) ----------
 
   // Right-click or m: the card takes the cursor and the keyboard, its PR and issue are read (their items);
-  // the highlight on « go » (menuStart: never on a choice, enter can't accept by accident).
-  openMenu(th, cx) {
+  // the highlight on « go » (menuStart: never on a choice, enter can't accept by accident). `kind`
+  // "filter" (f, #35): its values to filter by instead, nothing read.
+  openMenu(th, cx, kind = "card") {
     if (this.editing) this.commitEdit();
     this.vim.normal();
     this.handle.focus();
     this.cur = th.id;
-    this.menu = { id: th.id, key: menuStart(this.menuItems(th)), anim: `km-${++this.menus}` };
-    if (!th.draft) this.loadDetail(cx, false, th.id);
+    this.chipAt = null;
+    this.menu = { id: th.id, key: menuStart(this.menuItems(th, kind)), anim: `km-${++this.menus}`, kind };
+    if (!th.draft && kind === "card") this.loadDetail(cx, false, th.id);
   }
 
   // motion.js leave(): it fades and sinks 6 px, then goes (unless another opened meanwhile).
@@ -723,7 +812,8 @@ export default class Kanban extends View {
     });
   }
 
-  menuItems(th) {
+  menuItems(th, kind = this.menu?.kind) {
+    if (kind === "filter") return cardTerms(th).map((x) => ({ key: `filter:${x.field}`, field: x.field, value: x.value }));
     const d = this.details[th.id] ?? {};
     return cardMenu(th, { decision: this.decisions[th.terminal], prUrl: d.pr?.url ?? th.pr?.url, issueUrl: d.issue?.url });
   }
@@ -731,11 +821,12 @@ export default class Kanban extends View {
   // One item run, then the menu leaves. A decision goes by decide.js' press (the sidebar's and the
   // toast's answer: the decision file herdr-bridge's plugin reads, or the held dialog's keys); closing
   // the thread asks kt-confirm (it says what stops); archiving is the sidebar's (nothing closes).
-  runItem(th, it, cx) {
+  runItem(th, it, cx, neg = false) {
     if (!th || !it) return;
     const [kind, arg] = it.key.split(":");
     const d = this.details[th.id] ?? {};
     const go = {
+      filter: () => this.addFilter(it.field, it.value, neg), // f's (#35): `neg` with - or alt
       decide: () => {
         const dd = this.decisions[th.terminal];
         if (dd) cx.spawn(async (cx) => this.decided(await answer(dd, arg), cx));
@@ -886,10 +977,15 @@ export default class Kanban extends View {
   // One vim action on the board; false: not one it has, and the key goes on.
   act(a, cx) {
     if (!a) return false;
+    // `/`: the filter, a space after what it holds (its last term stays a chip, no completion pops on it).
+    if (a === "filter") this.editFilter();
     if (a === "pending" || a === "count" || a === "filter" || a === "normal") return true;
     const b = this.board;
     const at = this.at ?? { l: 0, c: 0, i: -1 };
-    if (a === "type" || a === "backspace") this.query = a === "type" ? this.query + this.vim.char : this.query.slice(0, -1);
+    if (a === "type" || a === "backspace") {
+      this.query = a === "type" ? this.query + this.vim.char : this.query.slice(0, -1);
+      this.compAt = 0;
+    }
     else if (["down", "up", "top", "bottom", "half-down", "half-up", "next", "prev", "left", "right", "tab-next", "tab-prev"].includes(a)) {
       this.at = move(b, at, a, this.vim.count, PAGE_ROWS);
       this.cur = atCard(b, this.at)?.id ?? null;
@@ -1053,7 +1149,11 @@ export default class Kanban extends View {
     return v_flex().flex_none()
       .child(h_flex().h(40).px(14).gap(8).items_center()
         .child(div().size(8).rounded(4).flex_none().bg(t[TINT[key]] ?? t.dim))
-        .child(div().flex_none().text_size(13).font_medium().text_color(t.foreground).child(this.colName(key)))
+        // Its name clicked (#35): its status (or phase) in the filter, alt: negated.
+        .child(div().id(`kk-fv-col-${key}`).flex_none().text_size(13).font_medium().text_color(t.foreground).cursor_pointer()
+          .hover((s) => s.text_color(t.accent)).tooltip(tr("fv.tip", { term: termText({ field: this.colField, value: key }) }))
+          .on_click((e, cx) => { this.addFilter(this.colField, key, Boolean(e?.modifiers?.alt)); cx.notify(); })
+          .child(this.colName(key)))
         .child(h_flex().id(`kk-wip-${key}`).flex_none().h(20).px(6).gap(3).items_center().rounded(6).border(1)
           .border_color(over ? alpha(t.blocked, "66") : editing ? t.border : alpha(t.border, "00"))
           .when(over, (el) => el.bg(alpha(t.blocked, "24")))
@@ -1156,9 +1256,15 @@ export default class Kanban extends View {
     const subs = th.subagents;
     const ci = th.report?.ci?.total ? th.report.ci : ciCount(this.details[th.id]?.pr?.checks);
     const count = (icon, color, n) => n > 0 && h_flex().flex_none().gap(2).items_center().text_color(color).child(svg(I(icon)).size(10)).child(mono(color, String(n)));
+    // #35: a value of the card (its agent, its PR, its project, its branch) clicked adds its term to the
+    // filter (kanban.js cardTerms; alt: negated); never on a leaving copy. The card's own click is stopped.
+    const terms = Object.fromEntries(cardTerms(th).map((x) => [x.field, x.value]));
+    const fv = (field, el) => (gone || terms[field] == null ? el : el.id(`kk-fv-${field}-${key}`).cursor_pointer()
+      .hover((s) => s.text_color(t.accent)).tooltip(tr("fv.tip", { term: termText({ field, value: terms[field] }) }))
+      .on_click((e, cx) => { cx.stop_propagation(); this.addFilter(field, terms[field], Boolean(e?.modifiers?.alt)); cx.notify(); }));
     const facts = () => [
-      look && h_flex().flex_none().gap(3).items_center().text_color(t[look.color])
-        .child(svg(I(look.icon)).size(11)).child(mono(t[look.color], `#${th.pr.number}`)),
+      look && fv("pr", h_flex().flex_none().gap(3).items_center().text_color(t[look.color])
+        .child(svg(I(look.icon)).size(11)).child(mono(t[look.color], `#${th.pr.number}`))),
       ci?.total && h_flex().id(`kk-ci-${key}`).flex_none().gap(5).items_center()
         .tooltip(tr("ci.tip", { ok: ci.ok, fail: ci.fail, pending: ci.pending }))
         .child(mono(t.dim, "CI")) // i18n: tech
@@ -1181,10 +1287,10 @@ export default class Kanban extends View {
       // Last, where it is: its project, its branch (a worktree's icon in a linked one).
       h_flex().h(16).gap(6).items_center()
         .child(this.mark(t, th.project, 12))
-        .child(div().flex_none().max_w(96).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(th.project.name.toUpperCase()))
+        .child(fv("project", div().flex_none().max_w(96).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(th.project.name.toUpperCase())))
         .when(Boolean(th.branch), (el) => el
           .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
-          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch))),
+          .child(fv("branch", div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch)))),
     ].filter(Boolean); };
     const session = () => (ses ? this.sessionBlock(t, th, ses, key, now) : null);
     // Unfolding: in a column, on its height (collapse, a builder: it folds back on its height too); by
@@ -1201,7 +1307,7 @@ export default class Kanban extends View {
       .when(!gone && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
       .when(!gone, (el) => el.cursor_pointer().on_click(() => this.open(th)).on_hover((h, cx) => this.hovering(th.id, h, cx)))
       .child(h_flex().h(20).gap(8).items_center()
-        .child(pet)
+        .child(fv("agent", h_flex().flex_none().child(pet)))
         // The title opens the card's drawer (the rest of the card goes to the agent, as enter).
         .child(div().id(`kk-tt-${key}`).flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(muted ? t.muted : t.foreground)
           .when(!gone, (el) => el.hover((s) => s.text_color(t.accent)).on_click((_e, cx) => { cx.stop_propagation(); this.openDrawer(th.id, cx); cx.notify(); }))
@@ -1316,21 +1422,25 @@ export default class Kanban extends View {
     const tone = { positive: t.done, negative: t.ansi1, danger: t.ansi1 };
     const row = (it, i) => {
       const [kind, arg] = it.key.split(":");
-      const label = kind === "decide" ? words[arg] ?? it.label : kind === "snooze" ? tr("menu.snooze", { when: tr(`snooze.${arg}`) }) : words[kind];
-      const color = tone[it.tone] ?? t.foreground;
+      // f's (#35): the term it adds, in its field's color; alt-click adds it negated.
+      const term = kind === "filter";
+      const label = term ? termText({ field: it.field, value: it.value })
+        : kind === "decide" ? words[arg] ?? it.label : kind === "snooze" ? tr("menu.snooze", { when: tr(`snooze.${arg}`) }) : words[kind];
+      const color = term ? t[FIELD_TINT[it.field]] ?? t.foreground : tone[it.tone] ?? t.foreground;
       return v_flex()
         .when(Boolean(it.sep) && i > 0, (el) => el.child(div().mx(7).my(4).h(1).bg(t.border)))
-        .child(h_flex().id(`kk-mi-${it.key}`).h(31).px(8).gap(9).rounded(7).items_center().text_color(color).cursor_pointer()
+        .child(h_flex().id(`kk-mi-${it.key}`).h(31).px(8).gap(9).rounded(7).items_center().text_color(term ? t.foreground : color).cursor_pointer()
           .when(i === at, (el) => el.bg(t.selected))
           .hover((st) => st.bg(t.hover))
-          .on_click((_e, cx) => { cx.stop_propagation(); this.runItem(th, it, cx); cx.notify(); })
+          .on_click((e, cx) => { cx.stop_propagation(); this.runItem(th, it, cx, Boolean(e?.modifiers?.alt)); cx.notify(); })
           .child(kind === "decide"
             ? h_flex().size(14).flex_none().items_center().justify_center().child(div().size(8).rounded(4).bg(color))
-            : svg(I(icons[kind])).size(14).flex_none().text_color(it.tone ? color : t.muted))
-          .child(div().flex_1().min_w(0).truncate().child(label))
+            : svg(I(term ? FIELD_ICON[it.field] ?? "search" : icons[kind])).size(14).flex_none().text_color(it.tone || term ? color : t.muted))
+          .child(div().flex_1().min_w(0).truncate().when(term, (el) => el.font_family(MONO).text_size(11.5)).child(label))
           .when(Boolean(it.hint), (el) => el.child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(it.hint))));
     };
-    return s.card(s.veil(v_flex().id("kk-menu"))).w(236).p(5).rounded(12).border(1).border_color(t.border).bg(t.popover).text_size(12.8)
+    const filtering = this.menu.kind === "filter";
+    return s.card(s.veil(v_flex().id("kk-menu"))).w(filtering ? 260 : 236).p(5).rounded(12).border(1).border_color(t.border).bg(t.popover).text_size(12.8)
       .on_size_change((_size, cx) => {
         if (this.menuShown === anim) return;
         this.menuShown = anim;
@@ -1340,7 +1450,9 @@ export default class Kanban extends View {
         this.closeMenu(cx);
         cx.notify();
       })
-      .children(list.map(row));
+      .when(filtering, (el) => el.child(div().px(8).pt(4).pb(2).font_family(MONO).text_size(10).text_color(t.muted).child(tr("fmenu.title").toUpperCase())))
+      .children(list.map(row))
+      .when(filtering, (el) => el.child(div().mt(4).px(8).py(5).border_t(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.dim).child(tr("fmenu.keys"))));
   }
 
   // What a blocked thread waits on (the sidebar's: decide.js, read for the blocked agents while the page
@@ -1652,6 +1764,34 @@ export default class Kanban extends View {
       .child(head).child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.input)).child(body), `kk-dr-${th.id}`, { dy: 0 });
   }
 
+  // #35, a filter chip: its term in its field's color (a word muted; one set aside in the warning color,
+  // its icon and the filter's help); an x; a click removes the term. `on`: under the keys' cursor (F).
+  chip(t, c, on) {
+    const color = !c.ok ? t.blocked : c.field ? t[FIELD_TINT[c.field]] ?? t.muted : t.muted;
+    return h_flex().id(`kk-chip-${c.i}`).flex_none().h(22).pl(8).pr(5).gap(5).items_center().rounded_full().border(1)
+      .border_color(on ? alpha(t.accent, "99") : alpha(color, "66")).bg(on ? alpha(t.accent, "24") : alpha(color, "1a"))
+      .text_color(color).cursor_pointer().hover((s) => s.bg(alpha(color, "33")))
+      .tooltip(c.ok ? tr("chip.remove", { term: c.text }) : tr("filter.help"))
+      .on_click((_e, cx) => { this.query = dropToken(this.query, c.i); this.reveal = true; cx.notify(); })
+      .when(!c.ok, (el) => el.child(svg(I("circle-alert")).size(11).flex_none()))
+      .child(div().font_family(MONO).text_size(10.5).when(c.neg, (el) => el.line_through()).child(c.text))
+      .child(svg(I("x")).size(10).flex_none().text_color(t.dim));
+  }
+
+  // #35, the completion's list (kt-new's): a field (its icon) or a value, the highlighted row accented;
+  // COMP_ROWS rows, then it scrolls; a click takes the row; its keys at the foot.
+  compPanel(t, items) {
+    const at = Math.min(this.compAt, items.length - 1);
+    return v_flex().id("kk-comp").w(260).rounded(12).border(1).border_color(t.border).bg(t.popover)
+      .child(v_flex().id("kk-comp-list").max_h(COMP_ROWS * 29 + 8).overflow_y_scroll().track_scroll(this.compScroll).p(4).gap(1)
+        .children(items.map((it, i) => h_flex().id(`kk-comp-${i}`).h(28).px(10).gap(8).flex_none().items_center().rounded(8).cursor_pointer()
+          .when(i === at, (el) => el.bg(alpha(t.accent, "24")))
+          .hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => { cx.stop_propagation(); this.query = it.query; this.compAt = 0; cx.notify(); })
+          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12).text_color(i === at ? t.accent : t.foreground).child(it.label)))))
+      .child(div().px(12).py(6).border_t(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.dim).child(tr("comp.keys")));
+  }
+
   // The hidden columns (GitHub Projects' « hidden columns »), at the board's end: how many, then each one,
   // its dot, its name and its cards' count; a click shows it again (the view's, as hiding it).
   hiddenStrip(t, b) {
@@ -1771,6 +1911,9 @@ export default class Kanban extends View {
     const values = (this.sliceList = o.slice === "none" ? [] : slices(kept, o.slice, pick));
     const onIt = sliced(kept, o.slice, pick);
     if (vis && !checking()) for (const th of onIt) this.wantPr(th);
+    this.colField = o.column === "phase" ? "phase" : "status"; // a column head's term (#35)
+    // The values the filter's completion offers (#35): those of the board's threads, before the query.
+    this.values = filterValues(listed);
     const b = (this.board = board(onIt, { field: o.column, group: o.group, sort: o.sort, pins: world.pins, firstSeen: world.firstSeen, registry: world.registry, folded: this.folded, hidden: this.hidden }));
     const focused = this.handle.is_focused();
     // The keyboard gone (a terminal clicked, ctrl-b t) while a tab was being renamed: the name stays as it
@@ -1795,7 +1938,7 @@ export default class Kanban extends View {
     const sub = rollText(m, `kk-head-n-${view.id}`, `${this.viewName(view)} · ${count}`, 14).font_family(MONO).text_size(10.5).text_color(t.muted);
     const field = h_flex().id("kk-filter").w(220).flex_none().h(28).px(12).gap(8).items_center().rounded_full().border(1)
       .border_color(typing ? alpha(t.accent, "99") : t.border).bg(typing ? alpha(t.accent, "24") : t.background).cursor_text()
-      .on_click((_e, cx) => { this.handle.focus(); this.vim.edit(); cx.notify(); })
+      .on_click((_e, cx) => { this.handle.focus(); this.vim.edit(); this.editFilter(); cx.notify(); })
       .child(svg(I("search")).size(13).flex_none().text_color(t.dim))
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(this.query ? t.foreground : t.dim)
         .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : tr("filter")))
@@ -1806,26 +1949,30 @@ export default class Kanban extends View {
     const mode = focused && div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
       .border_color(typing ? alpha(t.accent, "66") : t.border).bg(typing ? alpha(t.accent, "24") : t.background)
       .font_family(MONO).text_size(9).text_color(typing ? t.accent : t.muted).child(this.vim.label);
-    // What the query set aside (an unknown field, a value it can't read), said quietly before the field:
-    // the rest still filters.
-    const ignored = query.issues.map((i) => (i.kind === "field" ? `${i.field}:` : `${i.field}:${i.value}`)).join(" ");
-    const notice = ignored && h_flex().id("kk-ignored").flex_none().max_w(260).gap(5).items_center().text_color(t.blocked)
-      .tooltip(tr("filter.help"))
-      .child(svg(I("circle-alert")).size(12).flex_none())
-      .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).child(tr("filter.ignored", { list: ignored })));
-    // The toolbar under the tabs: the four choices, then the filter. One line that scrolls sideways on a
+    // #35: the completion while a token is typed, under the field (gpui-base's Popup, as the card's menu),
+    // COMP_ROWS rows at most, the rest scrolls.
+    const comp = typing ? this.compOf() : [];
+    const filterBox = comp.length ? Popup.new("kk-comp-pop", field).anchor("top_right").flex_none().content(this.compPanel(t, comp)) : field;
+    // The terms as chips under the toolbar (kanban.js chipsOf), each in its field's color, one set aside in
+    // the warning color (with the filter's help); a click, or x on the chip under the keys' cursor (F),
+    // removes it.
+    const chips = chipsOf(this.query, { typing });
+    if (this.chipAt != null) this.chipAt = chips.length ? Math.min(this.chipAt, chips.length - 1) : null;
+    const chipRow = chips.length > 0 && h_flex().id("kk-chips").flex_none().px(10).pb(8).gap(6).items_center().flex_wrap()
+      .children(chips.map((c, j) => this.chip(t, c, focused && j === this.chipAt)));
+    // The toolbar under the tabs: the five choices, then the filter. One line that scrolls sideways on a
     // narrow page (FILTERS.md).
     const tools = h_flex().id("kk-tools").flex_none().h(44).px(10).gap(6).items_center().overflow_x_scroll()
       .children(["column", "group", "slice", "sort", "density"].map((k) => this.choiceButton(t, k, o[k])))
       .child(div().flex_1().min_w(8))
-      .when(Boolean(notice), (el) => el.child(notice))
-      .child(field);
+      .child(filterBox);
     const head = v_flex().flex_none().rounded(16).border(1).border_color(t.border).bg(t.background)
       .child(this.band(t, tint, "Kanban", sub, [mode].filter(Boolean))) // i18n: tech
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(tint, "4d")))
       .child(this.tabs(t))
       .child(div().flex_none().mx(10).h(0).border_t(1).border_dashed().border_color(t.border))
       .child(tools)
+      .when(Boolean(chipRow), (el) => el.child(chipRow))
       .when(plan.propose.length > 0, (el) => el
         .child(div().flex_none().mx(10).h(0).border_t(1).border_dashed().border_color(t.border))
         .child(this.archiveOffer(t, plan.propose, archiveDays)));

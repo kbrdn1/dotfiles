@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
+  chipsOf, dropToken, addTerm, filterValues, completions, cardTerms,
   costOf, cleanLimits, stepLimit, sessionOf, ttlText, WIDTH, cleanWidths, stepWidth, laneWidths, cleanHidden, toggleHidden, checkSteps, ciCount, cardMenu, menuStart, takesFocus, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
@@ -235,6 +236,7 @@ assert.equal(viewsOf({ current: "gone", list: [{ id: "v1" }] }).current, "v1");
 assert.equal(viewsOf({ list: [{ nope: 1 }] }).current, "all"); // nothing usable: the defaults
 const live = { column: "phase", group: "none", slice: "project", pick: "p-acme", sort: "cost", filter: "status:blocked", limits: { ship: 2 } };
 assert.ok(!dirty(currentView(vs), { filter: " " })); // the same settings, written otherwise
+assert.ok(!dirty({ filter: "status:blocked" }, { filter: "status:blocked " })); // #35: entering the filter adds a space
 assert.ok(dirty(currentView(vs), live));
 assert.ok(dirty(currentView(vs), { limits: { idle: 3 } })); // a limit changed too
 const saved = saveView(vs, live);
@@ -252,6 +254,53 @@ assert.equal(deleteView({ current: "blocked", list: vs.list }, "project").curren
 assert.equal(deleteView({ current: "project", list: vs.list }, "project").current, "blocked"); // the last: the one before
 assert.equal(deleteView(viewsOf({ list: [{ id: "solo" }] }), "solo").list.length, 1); // the last view stays
 assert.deepEqual([stepView(vs, 1), stepView(vs, -1), stepView({ ...vs, current: "project" }, 1)], ["blocked", "project", "all"]);
+
+// #35, the filter's chips: one per term or word, ok or set aside; a field still empty, none; while
+// typing, not the token being typed; each written back as it reads (quotes kept for a space).
+const chips = (qq, o) => chipsOf(qq, o).map((c) => [c.i, c.text, c.field, c.neg, c.ok]);
+assert.deepEqual(chips('status:blocked -agent:codex ring foo:bar cost:abc status: project:"my app"'), [
+  [0, "status:blocked", "status", false, true], [1, "-agent:codex", "agent", true, true], [2, "ring", null, false, true],
+  [3, "foo:bar", "foo", false, false], [4, "cost:abc", "cost", false, false], [6, 'project:"my app"', "project", false, true]]);
+assert.deepEqual(chips("status:blocked ag", { typing: true }), [[0, "status:blocked", "status", false, true]]);
+assert.deepEqual(chips("status:blocked ag ", { typing: true }).length, 2); // a space after it: done
+// A chip removed: its token gone, the rest as it reads; the query's meaning otherwise kept.
+assert.equal(dropToken('status:blocked -agent:codex project:"my app"', 1), 'status:blocked project:"my app"');
+assert.equal(dropToken("ring", 0), "");
+assert.equal(dropToken('"status:blocked" ring', 1), '"status:blocked"'); // a quoted word stays a word
+assert.deepEqual(q(dropToken('"status:blocked" ring', 1)), q('"status:blocked"'));
+// A term added (a click on a card's value, f): at the end; already there, nothing; the other way, it turns.
+assert.equal(addTerm("", "project", "acme"), "project:acme");
+assert.equal(addTerm("ring", "branch", "fix/#9-login"), "ring branch:fix/#9-login");
+assert.equal(addTerm("project:acme", "project", "ACME"), "project:acme");
+assert.equal(addTerm("project:acme status:idle", "project", "acme", true), "status:idle -project:acme");
+assert.equal(addTerm("", "project", "my app"), 'project:"my app"');
+assert.deepEqual(q(addTerm("", "agent", "codex", true)), q("-agent:codex")); // the same filter as typed
+// The values completion offers: the fixed ones, and the board's projects, agents, branches.
+const vals = filterValues(show);
+assert.deepEqual([vals.project, vals.agent, vals.branch], [["acme", "Beta", "@current"], ["claude", "codex", "none"], ["feat/#12-ring", "none"]]);
+assert.deepEqual(vals.status, STATUSES);
+// Completion as typed: the fields, then a field's values (after a comma the next one, not one taken),
+// starting with it first, then holding it; negation kept; nothing in an open quote or for an unknown field.
+const comp = (qq) => completions(qq, vals).map((c) => [c.label, c.query]);
+assert.deepEqual(comp("st"), [["status:", "status:"]]);
+assert.deepEqual(comp("ring -a").map(([l]) => l), ["agent:", "age:"]);
+assert.deepEqual(comp("ring -a")[0][1], "ring -agent:");
+assert.equal(comp("").length, 9); // every field
+assert.deepEqual(comp("status:b"), [["blocked", "status:blocked "]]);
+assert.deepEqual(comp("status:blocked,").map(([l]) => l), ["done", "working", "idle"]);
+assert.deepEqual(comp("status:blocked,w"), [["working", "status:blocked,working "]]);
+assert.deepEqual(comp("agent:"), [["claude", "agent:claude "], ["codex", "agent:codex "], ["none", "agent:none "]]);
+assert.deepEqual(comp("branch:ring").map(([l]) => l), ["feat/#12-ring"]); // held, not only started
+assert.deepEqual(comp("project:b"), [["Beta", "project:Beta "]]);
+assert.deepEqual([comp('project:"my'), comp("foo:")], [[], []]);
+assert.deepEqual(comp("status:blocked ").map(([l]) => l), comp("").map(([l]) => l)); // after a space: a new token
+assert.equal(comp("status:blocked ")[0][1], "status:blocked status:");
+// A card's values to filter by (f): what it has.
+assert.deepEqual(cardTerms({ ...list[9], agentKey: "claude", pr: { number: 34, state: "OPEN", draft: true } }),
+  [{ field: "project", value: "Beta" }, { field: "agent", value: "claude" }, { field: "branch", value: "feat/#12-ring" }, { field: "pr", value: "draft" }, { field: "status", value: "working" }]);
+assert.deepEqual(cardTerms(list[3]), [{ field: "project", value: "acme" }, { field: "status", value: "idle" }]);
+assert.deepEqual(cardTerms(draftsOf([{ id: "tfx-dx", title: "x" }])[0]).map((x) => x.field), ["is"]); // no project: none of its own
+assert.deepEqual(cardTerms(draftsOf([{ id: "tfx-dy", title: "y", project: acme }])[0]).map((x) => x.field), ["project", "is"]);
 
 // The cursor, one lane: where its thread is now (it follows a card into another column).
 const one = (threads) => board(threads, { pins: ["tfx-3"] });

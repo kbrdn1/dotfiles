@@ -317,6 +317,94 @@ export function parseQuery(query) {
   return out;
 }
 
+// ---------- the filter, refined (#35): its chips, a term added or removed, completion as typed ----------
+
+const quote = (v, quoted = false) => (quoted || /\s/.test(v) ? `"${v}"` : v);
+/** A token written back: -field:value, a value in quotes when it had them or holds a space (a quoted
+ *  "status:blocked" stays a word). */
+export const termText = (tk) => `${tk.neg ? "-" : ""}${tk.field ? `${tk.field}:` : ""}${quote(tk.value, tk.quoted)}`;
+
+/** The query's terms and words as chips: [{ i (its token), text, field (null: a word), neg, ok }]. `ok`
+ *  false: set aside (a field it doesn't know, a value it can't read: parseQuery's issues). A field still
+ *  without its value is no chip; while typing (`typing`), neither is the token being typed. */
+export function chipsOf(query, { typing = false } = {}) {
+  const all = tokens(query);
+  const last = typing && !/\s$/.test(String(query ?? "")) ? all.length - 1 : -1;
+  return all.flatMap((tk, i) => {
+    if (i === last || (tk.field && !tk.value) || (!tk.field && !tk.value)) return [];
+    const ok = !tk.field || (tk.field in TERMS && Boolean(TERMS[tk.field](tk.value)));
+    return [{ i, text: termText(tk), field: tk.field, neg: tk.neg, ok }];
+  });
+}
+
+/** The query without its token `i` (a chip removed); the others written back as they read. */
+export const dropToken = (query, i) => tokens(query).filter((_tk, j) => j !== i).map(termText).join(" ");
+
+/** `field:value` added (a click on a card's value, f): already there, nothing changes; there the other
+ *  way (negated, or not), it turns; else it goes at the end. */
+export function addTerm(query, field, value, neg = false) {
+  const all = tokens(query);
+  const v = String(value).toLowerCase();
+  const same = (tk) => tk.field === field && tk.value.toLowerCase() === v;
+  if (all.some((tk) => same(tk) && tk.neg === neg)) return String(query ?? "");
+  const kept = all.filter((tk) => !same(tk)).map(termText);
+  return [...kept, termText({ neg, field, value: String(value) })].join(" ");
+}
+
+/** The values completion offers, by field: the fixed ones, and those the board's threads have (their
+ *  projects' names, agents, branches); none for a field it has no list for. */
+export function filterValues(threads) {
+  const uniq = (xs) => [...new Set(xs.filter(Boolean))].sort((a, b) => (text(a) < text(b) ? -1 : text(a) > text(b) ? 1 : 0));
+  return {
+    status: STATUSES, phase: [...PHASE_IDS, "other", "none"], pr: ["open", "draft", "merged", "closed", "none"],
+    is: ["pinned", "snoozed", "archived", "draft"], cost: [">1", ">5", "<1"], age: ["<1h", "<1d", ">1d"],
+    project: [...uniq(threads.map((th) => th.project?.name)), "@current"],
+    agent: [...uniq(threads.map((th) => th.agentKey)), "none"],
+    branch: [...uniq(threads.map((th) => th.branch)), "none"],
+  };
+}
+
+/** What completes the token being typed (the caret is at the query's end): a field (`sta` -> status:),
+ *  then one of its values (`status:bl` -> status:blocked, after a comma the next one): [{ label, query
+ *  (the whole query once taken) }], those that start with it first, then those that hold it. Nothing in
+ *  an open quote. */
+export function completions(query, values) {
+  const q = String(query ?? "");
+  if ((q.match(/"/g) ?? []).length % 2) return [];
+  const raw = q.match(/(\S*)$/)[1];
+  const head = q.slice(0, q.length - raw.length);
+  const neg = raw.startsWith("-") ? "-" : "";
+  const rest = raw.slice(neg.length);
+  const ranked = (list, s) => {
+    const l = s.toLowerCase();
+    return [...list.filter((x) => text(x).startsWith(l)), ...list.filter((x) => !text(x).startsWith(l) && text(x).includes(l))];
+  };
+  const colon = rest.indexOf(":");
+  if (colon < 0) {
+    if (!/^[a-z]*$/i.test(rest)) return [];
+    return ranked(FILTER_FIELDS, rest).filter((f) => f.startsWith(rest.toLowerCase())).map((f) => ({ label: `${f}:`, query: `${head}${neg}${f}:` }));
+  }
+  const field = rest.slice(0, colon).toLowerCase();
+  const parts = rest.slice(colon + 1).split(",");
+  const cur = parts.pop();
+  const taken = new Set(parts.map(text));
+  return ranked((values[field] ?? []).filter((v) => !taken.has(text(v))), cur)
+    .map((v) => ({ label: v, query: `${head}${neg}${field}:${[...parts, quote(v)].join(",")} ` }));
+}
+
+/** A card's values to filter by (f, a click on one): [{ field, value }], those it has: its project, its
+ *  agent, its branch, its PR (by state), its status; a draft: its project, is:draft. */
+export function cardTerms(th) {
+  const pr = !th.pr ? null : th.pr.state === "OPEN" && (th.pr.draft ?? th.pr.isDraft) ? "draft" : { OPEN: "open", MERGED: "merged", CLOSED: "closed" }[th.pr.state];
+  return [
+    th.project?.name && th.project.key !== "none" && { field: "project", value: th.project.name },
+    th.agentKey && { field: "agent", value: th.agentKey },
+    th.branch && { field: "branch", value: th.branch },
+    pr && { field: "pr", value: pr },
+    th.draft ? { field: "is", value: "draft" } : { field: "status", value: FIELDS.status.of(th) },
+  ].filter(Boolean);
+}
+
 /** A thread through the query read (parseQuery): every term and every word, a negated one must not match. */
 export function matchQuery(th, q, ctx = {}) {
   if (!q.terms.every((t) => t.test(th, ctx) !== t.neg)) return false;
