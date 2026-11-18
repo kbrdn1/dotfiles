@@ -42,6 +42,7 @@ export function splitHeredocs(cmd: string): { shell: string; bodies: string[] } 
       const ch = src[c];
       if (q) { line += ch; if (ch === q) q = null; continue; }
       if (ch === "'" || ch === '"') { q = ch; line += ch; continue; }
+      if (ch === "#" && (c === 0 || /[\s;&|(]/.test(src[c - 1]))) break; // commentaire shell : jusqu'à la fin de ligne
       const m = ch === "<" ? /^<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(src.slice(c)) : null;
       if (m && src[c + 2] !== "<") { // <<< est une here-string, pas un heredoc
         line += ` __HD${bodies.length + tags.length}__ `;
@@ -68,11 +69,17 @@ export function assignments(shell: string): Record<string, string> {
     const v = m[2];
     vars[m[1]] = v.startsWith("$(mktemp") ? "/tmp/mktemp" : v.replace(/^["']|["']$/g, "");
   }
+  // X=$(git rev-parse … --git-path|--git-dir|--git-common-dir …) : un chemin du dossier git
+  for (const m of shell.matchAll(/(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=\$\(git rev-parse [^)]*--git-(?:path|dir|common-dir)\b[^)]*\)/g)) vars[m[1]] = `${GITDIR}x`;
   return vars;
 }
 
+// Le dossier git (fichiers internes, diffs et rapports de travail des loops) n'est pas du code source.
+const GITDIR = "/__gitdir__/";
+
 export function resolve(target: string, vars: Record<string, string>): string | null {
   let t = target.replace(/^["']|["']$/g, "");
+  if (/^\$\(git rev-parse [^)]*--git-(?:path|dir|common-dir)\b[^)]*\)/.test(t)) return `${GITDIR}x`;
   for (let k = 0; k < 4 && /\$/.test(t); k++)
     t = t.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (all, n) => (n === "HOME" ? HOME : n === "TMPDIR" ? (process.env.TMPDIR ?? "/tmp") : vars[n] ?? all));
   t = t.replace(/^~(?=\/|$)/, HOME);
@@ -82,7 +89,7 @@ export function resolve(target: string, vars: Record<string, string>): string | 
 
 export function allowed(path: string | null, cwd: string, globs: RegExp[] = []): boolean {
   if (path === null) return false;
-  if (DEVS.test(path)) return true;
+  if (DEVS.test(path) || path.startsWith(GITDIR) || /(^|\/)\.git\//.test(path)) return true;
   const abs = path.startsWith("/") ? path : `${cwd.replace(/\/$/, "")}/${path}`;
   return TMPS.some((p) => abs.startsWith(p)) || globs.some((g) => g.test(abs));
 }

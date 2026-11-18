@@ -43,6 +43,12 @@ const cases: [string, boolean][] = [
   [`perl -e 'open(my $fh, ">>", "x.md"); print $fh "y"'`, true],
   [`perl -e 'open my $fh, ">", "x.md" or die; print $fh "y"'`, true],
   [`perl -ne 'print if /a/' x.md`, false],
+  // loop de review (me:loop:claude-review-pr) : faux positifs vus le 2026-11-18
+  [`# le gabarit s'écrit P0=<compte>, une vraie réponse P0=0\necho ok`, false],
+  [`DIFF=$(git rev-parse --path-format=absolute --git-path claude-review.diff)\ngit diff origin/dev...HEAD > "$DIFF"`, false],
+  [`git diff > "$(git rev-parse --git-path claude-review.diff)"`, false],
+  [`echo x > .git/info/exclude`, false],
+  [`echo x > src/a.ts # commentaire`, true],
 ];
 let bad = 0;
 for (const [cmd, deny] of cases) {
