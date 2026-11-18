@@ -22,10 +22,15 @@
 // header of the phase running (else the first unfolded one). j k gg G ctrl-d ctrl-u move over
 // phases, steps, Review's passes and their findings; h folds (a phase, Review, a pass, a finding;
 // on a row that doesn't fold: folds its parent and goes there), l unfolds; enter / o as a click
-// (a phase, Review, the tasks, « +N faites », a pass, a finding; the PR step opens the PR); O opens a
-// finding in Zed; y copies (a finding's place, a pass's sha, a task's text, a step's label); r reads again; esc gives the keyboard back to
+// (a phase, Review, the tasks, « +N faites », a pass, a finding; the issue and PR steps open theirs in the
+// Inbox); O opens a finding in Zed, the issue, PR, review or CI step's page on GitHub; gi / gI the issue in
+// the Inbox / on GitHub, gp / gP the PR (links.js); y copies (a finding's place, a pass's sha, a task's text, a step's label); r reads again; esc gives the keyboard back to
 // the terminal; [ ] the panel's previous / next tab; ? the keys. While Flow has the keyboard it
 // keeps following the same terminal.
+// Links (#40, kt-gwm's model: a pill in Herdr, the GitHub icon beside it in the browser): the issue, the PR
+// and its checks (the CI pill) on the header and on their steps open in kt-inbox (shared "kt.inbox.open",
+// then its page), the review and CI steps have their GitHub icon; the branch line opens Worktrees, and
+// Changes and History when the terminal is on the flow's branch (they follow the terminal).
 // CI unfolds like Review: the PR's pushed commits (its last 10, read by `gh` on unfold, on r and
 // when the followed terminal changes, never in a loop; a commit whose checks all ended is never
 // read again), a bar and a row each, one unfolded at a time into its checks (failures first), a
@@ -35,13 +40,15 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, Scrollbar } from "gpui-base";
-import { focused, panes, spaces, theme, layout, settings, readTextFile, watchFolder, exec, home, nextCommand, checking, run, notify, openOverlay, shared } from "herdr";
+import { focused, panes, spaces, theme, layout, settings, readTextFile, watchFolder, exec, home, nextCommand, checking, run, notify, openOverlay, shared, setShared } from "herdr";
 import * as fs from "fs/promises";
 import { nameOf, speak, workflowName, issueOf, flowBranch, phasesOf, details, findPlans, passOf, decisionOf, locOf,
   checkState, checkMs, tally, checkOrder, duration, runIdOf, logTail, ciLine, taskList } from "./steps.js";
 import { makeT, relative } from "./i18n.js";
 import strings from "./strings.js";
-import { Vim, keysOf, step } from "./vim.js";
+import { Vim, keyOf, keysOf, step } from "./vim.js";
+// Where the issue, PR, checks and branch buttons and gi gI gp gP go (pure: links.check.mjs).
+import { target, checksOf, stepKind, stepUrl, inHerdr, toBrowser, toPage, toTab, gLink } from "./links.js";
 import { motionState, frame, enter, collapse, stagger } from "./motion.js";
 import { refreshOn } from "./bus.js";
 // kt-threads' reads (threads-io.js with threads-model.js, pr-pick.js, thread-filter.js: byte-identical
@@ -57,6 +64,9 @@ import { ditherBand, TOP } from "./dither.js";
 const ME = "flow"; // this block's id in the layout's "panel-body" stack
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
+const GH = "mods/kt-gwm/github.svg";
+// What links.js acts with.
+const H = { run, exec, setShared, now: () => Date.now() };
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 // The project's color (shared "kt.projects", the registry entry holding `folder`), else the accent.
@@ -185,7 +195,7 @@ export default class Flow extends View {
         else if (c === "focus") this.focusIn();
         else if (c.startsWith("key:")) {
           this.focusIn();
-          for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
+          for (const k of keysOf(c.slice(4))) this.press(k, cx);
         }
         cx.notify();
       }
@@ -212,9 +222,17 @@ export default class Flow extends View {
   }
 
   key(e, cx) {
-    if (!this.act(this.vim.handle(e), cx)) return; // not ours: ctrl-b, cmd-* go on
+    if (!this.press(e, cx)) return; // not ours: ctrl-b, cmd-* go on
     cx.stop_propagation();
     cx.notify();
+  }
+
+  // One key, from the keyboard or `key:`: gi gI gp gP (links.js, after vim's pending g, as kt-kanban's gt),
+  // then vim's.
+  press(e, cx) {
+    const g = gLink(this.vim, keyOf(e).name, Date.now());
+    if (g) { this.go(g.kind, g.github); return true; }
+    return this.act(this.vim.handle(e), cx);
   }
 
   // What the cursor walks, in the order shown: phase headers, the steps of unfolded ones, Review's
@@ -280,18 +298,17 @@ export default class Flow extends View {
       else if (x?.kind === "pass" && this.openPass !== x.ps.pass) { this.openPass = x.ps.pass; this.openFinding = null; }
       else if (x?.kind === "finding") this.openFinding = x.f.id;
     } else if (a === "open") {
-      // As a click: the phase, Review, a pass, a finding toggle; the PR step opens its PR.
+      // As a click: the phase, Review, a pass, a finding toggle; the issue and PR steps open theirs in the Inbox.
       if (x?.kind === "phase") this.fold[x.p.id] = !x.folded;
       else if (x?.kind === "step" && x.s.id === "review" && this.report?.review?.passes?.length) this.reviewOpen = !reviewOpen;
-      else if (x?.kind === "step") {
-        const pr = details(x.s).find((d) => d.pr)?.pr;
-        const url = pr ? this.prUrl(pr) : null;
-        if (url) exec("open", [url]).catch(() => {});
-      } else if (x?.kind === "pass") { this.openPass = this.openPass === x.ps.pass ? null : x.ps.pass; this.openFinding = null; }
+      else if (x?.kind === "step") { if (stepKind(x.s.id)) this.go(stepKind(x.s.id), false); }
+      else if (x?.kind === "pass") { this.openPass = this.openPass === x.ps.pass ? null : x.ps.pass; this.openFinding = null; }
       else if (x?.kind === "finding") this.openFinding = this.openFinding === x.f.id ? null : x.f.id;
     } else if (a === "open-alt") {
+      // A step's GitHub page (issue, PR, review, CI), a finding in Zed.
       const loc = x?.kind === "finding" ? locOf(x.f.loc) : null, root = this.report?.root;
-      if (loc && root) exec("open", [`zed://file${root}/${loc}`]).catch(() => {});
+      if (x?.kind === "step") toBrowser(H, this.stepGithub(x.s.id));
+      else if (loc && root) exec("open", [`zed://file${root}/${loc}`]).catch(() => {});
     } else if (a === "yank") {
       const text = x?.kind === "finding" ? x.f.loc ?? x.f.title : x?.kind === "pass" ? x.ps.sha : x?.kind === "step" ? x.s.label : null;
       if (text) {
@@ -430,7 +447,7 @@ export default class Flow extends View {
           this.plans = await findPlans(dirs, issue, list, read).catch(() => []);
         }
         this.relink = false;
-        const key = JSON.stringify([term, cwd, branch, text, report, this.page, this.plans]);
+        const key = JSON.stringify([term, cwd, branch, own, text, report, this.page, this.plans]);
         this.issue = issue;
         if (key === this.key) return;
         if (term !== this.term) {
@@ -445,6 +462,8 @@ export default class Flow extends View {
         this.term = term;
         this.cwd = cwd;
         this.branch = branch;
+        // Changes and History follow the terminal, not the flow: offered only when it's on the flow's branch.
+        this.onBranch = Boolean(branch) && own === branch;
         this.flow = flow;
         this.report = report;
         cx.notify();
@@ -529,6 +548,38 @@ export default class Flow extends View {
     return this.report?.pr?.number === n && this.report.pr.url ? this.report.pr.url : gh ? `https://github.com/${gh}/pull/${n}` : null;
   }
 
+  // ---------- links: the issue and the PR in Herdr (the Inbox) or on GitHub (links.js) ----------
+
+  // The flow's issue or PR (`n`: a step's own number, else the flow's), where its buttons go.
+  target(kind, n = kind === "pr" ? this.prOf() : this.issue) {
+    const gh = this.cwd ? this.repos[this.cwd]?.gh : null;
+    return target(gh, kind, n, kind === "pr" && n ? this.prUrl(Number(n)) : null);
+  }
+  // gi gI gp gP, enter on the issue and PR steps: in the Inbox, else (off GitHub) the browser.
+  go(kind, github) {
+    const x = this.target(kind);
+    return github ? toBrowser(H, x?.url) : inHerdr(H, x) || toBrowser(H, x?.url);
+  }
+  stepGithub(id) {
+    return stepUrl(id, this.target("issue"), this.target("pr"));
+  }
+
+  // kt-gwm's GitHub icon: a round 18 px icon button, dim until hovered; its click stays its own (rows fold on theirs).
+  iconBtn(t, id, icon, tip, onClick) {
+    return h_flex().id(id).flex_none().size(18).items_center().justify_center().rounded_full().text_color(t.dim)
+      .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+      .on_click((_e, cx) => { cx.stop_propagation(); onClick(); })
+      .child(svg(icon).size(12));
+  }
+  // kt-gwm's link(): the pill opens the item in the Inbox (off GitHub: the browser), the GitHub icon beside it
+  // in the browser. `tips`: [Inbox's, GitHub's].
+  link(t, id, text, color, x, icon, tips) {
+    const inbox = Boolean(x?.repo);
+    return h_flex().flex_none().gap(2).items_center()
+      .child(this.pill(t, id, text, color, x && (inbox || x.url) ? () => inHerdr(H, x) || toBrowser(H, x.url) : null, icon, inbox ? tips[0] : x?.url ? tips[1] : null))
+      .when(Boolean(x?.url), (el) => el.child(this.iconBtn(t, `${id}-gh`, GH, tips[1], () => toBrowser(H, x.url))));
+  }
+
   // ---------- context ----------
 
   head(t, c, steps) {
@@ -540,7 +591,7 @@ export default class Flow extends View {
     const prColor = !prState ? t.muted : prState.state === "MERGED" ? t.ansi5 : prState.state === "CLOSED" ? c.err : prState.draft ? t.dim : t.done;
     const ci = this.report?.ci;
     const ciColor = !ci ? t.muted : ci.fail ? c.err : ci.pending ? c.warn : c.ok;
-    const url = prN ? this.prUrl(prN) : null;
+    const iss = this.target("issue"), pr = this.target("pr");
     // DESIGN-REFERENCE.md: the project's pixel band behind the header, inside its border (width less 2,
     // radius 16 less 1), measured on the card itself.
     const band = ditherBand(this.headW - 2, 60, 15, alpha(projectColor(t, this.report?.root ?? this.cwd), settings().dark !== false ? "6b" : "4d"), TOP);
@@ -552,17 +603,26 @@ export default class Flow extends View {
         .child(div().flex_1().min_w(0).truncate().text_size(13.5).font_semibold().child(workflowName(f.workflow)))
         .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(f.updatedAt ? ago(f.updatedAt) : ""))
         .when(this.keyed, (el) => el.child(modePill(t, this.vim))))
+      // The branch, then where else to see it: the Worktrees page; Changes and History (the panel's tabs, which
+      // follow the terminal) when the terminal is on it.
       .when(Boolean(repo || this.branch), (el) => el.child(h_flex().gap(6).items_center().min_w(0)
         .child(svg(I("git-branch")).size(12).flex_none().text_color(t.muted))
-        .child(div().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.muted)
-          .child([repo?.name, this.branch].filter(Boolean).join(" · ")))))
+        .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.muted)
+          .child([repo?.name, this.branch].filter(Boolean).join(" · ")))
+        .when(Boolean(repo), (el) => el.child(this.iconBtn(t, "kf-wt", I("folder-tree"), tr("worktrees"), () => toPage(H, "gwm"))))
+        .when(Boolean(repo && this.onBranch), (el) => el
+          .child(this.iconBtn(t, "kf-changes", I("file-diff"), tr("changes"), () => toTab(H, "diff")))
+          .child(this.iconBtn(t, "kf-history", "mods/kt-panel-head/history.svg", tr("history"), () => toTab(H, "history"))))))
+      // The issue, the PR and its checks: each pill in the Inbox, its GitHub icon in the browser (kt-gwm's links).
       .when(Boolean(issue || prN || ci?.total || this.page || this.plans?.length), (el) => el.child(h_flex().flex_wrap().gap(6).items_center()
-        .when(Boolean(issue), (el) => el.child(this.pill(t, "kf-issue", `#${issue}`, t.muted)))
+        .when(Boolean(issue), (el) => el.child(this.link(t, "kf-issue", `#${issue}`, t.muted, iss, I("circle-dashed"),
+          [tr("issueHerdr", { n: issue }), tr("issueGithub", { n: issue })])))
         // i18n: tech (PR #n and GitHub's state, the same in every language)
-        .when(Boolean(prN), (el) => el.child(this.pill(t, "kf-pr", `PR #${prN}${prState ? ` · ${prState.draft ? "draft" : prState.state.toLowerCase()}` : ""}`, prColor,
-          url ? () => exec("open", [url]).catch(() => {}) : null, I("git-pull-request"))))
+        .when(Boolean(prN), (el) => el.child(this.link(t, "kf-pr", `PR #${prN}${prState ? ` · ${prState.draft ? "draft" : prState.state.toLowerCase()}` : ""}`, prColor,
+          pr, I("git-pull-request"), [tr("prHerdr", { n: prN }), tr("prGithub", { n: prN })])))
         // Its id carries the repo and branch: another thread's CI shows at once, not rolling.
-        .when(Boolean(ci?.total), (el) => el.child(this.pill(t, "kf-ci", rollText(this.motion, `kf-ci-n-${repo?.name}|${this.branch}`, `CI ${ci.ok}/${ci.total}`, 14), ciColor))) // i18n: tech
+        .when(Boolean(ci?.total), (el) => el.child(this.link(t, "kf-ci", rollText(this.motion, `kf-ci-n-${repo?.name}|${this.branch}`, `CI ${ci.ok}/${ci.total}`, 14), ciColor, // i18n: tech
+          checksOf(pr), null, [tr("checksHerdr", { n: prN }), tr("checksGithub", { n: prN })])))
         .when(Boolean(this.page), (el) => el.child(this.pill(t, "kf-report", tr("report"), t.ansi4,
           () => exec("open", [this.page]).catch(() => {}), I("file-text"), tr("reportTip"))))
         .children((this.plans ?? []).map((p, i) => this.pill(t, `kf-plan-${i}`, p.title, t.ansi5,
@@ -605,6 +665,7 @@ export default class Flow extends View {
     const folds = ci || impl || (s.id === "review" && Boolean(this.report?.review?.passes?.length));
     const open = folds && (ci ? this.isCiOpen(s) : impl ? this.isImplOpen(s) : this.isReviewOpen(s));
     const cursor = this.ring(`s:${s.id}`);
+    const gh = s.id === "review" || s.id === "ci" ? this.stepGithub(s.id) : null;
     return h_flex().id(`kf-s-${s.id}`).h(28).px(6).gap(8).items_center().rounded(8)
       .border(1).border_color(cursor ? alpha(t.accent, "99") : on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
       .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
@@ -617,12 +678,19 @@ export default class Flow extends View {
         .child(nameOf(s.id)))
       .when(folds, (el) => el.child(svg(I(open ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(open ? t.accent : t.muted)))
       .child(h_flex().flex_1().min_w(0).gap(5).items_center().overflow_hidden()
-        .children(details(s).map((d, i) => d.pr
-          ? this.pill(t, `kf-pr-${s.id}-${i}`, d.text, s.state === "pending" ? t.muted : t.ansi4, this.prUrl(d.pr) ? () => exec("open", [this.prUrl(d.pr)]).catch(() => {}) : null)
+        // The PR's and the issue's #n: links as the header's (the Inbox, GitHub's icon beside).
+        .children(details(s).map((d, i) => {
+          const n = d.pr ?? (stepKind(s.id) === "issue" ? /^#(\d+)$/.exec(d.text)?.[1] : null);
+          return n ? this.link(t, `kf-${d.pr ? "pr" : "is"}-${s.id}-${i}`, d.text, s.state === "pending" ? t.muted : t.ansi4,
+            this.target(d.pr ? "pr" : "issue", n), null, d.pr ? [tr("prHerdr", { n }), tr("prGithub", { n })] : [tr("issueHerdr", { n }), tr("issueGithub", { n })])
           : d.tone
             ? this.pill(t, `kf-d-${s.id}-${i}`, d.text, toneOf(d))
             : div().min_w(0).truncate().when(Boolean(d.mono), (el) => el.font_family(MONO).text_size(11)).when(!d.mono, (el) => el.text_size(11.5))
-              .text_color(t.muted).child(d.text))))
+              .text_color(t.muted).child(d.text);
+        })))
+      // Review and CI: their page on GitHub (the PR's files with their review comments, its checks); in Herdr,
+      // they unfold here.
+      .when(Boolean(gh), (el) => el.child(this.iconBtn(t, `kf-gh-${s.id}`, GH, tr(s.id === "ci" ? "checksGithub" : "reviewGithub", { n: this.prOf() }), () => toBrowser(H, gh))))
       // The todos done / all; the terminal in its id: another agent's count shows at once, not rolling.
       .when(tasks, (el) => el.child(rollText(this.motion, `kf-todo-n-${this.term}`, `${this.list.n} / ${this.list.total}`, 14)
         .flex_none().font_family(MONO).text_size(10.5).text_color(this.list.n === this.list.total ? c.ok : t.dim)))

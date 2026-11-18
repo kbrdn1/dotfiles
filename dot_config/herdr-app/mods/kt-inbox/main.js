@@ -14,10 +14,12 @@
 // `kt-inbox.confirmed` (a mod command: it reaches this copy while the page shows).
 // Data: `gh`, cached in localStorage by scope (list 2 min, detail 1 min); the
 // list refreshes every 2 min, only while the page is shown.
-// Another mod opens an item here (kt-gwm's linked issues and PRs): shared
-// "kt.inbox.open" = { repo, kind, number, at }, then the "inbox" page. Read once
-// while shown (if under 30 s old) and cleared: the scope moves to that repo and
-// the item opens as if clicked, fetched by its detail even when not listed.
+// Another mod opens an item here (kt-gwm's linked issues and PRs, kt-flow's issue,
+// PR and checks): shared "kt.inbox.open" = { repo, kind, number, tab?, at }, then
+// the "inbox" page. Read once while shown (if under 30 s old) and cleared: the scope
+// moves to that repo, the filters that would hide it go (bulk.js fitAsked), the item
+// opens as if clicked (on `tab`, a PR's summary | code | checks), the cursor on its
+// row brought into view; not listed, the list is read again, and its detail fetches it.
 // Keys (vim.js; kt-keys lists them under Pages): the page opens typing in the filter (INSERT);
 // ctrl-b h/l (pane.go, "focus") or `kt-inbox.key:<keys>` give it the keyboard in NORMAL.
 // INSERT: type to filter, ctrl-n/ctrl-p, ctrl-j/ctrl-k, ↓ ↑ move the cursor, enter opens it, esc:
@@ -45,7 +47,7 @@ import { ICON_MAP } from "./icons.js";
 import { fileItems, sectionHead, action, alpha, colorize, cleanTokens, zed, firstLine, IMAGE, loadPreview, cleanPreviews } from "./diffview.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { Select, lines } from "./select.js";
-import { planClose, planReview, describe } from "./bulk.js";
+import { planClose, planReview, describe, fitAsked } from "./bulk.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
@@ -94,6 +96,8 @@ const load = (k) => parse(localStorage.getItem(k) ?? "null", null);
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const time = (iso) => Date.parse(iso ?? "") || 0;
 const ago = (iso) => relative(iso);
+// What the filter field searches in an item, lower-cased.
+const hay = (x) => `${x.title} ${x.repo} #${x.number} ${x.author} ${x.labels.join(" ")}`.toLowerCase();
 // A refused or failed one, as a confirm's list line ("name : why").
 const line = (item, why) => tr("line", { item, why });
 const more = (n) => tr("more", { n });
@@ -244,9 +248,9 @@ export default class Inbox extends View {
     return this.global ? null : this.scope.repo ?? null;
   }
 
-  // Cached by scope and relation.
-  listKey() {
-    return `list:${this.scope.repo === undefined ? "?" : (this.repo() ?? "@me")}:${this.rel ?? "involves"}`;
+  // Cached by scope and relation (this one's, or `rel`'s).
+  listKey(rel = this.rel) {
+    return `list:${this.scope.repo === undefined ? "?" : (this.repo() ?? "@me")}:${rel ?? "involves"}`;
   }
 
   // The scope changed (space, Global): its cached list now, a fetch if stale.
@@ -280,8 +284,10 @@ export default class Inbox extends View {
     });
   }
 
-  // shared "kt.inbox.open" (kt-gwm): that repo as the scope, that item opened as a click would.
-  // Read once and cleared; older than 30 s, only cleared.
+  // shared "kt.inbox.open" (kt-gwm, kt-flow: { repo, kind, number, tab?, at }): that repo as the scope, that
+  // item opened as a click would, the cursor on its row brought into view, `tab` shown (a PR's). The filters
+  // that would hide it go (bulk.js fitAsked); not in the list, the list is read again, and its detail
+  // fetches it anyway. Read once and cleared; older than 30 s, only cleared.
   openAsked(cx) {
     const req = shared("kt.inbox.open");
     if (!req || this.asked === req.at) return;
@@ -292,10 +298,19 @@ export default class Inbox extends View {
       if (Date.now() - (req.at ?? 0) > 30e3 || !req.repo || !req.number) return;
       this.scope = { space: spaces().find((x) => x.active)?.id ?? null, repo: req.repo, asked: true };
       this.global = false;
-      this.rescoped(cx);
-      const kind = req.kind === "pr" ? "pr" : "issue";
-      // Not in the open list (closed, merged, another relation): its detail fetches it.
-      this.select(this.items.find((x) => x.key === `${req.repo}#${req.number}`) ?? item(kind, { number: req.number }, req.repo), cx);
+      const a = fitAsked(req, this, (rel) => load(this.listKey(rel))?.items, (x, q) => hay(x).includes(q.trim().toLowerCase()));
+      ({ kind: this.kind, rel: this.rel, query: this.query } = a.view);
+      // rescoped(), but with the item selected before the list loads: pickFirst keeps it, and no other row
+      // opens nor is marked seen on the way.
+      this.multi.clear();
+      this.error = null;
+      this.zone = "list";
+      this.items = load(this.listKey())?.items ?? [];
+      this.select(a.item ?? item(a.kind, { number: req.number }, req.repo), cx);
+      if (a.tab) this.tab = a.tab;
+      this.cur = a.key;
+      this.reveal = true;
+      this.loadList(cx, a.reread);
       cx.notify();
     });
   }
@@ -878,8 +893,7 @@ export default class Inbox extends View {
 
   filtered() {
     const q = this.query.trim().toLowerCase();
-    return this.items.filter((x) => (!this.kind || x.kind === this.kind)
-      && (!q || `${x.title} ${x.repo} #${x.number} ${x.author} ${x.labels.join(" ")}`.toLowerCase().includes(q)));
+    return this.items.filter((x) => (!this.kind || x.kind === this.kind) && (!q || hay(x).includes(q)));
   }
 
   // ---------- keys (vim.js; kt-keys lists them) ----------
@@ -1123,12 +1137,14 @@ export default class Inbox extends View {
     // The keys' cursor, while the page has the keyboard: its row, brought into view once after it moved.
     // None while the Code zone has the keys: one cursor shows at a time.
     const cur = focused && this.zone !== "code" ? this.at(shown)?.key : null;
+    // Brought into view: the cursor's row; without the keyboard, the row another mod asked for (openAsked) once listed.
+    const seek = this.zone === "code" ? null : focused ? cur : this.cur;
     // The rows open and close on their height, in order (motion.js rows(), keyed repo#number): a filter,
     // a kind, a refresh. `at` counts them as rows() builds them, the closing ones included: they are the
     // list's direct children, after the error's line, which scroll_to_item reveals.
     let at = this.error ? 1 : 0;
     const rows = rowsOf(this.m, cx, "kti-rows", shown, (x) => x.key, (x, i) => {
-      if (i >= 0 && this.reveal && x.key === cur) {
+      if (i >= 0 && this.reveal && x.key === seek) {
         this.listScroll.scroll_to_item(at);
         this.reveal = false;
       }
@@ -1138,7 +1154,7 @@ export default class Inbox extends View {
     const repo = this.repo();
     const tint = this.tint(t);
     const q = this.query.trim().toLowerCase();
-    const matching = q ? this.items.filter((x) => `${x.title} ${x.repo} #${x.number} ${x.author} ${x.labels.join(" ")}`.toLowerCase().includes(q)) : this.items;
+    const matching = q ? this.items.filter((x) => hay(x).includes(q)) : this.items;
     const count = (k) => matching.filter((x) => !k || x.kind === k).length;
     // The page's head: the scope (the shown project's repo, else Global), how many, the Global pill
     // (a repo scope to the global view) and refresh, over the scope's dither.

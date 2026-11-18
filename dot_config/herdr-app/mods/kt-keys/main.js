@@ -143,6 +143,9 @@ const TABLE = {
     ["h / l", "pn.fold"],
     ["enter / o", "r.open"],
     ["O", "pn.zed"],
+    ["gi / gI", "pn.flowIssue", "Flow"], // i18n: tech
+    ["gp / gP", "pn.flowPr", "Flow"], // i18n: tech
+    ["O", "pn.flowGithub", "Flow"],
     ["k", "pn.above", "Files, Changes"], // i18n: tech
     ["tab", "pn.commits", "History"],
     ["tab / shift-tab", "pn.xtFilter", "Crosstalk"],
