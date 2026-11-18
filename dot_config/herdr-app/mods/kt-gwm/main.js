@@ -16,7 +16,8 @@
 //   Selection (select.js, page only): ⌘-click toggles a card, ⇧-click selects from the anchor, the
 //   box left of its name (on hover, or once one is selected) toggles it; a plain click empties it.
 //   While cards are selected, a bar floats at the list's foot: open them as spaces, copy their
-//   paths (one a line), sync, remove, ✕ to empty. Sync and remove ask once through kt-confirm,
+//   paths (one a line), sync, remove, ✕ to empty; a running sync or remove shows its progress there
+//   (viz.js' dithered bar). Sync and remove ask once through kt-confirm,
 //   listing every worktree; each one is checked with the single action's rules (remove: changes,
 //   an active agent, a Herdr terminal, a lock, the main checkout; sync: changes, no upstream): the
 //   refused ones are listed with their reason and left out. Remove stays one `gwm remove` at a
@@ -24,7 +25,8 @@
 // - "panel": the "gwm-panel" child of the right panel's "panel-body" stack. It follows the shown
 //   thread's terminal (kt-flow's rule) and its folder: in a linked worktree, that worktree (links,
 //   agents, note, commit prefix, sync); in a main checkout, the repo (branches, worktrees, daemon,
-//   doctor, .gwm.toml trust, `gwm clean` dry run); outside git, an empty state.
+//   doctor (a dithered bar: checks passed / total), .gwm.toml trust, `gwm clean` dry run); outside
+//   git, an empty state.
 // Transport: JSON-RPC to `gwm daemon` over its unix socket, one request per `nc -U`. A daemon
 // answers for one repo only, so each repo gets its own socket beside gwm's default one
 // (`gwm-kt-<hash>.sock`); gwm's default socket is used when it serves that repo. A repo shown
@@ -57,6 +59,8 @@ import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./mot
 // kt-keys' roll.js (a byte-identical copy): the head's, the selection's and a worktree's ahead / behind
 // counts roll to their new digits.
 import { roll, rollText } from "./roll.js";
+// kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the doctor and a bulk action's progress as dithered bars.
+import { viz } from "./viz.js";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { makeT, lang, relative } from "./i18n.js";
@@ -704,11 +708,12 @@ export default class Worktrees extends View {
     const items = p.items ?? [p];
     const sync = p.kind === "sync";
     const label = sync ? "Sync" : tr("busy.remove"); // i18n: tech
-    this.busy = { path: items[0].path, label };
+    this.busy = { path: items[0].path, label, ...(p.items && { what: label, i: 0, n: items.length }) };
     cx.spawn(async (cx) => {
       const out = [];
       for (const [i, q] of items.entries()) {
-        this.busy = { path: q.path, label: p.items ? `${label} ${i + 1}/${items.length}` : label };
+        // A bulk one: its base label, i done of n, for the bulk bar's progress.
+        this.busy = { path: q.path, label: p.items ? `${label} ${i + 1}/${items.length}` : label, ...(p.items && { what: label, i, n: items.length }) };
         cx.notify();
         out.push(await (sync ? this.sync(q) : this.remove(q)));
       }
@@ -841,7 +846,10 @@ export default class Worktrees extends View {
         .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(rollText(this.m, "kg-sel-n", tr("selected", { n }), 15)))
         .child(div().w(1).h(18).flex_none().bg(t.border))
         .when(Boolean(progress), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
-          .child(svg(I("refresh-cw")).size(13).spin(900)).child(progress ?? "")))
+          .child(svg(I("refresh-cw")).size(13).spin(900))
+          // viz.js' bar is ~39 px (its label on a 16 px line, 2, its cells in their 6 px glow): held in the
+          // buttons' 28 px, 3 px up, so the bar keeps its height; only the bottom glow runs into the padding.
+          .child(typeof progress === "string" ? progress : div().h(28).flex_none().line_height("16px").child(div().mt(-3).child(progress)))))
         .when(!progress, (el) => el.children(actions.map(([id, label, icon, onClick, danger]) => h_flex().id(`kg-bulk-${id}`).h(28).px(10).gap(6).items_center().rounded(8)
           .text_size(12).text_color(danger ? t.ansi1 : t.foreground).cursor_pointer().hover((s) => s.bg(danger ? alpha(t.ansi1, "1a") : t.hover))
           .on_click((_e, cx) => { onClick(cx); cx.notify(); })
@@ -873,7 +881,11 @@ export default class Worktrees extends View {
       ["sync", "Sync", G("sync"), () => this.askBulk("sync", picked)], // i18n: tech
       ["remove", tr("remove"), G("trash"), () => this.askBulk("remove", picked), true],
     ];
-    return this.bulkBar(t, picked.length, this.bulkActions, this.busy && tr("running", { what: this.busy.label }));
+    // A bulk action: i done of n as viz.js' bar under its bare label (the spinner says it runs; 160 px
+    // cut « Suppression en cours… »), « i+1 / n » the one running; a single one: its words.
+    const b = this.busy;
+    return this.bulkBar(t, picked.length, this.bulkActions, b && (!b.n ? tr("running", { what: b.label })
+      : viz(t, this.m, { roll }).progress(b.what, b.i, { max: b.n, width: 160, figure: `${b.i + 1} / ${b.n}`, id: "kg-bulk-p" })));
   }
 
   // Where the data came from: the daemon (done) or the CLI (warning).
@@ -1440,8 +1452,9 @@ export default class Worktrees extends View {
     const doc = info?.doctor;
     const bad = (doc?.checks ?? []).filter((x) => x.status !== "ok");
     const failed = bad.filter((x) => x.status === "failed").length;
+    // Both counts when both: the bar names every check that isn't ok under it.
     const doctor = !info ? ["…", t.dim] : !doc ? [tr("unavailable"), t.dim]
-      : failed ? [tr("failures", { n: failed }), t.ansi1]
+      : failed ? [[tr("failures", { n: failed }), bad.length > failed && tr("warnings", { n: bad.length - failed })].filter(Boolean).join(" · "), t.ansi1]
       : bad.length ? [tr("warnings", { n: bad.length }), t.ansi3] : ["OK", t.done];
     const TRUST_COLOR = { trusted: t.done, drift: t.ansi3, untrusted: t.ansi3, absent: t.dim, unknown: t.dim };
     const trust = TRUST_COLOR[info?.trust] ? [tr(`trust.${info.trust}`), TRUST_COLOR[info.trust]] : ["…", t.dim];
@@ -1457,7 +1470,14 @@ export default class Worktrees extends View {
           .children(this.marks(t, w ?? {}, false, `kg-r-mk-${w?.path ?? repo.name}`))))
         .child(this.meta(t, tr("meta.default"), info ? info.def ?? "—" : "…", t.foreground))
         .child(this.meta(t, "Daemon", d.source === "daemon" ? tr("daemonOn", { sock }) : tr("daemonOff"), d.source === "daemon" ? t.done : t.ansi3)) // i18n: tech
-        .child(this.meta(t, "Doctor", doctor[0], doctor[1]))
+        // Read: viz.js' bar, the checks that pass over all of them, tinted by the worst, the others named
+        // under it; its id per repo (its label changes with the state). Not read yet or none: in words.
+        .child(!doc?.checks?.length ? this.meta(t, "Doctor", doctor[0], doctor[1])
+          : h_flex().gap(10).items_start()
+            .child(this.eyebrow(t, "Doctor").w(118).flex_none()) // i18n: tech
+            .child(div().flex_1().min_w(0).child(viz(t, this.m, { roll }).progress(doctor[0], doc.checks.length - bad.length, {
+              max: doc.checks.length, color: doctor[1], figure: `${doc.checks.length - bad.length} / ${doc.checks.length}`,
+              detail: bad.map((x) => x.name).join(" · ") || undefined, id: `kg-doc-${repo.common}` }))))
         .child(this.meta(t, ".gwm.toml", trust[0], trust[1]))
         .child(this.meta(t, "gwm clean", this.inflight[`c:${repo.common}`] ? tr("measuring") : c?.error ? tr("cleanFailed", { error: c.error }) : c?.total ? tr("reclaimable", { total: size(c.total) }) : c ? tr("nothingToReclaim") : "…", c?.total ? t.foreground : t.dim)))
       .child(this.dashed(t))

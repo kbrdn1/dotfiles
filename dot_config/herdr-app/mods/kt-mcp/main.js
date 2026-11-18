@@ -53,7 +53,9 @@ import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
-import { rollText } from "./roll.js";
+import { roll, rollText } from "./roll.js";
+// kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the bulk Vérifier's progress as a dithered bar.
+import { viz } from "./viz.js";
 import { refreshOn } from "./bus.js";
 import { METHODS } from "./add.js";
 import { makeT, relative } from "./i18n.js";
@@ -555,7 +557,10 @@ export default class Mcp extends View {
         .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(rollText(this.m, "ktm-sel-n", tr("selected", { n }), 15)))
         .child(div().w(1).h(18).flex_none().bg(t.border))
         .when(Boolean(progress), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
-          .child(svg(I("refresh-cw")).size(13).spin(900)).child(progress ?? "")))
+          .child(svg(I("refresh-cw")).size(13).spin(900))
+          // viz.js' bar is ~39 px (its label on a 16 px line, 2, its cells in their 6 px glow): held in the
+          // buttons' 28 px, 3 px up, so the bar keeps its height; only the bottom glow runs into the padding.
+          .child(div().h(28).flex_none().line_height("16px").child(div().mt(-3).child(progress)))))
         .when(!progress, (el) => el.children(actions.map(([id, label, icon, onClick]) => h_flex().id(`ktm-bulk-${id}`).h(28).px(10).gap(6).items_center().rounded(8)
           .text_size(12).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => { onClick(cx); cx.notify(); })
@@ -577,7 +582,9 @@ export default class Mcp extends View {
       ["copy", tr("copyNames"), OWN("copy"), (cx) => this.copy(picked.map((x) => x.name).join("\n"), cx, tr("namesCopied", { n: picked.length }))],
       ["zed", tr("openConfigs"), I("external-link"), () => this.zed(picked.map((x) => x.file))],
     ];
-    return this.bulkBar(t, picked.length, this.bulkActions, g && `claude mcp get ${g.i + 1}/${g.n} · ${g.name}…`);
+    // The series: i done of n as viz.js' bar, « i+1 / n » the one running, named.
+    return this.bulkBar(t, picked.length, this.bulkActions, g && viz(t, this.m, { roll })
+      .progress(g.name, g.i, { max: g.n, width: 160, figure: `${g.i + 1} / ${g.n}`, id: "ktm-bulk-p" }));
   }
 
   // ---------- keys (vim.js; kt-keys lists them) ----------
