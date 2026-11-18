@@ -183,6 +183,7 @@ const TABLE = {
     ["tab / shift-tab", "md.card", "kt-usage"],
     ["enter / o", "md.session", "kt-usage"],
     ["r", "r.refresh", "kt-usage"],
+    ["i", "md.usageSources", "kt-usage"],
     ["q / esc", "r.close", "kt-usage"],
     ["/ esc", "md.modsSearch", "kt-mods"],
     ["tab / [ ]", "md.modsFilters", "kt-mods"],

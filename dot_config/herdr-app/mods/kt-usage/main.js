@@ -19,16 +19,21 @@
 // codex app-server), and nothing here can use a limit reset (the button opens claude.ai, no more).
 // Loads on open and on Rafraîchir, never on a timer; the GET at most once per 2 min (USAGE_CACHE).
 // Keys (vim.js): j/k element, gg/G, ctrl-d/u, tab/shift-tab card, enter/o on a session: focus it,
-// r refresh, q/esc close. `kt-usage.key:<keys>` feeds keys, `kt-usage.refresh` refreshes (tests).
+// r refresh, i the sources (folded by default), q/esc close. `kt-usage.key:<keys>` feeds keys,
+// `kt-usage.refresh` refreshes (tests).
+// Layout: the card follows the window (MAX_W wide at most, MARGIN from its edges, its full height),
+// its head and keys bar fixed, the cards between them scroll. A card WIDE or wider lays Claude Code out
+// in two columns (the limits | where the week went and what it cost), the sessions and the resets
+// below across; narrower, one column in that order.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { theme, props, closeOverlay, settings, nextCommand, checking, agents, knownAgents, exec, home, readTextFile, run, shared, watchFolder } from "herdr";
+import { theme, props, closeOverlay, settings, nextCommand, checking, agents, knownAgents, exec, home, readTextFile, run, shared, setShared, watchFolder } from "herdr";
 import * as fs from "fs/promises";
 import { ring, ringColor } from "./ring.js";
 import { costLevel, quotaLevel, levelColor } from "./levels.js";
-import { Vim, keysOf, step } from "./vim.js";
-import { motionState, frame, enter, pulse, stagger, sheet, leave, sharpen } from "./motion.js";
+import { Vim, keysOf, keyOf, step } from "./vim.js";
+import { motionState, frame, enter, pulse, stagger, sheet, leave, sharpen, collapse } from "./motion.js";
 import { bump } from "./bus.js";
 import { viz } from "./viz.js";
 import { roll, rollText } from "./roll.js";
@@ -36,13 +41,19 @@ import { claudeWindows, codexReading, codexWindows, dayCost, resetLabel, ago, cl
 import { makeT, num } from "./i18n.js";
 import strings from "./strings.js";
 import { ditherBand, TOP, ALL } from "./dither.js"; // the shared band (DESIGN-REFERENCE.md), tinted per provider
+import { usageSummary } from "./summary.js";
 
 const tr = makeT(strings);
 speak(makeT); // data.js' words follow kt.lang too
 // A window's label (data.js' codes: 5h, 7j) as shown.
 const wlabel = (l) => tr(`w.${l}`);
 const MONO = "Monaspace Krypton";
-const CARD = 780;
+const CARD = 780; // the card's width until the window is measured
+const MAX_W = 1200;
+const MARGIN = 24; // between the card and the window's edges
+const WIDE = 900; // from this card width, two columns of ~425 px or more (a 900 px window is narrower)
+const BESIDE = 1100; // from this card width, the sessions' cost donut beside their list (rows keep ~650 px)
+const SIDE = 360; // that donut's column: the ring and its legend
 const TIMEOUT = 15000; // every exec
 const ROLLOUT_TAIL = 262144; // codex.rs ROLLOUT_TAIL_BYTES
 // A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
@@ -159,6 +170,7 @@ export default class Usage extends View {
     this.motion = motionState();
     this.bw = {}; // band id -> measured width (the dither's tiles)
     this.costsAt = 0; // the sessions' cost donut: drawn from the card's third layout on (claude())
+    this.sources = localStorage.getItem("sources") === "open"; // the Sources block, folded by default
     // The dialog isn't keyed yet in init: ask for the keyboard again, briefly, until it has it.
     this.handle.focus();
     for (const ms of [16, 50, 120, 250]) cx.timer.after(ms, () => { if (!this.handle.is_focused()) this.handle.focus(); });
@@ -171,7 +183,7 @@ export default class Usage extends View {
         const c = await nextCommand();
         if (c.startsWith("key:")) {
           this.handle.focus();
-          for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
+          for (const k of keysOf(c.slice(4))) this.press(k, cx);
         } else if (c === "refresh") this.refresh(cx);
         cx.notify();
       }
@@ -187,6 +199,8 @@ export default class Usage extends View {
 
   // A full read; then bump("usage") (DATA-SYNC.md): kt-threads' 5h rings and kbrdn-status follow.
   // Folder changes (watch) don't bump: those mods watch the same files themselves.
+  // After a full read only (never from watch(): a setShared re-renders every mod), the summary
+  // kt-threads' hover preview reads (summary.js, usage-peek's format): numbers, dates, names.
   refresh(cx) {
     if (this.busy || checking()) return;
     this.busy = true;
@@ -195,6 +209,7 @@ export default class Usage extends View {
       try {
         this.data = await this.load(this.data, cx);
         this.error = null;
+        setShared("kt.usage.summary", usageSummary(this.data, midnight()));
       } catch (e) {
         this.error = String(e?.message ?? e);
       }
@@ -307,6 +322,7 @@ export default class Usage extends View {
     const n = this.items.length;
     if (a === "escape" || a === "quit") this.dismiss(cx);
     else if (a === "refresh") this.refresh(cx);
+    else if (a === "sources") this.toggleSources();
     else if (a === "open" || a === "right") this.activate(this.items[this.cur], cx);
     else if (a === "tab-next" || a === "tab-prev") this.jump(a === "tab-next" ? 1 : -1);
     else if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
@@ -340,8 +356,21 @@ export default class Usage extends View {
     }
   }
 
+  // A key (an event or a key name): vim's action, else i for the sources (vim.js, a shared copy, has
+  // no i and drops it).
+  press(k, cx) {
+    return this.act(this.vim.handle(k) ?? (keyOf(k).name === "i" ? "sources" : null), cx);
+  }
+
+  // The Sources block, unfolded or folded again (i, or a click on its line); remembered for the next
+  // opening (this mod's localStorage, as kt-new's choices).
+  toggleSources() {
+    this.sources = !this.sources;
+    localStorage.setItem("sources", this.sources ? "open" : "shut");
+  }
+
   key(e, cx) {
-    if (!this.act(this.vim.handle(e), cx)) return; // not ours: ctrl-b, cmd-* go on
+    if (!this.press(e, cx)) return; // not ours: ctrl-b, cmd-* go on
     cx.stop_propagation();
     cx.notify();
   }
@@ -450,7 +479,10 @@ export default class Usage extends View {
   claude(t, now, base) {
     const c = this.data.claude;
     const q = c.quota;
-    const list = [];
+    // Two columns on a wide card: the limits on the left, where the week went and what it cost on the
+    // right; the sessions, then the resets, across below. One column in that order otherwise.
+    const left = [];
+    const right = [];
     const items = [{ kind: "card", id: "claude" }];
     // The weekly limit first: on Ultra (Max 20x, verified) it is the only one, Anthropic removed the
     // 5h window late October 2026 (five_hour null). A five_hour that comes back shows beside it.
@@ -459,14 +491,15 @@ export default class Usage extends View {
     const u = api?.usage;
     const [five, slWeek] = claudeWindows(q, now);
     const week = u?.week ?? slWeek;
-    list.push(this.window(t, "ku-g-claude-7j", week, { why: tr("notGivenNow"), name: tr("weekQuota"), main: true }, now));
-    list.push(div().px(10).font_family(MONO).text_size(10.5).text_color(api?.error ? t.blocked : t.dim).child(
+    left.push(this.eyebrow(t, tr("limits")));
+    left.push(this.window(t, "ku-g-claude-7j", week, { why: tr("notGivenNow"), name: tr("weekQuota"), main: true }, now));
+    left.push(div().px(10).font_family(MONO).text_size(10.5).text_color(api?.error ? t.blocked : t.dim).child(
       api?.error ? tr("api.error", { error: tr(`err.${api.error}`, { status: api.status }) })
         : u ? tr("api.read", { ago: ago(Math.floor(api.at / 1000), now), cached: api.cached ? tr("api.cached") : "",
           severity: u.week?.severity ? tr("api.severity", { severity: u.week.severity }) : "" })
           : tr("api.notYet")));
     // Fable's weekly limit, and its share of the week, as the endpoint gives them.
-    if (u?.scoped) list.push(this.window(t, "ku-p-claude-fable", u.scoped, {
+    if (u?.scoped) left.push(this.window(t, "ku-p-claude-fable", u.scoped, {
       why: tr("notGiven"), name: tr(u.scoped.active === false ? "scopedInactive" : "scopedName", { name: u.scoped.name ?? tr("scoped") }) }, now));
     // A share with its used part and an allowance is a bar (its fill: used of the allowance, in the
     // status line's quota colours); a share without one stays a sentence.
@@ -474,21 +507,22 @@ export default class Usage extends View {
     const shareWords = [];
     (u?.shares ?? []).forEach((s, i) => {
       if (s.used == null || !(s.value > 0)) { shareWords.push(shareText(s)); return; }
-      list.push(this.V.progress(tr("share.bar", { name: s.label ?? tr("scoped") }), s.used, { max: s.value, id: `ku-p-claude-share-${i}`,
+      left.push(this.V.progress(tr("share.bar", { name: s.label ?? tr("scoped") }), s.used, { max: s.value, id: `ku-p-claude-share-${i}`,
         figure: tr("share.figure", { used: Math.round(s.used), n: Math.round(s.value) }), detail: tr("share.detail", { used: Math.round(s.used), n: Math.round(s.value) }),
         color: levelColor(t, quotaLevel((s.used / s.value) * 100)) }));
     });
-    if (shareWords.length) list.push(div().px(10).text_size(12).text_color(t.muted).child(shareWords.join(" · ")));
-    if (!five.missing) list.push(this.window(t, "ku-p-claude-5h", five, { name: tr("fiveQuota") }, now));
-    if (five.missing) list.push(div().px(10).text_size(12).text_color(t.muted).child(tr(c.plan === "Ultra" ? "five.ultra" : "five.none")));
+    if (shareWords.length) left.push(div().px(10).text_size(12).text_color(t.muted).child(shareWords.join(" · ")));
+    if (!five.missing) left.push(this.window(t, "ku-p-claude-5h", five, { name: tr("fiveQuota") }, now));
+    if (five.missing) left.push(div().px(10).text_size(12).text_color(t.muted).child(tr(c.plan === "Ultra" ? "five.ultra" : "five.none")));
     // The week per surface (Claude Code, Chats, Cowork, Other): a donut, the second heavy visual.
     if (u?.rows.length) {
-      list.push(this.eyebrow(t, tr("bySurface")));
-      list.push(div().px(10).child(this.V.donut(u.rows.map((r) => ({ label: r.label, value: r.value })),
+      right.push(this.eyebrow(t, tr("bySurface")));
+      right.push(div().px(10).child(this.V.donut(u.rows.map((r) => ({ label: r.label, value: r.value })),
         { label: tr("surfaces"), value: tr("sevenDays"), size: 132, id: "ku-d-claude-surfaces" })));
     }
     // Usage credits and spend: a bar (used of the limit, quota colours) when a limit and the amount
-    // used are given; else said as the endpoint gives them, or "non fourni".
+    // used are given; else said as the endpoint gives them, or "non fourni". Then today's cost.
+    right.push(this.eyebrow(t, tr("costs")));
     if (u) {
       const stateOf = (c) => (c.enabled === false ? (c.byUser ? tr("credit.offByYou") : c.reason ? tr("credit.offWhy", { why: c.reason }) : tr("credit.off"))
         : c.enabled ? tr("credit.on") : tr("credit.unknown"));
@@ -507,24 +541,35 @@ export default class Usage extends View {
           figure: tr("credit.figure", { used: moneyLabel(c.used), limit: moneyLabel(c.limit) }), detail: stateOf(c),
           color: levelColor(t, quotaLevel((c.used.amount / c.limit.amount) * 100)) })));
       }
-      if (bars.length) list.push(h_flex().gap(16).items_start().children(bars));
-      if (words.length) list.push(div().px(10).text_size(12).text_color(t.muted).child(words.join(" · ")));
+      if (bars.length) right.push(h_flex().gap(16).items_start().children(bars));
+      if (words.length) right.push(div().px(10).text_size(12).text_color(t.muted).child(words.join(" · ")));
     }
+    const cost = dayCost(c.files, midnight());
+    // A stat without its trend: there is no history of past days to draw one from (none is invented).
+    right.push(h_flex().px(10).gap(10).items_start()
+      .child(div().flex_1().min_w(0).child(this.V.stat(tr("dayCost"), cost.sessions ? usd(cost.total) : "—", {
+        detail: tr("written", { n: cost.sessions }), id: "ku-s-claude-cost", snap: 2 })))
+      .child(this.pill(t, tr("estimate"), t.blocked)));
+    right.push(div().px(10).text_size(11).text_color(t.dim).child(tr("costAbout")));
 
     // The live Claude sessions on this computer (a remote one's statusLine files are on its machine).
     const byT = new Map(c.files.map((f) => [f.terminal, f]));
     const live = agents().filter((a) => a.app === "claude-code" && !a.address.includes("/"));
-    list.push(this.eyebrow(t, rollText(this.m, "ku-sessions-n", tr("sessions", { n: live.length }).toUpperCase(), 14)));
-    if (!live.length) list.push(div().px(10).text_size(12).text_color(t.dim).child(tr("noSession")));
+    const rows = [];
+    if (!live.length) rows.push(div().px(10).text_size(12).text_color(t.dim).child(tr("noSession")));
     for (const a of live) {
       const idx = base + items.length;
       items.push({ kind: "session", id: `s-${a.address}`, terminal: a.address });
       // A row's figures roll while the list stays short (ANIMATIONS.md: not past 12 rows).
-      list.push(this.session(t, a, byT.get(a.address), idx, now, live.length <= 12));
+      rows.push(this.session(t, a, byT.get(a.address), idx, now, live.length <= 12));
     }
+    const sessions = v_flex().gap(10)
+      .child(this.eyebrow(t, rollText(this.m, "ku-sessions-n", tr("sessions", { n: live.length }).toUpperCase(), 14)))
+      .child(v_flex().gap(4).children(rows));
     // The rows' costs as a donut: each live session's cost_usd, a running total since that session
-    // began (not today's cost, summed differently below). The 5 dearest, then the rest. Not past 12
-    // sessions (the rows stop rolling there too), nor without any cost.
+    // began (not today's cost, summed differently with the costs above). The 5 dearest, then the rest.
+    // Not past 12 sessions (the rows stop rolling there too), nor without any cost. Beside the list on a
+    // card BESIDE or wider, below it otherwise.
     const costs = live.map((a) => ({ label: `${a.space_name} · ${a.tab_name}`, value: byT.get(a.address)?.cost_usd }))
       .filter((s) => s.value > 0).sort((x, y) => y.value - x.value);
     // Slices to the dime, the legend's own precision (viz compact, step 0.1): the ring is rebuilt when
@@ -532,43 +577,38 @@ export default class Usage extends View {
     const dime = (v) => Math.round(v * 10) / 10;
     const slices = [...costs.slice(0, 5), { label: tr("cumul.rest"), value: costs.slice(5).reduce((sum, s) => sum + s.value, 0), color: "muted" }]
       .map((s) => ({ ...s, value: dime(s.value) })).filter((s) => s.value > 0);
+    const cumul = [];
     if (slices.length && live.length <= 12) {
-      list.push(this.eyebrow(t, tr("cumul.title")));
+      cumul.push(this.eyebrow(t, tr("cumul.title")));
       // Drawn at the card's third layout, a render of its own: the first render with data builds the
       // gauge and the surfaces donut cold, the second viz's fluid bars (Fable, its share, credits,
       // spend), and this ring in either call came near Herdr's ~120 ms interrupt (scratch check,
       // 7 sessions: 5 interrupted in 10 with it in the first, 0 without). A new id per step: its
       // on_size_change reports each one's first layout.
       const at = this.costsAt;
-      list.push(div().id(`ku-d-claude-sessions~at${at}`).px(10)
+      cumul.push(div().id(`ku-d-claude-sessions~at${at}`).px(10)
         .on_size_change((_size, cx) => { if (this.costsAt === at && at < 2) { this.costsAt = at + 1; cx.notify(); } })
         .child(at >= 2 ? this.V.donut(slices, { label: tr("cumul.caption"), size: 132, id: "ku-d-claude-sessions",
           value: usd(costs.reduce((sum, s) => sum + s.value, 0)) }) : div().h(132)));
-      list.push(div().px(10).text_size(11).text_color(t.dim).child(tr("cumul.about")));
+      cumul.push(div().px(10).text_size(11).text_color(t.dim).child(tr("cumul.about")));
     }
-
-    const cost = dayCost(c.files, midnight());
-    // A stat without its trend: there is no history of past days to draw one from (none is invented).
-    list.push(h_flex().px(10).gap(10).items_start()
-      .child(div().flex_1().min_w(0).child(this.V.stat(tr("dayCost"), cost.sessions ? usd(cost.total) : "—", {
-        detail: tr("written", { n: cost.sessions }), id: "ku-s-claude-cost", snap: 2 })))
-      .child(this.pill(t, tr("estimate"), t.blocked)));
-    list.push(div().px(10).text_size(11).text_color(t.dim).child(tr("costAbout")));
 
     // Limit resets: what one does, when one is worth it (computed from the weekly window), and the
     // official page. Nothing here can use a reset: the button only opens claude.ai in the browser.
+    // After the sessions, as their items: j goes card, sessions, resets.
     const adv = resetAdvice(week, now);
-    list.push(this.eyebrow(t, tr("resets")));
-    list.push(div().px(10).text_size(11.5).text_color(t.dim).child(tr("resetsAbout")));
-    list.push(h_flex().px(10).gap(8).items_center()
+    const resets = [];
+    resets.push(this.eyebrow(t, tr("resets")));
+    resets.push(div().px(10).text_size(11.5).text_color(t.dim).child(tr("resetsAbout")));
+    resets.push(h_flex().px(10).gap(8).items_center()
       .child(div().flex_none().size(7).rounded_full().bg(adv.worth ? t.blocked : t.done))
       .child(div().flex_1().min_w(0).text_size(12.5).text_color(adv.worth ? t.foreground : t.muted).child(adv.text)));
-    list.push(div().px(10).text_size(11.5).text_color(t.dim)
+    resets.push(div().px(10).text_size(11.5).text_color(t.dim)
       .child(tr("resetsAvailable")));
     const ri = base + items.length;
     items.push({ kind: "resets", id: "resets" });
     const onR = this.cur === ri;
-    list.push(h_flex().px(10).child(h_flex().id("ku-resets").flex_none().h(30).px(12).gap(8).items_center().rounded_full().border(1)
+    resets.push(h_flex().px(10).child(h_flex().id("ku-resets").flex_none().h(30).px(12).gap(8).items_center().rounded_full().border(1)
       .border_color(onR ? alpha(t.accent, "99") : t.border).bg(onR ? alpha(t.accent, "24") : t.background)
       .cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(tr("resetsTip"))
       .on_click((_e, cx) => { cx.stop_propagation(); this.cur = ri; this.openResets(); })
@@ -576,10 +616,18 @@ export default class Usage extends View {
       .child(div().text_size(12).text_color(t.foreground).child(tr("manageResets")))
       .child(div().font_family(MONO).text_size(10).text_color(t.dim).child(tr("resetsNote")))));
 
+    const col = (els) => v_flex().gap(10).children(els);
+    const half = (els) => col(els).flex_1().min_w(0); // in a row only: its fluid visuals measure it
+    const body = [
+      this.wide ? h_flex().gap(24).items_start().child(half(left)).child(half(right)) : col([...left, ...right]),
+      this.beside && cumul.length ? h_flex().gap(24).items_start().child(sessions.flex_1().min_w(0)).child(v_flex().w(SIDE).flex_none().gap(10).children(cumul))
+        : col([sessions, ...cumul]),
+      col(resets),
+    ];
     return {
       items,
       // i18n: tech (Claude Code, API + statusLine)
-      el: this.card(t, base, { key: "claude", name: "Claude Code", body: list,
+      el: this.card(t, base, { key: "claude", name: "Claude Code", body,
         sub: [c.plan ? `${c.plan}${c.tier ? ` (${c.tier})` : ""}` : tr("unknownPlan"), q?.updated_at ? tr("quotaUpdated", { ago: ago(q.updated_at, now) }) : tr("quotaNever"), u ? "API + statusLine" : "statusLine"].join(" · ") }), // i18n: tech
     };
   }
@@ -653,10 +701,16 @@ export default class Usage extends View {
     };
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const now = unix();
     const m = (this.m = frame(this.motion, Boolean(shared("kt.reducedMotion"))));
+    // The card's size from the window's (the veil's on_size_change): as wide as MAX_W at most, its full
+    // height less the margins; the cards inside choose their columns from that width.
+    const W = this.size ? Math.min(MAX_W, this.size.width - 2 * MARGIN) : CARD;
+    const H = this.size ? Math.max(240, this.size.height - 2 * MARGIN) : 760;
+    this.wide = W >= WIDE;
+    this.beside = W >= BESIDE;
     // Monocode's dithered gauge / progress / stat, on this render's motion state; with roll, their
     // numbers roll to a new value (the gauge's percent, the progress percent, the stat value).
     this.V = viz(t, m, { roll });
@@ -695,7 +749,6 @@ export default class Usage extends View {
       .flex().items_center().justify_center().child(svg(I("gauge")).size(18).text_color(t.accent));
     const sub = this.busy && !d ? tr("reading") : d ? tr("refreshed", { time: clock(d.at) }) : tr("notRead");
 
-    const listH = Math.max(200, (this.size?.height ?? 760) - 300);
     // The cards come in with a short cascade (ANIMATIONS.md 6: 30 ms apart), once: their ids stay
     // across refreshes. The body scrolls, so it clips the 6 px rise.
     const body = d
@@ -713,23 +766,35 @@ export default class Usage extends View {
     const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1).border_color(t.border).bg(t.background)
       .font_family(MONO).text_size(9).text_color(t.muted).child(this.vim.label);
 
+    // The sources, folded to one line by default (i or a click): unfolded, the body above gives them
+    // the room (flex), and the fold animates both ways (motion.js collapse, the body as a function).
+    const sources = () => v_flex().px(12).pb(6).gap(3)
+      .child(src("API", tr("src.api")))
+      .child(src("Claude", tr("src.claude")))
+      .child(src("Codex", tr("src.codex", { path: rollout })))
+      .child(src("Resets", tr("src.resets")))
+      .child(src(tr("src.others"), tr("src.othersText")));
+    const fold = collapse(m, "ku-sources", this.sources, sources, { cx });
+
+    // kt-mods' modal: the card at its full height, the head and the keys bar fixed, the body between
+    // them takes the rest (flex_1 in a definite height) and scrolls.
     const card = s.card(v_flex().id("ku-card")
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .w(CARD).max_w_full())
+      .w(W).h(H).max_w_full())
       .p(4).gap(4).rounded(20).bg(t.popover).border(1).border_color(t.border).shadow_lg()
-      .child(div().rounded(16).bg(t.surface).border(1).border_color(t.border)
+      .child(div().flex_none().rounded(16).bg(t.surface).border(1).border_color(t.border)
         .child(this.band(t, { id: "ku-head", tint: t.accent, mark, title: tr("title"), sub, rounded: "all",
           buttons: [refresh, this.iconBtn(t, "ku-close", I("x"), tr("closeTip"), (cx) => this.dismiss(cx))] })))
       // overflow_y_scroll, not _scrollbar: with the scrollbar, scroll_to_item did nothing here (G and
       // tab left the cursor's card off screen); the wheel and trackpad scroll either way.
-      .child(v_flex().id("ku-body").max_h(listH).overflow_y_scroll().track_scroll(this.scroll).gap(4).children(body))
-      .child(v_flex().rounded(16).bg(t.surface).border(1).border_color(t.border)
-        .child(v_flex().px(12).pt(8).pb(6).gap(3)
-          .child(src("API", tr("src.api")))
-          .child(src("Claude", tr("src.claude")))
-          .child(src("Codex", tr("src.codex", { path: rollout })))
-          .child(src("Resets", tr("src.resets")))
-          .child(src(tr("src.others"), tr("src.othersText"))))
+      .child(v_flex().id("ku-body").flex_1().min_h(0).overflow_y_scroll().track_scroll(this.scroll).gap(4).children(body))
+      .child(v_flex().flex_none().rounded(16).bg(t.surface).border(1).border_color(t.border)
+        .child(h_flex().id("ku-sources-line").px(12).py(5).gap(6).items_center().cursor_pointer()
+          .font_family(MONO).text_size(10).text_color(t.dim).hover((st) => st.text_color(t.muted)).tooltip(tr("sourcesTip"))
+          .on_click((_e, cx) => { cx.stop_propagation(); this.toggleSources(); cx.notify(); })
+          .child(tr("sources"))
+          .child(this.sources ? "▾" : "▸"))
+        .children(fold ? [fold] : [])
         .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
         .child(h_flex().px(12).py(8).gap(12).items_center().text_size(11).text_color(t.dim)
           .child(mode)
@@ -737,6 +802,7 @@ export default class Usage extends View {
           .child(hint("tab", tr("hint.card")))
           .child(hint("enter", tr("hint.enter")))
           .child(hint("r", tr("hint.refresh")))
+          .child(hint("i", tr("hint.sources")))
           .child(div().flex_1())
           .child(hint("q esc", tr("hint.close")))));
 
