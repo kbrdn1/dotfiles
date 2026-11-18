@@ -1,9 +1,10 @@
 {
   "env": {
+    "CLAUDE_AFK_TIMEOUT_MS": "999999",
+    "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_NEW_INIT": "1",
-    "SLASH_COMMAND_TOOL_CHAR_BUDGET": "30000",
-    "CLAUDE_AFK_TIMEOUT_MS": "999999"
+    "SLASH_COMMAND_TOOL_CHAR_BUDGET": "30000"
   },
   "includeCoAuthoredBy": false,
   "permissions": {
@@ -140,10 +141,24 @@
     "deny": [
       "Read(~/.ssh/**)",
       "Read(**/*secret*)",
-      "Bash(rm -rf *)"
+      "Bash(rm -rf *)",
+      "Bash(sudo rm *)",
+      "Bash(git push --force origin main*)",
+      "Bash(git push --force origin master*)",
+      "Bash(git push -f origin main*)",
+      "Bash(git push -f origin master*)",
+      "Bash(git push --force-with-lease origin main*)",
+      "Bash(git push --force-with-lease origin master*)",
+      "Bash(dd *of=/dev/*)",
+      "Bash(mkfs*)",
+      "Bash(diskutil eraseDisk*)",
+      "Bash(curl * | sh*)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | sh*)",
+      "Bash(wget * | bash*)"
     ],
     "ask": [],
-    "defaultMode": "auto"
+    "defaultMode": "bypassPermissions"
   },
   "model": "opus",
   "hooks": {
@@ -156,113 +171,11 @@
             "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/need-human.mp3"
           }
         ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "PermissionDenied": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude",
-            "timeout": 86400
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bun /Users/kbrdn1/.claude/scripts/validate-command.js"
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
       }
     ],
     "SessionStart": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      },
-      {
-        "matcher": "*",
+        "matcher": "^(startup|resume|clear|compact|fork)$",
         "hooks": [
           {
             "type": "command",
@@ -281,66 +194,19 @@
             "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/finish.mp3"
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "'/Users/kbrdn1/Library/Application Support/OpenIsland/bin/OpenIslandHooks' --source claude"
-          }
-        ]
       }
     ]
   },
   "statusLine": {
     "type": "command",
-    "command": "HERDR_PLUGIN_STATE_DIR='/Users/kbrdn1/.local/state/herdr/plugins/herdr-agent-quota' '/Users/kbrdn1/Projects/Perso/herdr-agent-quota/target/release/herdr-agent-quota' claude-statusline",
-    "padding": 2,
-    "refreshInterval": 60
+    "command": "bun /Users/kbrdn1/.claude/scripts/statusline.ts",
+    "padding": 0,
+    "refreshInterval": 30
   },
   "enabledPlugins": {
     "claude-hud@claude-hud": true,
     "codex@openai-codex": true,
+    "crosstalk@claude-crosstalk": true,
     "frontend-design@claude-code-plugins": true,
     "gopls-lsp@claude-plugins-official": true,
     "lua-lsp@claude-plugins-official": true,
@@ -350,9 +216,17 @@
     "ponytail@ponytail": true,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true
+    "typescript-lsp@claude-plugins-official": true,
+    "me@claude-flow": true,
+    "herdr-bridge@herdr-bridge": true
   },
   "extraKnownMarketplaces": {
+    "claude-crosstalk": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/kbrdn1/Projects/Perso/claude-crosstalk"
+      }
+    },
     "Mixedbread-Grep": {
       "source": {
         "source": "github",
@@ -376,11 +250,28 @@
         "source": "github",
         "repo": "DietrichGebert/ponytail"
       }
+    },
+    "claude-flow": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/kbrdn1/Projects/Perso/claude-flow"
+      }
+    },
+    "herdr-bridge": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/kbrdn1/Projects/Perso/herdr-bridge"
+      }
     }
   },
   "outputStyle": "senior-dev",
   "language": "French",
   "effortLevel": "xhigh",
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "xhigh"
+    }
+  },
   "advisorModel": "opus",
   "tui": "fullscreen",
   "voice": {
@@ -393,10 +284,5 @@
   "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "voiceEnabled": true,
-  "_openIslandOriginalStatusLine": {
-    "command": "bun /Users/kbrdn1/.claude/scripts/statusline.ts",
-    "padding": 0,
-    "type": "command"
-  }
+  "voiceEnabled": true
 }
