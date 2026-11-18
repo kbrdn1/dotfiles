@@ -885,7 +885,7 @@ export default class Worktrees extends View {
     // cut « Suppression en cours… »), « i+1 / n » the one running; a single one: its words.
     const b = this.busy;
     return this.bulkBar(t, picked.length, this.bulkActions, b && (!b.n ? tr("running", { what: b.label })
-      : viz(t, this.m, { roll }).progress(b.what, b.i, { max: b.n, width: 160, figure: `${b.i + 1} / ${b.n}`, id: "kg-bulk-p" })));
+      : viz(t, this.m, { roll }).progress(b.what, b.i, { max: b.n, width: 160, figure: `${b.i + 1} / ${b.n}`, id: "kg-bulk-p", live: true })));
   }
 
   // Where the data came from: the daemon (done) or the CLI (warning).

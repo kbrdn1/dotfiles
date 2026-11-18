@@ -584,7 +584,7 @@ export default class Mcp extends View {
     ];
     // The series: i done of n as viz.js' bar, « i+1 / n » the one running, named.
     return this.bulkBar(t, picked.length, this.bulkActions, g && viz(t, this.m, { roll })
-      .progress(g.name, g.i, { max: g.n, width: 160, figure: `${g.i + 1} / ${g.n}`, id: "ktm-bulk-p" }));
+      .progress(g.name, g.i, { max: g.n, width: 160, figure: `${g.i + 1} / ${g.n}`, id: "ktm-bulk-p", live: true }));
   }
 
   // ---------- keys (vim.js; kt-keys lists them) ----------

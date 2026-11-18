@@ -57,7 +57,7 @@
 // (a render per mouse move): bars and lines get a native tooltip per category instead.
 
 import { div, PathBuilder, Background } from "gpui-kit";
-import { enter, pulse, MS } from "./motion.js";
+import { enter, MS } from "./motion.js";
 import { makeT } from "./i18n.js";
 import words from "./viz.strings.js";
 
@@ -404,7 +404,7 @@ export function progressGeometry(ratio, width, cell = CELL) {
 }
 
 /** A flow's steps: one segment per step, `gap` cells between them, 3 cells high. Each segment's track
- * is one rectangle under the ink: done and failed solid, current half dithered (its paint breathes),
+ * is one rectangle under the ink: done and failed solid, current half dithered (sparks work on it),
  * skipped a light diagonal hatch, todo the track alone. `segs`: each segment's [x, w] in px. */
 export function stepsGeometry(states, width, cell = CELL, gap = 2) {
   const cols = Math.floor(width / cell);
@@ -725,7 +725,27 @@ export function viz(t, m = null, { roll } = {}) {
   }
 
   // `figure`: a text in place of the percentage (steps() folded: « n / total »), in its reel (`${id}-pct`).
-  function progress(name, value, { max = 100, detail, color: token = "accent", width, cell = CELL, id = `viz-p-${slug(name)}`, figure } = {}) {
+  // The front at work (Cloudflare's bars), in place of a breath: a few cells of the trame lighting up
+  // and going out, each on its own period so they never pulse together, and one drifting along the
+  // front. Cells of the grid (`c` px, from column `a`, `n` columns, rows `row0`..+2), only on cells the
+  // trame leaves unlit (`lit`). Native loops, one per cell (motion.js' rule), drawn ~30 fps while
+  // shown, and only with a motion state that isn't reduced (callers pass a reduced one for what has
+  // stopped). ponytail: 6 twinkling cells and 1 drifting at most, whatever the width.
+  const SPARK = [900, 1300, 1700, 1100, 1500, 2100];
+  function sparks(a, n, row0, c, colour, lit = () => false) {
+    if (!m || m.reduced || n <= 0) return [];
+    const free = [];
+    for (let col = a; col < a + n; col++) for (let row = 0; row < 3; row++) if (!lit(col, row0 + row)) free.push([col, row]);
+    const every = Math.max(1, Math.floor(free.length / SPARK.length));
+    const twinkle = free.filter((_, i) => i % every === 0).slice(0, SPARK.length).map(([col, row], j) =>
+      div().absolute().left(col * c).top((row0 + row) * c).size(c).bg(colour).opacity(0).loop("opacity", { from: 0, to: 0.9, period: SPARK[j] }));
+    const drift = n > 1 ? [div().absolute().top((row0 + 1) * c).size(c).bg(colour).opacity(0.85).loop("left", { from: a * c, to: (a + n - 1) * c, period: 1600 })] : [];
+    return [...twinkle, ...drift];
+  }
+
+  // `live`: something is running toward that value (CI checks, a flow's step): its front works
+  // (sparks), with `m`. Off by default: a reading (a quota) stays still.
+  function progress(name, value, { max = 100, detail, color: token = "accent", width, cell = CELL, id = `viz-p-${slug(name)}`, figure, live = false } = {}) {
     const ratio = max > 0 && Number.isFinite(value) ? clamp(value / max, 0, 1) : 0;
     const tint = color(t, token);
     const glow = faint(tint, (light ? 0.4 : 1) * 0.3);
@@ -737,7 +757,11 @@ export function viz(t, m = null, { roll } = {}) {
       const hpx = 3 * g.cell;
       const bloom = g.head > 0 ? [[0, faint(tint, 0), glow], [B + hpx, glow, faint(tint, 0)]].map(([y, from, to]) =>
         div().absolute().left(0).top(y).w(g.head * g.cell).h(B).child(paint(RECT(), Background.linear_gradient(180, from, to)))) : [];
-      const cells = div().absolute().left(0).top(B).w(w).h(hpx).children([...g.paths].map(([k, p]) => paint(p, k === "tint" ? tint : faint(tint, 0.14))));
+      // Live: the front works, 3 columns behind it to 3 past it, sparks on the track past the head.
+      const cols = Math.floor(w / g.cell);
+      const from = Math.max(0, g.head - 3);
+      const front = live ? sparks(from, Math.min(cols - from, 6), 0, g.cell, tint, (col) => col < g.head) : [];
+      const cells = div().absolute().left(0).top(B).w(w).h(hpx).children([...[...g.paths].map(([k, p]) => paint(p, k === "tint" ? tint : faint(tint, 0.14))), ...front]);
       return reveal(m, id, w, hpx + 2 * B, div().relative().w(w).h(hpx + 2 * B).children([...bloom, cells]));
     };
     const pct = figure ?? `${Math.round(ratio * 100)}%`;
@@ -754,7 +778,7 @@ export function viz(t, m = null, { roll } = {}) {
 
   // A flow's progress by steps (`list`: [{ label, state: "done" | "current" | "todo" | "failed" |
   // "skipped" }], an unknown state counts as todo): a dithered segment per step, done in the tint (the
-  // status line's ok purple), current half inked and breathing (motion.js pulse), failed red, skipped
+  // status line's ok purple), current half inked with its front at work (sparks), failed red, skipped
   // hatched, todo the track. Each step's label under its segment, mono and truncated, and its tooltip
   // on the segment; segments narrower than STEP_MIN px: only the step in front and « n / total ».
   // Drawn in from the left once (reveal), as progress.
@@ -798,14 +822,17 @@ export function viz(t, m = null, { roll } = {}) {
       if (m) (m.folded ??= new Set())[now ? "add" : "delete"](id);
       return now;
     };
-    const folded = (w, name) => progress(name, passed, { max: states.length, figure: total, color: worst, width: w, cell, id });
+    const running = states.indexOf("current");
+    const folded = (w, name) => progress(name, passed, { max: states.length, figure: total, color: worst, width: w, cell, id, live: running >= 0 });
+    // The running step's cell at work: sparks on the cells its half trame leaves unlit (rows from `row0`).
+    const atWork = (g, row0) => (running < 0 ? []
+      : sparks(Math.round(g.segs[running][0] / g.cell), Math.round(g.segs[running][1] / g.cell), row0, g.cell, fill.current, (col, row) => inked(col, row, 0.5)));
     const flat = (w) => memo(`s|${states}|${w}|${cell}`, () => capped((c) => stepsGeometry(states, w, c), cell, w * 3 * cell));
     const draw = (w) => {
       if (folds(w, flat)) return folded(w, String(list[front].label ?? ""));
       const g = flat(w);
       const hpx = 3 * g.cell;
-      const bar = div().relative().w(w).h(hpx).children([...g.paths].map(([k, p]) => (k === "current" && m
-        ? pulse(m, div().absolute().inset_0().child(paint(p, fill[k])), true) : paint(p, fill[k]))));
+      const bar = div().relative().w(w).h(hpx).children([...[...g.paths].map(([k, p]) => paint(p, fill[k])), ...atWork(g, 0)]);
       const labels = g.segs.some(([, sw]) => sw < STEP_MIN)
         ? div().flex().w(w).h(LH).gap(8).child(text(states[front]).flex_1().min_w(0).child(String(list[front].label ?? "")))
           // With roll, « n / total » rolls to its new count (its reels: `${id}-n`).
@@ -834,8 +861,8 @@ export function viz(t, m = null, { roll } = {}) {
       if (folds(w, geo)) return folded(w, `${name != null ? `${name} · ` : ""}${list[front].label ?? ""}`);
       const g = geo(w);
       const hpx = 5 * g.cell;
-      const bar = div().relative().w(w).h(hpx).children([...g.paths].map(([k, p]) => (k === "current" && m
-        ? pulse(m, div().absolute().inset_0().child(paint(p, fill[k])), true) : paint(p, fill[k]))));
+      // In a tier, a step's cells sit on rows 1 to 3.
+      const bar = div().relative().w(w).h(hpx).children([...[...g.paths].map(([k, p]) => paint(p, fill[k])), ...atWork(g, 1)]);
       const line = div().flex().w(w).h(LH).gap(5)
         .when(name != null, (el) => el.child(text("done").flex_none().child(String(name))).child(text("todo").flex_none().child("·")))
         .child(text(states[front]).flex_1().min_w(0).child(String(list[front].label ?? "")))

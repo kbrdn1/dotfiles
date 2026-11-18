@@ -741,7 +741,7 @@ export default class Automation extends View {
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child([sp?.name, r.cwd ? tilde(r.cwd, home()) : null].filter(Boolean).join(" · ") || r.address))
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(t[r.status] ?? t.dim).child(statusText(r.status)))
       // « Itération N/M » as read on its screen (viz.js' dithered bar); nothing read yet: said.
-      .child(it ? div().w(180).flex_none().child(this.V.progress(tr("iteration", { n: it.n, m: it.m }), it.n, { max: it.m, width: 180, color: "working", id: `kta-it-${r.address}` }))
+      .child(it ? div().w(180).flex_none().child(this.V.progress(tr("iteration", { n: it.n, m: it.m }), it.n, { max: it.m, width: 180, color: "working", id: `kta-it-${r.address}`, live: r.status === "working" }))
         : div().w(180).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(tr("noIteration")));
   }
 

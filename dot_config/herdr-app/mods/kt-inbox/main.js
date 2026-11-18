@@ -698,7 +698,7 @@ export default class Inbox extends View {
         // A bulk run: its calls done over all (viz.js progress); else what runs, spinning. A 16 px line: the
         // progress is 39 px high (the buttons 28), and the bar stays under the list's 64 px foot.
         .when(Boolean(this.busy && this.bulkStep), (el) => el.child(div().px(10).line_height("16px").child(this.V.progress(tr("running", { what: this.busy }), this.bulkStep.i,
-          { max: this.bulkStep.n, width: 160, figure: `${this.bulkStep.i} / ${this.bulkStep.n}`, id: "kti-bulk-prog" }))))
+          { max: this.bulkStep.n, width: 160, figure: `${this.bulkStep.i} / ${this.bulkStep.n}`, id: "kti-bulk-prog", live: true }))))
         .when(Boolean(this.busy && !this.bulkStep), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
           .child(svg(I("refresh-cw")).size(13).spin(900)).child(tr("running", { what: this.busy }))))
         .when(!this.busy, (el) => el.children(actions.map(([id, label, icon, onClick, danger]) => h_flex().id(`kti-bulk-${id}`).h(28).px(10).gap(6).items_center().rounded(8)

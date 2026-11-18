@@ -293,7 +293,43 @@ const texts = (x) => { const out = []; (function walk(n) { n?.kids?.forEach((k) 
 assert.deepEqual(texts(stWide), ["Issue", "Worktree", "PR", "Review", "CI"], "a label under each step");
 const tips = []; (function walk(n) { if (n?.props?.tooltip) tips.push(n.props.tooltip[0]); n?.kids?.forEach(walk); })(stWide);
 assert.deepEqual(tips, ["Issue · fait", "Worktree · fait", "PR · fait", "Review · en cours", "CI · à faire"]);
-assert.ok(find(stWide, (n) => n.props?.loop), "current breathes");
+assert.ok(find(stWide, (n) => n.props?.loop), "current at work");
+
+// #37: the front at work, not a breath: 6 cells twinkling (opacity loops, each its own period) and 1
+// drifting (a left loop), on the running step's unlit cells, inside its segment; none without m or reduced.
+{
+  const loops = (x) => { const out = []; (function walk(n) { if (n?.props?.loop) out.push(n); n?.kids?.forEach(walk); })(x); return out; };
+  const sp = loops(stWide);
+  const tw = sp.filter((n) => n.props.loop[0] === "opacity");
+  const dr = sp.filter((n) => n.props.loop[0] === "left");
+  assert.deepEqual([tw.length, dr.length], [6, 1], "6 twinkling cells, 1 drifting");
+  assert.equal(new Set(tw.map((n) => n.props.loop[1].period)).size, 6, "each its own period: never in step");
+  const seg = V.stepsGeometry(flow.map((s) => s.state), 400).segs[3];
+  for (const n of tw) {
+    const x = n.props.left[0], y = n.props.top[0], c = n.props.size[0];
+    assert.ok(x >= seg[0] && x + c <= seg[0] + seg[1] && y >= 0 && y < 3 * c, "inside the running step's cell");
+    assert.equal(V.inked(x / c, y / c, 0.5), false, "on a cell the half trame leaves unlit");
+  }
+  assert.deepEqual(dr[0].props.loop[1].from, seg[0], "drifts from the segment's start");
+  assert.equal(loops(V.viz(t, null).steps(flow, { width: 400, id: "st" })).length, 0, "no motion state: still");
+  assert.equal(loops(V.viz(t, frame(motionState(), false)).steps(flow.map((s) => ({ ...s, state: "done" })), { width: 400, id: "st" })).length, 0, "nothing running: still");
+  // In tiers, on rows 1 to 3 of the 5.
+  const tier = V.viz(t, frame(motionState(), false)).steps(Array.from({ length: 6 }, (_, i) => ({ label: `S${i}`, group: i < 3 ? "A" : "B", state: i < 4 ? "done" : i === 4 ? "current" : "todo" })), { width: 400, id: "tsp" });
+  const tt = loops(tier).filter((n) => n.props.loop[0] === "opacity");
+  assert.equal(tt.length, 6);
+  assert.ok(tt.every((n) => n.props.top[0] >= n.props.size[0] && n.props.top[0] < 4 * n.props.size[0]), "tiers: rows 1 to 3");
+  assert.ok(tt.every((n) => !V.inked(n.props.left[0] / n.props.size[0], n.props.top[0] / n.props.size[0], 0.5)), "tiers: on unlit cells, rows counted in the 5");
+  // progress: live only, its sparks past the head (the track), its drift across the front; off: still.
+  const live = V.viz(t, frame(motionState(), false)).progress("Checks", 40, { width: 300, live: true, id: "pl" });
+  const pl = loops(live);
+  const head = V.progressGeometry(0.4, 300).head * V.CELL;
+  assert.deepEqual([pl.filter((n) => n.props.loop[0] === "opacity").length, pl.filter((n) => n.props.loop[0] === "left").length], [6, 1], "live progress: its front works");
+  assert.ok(pl.filter((n) => n.props.loop[0] === "opacity").every((n) => n.props.left[0] >= head), "sparks past the head");
+  assert.equal(loops(V.viz(t, frame(motionState(), false)).progress("Quota", 40, { width: 300, id: "pq" })).length, 0, "a reading (not live): still");
+  assert.equal(loops(V.viz(t, frame(motionState(), true)).progress("Checks", 40, { width: 300, live: true, id: "pr" })).length, 0, "reduced: still");
+  // Folded steps: the bar is live while a step runs.
+  assert.ok(loops(V.viz(t, frame(motionState(), false)).steps(Array.from({ length: 30 }, (_, i) => ({ label: `S${i}`, state: i < 9 ? "done" : i === 9 ? "current" : "todo" })), { width: 120, id: "fold" })).length > 0, "folded and running: the bar's front works");
+}
 const enTips = []; (function walk(n) { if (n?.props?.tooltip) enTips.push(n.props.tooltip[0]); n?.kids?.forEach(walk); })(
   V.viz(t, null).steps(flow, { width: 400, words: { done: "done", current: "running" } }));
 assert.deepEqual(enTips.slice(2, 5), ["PR · done", "Review · running", "CI · à faire"], "words replace the names given, French for the rest");
