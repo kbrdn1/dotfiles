@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
-  costOf, cleanLimits, stepLimit, checkSteps, SNOOZES, wakeAt, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
+  costOf, cleanLimits, stepLimit, checkSteps, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
 
@@ -255,4 +255,70 @@ assert.equal(wakeAt("tonight", late), new Date(2026, 10, 19, 19, 0).getTime());
 assert.equal(wakeAt("tomorrow", noon), new Date(2026, 10, 19, 9, 0).getTime());
 assert.equal(wakeAt("tomorrow", late), new Date(2026, 10, 19, 9, 0).getTime());
 assert.deepEqual(SNOOZES, ["hour", "tonight", "tomorrow"]);
+// Drafts: a card with no agent, flow nor cost: Inactif (status), Sans flow (phase), first in its column;
+// an issue from a "#N" title; is:draft; its consigne in the free words; outside the cost.
+const drafts = draftsOf([{ id: "tfx-d1", title: "#77 Nouvelle idée", task: "Écrire le\nmodule kanban", project: acme, at: now - 2 * MIN },
+  { id: "tfx-d2", title: "Autre", at: now - MIN }, { nope: 1 }, null]);
+assert.deepEqual(drafts.map((d) => [d.id, d.draft, d.issue, d.project.key]), [["tfx-d1", true, "77", "p-acme"], ["tfx-d2", true, null, "none"]]);
+const withD = [...show, ...drafts];
+assert.deepEqual(ids(columns(withD, "status", { pins: ["tfx-3"] })[3]), ["tfx-d2", "tfx-d1", "tfx-3", "tfx-4", "tfx-8", "tfx-7"]);
+assert.deepEqual(ids(columns(withD, "phase").at(-1)).slice(0, 2), ["tfx-d2", "tfx-d1"]);
+const qd = (text) => withD.filter((x) => matchQuery(x, parseQuery(text), ctx)).map((x) => x.id);
+assert.deepEqual(qd("is:draft"), ["tfx-d1", "tfx-d2"]);
+assert.deepEqual(qd("module"), ["tfx-d1"]); // its consigne
+assert.deepEqual(qd("#77"), ["tfx-d1"]);
+assert.equal(costOf(drafts), 0);
+assert.deepEqual(draftsOf("torn"), []);
+
+// A launched draft's thread (kt-new's record): by its tab's name, in that space or that worktree's; not
+// there yet, or two: null.
+const made = [
+  { id: "tfx-n1", tab: { name: "Login" }, space: { id: "tfx-s1", folder: "/tfx/acme", machine: null } },
+  { id: "tfx-n2", tab: { name: "fix" }, space: { id: "tfx-s5", folder: "/tfx/wt/fix", machine: null } },
+  { id: "tfx-n3", tab: { name: "Dup" }, space: { id: "tfx-s1" } }, { id: "tfx-n4", tab: { name: "Dup" }, space: { id: "tfx-s1" } },
+];
+assert.equal(attach(made, { tab: "Login", space: "tfx-s1" }), "tfx-n1");
+assert.equal(attach(made, { tab: "Login", space: "tfx-s2" }), null);
+assert.equal(attach(made, { tab: "fix", space: null, folder: "/tfx/wt/fix", machine: null }), "tfx-n2");
+assert.equal(attach(made, { tab: "fix", space: null, folder: "/tfx/wt/fix", machine: "vps" }), null);
+assert.equal(attach(made, { tab: "Dup", space: "tfx-s1" }), null); // two: no guess
+assert.equal(attach(made, null), null);
+
+// Auto-archive: merged, seen (idle, or no agent), quiet N days; never pinned, shown, archived, a draft,
+// one already archived once (skip); 0 days: never.
+const D = 86400e3;
+const arc = [
+  th("tfx-a1", "idle", 0, { pr: { state: "MERGED" }, activity: now - 8 * D }),
+  th("tfx-a2", "done", 0, { pr: { state: "MERGED" }, activity: now - 8 * D }), // not seen yet
+  th("tfx-a3", "idle", 0, { pr: { state: "OPEN" }, activity: now - 8 * D }),
+  th("tfx-a4", "idle", 0, { pr: { state: "MERGED" }, activity: now - 2 * D }), // too recent
+  th("tfx-a5", null, 0, { pr: { state: "MERGED" }, activity: now - 9 * D }), // no agent: seen
+  th("tfx-a6", "idle", 0, { pr: { state: "MERGED" }, activity: now - 9 * D, pinned: true }),
+  th("tfx-a7", "idle", 0, { pr: { state: "MERGED" }, activity: now - 9 * D, shown: true }),
+  th("tfx-a8", "idle", 0, { pr: { state: "MERGED" }, activity: now - 9 * D, settled: true }),
+  th("tfx-a9", "working", 0, { pr: { state: "MERGED" }, activity: now - 9 * D }),
+  th("tfx-a10", "idle", 0, { pr: { state: "MERGED" }, activity: now - 9 * D }),
+];
+assert.deepEqual(toArchive(arc, { days: 7, now, skip: new Set(["tfx-a10"]) }), ["tfx-a1", "tfx-a5"]);
+assert.deepEqual(toArchive(arc, { days: 1, now }), ["tfx-a1", "tfx-a4", "tfx-a5", "tfx-a10"]);
+assert.deepEqual(toArchive(arc, { days: 0, now }), []);
+assert.deepEqual(toArchive([...arc, ...drafts], { days: 1, now }).length, 4);
+// What it does: never anything on its own the first time (no memo): all of it proposed. Taken on
+// (`since`), only a thread crossing its N days after that goes by itself; one past them before (a PR
+// read late, say) is proposed; what it archived or was told to leave (`done`), never again; 0: nothing.
+assert.deepEqual(archivePlan(arc, { days: 7, now }), { auto: [], propose: ["tfx-a1", "tfx-a5", "tfx-a10"] });
+assert.deepEqual(archivePlan(arc, { days: 7, now, memo: null }).auto, []);
+const crossing = [
+  th("tfx-c1", "idle", 0, { pr: { state: "MERGED" }, activity: now - 7 * D - 3600e3 }), // crossed an hour ago
+  th("tfx-c2", "idle", 0, { pr: { state: "MERGED" }, activity: now - 10 * D }), // crossed three days ago
+  th("tfx-c3", "idle", 0, { pr: { state: "MERGED" }, activity: now - 9 * D }), // left once
+];
+const memo = { since: now - D, done: { "tfx-c3": now - D } };
+assert.deepEqual(archivePlan(crossing, { days: 7, now, memo }), { auto: ["tfx-c1"], propose: ["tfx-c2"] });
+assert.deepEqual(archivePlan(crossing, { days: 7, now, memo: { since: now - 5 * D, done: {} } }), { auto: ["tfx-c1", "tfx-c2", "tfx-c3"], propose: [] });
+assert.deepEqual(archivePlan(crossing, { days: 0, now, memo }), { auto: [], propose: [] });
+assert.deepEqual(archivePlan(crossing, { days: 7, now, memo: { done: {} } }).auto, []); // no `since`: as the first time
+// Its option: mod.json's archiveDays, a number from 0 (never), 7 by default.
+const days = declared.find((x) => x.key === "archiveDays");
+assert.deepEqual([days.type, days.min, days.default], ["number", 0, 7]);
 console.log("kanban: ok");

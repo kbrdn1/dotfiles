@@ -45,13 +45,14 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, theme, shared, setShared, layout, nextCommand, settings, exec, home, readTextFile, openOverlay, checking, window as win } from "herdr";
+import { spaces, panes, run, theme, shared, setShared, layout, nextCommand, settings, exec, home, readTextFile, openOverlay, checking, notify, window as win } from "herdr";
 import * as fs from "fs/promises";
 import * as model from "./threads-model.js";
 import * as io from "./threads-io.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
-  costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt } from "./kanban.js";
+  costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
+  FIELDS, draftThread, draftsOf, attach, archivePlan } from "./kanban.js";
 import { companion } from "./companion-logo.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the drawer's dither steps (flow, checks).
 import { viz } from "./viz.js";
@@ -99,6 +100,10 @@ const OPT_ICON = { column: K("columns-3"), group: K("rows-3"), slice: I("panel-l
 const KEY_OF = { column: "c", group: "b", slice: "s", sort: "t" };
 const PICKS = "kt.kanban.slicePick"; // { project: key | null, program: key | null }
 const VIEWS = "kt.kanban.views"; // { current, list }: the saved views (kanban.js viewsOf)
+const DRAFTS = "kt.kanban.drafts"; // [{ id, title, task, space, project, at }]: the draft cards (kanban.js draftsOf)
+const LAUNCHED = "kt.kanban.launched"; // kt-new's record of a draft launched: { draft, tab, space, folder, machine, at }
+const ARCHIVE_EVERY = 600e3; // auto-archive looks every 10 minutes (and on arrival)
+const AUTO_ARCHIVED = "kt.kanban.autoArchived"; // { since, done: { tab id: when } }: auto-archive's memo (archivePlan)
 const WAIT = 600; // vim.js' time between the two keys of gt / gT
 
 // The board's choices as stored (the key strings in full: kt-mods finds who reads them by a grep).
@@ -137,7 +142,8 @@ export default class Kanban extends View {
     this.draft = "";
     this.viewMenu = false; // the current view's actions shown in the tab row
     this.limitEdit = null; // the column whose head shows its limit's stepper
-    this.pending = null; // the view kt-confirm asks about deleting
+    this.pending = null; // what kt-confirm asks about deleting: { kind: "view" | "draft", id }
+    this.editing = null; // a draft being typed in its drawer: { id, field: "title" | "task", title, task }
     // The drawer (a card's side panel): the thread it shows (null: shut), the last one (drawn while it
     // closes), whether its snooze choices show; its PR, issue and diff by thread id ({ at, pr, issue,
     // diff, diffAt, loading }), read when it opens.
@@ -183,6 +189,8 @@ export default class Kanban extends View {
       if (this.drawer) this.loadDetail(cx); // its diff again (local, cheap); gh only once stale
     });
     cx.timer.every(1500, (cx) => { if (visible()) this.lookup(cx); });
+    // Auto-archive: only while the page shows (autoArchive returns at once otherwise), gently.
+    cx.timer.every(ARCHIVE_EVERY, () => this.autoArchive());
     // `focus` (pane.go) takes the keyboard in NORMAL; `key:<keys>` takes it and types those keys
     // ("l", "g g", "/ f i x", "c"), for tests; `refresh` reads again.
     cx.spawn(async (cx) => {
@@ -193,12 +201,19 @@ export default class Kanban extends View {
           this.focusIn();
           for (const k of keysOf(c.slice(4))) this.press(k, cx);
         } else if (c === "refresh") this.refresh(cx);
-        // kt-confirm's yes on deleting a view (command `kt-kanban.confirmed`, this copy shows behind it).
+        // kt-confirm's yes on deleting a view or a draft (command `kt-kanban.confirmed`, this copy shows
+        // behind it).
         else if (c === "confirmed" && this.pending) {
-          const views = deleteView(viewsOf(shared(VIEWS)), this.pending);
+          const { kind, id } = this.pending;
           this.pending = null;
-          this.setViews(views);
-          this.applyView(currentView(views));
+          if (kind === "draft") {
+            setShared(DRAFTS, (shared(DRAFTS) ?? []).filter((d) => d.id !== id));
+            if (this.drawer === id) this.closeDrawer(cx);
+          } else {
+            const views = deleteView(viewsOf(shared(VIEWS)), id);
+            this.setViews(views);
+            this.applyView(currentView(views));
+          }
         }
         cx.notify();
       }
@@ -395,7 +410,7 @@ export default class Kanban extends View {
     const views = viewsOf(shared(VIEWS));
     if (views.list.length < 2) return;
     const v = currentView(views);
-    this.pending = v.id;
+    this.pending = { kind: "view", id: v.id };
     this.viewMenu = false;
     openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
       title: tr("view.del.title", { name: this.viewName(v) }), detail: tr("view.del.detail"), label: tr("view.delete"), danger: true,
@@ -444,7 +459,35 @@ export default class Kanban extends View {
       else return false;
       return true;
     }
+    // A draft being typed in its drawer takes them too: tab the other field, enter the consigne (from the
+    // title) or a new line (in it), esc or cmd+enter done (kept).
+    const ed = this.editing;
+    if (ed) {
+      if (name === "escape" || name === "cmd-enter" || name === "ctrl-enter") this.commitEdit();
+      else if (name === "tab" || name === "shift-tab") ed.field = ed.field === "title" ? "task" : "title";
+      else if (name === "enter") { if (ed.field === "title") ed.field = "task"; else ed.task += "\n"; }
+      else if (name === "backspace") ed[ed.field] = ed[ed.field].slice(0, -1);
+      else if (char && !/^(ctrl|cmd)-/.test(name)) { if (ed.field === "task" || ed.title.length < 120) ed[ed.field] += char; }
+      else return false;
+      return true;
+    }
     if (this.vim.insert) return this.act(this.vim.handle(e), cx);
+    // n: a new draft (its drawer opens, its title typed at once).
+    if (name === "n") {
+      this.vim.normal();
+      this.newDraft(cx);
+      return true;
+    }
+    // The draft in the drawer, else under the cursor: i types it, L launches it (kt-new).
+    const draft = [this.drawer && this.byId?.get(this.drawer), atCard(this.board, this.at ?? { l: 0, c: 0, i: -1 })].find((x) => x?.draft);
+    if (draft && (name === "i" || name === "L")) {
+      this.vim.normal();
+      if (name === "i") {
+        if (this.drawer !== draft.id) this.openDrawer(draft.id, cx);
+        this.startEdit(draft, "title");
+      } else this.launch(draft);
+      return true;
+    }
     if ((name === "t" || name === "T") && this.vim.pending === "g" && Date.now() - this.vim.at <= WAIT) {
       this.vim.normal();
       const views = viewsOf(shared(VIEWS));
@@ -459,7 +502,7 @@ export default class Kanban extends View {
     if (name === "+" || name === "-") {
       this.vim.normal();
       const key = this.board.keys[this.at?.c ?? 0];
-      const n = this.board.lanes.reduce((s, lane) => s + (lane.cols[this.at?.c ?? 0]?.threads.length ?? 0), 0);
+      const n = this.board.lanes.reduce((s, lane) => s + (lane.cols[this.at?.c ?? 0]?.threads.filter((x) => !x.draft).length ?? 0), 0);
       if (key) this.limits = stepLimit(this.limits, key, name === "+" ? 1 : -1, n);
       return true;
     }
@@ -474,7 +517,7 @@ export default class Kanban extends View {
     // Its actions, while it shows (kt-keys lists them): p pin, z snooze (then 1 2 3 the choices, 0 wakes),
     // O the PR, I the issue, e Zed.
     const th = this.drawer ? this.byId?.get(this.drawer) : null;
-    if (th) {
+    if (th && !th.draft) {
       const d = this.details[th.id] ?? {};
       const pick = this.snoozing ? { 1: "hour", 2: "tonight", 3: "tomorrow" }[name] ?? (name === "0" ? null : undefined) : undefined;
       const act = pick !== undefined ? () => this.snooze(th, pick)
@@ -566,6 +609,108 @@ export default class Kanban extends View {
     exec("zed", [th.cwd]).catch(() => exec("open", [`zed://file${th.cwd}`]).catch(() => {}));
   }
 
+  // ---------- drafts (kanban.js draftsOf; shared "kt.kanban.drafts") ----------
+
+  // A new draft in the shown space's project, its drawer open, its title typed at once.
+  newDraft(cx) {
+    const shown = spaces().find((s) => s.active);
+    const p = shown ? [...(this.byId?.values() ?? [])].find((x) => !x.draft && x.space?.id === shown.id)?.project : null;
+    const d = { id: `d${Date.now().toString(36)}`, title: "", task: "", space: shown?.id ?? null, at: Date.now(),
+      project: p ? { key: p.key, name: p.name, color: p.color, logo: p.logo, home: p.home } : null };
+    setShared(DRAFTS, [...(shared(DRAFTS) ?? []), d]);
+    this.openDrawer(d.id, cx);
+    this.startEdit(draftThread(d), "title");
+  }
+
+  startEdit(th, field) {
+    this.editing = { id: th.id, field, title: th.title, task: th.task };
+    this.handle.focus();
+    this.vim.normal();
+  }
+
+  // The typing kept; a draft left with neither title nor consigne goes (there is nothing to lose).
+  commitEdit() {
+    const ed = this.editing;
+    this.editing = null;
+    if (!ed) return;
+    const list = shared(DRAFTS) ?? [];
+    const empty = !ed.title.trim() && !ed.task.trim();
+    setShared(DRAFTS, empty ? list.filter((d) => d.id !== ed.id) : list.map((d) => (d.id === ed.id ? { ...d, title: ed.title.trim(), task: ed.task } : d)));
+  }
+
+  askDeleteDraft(th) {
+    this.pending = { kind: "draft", id: th.id };
+    openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
+      title: tr("draft.del.title", { name: th.title || tr("draft.untitled") }), detail: tr("draft.del.detail"), label: tr("draft.delete"), danger: true,
+      command: { name: "kt-kanban.confirmed" } } });
+  }
+
+  // « Lancer » (L): kt-new, filled in: the draft's title as the thread's name, its consigne as the
+  // agent's first message, its project (the space it was made in, else the shown one), Claude, a gwm
+  // worktree. Nothing starts until the person's Enter there; kt-new records the thread it made
+  // (shared "kt.kanban.launched") and the board lets the draft go (landing).
+  launch(th) {
+    if (this.editing) this.commitEdit();
+    const space = spaces().some((s) => s.id === th.from) ? th.from : spaces().find((s) => s.active)?.id;
+    openOverlay({ mod: "kt-new", kind: "dialog", width: 1, height: 1, frame: "none",
+      props: { name: th.title, task: th.task, project: space ?? null, agent: "claude", worktree: true, draft: th.id } }); // i18n: tech
+  }
+
+  // A draft kt-new launched: it goes from the drafts; its thread (kanban.js attach: its tab's name in its
+  // space or worktree), once there, takes the cursor, and the drawer if it showed the draft. Not found
+  // a minute after: the record goes too (the draft is gone anyway). Writes off the render.
+  landing(rec, all, cx) {
+    const drafts = shared(DRAFTS) ?? [];
+    const has = drafts.some((d) => d.id === rec.draft);
+    const id = attach(all, rec);
+    const stale = Date.now() - (rec.at ?? 0) > 60e3;
+    if (!has && !id && !stale) return;
+    cx.spawn(async () => {
+      if (has) setShared(DRAFTS, drafts.filter((d) => d.id !== rec.draft));
+      if (id || stale) setShared(LAUNCHED, null);
+    });
+    if (!id) return;
+    if (this.drawer === rec.draft) this.drawer = this.drawerLast = id;
+    this.cur = id;
+    this.reveal = true;
+  }
+
+  // Auto-archive (mod.json's archiveDays, 7 by default, 0: never; kanban.js archivePlan): tab.settle, the
+  // sidebar's own archive (a display state: nothing closes), on the threads whose PR is merged and that
+  // were seen, quiet N days. Only while the page shows. On its own only for a thread that crosses its N
+  // days after auto-archive was taken on (its memo's `since`, set at the first pass): every thread
+  // already past them is only proposed in the head (« Archiver » / « Laisser »), the person's click. Its
+  // memo is shared ("kt.kanban.autoArchived": { since, done }), not this copy's (the glass layout has one
+  // of its own); `done`, what it archived or was told to leave: never twice. Written only on a change.
+  autoArchive() {
+    if (checking() || !visible()) return;
+    const days = Number(shared("kt.opt.kt-kanban.archiveDays") ?? 7);
+    const memo = shared(AUTO_ARCHIVED);
+    const now = Date.now();
+    const threads = model.threadsOf(this.world(now));
+    const { auto } = archivePlan(threads, { days, now, memo });
+    for (const id of auto) run("tab.settle", { id });
+    // Said once per pass, how many and where to find them (nothing closed).
+    if (auto.length) notify({ title: tr("archive.title", { n: auto.length }), body: tr("archive.body"), level: "info", timeout: 6000 });
+    this.markArchived(memo, auto, threads, now);
+  }
+
+  // The memo after a pass or a click: `since` set once (the first pass), `ids` done, the closed tabs out.
+  markArchived(memo, ids, threads, now) {
+    const alive = new Set(threads.map((x) => x.id));
+    const was = memo?.done ?? {};
+    const done = Object.fromEntries([...Object.entries(was).filter(([id]) => alive.has(id)), ...ids.map((id) => [id, now])]);
+    if (!memo?.since || ids.length || Object.keys(done).length !== Object.keys(was).length) setShared(AUTO_ARCHIVED, { since: memo?.since ?? now, done });
+  }
+
+  // The head's proposal (archivePlan's `propose`): « Archiver » settles them, « Laisser » leaves them for
+  // good; either way they are done.
+  settleProposed(ids, archive) {
+    const now = Date.now();
+    if (archive) for (const id of ids) run("tab.settle", { id });
+    this.markArchived(shared(AUTO_ARCHIVED), ids, [...(this.byId?.values() ?? [])], now);
+  }
+
   // One vim action on the board; false: not one it has, and the key goes on.
   act(a, cx) {
     if (!a) return false;
@@ -582,11 +727,18 @@ export default class Kanban extends View {
     } else if (a === "open-alt") {
       // O: the drawer's PR in the browser (while it shows).
       const th = this.drawer ? this.byId?.get(this.drawer) : null;
-      if (!th) return false;
+      if (!th || th.draft) return false;
       this.browse(this.details[th.id]?.pr?.url ?? th.pr?.url);
     } else if (a === "open" || a === "submit") {
+      // A draft has no agent: enter opens its drawer.
       const th = atCard(b, at);
-      if (th) this.open(th);
+      if (th?.draft) this.openDrawer(th.id, cx);
+      else if (th) this.open(th);
+    } else if (a === "delete") {
+      // x / dd: a draft goes (kt-confirm); nothing else is deleted from here.
+      const th = [this.drawer && this.byId?.get(this.drawer), atCard(b, at)].find((x) => x?.draft);
+      if (!th) return false;
+      this.askDeleteDraft(th);
     } else if (a === "panel-prev" || a === "panel-next") {
       // [ / ]: the slice before / after (« Tout » among them), while the panel shows.
       const field = opts().slice;
@@ -709,7 +861,11 @@ export default class Kanban extends View {
   // warning color past it: nothing is blocked), and on the right what its cards cost together (rolling,
   // in costLevel's color). A click on the count shows the limit's stepper under it (or + / - on the
   // cursor's column); the limit belongs to the view.
-  colHead(t, key, list) {
+  // The drafts (in the column a draft lands in) count apart, « +k », outside the limit; that column's head
+  // has the « + » of a new draft (n).
+  colHead(t, key, cards) {
+    const list = cards.filter((th) => !th.draft);
+    const drafts = cards.length - list.length;
     const n = list.length;
     const lim = this.limits[key];
     const over = Boolean(lim) && n > lim;
@@ -732,7 +888,13 @@ export default class Kanban extends View {
           .on_click((_e, cx) => { this.limitEdit = editing ? null : key; cx.notify(); })
           .child(mono(roll(this.m, `kk-n-${key}`, String(n), 14)))
           .when(Boolean(lim), (el) => el.child(mono(div()).child(`/ ${lim}`))))
+        .when(drafts > 0, (el) => el.child(div().id(`kk-drafts-${key}`).flex_none().px(5).rounded(5).border(1).border_dashed().border_color(t.input)
+          .tooltip(tr("draft.count")).child(mono(div()).text_color(t.dim).child(`+${drafts}`))))
         .child(div().flex_1())
+        .when(key === this.draftCol, (el) => el.child(h_flex().id(`kk-new-draft-${key}`).flex_none().size(22).items_center().justify_center().rounded(6)
+          .text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("draft.new"))
+          .on_click((_e, cx) => { this.newDraft(cx); cx.notify(); })
+          .child(svg(I("plus")).size(13))))
         .when(cost > 0, (el) => el.child(div().id(`kk-cost-${key}`).flex_none().tooltip(tr("cost.sum"))
           .child(mono(roll(this.m, `kk-cost-n-${key}`, `$${fnum(cost, 2)}`, 14, { snap: 2 })).text_color(levelColor(t, costLevel(cost), { okGreen: true }))))))
       .when(editing, (el) => el.child(h_flex().h(32).px(14).gap(6).items_center()
@@ -748,6 +910,7 @@ export default class Kanban extends View {
   // (its leaving copy in the old column, rows()). `gone`: that leaving copy, no longer a target.
   card(t, th, col, cursor, gone, now, cx) {
     const key = `${col}-${th.id}`;
+    if (th.draft) return this.draftCard(t, th, key, cursor, gone);
     const muted = th.settled || th.asleep;
     const bridge = th.terminal ? this.shownLive[th.terminal] : null;
     const pet = companion({
@@ -888,6 +1051,7 @@ export default class Kanban extends View {
   // (kt-inbox's), the diff against the base, the cost, context and sub-agents, then its actions, each with
   // its key. It fades in at each card it shows (its id carries the thread).
   drawerPanel(t, th, now, cx) {
+    if (th.draft) return this.draftPanel(t, th, now);
     const d = this.details[th.id] ?? {};
     const V = viz(t, this.m, { roll });
     const key = th.id;
@@ -990,6 +1154,108 @@ export default class Kanban extends View {
       .child(head).child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(tint, "4d"))).child(body), `kk-dr-${key}`, { dy: 0 });
   }
 
+  // Auto-archive's proposal, a line in the head: how many threads could go (their titles in the tooltip),
+  // « Archiver » (tab.settle, nothing closes) or « Laisser » (never proposed again).
+  archiveOffer(t, ids, days) {
+    const titles = ids.map((id) => this.byId?.get(id)?.title).filter(Boolean);
+    const chip = (id, label, onClick, color) => h_flex().id(`kk-arch-${id}`).flex_none().h(24).px(10).items_center().rounded_full().border(1)
+      .border_color(t.border).bg(t.background).text_size(12).text_color(color).cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => { onClick(); cx.notify(); })
+      .child(label);
+    return h_flex().id("kk-archive-offer").flex_none().h(38).px(12).gap(8).items_center()
+      .tooltip(titles.slice(0, 12).join(" · ") + (titles.length > 12 ? " …" : ""))
+      .child(svg(I("archive")).size(13).flex_none().text_color(t.muted))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.muted).child(tr("archive.offer", { n: ids.length, days })))
+      .child(chip("do", tr("archive.do"), () => this.settleProposed(ids, true), t.foreground))
+      .child(chip("leave", tr("archive.leave"), () => this.settleProposed(ids, false), t.muted));
+  }
+
+  // A draft's card (GitHub's draft item): dashed and faded, the pen, its title (« Sans titre » while it
+  // has none), the DRAFT word, its project, its consigne's first line. A click opens its drawer.
+  draftCard(t, th, key, cursor, gone) {
+    const first = th.task.split("\n").find((l) => l.trim()) ?? "";
+    return v_flex().id(`kk-card-${key}`).p(8).gap(4).rounded(12).border(1).border_dashed()
+      .border_color(cursor ? alpha(t.accent, "99") : t.input).bg(cursor ? alpha(t.accent, "24") : alpha(t.background, "80"))
+      .when(!cursor, (el) => el.opacity(0.8))
+      .when(!gone && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(!gone, (el) => el.cursor_pointer().on_click((_e, cx) => { this.openDrawer(th.id, cx); cx.notify(); }))
+      .child(h_flex().h(20).gap(8).items_center()
+        .child(h_flex().size(20).flex_none().items_center().justify_center().child(svg(I("square-pen")).size(13).text_color(t.dim)))
+        .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(th.title ? t.foreground : t.dim).child(th.title || tr("draft.untitled")))
+        .child(div().flex_none().h(16).px(6).flex().items_center().rounded_full().border(1).border_dashed().border_color(t.input)
+          .font_family(MONO).text_size(9).text_color(t.dim).child(tr("draft.tag"))))
+      .child(h_flex().h(16).gap(6).items_center()
+        .child(this.mark(t, th.project.key === "none" ? null : th.project, 12))
+        .child(div().flex_none().max_w(150).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(String(th.project.name ?? "").toUpperCase())))
+      .when(Boolean(first), (el) => el.child(div().h(16).min_w(0).truncate().text_size(11.5).text_color(t.dim).child(first)));
+  }
+
+  // A draft's drawer: its head (the pen over the project's dither), its title and its consigne (i types
+  // them, tab from one to the other, esc done: kept), then « Lancer » (L: kt-new filled in, nothing
+  // starts without the person's Enter there) and « Supprimer » (x, kt-confirm).
+  draftPanel(t, th, now) {
+    const ed = this.editing?.id === th.id ? this.editing : null;
+    const title = ed ? ed.title : th.title;
+    const task = ed ? ed.task : th.task;
+    const tint = th.project.home ? t.muted : paint(t, th.project.color) ?? t.accent;
+    const mono = (color, text) => div().flex_none().font_family(MONO).text_size(10.5).text_color(color).child(text);
+    const eyebrow = (text, hint) => h_flex().gap(8).items_center().font_family(MONO).text_size(10).text_color(t.muted)
+      .child(div().flex_1().child(String(text).toUpperCase())).when(Boolean(hint), (el) => el.child(div().text_color(t.dim).child(hint)));
+    const box = (field, body) => {
+      const on = ed?.field === field;
+      return v_flex().id(`kk-df-${field}-${th.id}`).min_h(field === "task" ? 96 : 32).max_h(field === "task" ? 260 : 64).overflow_y_scroll()
+        .px(12).py(7).gap(2).rounded(10).border(1).border_color(on ? t.accent : t.input).when(on, (el) => el.bg(alpha(t.accent, "14")))
+        .bg(t.background).cursor_text()
+        .on_click((_e, cx) => {
+          if (ed) this.editing.field = field;
+          else {
+            if (this.editing) this.commitEdit(); // another draft's typing, kept
+            this.startEdit(th, field);
+          }
+          cx.notify();
+        })
+        .child(body(on));
+    };
+    const caret = () => div().flex_none().w(2).h(16).rounded(1).bg(t.accent);
+    const titleBox = box("title", (on) => h_flex().min_h(18).items_center().text_size(13.5).font_medium()
+      .text_color(title ? t.foreground : t.dim).child(div().min_w(0).truncate().child(title || (on ? "" : tr("draft.untitled")))).when(on, (el) => el.child(caret())));
+    const lines = task.split("\n");
+    const taskBox = box("task", (on) => v_flex().gap(2).text_size(12.5).line_height("18px")
+      .when(!task && !on, (el) => el.child(div().text_color(t.dim).child(tr("draft.taskPh"))))
+      .children((task || on ? lines : []).map((l, i) => h_flex().min_h(18).items_center().text_color(t.foreground)
+        .child(div().min_w(0).child(l)).when(on && i === lines.length - 1, (el) => el.child(caret())))));
+    const button = (id, label, k, onClick, color = t.foreground) => h_flex().id(`kk-dd-${id}`).flex_none().h(28).px(10).gap(8).items_center().rounded_full().border(1)
+      .border_color(t.border).bg(t.background).text_size(12).text_color(color).cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => { onClick(); cx.notify(); })
+      .child(label).child(div().flex_none().px(5).rounded(4).bg(t.raised).font_family(MONO).text_size(9.5).text_color(t.muted).child(k));
+    const head = div().relative().flex_none().h(64).overflow_hidden().rounded_t(15)
+      .child(ditherBand(DRAWER_W - 2, 64, 15, alpha(tint, settings().dark ? "4d" : "33"), TOP))
+      .child(h_flex().size_full().px(12).gap(10).items_center()
+        .child(h_flex().size(36).flex_none().rounded(10).items_center().justify_center().border(1).border_dashed().border_color(t.input).bg(alpha(t.background, "e6"))
+          .child(svg(I("square-pen")).size(16).text_color(t.dim)))
+        .child(v_flex().flex_1().min_w(0).gap(3)
+          .child(sharpen(this.m, `kk-dr-title:${th.id}`, () => div().truncate().text_size(14).font_semibold().text_color(title ? t.foreground : t.dim).child(title || tr("draft.untitled"))))
+          .child(h_flex().min_w(0).gap(6).items_center()
+            .child(this.mark(t, th.project.key === "none" ? null : th.project, 12))
+            .child(div().flex_none().max_w(140).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(String(th.project.name ?? "").toUpperCase()))
+            .child(mono(t.dim, tr("draft.tag")))
+            .child(mono(t.dim, model.age(th.activity, now).toUpperCase()))))
+        .child(h_flex().id("kk-dr-close").size(26).flex_none().items_center().justify_center().rounded_full().text_color(t.dim)
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("drawer.close"))
+          .on_click((_e, cx) => { if (this.editing) this.commitEdit(); this.closeDrawer(cx); cx.notify(); })
+          .child(svg(I("x")).size(13))));
+    const body = v_flex().id(`kk-dr-body-${th.id}`).flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(14)
+      .child(v_flex().gap(6).child(eyebrow(tr("draft.title"), ed ? null : "i")).child(titleBox))
+      .child(v_flex().gap(6).child(eyebrow(tr("draft.consigne"), ed ? "tab · esc" : null)).child(taskBox)) // i18n: tech
+      .child(div().text_size(12).line_height("18px").text_color(t.dim).child(tr("draft.help")))
+      .child(h_flex().flex_wrap().gap(6)
+        .child(button("launch", tr("draft.launch"), "L", () => this.launch(th)))
+        .child(button("edit", tr("draft.edit"), "i", () => this.startEdit(th, "title")))
+        .child(button("delete", tr("draft.delete"), "x", () => this.askDeleteDraft(th), t.ansi1)));
+    return enter(this.m, v_flex().w(DRAWER_W).h_full().rounded(16).border(1).border_dashed().border_color(t.input).bg(t.background)
+      .child(head).child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.input)).child(body), `kk-dr-${th.id}`, { dy: 0 });
+  }
+
   // Slice by: the panel on the left, its field's values with their counts, « Tout » first; a click picks
   // one (again: lets it go). Its field: the header's button (s), its close button sets it back to none.
   slicePanel(t, field, values, total) {
@@ -1043,6 +1309,7 @@ export default class Kanban extends View {
         // app has settled its own focus on the switch (unless pane.go already gave it).
         cx.timer.after(150, (cx) => {
           if (visible() && !this.handle.is_focused()) this.focusIn();
+          this.autoArchive(); // and what has gone quiet since
           cx.notify();
         });
       }
@@ -1060,10 +1327,21 @@ export default class Kanban extends View {
     const shown = world.spaces.find((s) => s.active);
     const query = parseQuery(this.query);
     const all = model.threadsOf(world);
-    // Every thread by id: the drawer's (it may be out of the board's filter), the keys' actions on it.
-    this.byId = new Map(all.map((th) => [th.id, th]));
+    // A draft kt-new launched: let it go, find its thread (landing).
+    const rec = shared(LAUNCHED);
+    if (rec?.draft && !checking()) this.landing(rec, all, cx);
+    // The drafts (kanban.js draftsOf): cards with no agent, never archived.
+    const drafts = draftsOf(shared(DRAFTS));
+    // Every card by id: the drawer's (it may be out of the board's filter), the keys' actions on it.
+    this.byId = new Map([...all, ...drafts].map((th) => [th.id, th]));
+    // Auto-archive's proposal (archivePlan, pure): the threads already past their N days when it was taken
+    // on, offered in the head; nothing settles without the click.
+    const archiveDays = Number(shared("kt.opt.kt-kanban.archiveDays") ?? 7);
+    const plan = archivePlan(all, { days: archiveDays, now, memo: shared(AUTO_ARCHIVED) });
     if (this.drawer && !this.byId.has(this.drawer)) this.drawer = this.drawerLast = null; // its tab closed
-    const listed = onBoard(all, query.archived);
+    const listed = [...onBoard(all, query.archived), ...drafts];
+    // The column a draft lands in (Inactif, Sans flow): its head has the « + » of a new one.
+    this.draftCol = (FIELDS[o.column] ?? FIELDS.status).of(draftThread({ id: "" }));
     const current = !shown ? null : model.isHome(shown, world) ? "home" : model.projectId(shown, world) ?? `space:${shown.id}`;
     const kept = listed.filter((th) => matchQuery(th, query, { now, current }));
     const pick = (this.pick = o.slice === "none" ? null : (shared(PICKS) ?? {})[o.slice] ?? null);
@@ -1075,6 +1353,8 @@ export default class Kanban extends View {
     // The keyboard gone (a terminal clicked, ctrl-b t) while a tab was being renamed: the name stays as it
     // was. Only on that change, so the render right after startRename() doesn't end it before focus lands.
     if (this.renaming && this.keyed && !focused) this.renaming = null;
+    // The same for a draft being typed, except that what was typed is kept.
+    if (this.editing && this.keyed && !focused && !checking()) cx.spawn(async () => this.commitEdit());
     this.keyed = focused;
     const typing = focused && this.vim.insert;
     this.at = locate(b, this.cur, this.at);
@@ -1122,7 +1402,10 @@ export default class Kanban extends View {
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(tint, "4d")))
       .child(this.tabs(t))
       .child(div().flex_none().mx(10).h(0).border_t(1).border_dashed().border_color(t.border))
-      .child(tools);
+      .child(tools)
+      .when(plan.propose.length > 0, (el) => el
+        .child(div().flex_none().mx(10).h(0).border_t(1).border_dashed().border_color(t.border))
+        .child(this.archiveOffer(t, plan.propose, archiveDays)));
     // The board: no group, the columns side by side (scrolling sideways once narrower than their 240 px
     // each; the cursor's column comes into view, its card then in column()); by project, the lanes. The
     // slice panel on its left.

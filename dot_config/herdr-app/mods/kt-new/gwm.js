@@ -10,6 +10,28 @@ export function issueOf(name) {
 // The thread as the agent's first message; "#42 …" reads "Issue #42 …" (a leading # is Claude Code's memory key).
 export const firstMessage = (name) => (name.startsWith("#") ? `Issue ${name}` : name); // i18n: agent
 
+/** The agent's first message (`task`): the consigne whole when there is one (multi-line, any length:
+ *  the thread's name stays short), else the name as firstMessage says it, plus the issue's title gwm
+ *  fetched for a bare "#N" (`title`, `desc`: the worktree path's); none for an agent that takes none. */
+export function firstTask({ name, consigne = "", prompt, title = null, desc = null }) {
+  if (!prompt) return undefined;
+  const c = String(consigne ?? "").trim();
+  if (c) return c;
+  const task = firstMessage(name);
+  return !desc && title ? `${task} ${title}` : task;
+}
+
+/** What starts the thread, as the app command to run: in the project's space a tab running the agent's
+ *  own CLI (`argv`: claude, codex, vibe, in the terminal, under the person's login: never a relay of the
+ *  model's calls), its first message `task`; a worktree gwm made: a tab in its space when one is open
+ *  (`open`), else a new space on its folder. */
+export function startCommand({ space, open = null, path = null, machine = null, argv = null, name, task }) {
+  const agent = { argv: argv ?? undefined, task };
+  if (!path) return { name: "tab.new", args: { space, ...agent, name } };
+  if (open) return { name: "tab.new", args: { space: open, ...agent, name } };
+  return { name: "space.new", args: { folder: path, tab: name, ...agent, machine: machine ?? "" } };
+}
+
 // gwm's arguments for an issue: `--issue N` (type and description from the issue; `--type`: the
 // picked one), or the triple when the type is picked and there's a description; `triple` also backs
 // `--issue` up when the forge doesn't know the issue. `--reuse-branch`: a local branch of that name

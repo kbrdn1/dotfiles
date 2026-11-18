@@ -23,13 +23,23 @@
 // shift-tab change its pick; enter or o starts; / or a click on the field types
 // again; q or esc closes; ? the keys (kt-keys, Modales). `kt-new.key:<keys>`
 // feeds keys ("escape j l", "h e l l o"), for tests.
+//
+// The consigne: a multi-line field under the name, apart from it. The name stays short (the tab, the
+// branch: 48 characters); the consigne, when there is one, goes whole to the agent as its first message
+// (`task`), worktree or not. ctrl+O or a click puts the typing in it; there enter is a new line and
+// cmd+enter / ctrl+enter starts. The agent is always its own CLI (`argv`), run in the terminal under the
+// person's login: nothing here relays the model's calls.
+// Props (kt-kanban's « Lancer » on a draft, kt-head's ctrl-b shift-g): { worktree, name, task, project
+// (a space id: its project picked), agent ("claude", "codex", "vibe"), draft }. Nothing starts without
+// the person's Enter. With `draft`, the thread made is recorded in shared "kt.kanban.launched" ({ draft,
+// tab, space, folder, machine, at }): the Kanban then lets the draft go and puts its cursor on the thread.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, run, theme, props, closeOverlay, shared, setShared, exec, settings, openOverlay, nextCommand, checking, home, readTextFile } from "herdr";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
-import { issueOf, firstMessage, plan, retry, TRUST, where, explain } from "./gwm.js";
+import { issueOf, firstMessage, firstTask, startCommand, plan, retry, TRUST, where, explain } from "./gwm.js";
 import { ditherBand, TOP } from "./dither.js";
 import { bump, gitTopics } from "./bus.js";
 import { makeT } from "./i18n.js";
@@ -94,12 +104,21 @@ function spaceColor(t, p) {
 
 export default class NewThread extends View {
   init(_props, cx) {
-    this.name = "";
+    const p = props() ?? {};
+    this.name = String(p.name ?? "").trim().slice(0, MAX_NAME);
+    this.task = String(p.task ?? ""); // the consigne (multi-line)
+    this.field = "name"; // where the typing goes: "name" | "task"
+    this.draft = typeof p.draft === "string" ? p.draft : null; // kt-kanban's draft being launched
     this.project = 0;
-    this.agent = Math.max(0, AGENTS.findIndex(([n]) => n === localStorage.getItem("agent")));
+    // props.project: a space id, its project picked once the projects are known (projects()).
+    this.wantProject = typeof p.project === "string" ? p.project : null;
+    // props.agent: the agent's name or command ("claude"), else the last one picked.
+    const asked = String(p.agent ?? "").toLowerCase();
+    const byProp = asked ? AGENTS.findIndex(([n, argv]) => n.toLowerCase() === asked || argv?.[0] === asked) : -1;
+    this.agent = byProp >= 0 ? byProp : Math.max(0, AGENTS.findIndex(([n]) => n === localStorage.getItem("agent")));
     this.type = Math.max(0, TYPES.indexOf(localStorage.getItem("type")));
-    // props.worktree (ctrl-b shift-g, kt-head): a new worktree this time.
-    this.worktree = props()?.worktree === true || localStorage.getItem("worktree") === "yes";
+    // props.worktree (ctrl-b shift-g, kt-head; a draft's launch): a new worktree this time.
+    this.worktree = p.worktree === true || localStorage.getItem("worktree") === "yes";
     this.base = this.worktree; // the checkout before "#N" picks a worktree
     this.chose = false; // the person picked the checkout: "#N" no longer changes it
     this.typeChosen = false; // the person picked the type: passed to gwm
@@ -198,8 +217,23 @@ export default class NewThread extends View {
     if (field === "worktree") this.chose = true;
     if (field === "type") this.typeChosen = true;
     if (field === "project") {
+      this.wantProject = null; // the person's pick wins over props.project
       this.error = null;
       this.trust = null;
+      this.guessCheckout();
+    }
+  }
+
+  // props.project (a space id): its project's entry, by the space itself, else (the repos known) by its
+  // repo; let go once the repos are known (or the space is gone).
+  pickWanted() {
+    if (!this.wantProject || this.done) return;
+    const s = spaces().find((x) => x.id === this.wantProject);
+    const r = s ? this.repos[JSON.stringify([s.machine ?? null, s.folder])] : null;
+    const i = this.projects().findIndex((x) => x.space.id === this.wantProject || (r && x.key === r.key));
+    if (i >= 0) this.project = i;
+    if (this.scanned || !s) {
+      this.wantProject = null;
       this.guessCheckout();
     }
   }
@@ -230,6 +264,22 @@ export default class NewThread extends View {
       this.blank(cx);
       return true;
     }
+    // The consigne: ctrl+o puts the typing in it (again: back to the name); there enter is a new line,
+    // cmd+enter or ctrl+enter starts.
+    const name = keyOf(e).name;
+    if (name === "ctrl-o" && !this.busy) {
+      this.field = this.field === "task" ? "name" : "task";
+      this.vim.edit();
+      return true;
+    }
+    if ((name === "cmd-enter" || name === "ctrl-enter") && !this.busy) {
+      this.start(cx);
+      return true;
+    }
+    if (name === "enter" && this.field === "task" && this.vim.insert && !this.busy) {
+      this.task += "\n";
+      return true;
+    }
     if (chord && !this.busy) {
       this.cycle(chord, 1);
       return true;
@@ -244,6 +294,8 @@ export default class NewThread extends View {
     else if (a === "normal" || a === "filter" || a === "pending" || a === "count") {} // the mode changed, or a gg on its way
     else if (this.busy) return false;
     else if (a === "submit" || a === "open") this.start(cx);
+    else if (a === "type" && this.field === "task") this.task += this.vim.char;
+    else if (a === "backspace" && this.field === "task") this.task = this.task.slice(0, -1);
     else if (a === "type") {
       if (this.name.length < MAX_NAME) this.name += this.vim.char;
       this.nudge = null;
@@ -290,13 +342,20 @@ export default class NewThread extends View {
     localStorage.setItem("agent", label);
     // Remembered only when the person picked it (a "#N" guess isn't a preference).
     if (this.chose) localStorage.setItem("worktree", this.worktree ? "yes" : "no");
-    const task = prompt ? firstMessage(name) : undefined;
+    // The first message: the consigne whole, else the name (gwm.js firstTask).
+    const task = firstTask({ name, consigne: this.task, prompt });
     // kbrdn-threads' main "view" stack: show the thread (⌘T may come from the Inbox page).
     const show = () => run("layout.select", { stack: "view", child: "thread" });
+    // The command (gwm.js startCommand), run; a draft launched is recorded for the Kanban.
+    const go = (c) => {
+      run(c.name, c.args);
+      if (this.draft) setShared("kt.kanban.launched", { draft: this.draft, tab: c.args.name ?? c.args.tab, space: c.name === "tab.new" ? c.args.space : null,
+        folder: c.args.folder ?? null, machine: p.space.machine ?? null, at: Date.now() });
+    };
     if (!(this.worktree && p.git)) {
       this.done = this.projects();
       show();
-      run("tab.new", { space: p.space.id, argv: argv ?? undefined, name, task });
+      go(startCommand({ space: p.space.id, argv, name, task }));
       this.dismiss(cx);
       return;
     }
@@ -338,13 +397,13 @@ export default class NewThread extends View {
         if (!path) throw made.code !== 0 ? lastLine(made.stderr) || lastLine(made.stdout) || tr("exitCode", { code: made.code }) : tr("noWhere");
         const title = made.all.match(/^✓ fetched issue #\d+ (.+)$/m)?.[1]?.trim();
         const tab = spec.desc ?? title ?? name;
-        const message = task && !spec.desc && title ? `${task} ${title}` : task;
+        // The consigne whole when there is one; else « Issue #N desc », with gwm's title for a bare #N.
+        const message = firstTask({ name, consigne: this.task, prompt, title, desc: spec.desc });
         this.done = this.projects();
         show();
         // The worktree already has a space (gwm reopened it): a new thread there, not a second space.
         const open = spaces().find((s) => s.folder === path && (s.machine ?? null) === (p.space.machine ?? null));
-        if (open) run("tab.new", { space: open.id, argv: argv ?? undefined, name: tab, task: message });
-        else run("space.new", { folder: path, tab, argv: argv ?? undefined, task: message, machine: p.space.machine ?? "" });
+        go(startCommand({ space: p.space.id, open: open?.id ?? null, path, machine: p.space.machine, argv, name: tab, task: message }));
         this.dismiss(cx);
       } catch (error) {
         const raw = String(error?.message ?? error);
@@ -517,7 +576,11 @@ export default class NewThread extends View {
     if (!p) return this.section(t, mark("folder", t.dim), tr("noProject.title"), tr("noProject.text"));
     const [, argv, prompt] = AGENTS[this.agent];
     const name = this.name.trim();
-    const agent = argv ? `${argv.join(" ")}${prompt && name ? ` « ${firstMessage(name)} »` : ""}` : tr("agent.none");
+    // What the agent gets first (the consigne whole, else the name): its first line here.
+    const first = firstTask({ name, consigne: this.task, prompt }) ?? "";
+    const line = first.split("\n")[0];
+    const said = line.length > 60 || first.includes("\n") ? `${line.slice(0, 60)}…` : line;
+    const agent = argv ? `${argv.join(" ")}${said ? ` « ${said} »` : ""}` : tr("agent.none");
     if (!tree) {
       return this.facts(t, [
         [tr("fact.folder"), tilde(p.space.folder) || "—", true],
@@ -542,6 +605,7 @@ export default class NewThread extends View {
 
   render() {
     const t = theme();
+    this.pickWanted();
     const ps = this.projects();
     this.project = Math.min(this.project, Math.max(0, ps.length - 1));
     const p = ps[this.project];
@@ -583,12 +647,28 @@ export default class NewThread extends View {
     const tint = p ? projectTint(p.space) : null;
     const band = tint ? (String(tint).startsWith("#") ? tint : t[tint] ?? t.accent) : t.accent;
     const subtitle = [p?.name ?? tr("sub.noProject"), tree ? tr("sub.worktree") : git ? tr("sub.current") : tr("sub.folder"), AGENTS[this.agent][0].toLowerCase()].join(" · ");
-    // The field looks live while typing (INSERT); in NORMAL it rests, without its caret.
-    const focused = keyed && this.vim.insert;
+    // The field typed in looks live (INSERT); in NORMAL they rest, without their caret.
+    const typing = keyed && this.vim.insert;
+    const focused = typing && this.field === "name";
+    const onTask = typing && this.field === "task";
     const dashed = () => div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border);
     const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
-      .border_color(focused ? alpha(t.accent, "66") : t.border).bg(focused ? alpha(t.accent, "24") : t.background)
-      .font_family(MONO).text_size(9).text_color(focused ? t.accent : t.muted).child(this.vim.label);
+      .border_color(typing ? alpha(t.accent, "66") : t.border).bg(typing ? alpha(t.accent, "24") : t.background)
+      .font_family(MONO).text_size(9).text_color(typing ? t.accent : t.muted).child(this.vim.label);
+    // The consigne (multi-line, apart from the name): its lines as typed, a caret at the end while it
+    // types; past 6 lines it scrolls. Empty: what it is for.
+    const lines = this.task.split("\n");
+    const consigne = div().p(3).rounded(15).bg(onTask ? t.accent + "33" : t.accent + "00")
+      .child(v_flex().id("kt-n-task").min_h(64).max_h(140).overflow_y_scroll().px(14).py(10).gap(2).rounded(12).bg(t.background)
+        .border(1).border_color(onTask ? t.accent : t.input).text_size(13).line_height("19px").cursor_text()
+        .on_click((_e, cx) => { this.field = "task"; this.vim.edit(); this.handle.focus(); cx.notify(); })
+        .child(h_flex().gap(8).items_center().font_family(MONO).text_size(10).text_color(t.muted)
+          .child(div().flex_1().child(tr("task.label")))
+          .child(div().text_color(t.dim).child("ctrl+o"))) // i18n: tech
+        .when(!this.task && !onTask, (el) => el.child(div().text_color(t.dim).child(tr("task.ph"))))
+        .children((this.task || onTask ? lines : []).map((l, i) => h_flex().min_h(19).items_center().text_color(t.foreground)
+          .child(div().min_w(0).child(l))
+          .when(onTask && i === lines.length - 1, (el) => el.child(div().flex_none().w(2).h(16).rounded(1).bg(t.accent))))));
     // The modals' motion (ANIMATIONS.md, kt-confirm's): the veil fades in and the card rises 6 px,
     // MS.open, once, on the first size report, and goes back out on dismiss (motion.js sheet);
     // reduced motion: there at once.
@@ -667,7 +747,7 @@ export default class NewThread extends View {
                       .text_size(16)
                       .cursor_text()
                       // A click on the field types again (INSERT).
-                      .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
+                      .on_click((_e, cx) => { this.field = "name"; this.vim.edit(); this.handle.focus(); cx.notify(); })
                       .child(svg("mods/kt-threads/square-pen.svg").size(15).flex_none().text_color(t.dim))
                       .child(
                         h_flex()
@@ -680,6 +760,7 @@ export default class NewThread extends View {
                       ),
                   ),
               )
+              .child(consigne)
               .child(
                 v_flex()
                   .child(row(tr("row.project"), this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space))), this.scrolls.project), "project"))

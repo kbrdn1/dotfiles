@@ -1,6 +1,6 @@
 // bun mods/kt-new/gwm.check.mjs: gwm.js against gwm 1.11's real lines (scratch repo, no TTY).
 import assert from "node:assert/strict";
-import { issueOf, firstMessage, plan, retry, TRUST, where, explain } from "./gwm.js";
+import { issueOf, firstMessage, firstTask, startCommand, plan, retry, TRUST, where, explain } from "./gwm.js";
 
 const P = "/tmp/s/repo-worktrees/feat-1-hello-world";
 const created = `creating worktree:\n  branch : feat/#1-hello-world\n  path   : ${P}\n✓ worktree created at ${P}\nwarning: [[bootstrap.command]] is deprecated\n  ✓ [post_create] notify`;
@@ -58,5 +58,23 @@ assert.equal(explain(closed), "closed");
 assert.equal(explain(stale), "failed");
 assert.equal(explain(hook.split("\n").pop()), "hook");
 assert.equal(explain("zsh: command not found: gwm"), "failed");
+
+// The first message: the consigne whole (multi-line, long) when there is one; else the name (Issue #N…),
+// plus gwm's title for a bare #N; nothing for the shell.
+const consigne = `Reprends le login.\n${"x".repeat(300)}\nPuis ouvre la PR.`;
+assert.equal(firstTask({ name: "#42 fix", consigne, prompt: true, title: "Fix it" }), consigne);
+assert.equal(firstTask({ name: "#42 fix", consigne: "  \n ", prompt: true }), "Issue #42 fix");
+assert.equal(firstTask({ name: "#42", prompt: true, title: "Fix the login" }), "Issue #42 Fix the login");
+assert.equal(firstTask({ name: "#42 fix", prompt: true, title: "Fix the login", desc: "fix" }), "Issue #42 fix");
+assert.equal(firstTask({ name: "x", consigne, prompt: false }), undefined);
+// The command: the agent's own CLI in a tab (current checkout), in the worktree's open space, or a new
+// space on it; the consigne as its first message, the name short.
+assert.deepEqual(startCommand({ space: "s1", argv: ["claude"], name: "Login", task: consigne }),
+  { name: "tab.new", args: { space: "s1", argv: ["claude"], task: consigne, name: "Login" } });
+assert.deepEqual(startCommand({ space: "s1", path: P, open: "s9", argv: ["codex"], name: "fix", task: "t" }),
+  { name: "tab.new", args: { space: "s9", argv: ["codex"], task: "t", name: "fix" } });
+assert.deepEqual(startCommand({ space: "s1", path: P, machine: null, argv: ["vibe"], name: "fix", task: "t" }),
+  { name: "space.new", args: { folder: P, tab: "fix", argv: ["vibe"], task: "t", machine: "" } });
+assert.deepEqual(startCommand({ space: "s1", argv: null, name: "sh", task: undefined }).args, { space: "s1", argv: undefined, task: undefined, name: "sh" });
 
 console.log("gwm.js: ok");

@@ -58,10 +58,67 @@ export function columns(threads, field = "status", { pins = [], sort = "activity
   const order = by ? sortByNeed(threads, pins).sort((a, b) => by(a, b, { firstSeen })) : sortByNeed(threads, pins);
   for (const th of order) of.get(f.of(th))?.threads.push(th);
   for (const c of cols) {
+    // The drafts first (what is to start next), the snoozed last.
     const asleep = c.threads.filter((th) => th.asleep).sort((a, b) => a.snooze.until - b.snooze.until);
-    c.threads = [...c.threads.filter((th) => !th.asleep), ...asleep];
+    c.threads = [...c.threads.filter((th) => th.draft), ...c.threads.filter((th) => !th.asleep && !th.draft), ...asleep];
   }
   return cols;
+}
+
+// ---------- drafts (GitHub Projects' draft items): an idea that isn't a thread yet ----------
+// Stored in shared "kt.kanban.drafts": [{ id, title, task, space, project, at }]: its title, its consigne
+// (multi-line), the space it was made in, its project as it was then ({ key, name, color, logo, home }),
+// when. A card like a thread's, with no agent, flow, cost nor PR: in Inactif (status) or Sans flow
+// (phase), with the other fields as any card; never archived; outside the limits.
+
+/** A draft as a card (`draft: true`); a title "#N …" is that issue's. */
+export function draftThread(d) {
+  return {
+    id: d.id, draft: true, title: String(d.title ?? ""), task: String(d.task ?? ""), from: d.space ?? null, space: null, tab: null, lead: null, agent: null,
+    status: null, flow: null, cost: null, model: null, ctx: null, sl: null, activity: d.at ?? 0, settled: false, asleep: false, snooze: null,
+    pinned: false, shown: false, branch: null, worktree: null, cwd: null, terminal: null, program: null, agentKey: null,
+    issue: String(d.title ?? "").match(/^#(\d+)/)?.[1] ?? null, pr: null, prFrom: null,
+    project: d.project ?? { key: "none", name: "", home: false, color: null, logo: null },
+    subagents: { shown: [], done: 0, total: 0 },
+  };
+}
+
+/** The drafts stored, as cards. */
+export const draftsOf = (stored) => (Array.isArray(stored) ? stored : []).filter((d) => d && typeof d.id === "string").map(draftThread);
+
+/** The thread a launched draft became (kt-new's record, shared "kt.kanban.launched": { tab, space,
+ *  folder, machine }): the one whose tab has that name, in that space, or in that worktree's when kt-new
+ *  made a space; null while it isn't there, or when two could be it (no guess). */
+export function attach(threads, rec) {
+  if (!rec?.tab) return null;
+  const hits = threads.filter((th) => !th.draft && th.tab?.name === rec.tab
+    && (rec.space ? th.space.id === rec.space : th.space.folder === rec.folder && (th.space.machine ?? null) === (rec.machine ?? null)));
+  return hits.length === 1 ? hits[0].id : null;
+}
+
+// ---------- auto-archive ----------
+
+/** The threads to archive (tab.settle, the sidebar's archive: a display state, nothing closes): its PR
+ *  merged, seen (no longer done: looked at; nor working nor blocked), idle `days` days since its last
+ *  activity; never a pinned, shown, archived one, a draft, nor one in `skip` (archived once already:
+ *  brought back by hand, it stays). `days` 0: none. */
+export const toArchive = (threads, { days, now, skip = new Set() }) => (!(days > 0) ? [] : threads
+  .filter((th) => !th.draft && !th.settled && !th.pinned && !th.shown && !skip.has(th.id) && th.pr?.state === "MERGED"
+    && (th.status === "idle" || th.status == null) && now - th.activity >= days * 86400e3)
+  .map((th) => th.id));
+
+/** What auto-archive does now, from its memo (shared "kt.kanban.autoArchived": { since, done }): `since`,
+ *  when it was taken on (absent: now, the first pass); `done`, the threads it archived or was told to
+ *  leave. A thread that crossed its N days after `since` is archived on its own (`auto`); one already
+ *  past them before (all of them, on the first pass, whatever the PRs read so far) is only proposed
+ *  (`propose`): the person archives or leaves them with a click. Never twice the same. */
+export function archivePlan(threads, { days, now, memo = null }) {
+  const since = memo?.since ?? now;
+  const done = new Set(Object.keys(memo?.done ?? {}));
+  const byId = new Map(threads.map((th) => [th.id, th]));
+  const ids = toArchive(threads, { days, now, skip: done });
+  const crossed = (id) => byId.get(id).activity + days * 86400e3;
+  return { auto: ids.filter((id) => crossed(id) >= since), propose: ids.filter((id) => crossed(id) < since) };
 }
 
 /** The board: its column keys and its lanes, [{ key, project, count, open, cols }]. No group: one lane
@@ -108,7 +165,7 @@ export const sliced = (threads, field, pick) => (pick == null ? threads : thread
 // (`status:`) is skipped quietly.
 //   status:blocked|done|working|idle   phase:prep|spec|impl|ship|close|other|none
 //   project:<in its name>|@current     agent:<program key or name>|none   branch:<in it>|none
-//   pr:open|draft|merged|closed|none   is:pinned|snoozed|archived (the archived show only with it)
+//   pr:open|draft|merged|closed|none   is:pinned|snoozed|draft|archived (the archived show only with it)
 //   cost:>5  cost:<=1,5  cost:2..10  cost:3   age:<1h  age:>2d  age:1h..1d (s, m, h, d or j, w)
 
 /** The query's tokens: { neg, field, value, quoted }; a `field:` only outside quotes. */
@@ -181,8 +238,8 @@ const TERMS = {
     return l && ((th) => l.some((x) => (x === "none" ? !th.pr : x === "draft" ? th.pr?.state === "OPEN" && Boolean(th.pr.draft ?? th.pr.isDraft) : th.pr?.state === PR_STATE[x])));
   },
   is: (v) => {
-    const l = oneOf(v, (x) => x === "pinned" || x === "snoozed" || x === "archived");
-    return l && ((th) => l.some((x) => (x === "pinned" ? th.pinned : x === "snoozed" ? th.asleep : th.settled)));
+    const l = oneOf(v, (x) => ["pinned", "snoozed", "archived", "draft"].includes(x));
+    return l && ((th) => l.some((x) => (x === "pinned" ? th.pinned : x === "snoozed" ? th.asleep : x === "draft" ? th.draft : th.settled)));
   },
   // cost: an unknown cost never matches a bound (its negation does)
   cost: (v) => { const r = bound(v, money, "="); return r && ((th) => th.cost != null && within(r, th.cost)); },
@@ -222,7 +279,7 @@ export function parseQuery(query) {
 export function matchQuery(th, q, ctx = {}) {
   if (!q.terms.every((t) => t.test(th, ctx) !== t.neg)) return false;
   if (!q.words.length) return true;
-  const hay = [th.title, th.project?.name, th.branch, th.program?.name, th.issue && `#${th.issue}`, th.pr && `#${th.pr.number}`]
+  const hay = [th.title, th.project?.name, th.branch, th.program?.name, th.issue && `#${th.issue}`, th.pr && `#${th.pr.number}`, th.task]
     .filter(Boolean).join(" ").toLowerCase();
   return q.words.every((w) => hay.includes(w.text) !== w.neg);
 }
