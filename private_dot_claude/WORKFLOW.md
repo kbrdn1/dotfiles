@@ -404,7 +404,7 @@ flowchart TD
 - **Release** : `/me:release` (skill `me:release`) — bump + changelog **commités sur `dev`**, merge `dev → main` en merge commit, **tag après le merge**, notes = `changelogs/<version>.md`, titre = `vX.Y.Z` seul. Un `/release` per-project (ex. `bijouterie-julian`) fait foi sur le protocole générique.
 - **Worktrees** : gérés via `gwm` (config `.gwm.toml` par repo).
 - **Gros chantier** : hiérarchie d'agents avec `hc` via `/me:dispatch` (lead, workers, helpers) ; jamais `herdr worktree create`, qui crée un worktree hors gwm.
-- **Commandes** : jamais de commande du même nom qu'une skill. La commande masque la skill et reboucle (« Invoke the skill… ») ; une skill `me:x` répond seule à `/me:x`.
+- **Commandes** : une skill rangée sous `skills/me/` n'est pas chargée par Claude Code (2.1.327, vérifié). Chaque `skills/me/<x>` a donc une **cale** `commands/me/<x>.md` qui lit son `SKILL.md` avec Read ; jamais « invoque la skill », qui boucle.
 - **Sessions IA** : après chaque `gwm create`, la session courante se pin sur le worktree via `gwm agents attach`. Sans ça, `gwm agents` et le pane Agents de la TUI montrent la session sur le repo principal — l'endroit d'où elle a démarré, pas celui où elle travaille. Claude Code expose l'id exact dans l'environnement :
 
   ```bash
@@ -453,8 +453,8 @@ flowchart TD
   hiérarchie avec `hc` (lead, workers, helpers), retours d'une session de test sur k-hub intégrés (PR partielles,
   worktree neuf, PR de bots, accord avant merge, reprise après redémarrage). Loops : `claude-review-pr` et
   `codex-review-pr` alimentent le rapport (check codex dans `check.sh`), `ci-until-green` relance **une fois** un
-  job jamais démarré (facturation, runner) et rien d'autre. Dix commandes « ref » retirées : elles masquaient leur
-  skill. `scripts/zed-tokens.ts` colore les diffs de Herdr au thème Zed. ⚠️ Un chantier `hc` complet n'a pas encore
+  job jamais démarré (facturation, runner) et rien d'autre. Les commandes « ref » qui bouclaient sont devenues des cales
+  qui lisent le `SKILL.md`. `scripts/zed-tokens.ts` colore les diffs de Herdr au thème Zed. ⚠️ Un chantier `hc` complet n'a pas encore
   tourné de bout en bout.
 
 - **`docs-sync` dans les quatre workflows, en deux passages** (2026-09-19) : les skills `git-flow-worktree`, `spec-git-flow-worktree`, `git-flow-branch`, `spec-git-flow-branch` (et la command `/me:issue-worktree-pr`) gagnent une étape **docs — premier passage** après l'implémentation, avant la PR (`/me:loop:docs-sync` si le repo a un `check_command` ; les docs partent dans la PR dès le premier push, l'axe **spec** de la review les lit comme l'intention réalisée), un ⛔ **rien n'écrit dans l'arbre pendant la review** (les deux reviewers lisent le worktree à chaque passe — un `docs-sync` concurrent change leur base en cours de passe, et son résultat serait de toute façon réécrit), et une étape **docs — second passage** après la review, **seulement si le code a bougé** depuis l'ouverture de la PR (`git log --oneline --since="$(gh pr view --json createdAt -q .createdAt)" -- . ':!docs' ':!**/*.md'` non vide), avant `ci-until-green` qui tourne ainsi sur le SHA final, docs comprises. Écarté : le parallèle « docs-sync pendant la review » (arbre mouvant sous les reviewers, deux passes de docs au lieu d'une) ; la seule façon propre serait un second worktree de la même branche, jugée trop lourde pour l'instant. Le gate reste **par projet** : un repo sans surface énumérable saute l'étape en le disant, il n'invente pas de gate. Le mod `claude-flow` gagnera une étape `docs` dans le pane (issue à ouvrir).

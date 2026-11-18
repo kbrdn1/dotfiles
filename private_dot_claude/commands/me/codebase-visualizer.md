@@ -3,6 +3,8 @@ description: "Transforme un repo en carte d'architecture isométrique interactiv
 argument-hint: "[repo / chemin à cartographier + angle voulu]"
 ---
 
-Invoke the `me:codebase-visualizer` skill via the Skill tool to handle this request.
+# /me:codebase-visualizer
 
-Pass along the user's arguments: $ARGUMENTS
+Lis `~/.claude/skills/me/codebase-visualizer/SKILL.md` en entier avec l'outil Read, puis applique-le à la lettre avec les arguments : `$ARGUMENTS`.
+
+Commande légère : depuis Claude Code 2.1.327, une skill rangée dans `~/.claude/skills/me/<nom>/` n'est plus chargée comme skill dans une nouvelle session. Cette commande la rend invocable par `/me:codebase-visualizer`. La skill fait foi.

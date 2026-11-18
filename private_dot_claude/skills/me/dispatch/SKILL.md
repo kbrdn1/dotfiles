@@ -1,4 +1,4 @@
---
+---
 name: me:dispatch
 description: "Orchestre un gros chantier en hiérarchie d'agents avec Herdr Core (hc) : le lead (cette session) lance un worker Claude par issue, chacun dans son worktree gwm créé d'abord (hc run --cwd), le worker lance ses propres helpers (reviewers), et hc remonte les nouvelles au parent (fin de tour, blocage, erreur) sans rien surveiller. Reprise du travail en cours (worktrees, PR ouvertes, issues), plan me:report en direct, merge progressif dans dev. Demande une session lancée dans un terminal hc (Herdr) ; ailleurs, repli séquentiel. Triggers: /me:dispatch, dispatch, lancer les issues en parallèle, orchestrer avec hc, hiérarchie d'agents, gros chantier, reprendre le travail en cours, reprendre le sprint."
 ---
@@ -123,7 +123,7 @@ Jamais deux agents sur le même worktree. Plusieurs **agents correcteurs** dans 
 agent, passent si leurs fichiers sont disjoints et qu'ils commitent avec `git add <chemins>`, jamais `-A`. Au plus
 3 agents en vol, et pas deux issues qui touchent les mêmes fichiers en même temps : sérialiser celles-là.
 
-# 3. Un worker par issue, né dans son worktree
+## 3. Un worker par issue, né dans son worktree
 
 ```bash
 hc run --bg --name "i$N" --cwd "$WT" --outlive-parent \
@@ -169,7 +169,7 @@ Après les lancements : dire en une ligne quel worker part sur quoi (`hc ls --la
 Chaque collecte de branche (les loops de review et de CI des agents la lancent) relit ce plan : le kanban avance
 tout seul.
 
-# 5. Suivi et retour d'un worker
+## 5. Suivi et retour d'un worker
 
 - Les nouvelles arrivent comme des notes de hc tapées dans la session du lead (balises `<hc …>`) : fin de tour,
   blocage, erreur, sortie. Pour attendre activement plutôt que finir le tour : `hc wait --children any` (prochaine

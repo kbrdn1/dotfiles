@@ -3,6 +3,8 @@ description: "Génère une bannière promo de repo (PNG dark + light) au thème 
 argument-hint: "[repo / projet à promouvoir + particularités]"
 ---
 
-Invoke the `me:banner-repo` skill via the Skill tool to handle this request.
+# /me:banner-repo
 
-Pass along the user's arguments: $ARGUMENTS
+Lis `~/.claude/skills/me/banner-repo/SKILL.md` en entier avec l'outil Read, puis applique-le à la lettre avec les arguments : `$ARGUMENTS`.
+
+Commande légère : depuis Claude Code 2.1.327, une skill rangée dans `~/.claude/skills/me/<nom>/` n'est plus chargée comme skill dans une nouvelle session. Cette commande la rend invocable par `/me:banner-repo`. La skill fait foi.
