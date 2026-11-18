@@ -35,7 +35,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { ring, ctxTokens } from "./ring.js";
-import { costLevel, levelColor } from "./levels.js";
+import { costLevel, quotaLevel, levelColor } from "./levels.js";
 import { companion } from "./companion-logo.js";
 import { longLived } from "./pr-pick.js";
 import { filterOf, filtering, openFirst, moveInGroup } from "./thread-filter.js";
@@ -48,7 +48,7 @@ import { Vim, keysOf, step } from "./vim.js";
 // there, then copy.
 import { decide, decisionButtons, pillKeys, press } from "./decide.js";
 // Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
-import { motionState, frame, enter, collapse, ink, fade, rows as motionRows } from "./motion.js";
+import { motionState, frame, enter, collapse, ink, fade, sheet, leave, leaving, rows as motionRows } from "./motion.js";
 // kt-keys' roll.js (a byte-identical copy): the nav's counts, the group heads', the focus card's figures,
 // and (12 threads or fewer listed) the cards' ages and durations roll to their new digits.
 import { roll, rollText } from "./roll.js";
@@ -60,7 +60,7 @@ import { phasesOf, nameOf, speak } from "./steps.js";
 import { bump, refreshOn } from "./bus.js";
 // Written here, copied byte for byte into mods/kt-head: the halo both draw.
 import { HALO, haloLayers } from "./halo.js";
-import { langSwitch, cycleButton, makeT, num as fnum } from "./i18n.js";
+import { langSwitch, cycleButton, makeT, num as fnum, relative } from "./i18n.js";
 import strings from "./strings.js";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder } from "herdr";
@@ -159,6 +159,11 @@ function cacheLeft(s) {
   if (!s?.cache_at || !s.cache_ttl) return "";
   const m = Math.ceil((s.cache_at + s.cache_ttl * 1000 - Date.now()) / 60e3);
   return m <= 0 ? tr("cacheGone") : m >= 60 ? "ttl≈1h" : `ttl≈${m}m`; // i18n: tech
+}
+// A window's reset in words, from its unix seconds: "reset dans 6 j", "reset dans 3 h".
+function resetWords(sec) {
+  const h = (sec * 1000 - Date.now()) / 3600e3;
+  return h >= 24 ? tr("reset.d", { n: Math.ceil(h / 24) }) : tr("reset.h", { n: Math.max(1, Math.ceil(h)) });
 }
 // A live 5h / 7d window (statusline's rate_limits, top level), or null once it has reset.
 function windowOf(q, name) {
@@ -271,6 +276,12 @@ export default class Threads extends View {
     this.barShown = null;
     this.barPress = null; // the registry project a drag in the bar started on
     this.barOver = null; // the square it is over (an id of barShownIds)
+    // The Usage button's peek (usagePeek): its generation while shown (null: hidden), the pointer on the
+    // button or the panel, the statusLine's quota as read on hover-in.
+    this.peek = null;
+    this.peekGen = 0;
+    this.peekOver = {};
+    this.peekQuota = null;
     if (!checking()) {
       cx.spawn(async () => {
         const r = await exec("pwd", ["-P"], { cwd: home() }).catch(() => null);
@@ -758,8 +769,7 @@ export default class Threads extends View {
     const five = sl ? windowOf(this.quota, "five_hour") : null;
     // The weekly limit when there is no 5 h window (none on Kylian's plan): the 5 h one wins if it is back.
     const week = sl && !five ? windowOf(this.quota, "seven_day") : null;
-    const weekLeft = week ? (week.resets_at * 1000 - Date.now()) / 3600e3 : 0;
-    const weekReset = weekLeft >= 24 ? tr("reset.d", { n: Math.ceil(weekLeft / 24) }) : tr("reset.h", { n: Math.max(1, Math.ceil(weekLeft)) });
+    const weekReset = week ? resetWords(week.resets_at) : "";
     const eyebrow = (text) => div().font_family(MONO).text_size(10).text_color(t.muted).child(text);
     const beside = (text) => div().min_w(0).truncate().font_family(MONO).text_size(10).text_color(t.dim).child(text);
     // A 32 px ring, its value in the middle, its label and detail beside it.
@@ -1563,6 +1573,7 @@ export default class Threads extends View {
       .when(!gone && !here && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
       .when(!gone, (el) => el.cursor_pointer()
         .on_hover((h, cx) => {
+          if (h && this.peek) return; // the Usage peek drawn over the row: gpui hovers what's under it too
           if (h) this.hover = c.id;
           else if (this.hover === c.id) {
             this.hover = null;
@@ -1586,6 +1597,140 @@ export default class Threads extends View {
       .mx(8)
       .when(recede, (el) => el.opacity(0.62))
       .child(card);
+  }
+
+  // ---------- the Usage button's peek ----------
+
+  // Shown once the pointer rests 300 ms on the button; gone 160 ms after it left both the button and
+  // the panel (room to slide onto it), fading and sinking 6 px (motion.js sheet / leave). One-shot
+  // timers, the last one wins (peekTok).
+  peekHover(part, on, cx) {
+    this.peekOver = { ...this.peekOver, [part]: on };
+    const tok = (this.peekTok = (this.peekTok ?? 0) + 1);
+    const id = `kt-peek-${this.peek}`;
+    if (this.peekOver.btn || this.peekOver.panel) {
+      if (part === "btn" && on) this.readPeek(cx);
+      // Back while it goes: a new one at once (a new id, so it comes in again).
+      if (this.peek && leaving(this.motion, id)) {
+        this.peek = ++this.peekGen;
+        cx.notify();
+      } else if (!this.peek) cx.timer.after(300, (cx) => {
+        if (this.peekTok !== tok) return;
+        this.peek = ++this.peekGen;
+        cx.notify();
+      });
+    } else if (this.peek) cx.timer.after(160, (cx) => {
+      if (this.peekTok !== tok) return;
+      leave(this.motion, cx, id, (cx) => {
+        this.motion.out?.delete(id); // frame() never clears it
+        if (`kt-peek-${this.peek}` === id) {
+          this.peek = null;
+          this.peekOver = {};
+        }
+        cx.notify();
+      });
+    });
+  }
+
+  // The statusLine's quota file as written, with its updated_at (readLive drops it): a local read on
+  // hover-in, never the network.
+  readPeek(cx) {
+    if (checking()) return;
+    cx.spawn(async (cx) => {
+      try {
+        const s = await readTextFile(`${io.statuslineDir(home())}/herdr-quota.json`);
+        this.peekQuota = s ? JSON.parse(s) : null;
+      } catch { /* torn mid-write: keep the last one */ }
+      if (this.peek) cx.notify();
+    });
+  }
+
+  // A click on the button or the panel: the console, and the peek gone at once (the dialog covers it).
+  openUsage() {
+    this.peekTok = (this.peekTok ?? 0) + 1;
+    this.peek = null;
+    this.peekOver = {};
+    run("mod.open", { name: "kt-usage" });
+  }
+
+  // The peek, 220 px, over the bottom of the sidebar: kt-usage's last full read as it publishes it
+  // (shared "kt.usage.summary": the weekly window, Fable, today's cost, Codex) and the statusLine's
+  // weekly window, the newer of the two for the week. Read only: no network, nothing of kt-usage's
+  // token. A window whose reset passed since its reading shows no number (kt-usage's data.js rule).
+  usagePeek(t, m) {
+    const now = Date.now() / 1000;
+    const q = this.peekQuota;
+    const s = shared("kt.usage.summary");
+    const sc = s?.claude;
+    const qw = Number.isFinite(q?.seven_day?.used_percentage) ? { used: q.seven_day.used_percentage, resets: q.seven_day.resets_at } : null;
+    const fromSum = Boolean(sc?.week) && (s.at ?? 0) >= (q?.updated_at ?? 0);
+    const week = fromSum ? sc.week : qw;
+    const live = (w) => Boolean(w) && Number.isFinite(w.used) && !(w.resets <= now);
+    const fable = sc?.fable && sc.fable.active !== false && live(sc.fable) ? sc.fable : null;
+    const day = sc?.day && (s.at ?? 0) >= new Date().setHours(0, 0, 0, 0) / 1000 ? sc.day : null;
+    const codex = s?.codex ?? null;
+    // How old what's shown is: its oldest source.
+    const ats = [week && !fromSum ? q?.updated_at : null, fromSum || fable || day || codex ? s?.at : null].filter(Number.isFinite);
+    const age = ats.length ? relative(Math.min(...ats) * 1000) : "";
+
+    const eyebrow = (text) => div().flex_none().font_family(MONO).text_size(10).text_color(t.muted).child(text);
+    const dim = (text) => div().min_w(0).truncate().font_family(MONO).text_size(10).text_color(t.dim).child(text);
+    // The focus card's 32 px ring (levels.js' quota colours), its label and detail beside it.
+    const cell = (id, label, w, sub) => h_flex().gap(8).items_center()
+      .child(ring(t, id, w.used, 32, { kind: "quota", severity: w.severity, roll, m }))
+      .child(v_flex().min_w(0).gap(1).child(eyebrow(label)).child(dim(sub)));
+    const claude = [];
+    if (week) claude.push(live(week) ? cell("kt-peek-7j", tr("week"), week, resetWords(week.resets)) : dim(`${tr("week")} · ${tr("peek.stale")}`));
+    if (fable) claude.push(cell("kt-peek-fable", (fable.name ?? "Fable").toUpperCase(), fable, sc.share // i18n: tech
+      ? tr("peek.share", { used: Math.round(sc.share.used), of: Math.round(sc.share.of) }) : resetWords(fable.resets)));
+    if (day) claude.push(h_flex().gap(8).items_center()
+      .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.muted).child(tr("peek.dayCost")))
+      .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.foreground).child(`$${fnum(day.usd, 2)}`)));
+    const cw = codex ? [["5H", codex.five], [tr("week"), codex.week]].filter(([, w]) => live(w)) : []; // i18n: tech
+    const parts = [
+      claude.length > 0 && v_flex().gap(8)
+        .child(h_flex().gap(6).items_center()
+          .child(svg("mods/kt-usage/gauge.svg").size(12).flex_none().text_color(t.accent))
+          .child(eyebrow("CLAUDE")) // i18n: tech
+          .child(div().flex_1())
+          .when(Boolean(sc?.plan), (el) => el.child(dim(sc.plan))))
+        .children(claude),
+      codex && h_flex().gap(8).items_center()
+        .child(eyebrow("CODEX")) // i18n: tech
+        .child(div().flex_1())
+        .children(cw.length ? cw.map(([label, w]) => div().flex_none().font_family(MONO).text_size(10.5)
+          .text_color(levelColor(t, quotaLevel(w.used))).child(tr("peek.pct", { label, n: Math.round(w.used) }))) : [dim(codex.five || codex.week ? tr("peek.stale") : "—")]),
+    ].filter(Boolean);
+    const body = parts.length > 0 && v_flex().p(10).gap(8).rounded(10).bg(t.surface).border(1).border_color(t.border)
+      .children(parts.flatMap((p, i) => (i ? [div().h(0).border_t(1).border_dashed().border_color(t.border), p] : [p])));
+    const foot = h_flex().px(8).py(4).gap(8).items_center()
+      .child(div().flex_1().min_w(0).truncate().text_size(10.5).text_color(t.dim).child(tr(body ? "peek.open" : "peek.none")))
+      .when(Boolean(body && age), (el) => el.child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(tr("peek.read", { ago: age }))));
+
+    // In: a fade and a 6 px rise once laid out (its first on_size_change); out: leave() in peekHover.
+    // Each showing has its own id, so it comes in again.
+    const gen = this.peek;
+    const id = `kt-peek-${gen}`;
+    const sh = sheet(m, id, m.reduced || this.peekShown === gen);
+    const card = v_flex().id(id).p(4).gap(4).rounded(14).bg(t.popover).border(1).border_color(t.border).shadow_lg().cursor_pointer()
+      .on_size_change((_size, cx) => {
+        if (this.peekShown === gen) return;
+        this.peekShown = gen;
+        cx.notify();
+      })
+      .on_hover((h, cx) => this.peekHover("panel", h, cx))
+      // Presses stop here: the rows under it open their menu on a right-click, the project bar drags.
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_mouse_down("right", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        this.openUsage();
+        cx.notify();
+      })
+      .when(Boolean(body), (el) => el.child(body))
+      .child(foot);
+    // Out of the flow, 4 px over the footer (40): nothing above it moves.
+    return div().absolute().bottom(44).left(8).w(Math.min(220, this.width - 16)).child(sh.card(sh.veil(card)));
   }
 
   // kbrdn.dev `.eyebrow` shelf header.
@@ -2002,7 +2147,9 @@ export default class Threads extends View {
           .child(this.button("kt-keys", "", "keyboard", () => run("app.help")))
           .child(this.button("kt-layout", "", "layers", () => run("layout.switch")))
           // kt-usage's console (its own icon: button() takes its icons from this folder, so as the label).
-          .child(this.button("kt-usage", svg("mods/kt-usage/gauge.svg").size(13), "", () => run("mod.open", { name: "kt-usage" })).tooltip(tr("usage")))
+          // Its hover shows the peek (usagePeek) in place of a tooltip: the two would show together.
+          .child(this.button("kt-usage", svg("mods/kt-usage/gauge.svg").size(13), "", () => this.openUsage())
+            .accessibility_label(tr("usage")).on_hover((h, cx) => this.peekHover("btn", h, cx)))
           // kt-mods' console: blocks shown or hidden, root mods, kbrdn options, shared copies.
           .child(this.button("kt-mods", svg("mods/kt-mods/blocks.svg").size(13), "", () => run("mod.open", { name: "kt-mods" })).tooltip("Mods")) // i18n: tech
           .child(div().flex_1())
@@ -2011,6 +2158,8 @@ export default class Threads extends View {
           .child(langSwitch(t, fx))
           .child(((mode) => cycleButton(t, { id: "kt-theme", key: mode, icon: I(THEME_ICON[mode]), tip: tr(`theme.${mode}`), fx,
             onClick: (cx) => this.setTheme(THEME_NEXT[mode], cx) }))(this.themeMode())),
-      );
+      )
+      // The Usage peek, last: drawn over the list and the project bar, which keep their place.
+      .when(Boolean(this.peek) && this.width >= 216, (el) => el.child(this.usagePeek(t, m)));
   }
 }
