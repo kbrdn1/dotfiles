@@ -178,6 +178,8 @@ const TABLE = {
     ["[ / ]", "md.image", "kt-viewer"],
     ["ctrl-p / ctrl-w / ctrl-t / ctrl-a", "md.newKeys", "kt-new"],
     ["ctrl-o", "md.newTask", "kt-new"],
+    ["ctrl-f", "md.newFlow", "kt-new"],
+    ["/", "md.newSlash", "kt-new"],
     ["cmd-enter / ctrl-enter", "md.newStart", "kt-new"],
     ["j / k", "md.usageMove", "kt-usage"],
     ["tab / shift-tab", "md.card", "kt-usage"],
@@ -387,7 +389,8 @@ export default class Keys extends View {
           .child(hint("esc", typing ? tr("hint.normal") : tr("hint.close")))));
     return s.veil(div().id("kk-veil").size_full().flex().items_center().justify_center().bg(veil()))
       .on_size_change((size, cx) => { this.size = size; cx.notify(); })
-      .on_click((_e, cx) => this.dismiss(cx))
+      // A press, not on_click: on the element holding the keyboard, GPUI turns Space and Enter into a click.
+      .on_mouse_down("left", (_e, cx) => this.dismiss(cx))
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .child(card);

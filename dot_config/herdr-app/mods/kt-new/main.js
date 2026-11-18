@@ -29,6 +29,15 @@
 // (`task`), worktree or not. ctrl+O or a click puts the typing in it; there enter is a new line and
 // cmd+enter / ctrl+enter starts. The agent is always its own CLI (`argv`), run in the terminal under the
 // person's login: nothing here relays the model's calls.
+// The consigne completes Claude Code's `/name`s (skills.js): `/` at a line's start or after a space
+// lists the skills and commands Claude Code loads (personal, the selected project's .claude, the
+// enabled plugins), filtered as typed; ↓ ↑ / ctrl-n ctrl-p move, tab or enter completes, esc closes.
+// Read once per opening (files re-read only when their mtime moved); Claude only, the other agents
+// say so. Its head carries the agent (a click or ctrl+A, both modes). The Workflow row (ctrl+F, both
+// modes) prefills the consigne with an installed workflow's `/name ` (skills.js presets), libre takes
+// it off; picking one picks Claude. A workflow leading the consigne (Claude) owns the checkout: it
+// opens its own issue, and the worktree ones make it with gwm, so kt-new runs no gwm and starts it
+// in the project's main checkout; the Checkout row says which (skills.js checkoutOf).
 // Props (kt-kanban's « Lancer » on a draft, kt-head's ctrl-b shift-g): { worktree, name, task, project
 // (a space id: its project picked), agent ("claude", "codex", "vibe"), draft }. Nothing starts without
 // the person's Enter. With `draft`, the thread made is recorded in shared "kt.kanban.launched" ({ draft,
@@ -42,10 +51,14 @@ import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
 import { issueOf, firstMessage, firstTask, startCommand, plan, retry, TRUST, where, explain } from "./gwm.js";
 import { ditherBand, TOP } from "./dither.js";
 import { bump, gitTopics } from "./bus.js";
+import { ORDER, scan, fit, suggest, insert, presets, leading, withWorkflow, checkoutOf } from "./skills.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
 const tr = makeT(strings);
+// The skills' last list and each file's entry by its mtime, kept from one opening to the next (module
+// code outlives the dialog): an opening shows the last list at once and re-reads only changed files.
+const memo = { list: [], files: new Map() };
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const tilde = (p) => (p && p.startsWith(home()) ? `~${p.slice(home().length)}` : p ?? "");
@@ -127,7 +140,11 @@ export default class NewThread extends View {
     this.error = null; // { title, text, raw }: gwm's last refusal
     this.trust = null; // { file, text, on, repo, changed? }: a .gwm.toml gwm won't run untrusted
     this.scanned = false; // the spaces' repos are known
-    this.repos = {}; // folder -> { key, name, main } | null
+    this.repos = {}; // folder -> { key, name, main, top } | null
+    this.skills = memo.list; // what `/` completes (skills.js invocable)
+    this.loading = true; // the skills' scan of this opening is running
+    this.pick = 0; // the completion's highlighted entry
+    this.shut = null; // the consigne as it was when esc closed the completion: closed while unchanged
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.motion = motionState(); // ANIMATIONS.md: the veil fades and the card rises, in and out (motion.js sheet, leave)
@@ -136,7 +153,7 @@ export default class NewThread extends View {
     this.vim = new Vim({ field: true, insert: true });
     this.at = "project";
     // The project and type groups scroll sideways when they're longer than the dialog.
-    this.scrolls = { project: ScrollHandle.new(), type: ScrollHandle.new() };
+    this.scrolls = { project: ScrollHandle.new(), type: ScrollHandle.new(), flow: ScrollHandle.new(), complete: ScrollHandle.new() };
     if (!checking()) cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -160,14 +177,78 @@ export default class NewThread extends View {
           if (top.code !== 0 || common.code !== 0) continue;
           const key = common.stdout.trim();
           const main = key.endsWith("/.git") ? key.slice(0, -5) : key;
-          this.repos[JSON.stringify([s.machine ?? null, s.folder])] = { key: JSON.stringify([s.machine ?? null, key]), name: main.split("/").pop(), main: main === top.stdout.trim() };
+          this.repos[JSON.stringify([s.machine ?? null, s.folder])] = { key: JSON.stringify([s.machine ?? null, key]), name: main.split("/").pop(), main: main === top.stdout.trim(), top: top.stdout.trim() };
         } catch {}
       }
       this.scanned = true;
       // "#N" typed before the scan knew the project was a repo.
       this.guessCheckout();
       cx.notify();
+      // The skills, once the projects' roots are known (their .claude).
+      if (checking()) return;
+      await this.loadSkills();
+      cx.notify();
     });
+  }
+
+  // The skills Claude Code loads (skills.js scan): one rg + stat, then only the files whose mtime moved.
+  // Local projects only: a remote space's files are on that machine.
+  async loadSkills() {
+    try {
+      const projects = Object.entries(this.repos).filter(([k, r]) => r && JSON.parse(k)[0] === null).map(([, r]) => r.top);
+      memo.list = await scan({ home: home(), projects, exec, read: (p) => readTextFile(p), cache: memo.files });
+      this.skills = memo.list;
+    } catch {} // the last list stays
+    this.loading = false;
+  }
+
+  // The selected project's git root, for its own .claude skills.
+  projectTop() {
+    const s = this.projects()[this.project]?.space;
+    return s ? this.repos[JSON.stringify([s.machine ?? null, s.folder])]?.top ?? null : null;
+  }
+
+  claude() {
+    return AGENTS[this.agent]?.[1]?.[0] === "claude";
+  }
+
+  // The workflow presets' names, as installed (ORDER until the first scan of this machine is in).
+  flowNames() {
+    return this.skills.length ? presets(this.skills).map((e) => e.name) : ORDER;
+  }
+
+  // The workflow the consigne starts with, for Claude; in a git project, it owns the checkout.
+  flow() {
+    return this.claude() ? leading(this.task, this.flowNames()) : null;
+  }
+  owner() {
+    return this.projects()[this.project]?.git ? this.flow() : null;
+  }
+
+  // A workflow preset (null: libre) in place of the consigne's leading one; one picked is Claude's, and
+  // the typing goes to the consigne for what follows it.
+  setFlow(name) {
+    this.task = withWorkflow(this.task, name, this.flowNames());
+    if (name) this.agent = Math.max(0, AGENTS.findIndex(([, argv]) => argv?.[0] === "claude"));
+    this.field = "task";
+    this.vim.edit();
+    this.shut = null;
+  }
+
+  // ctrl+f: the next preset after the consigne's (libre after the last).
+  cycleFlow() {
+    const seq = [null, ...this.flowNames()];
+    const at = seq.indexOf(this.flow()); // the lit one: libre for Codex, Vibe, the shell
+    const next = seq[(at + 1) % seq.length];
+    this.setFlow(next);
+    if (next) this.scrolls.flow.scroll_to_item(seq.indexOf(next));
+  }
+
+  // The completion under the consigne while a `/word` is typed at its end (INSERT): skills.js suggest,
+  // { q, items, note }; Codex, Vibe and the shell get a note (strings.js' complete.<note>).
+  completion() {
+    if (this.field !== "task" || !this.vim.insert || this.busy) return null;
+    return suggest(this.skills, this.task, AGENTS[this.agent][1]?.[0] ?? null, { project: this.projectTop(), loading: this.loading, shut: this.shut });
   }
 
   // One entry per project: its repo's main-checkout space (else the first),
@@ -194,14 +275,16 @@ export default class NewThread extends View {
     leave(this.motion, cx, "kn", () => closeOverlay(props().overlay));
   }
 
-  // The rows the cursor walks, as shown: Checkout only in a git project, Type only for a worktree.
+  // The rows the cursor walks, as shown: Checkout only in a git project, Type only for a worktree;
+  // neither while a workflow owns the checkout (its row is a fact then).
   fields() {
-    const git = Boolean(this.projects()[this.project]?.git);
+    const git = Boolean(this.projects()[this.project]?.git) && !this.owner();
     return ["project", ...(git ? ["worktree"] : []), ...(git && this.worktree ? ["type"] : []), "agent"];
   }
 
   // A row's next (d = 1) or previous pick, round; its group scrolls to it.
   cycle(field, d) {
+    if ((field === "worktree" || field === "type") && this.owner()) return; // the workflow's
     if (field === "worktree") this.choose("worktree", !this.worktree);
     else {
       const n = Math.max(1, { project: this.projects().length, type: TYPES.length, agent: AGENTS.length }[field]);
@@ -256,9 +339,33 @@ export default class NewThread extends View {
     cx.notify();
   }
 
-  // One key, from the keyboard or `key:` (a name): ctrl+p / w / t / a first (both modes, as
-  // before), then vim's.
+  // One key, from the keyboard or `key:` (a name): the open completion's first (it takes ↓ ↑, ctrl-n /
+  // p / j / k, tab, enter and esc), then ctrl+p / w / t / a / f (both modes, as before), then vim's.
   press(e, cx) {
+    const c = this.completion();
+    if (c) {
+      const n = keyOf(e).name;
+      if (n === "escape") {
+        this.shut = this.task;
+        return true;
+      }
+      const k = c.items.length;
+      const by = ["down", "ctrl-n", "ctrl-j"].includes(n) ? 1 : ["up", "ctrl-p", "ctrl-k", "shift-tab"].includes(n) ? -1 : 0;
+      if (k && by) {
+        this.pick = (Math.min(this.pick, k - 1) + by + k) % k;
+        this.scrolls.complete.scroll_to_item(this.pick);
+        return true;
+      }
+      if (k && (n === "tab" || n === "enter")) {
+        this.task = insert(this.task, c.items[Math.min(this.pick, k - 1)].name);
+        this.pick = 0;
+        return true;
+      }
+    }
+    if (keyOf(e).name === "ctrl-f" && !this.busy) {
+      this.cycleFlow();
+      return true;
+    }
     const chord = { "ctrl-p": "project", "ctrl-w": "worktree", "ctrl-t": "type", "ctrl-a": "agent" }[keyOf(e).name];
     if (keyOf(e).name === "ctrl-e" && !this.busy) {
       this.blank(cx);
@@ -294,8 +401,13 @@ export default class NewThread extends View {
     else if (a === "normal" || a === "filter" || a === "pending" || a === "count") {} // the mode changed, or a gg on its way
     else if (this.busy) return false;
     else if (a === "submit" || a === "open") this.start(cx);
-    else if (a === "type" && this.field === "task") this.task += this.vim.char;
-    else if (a === "backspace" && this.field === "task") this.task = this.task.slice(0, -1);
+    else if (a === "type" && this.field === "task") {
+      this.task += this.vim.char;
+      this.pick = 0;
+    } else if (a === "backspace" && this.field === "task") {
+      this.task = this.task.slice(0, -1);
+      this.pick = 0;
+    }
     else if (a === "type") {
       if (this.name.length < MAX_NAME) this.name += this.vim.char;
       this.nudge = null;
@@ -352,7 +464,8 @@ export default class NewThread extends View {
       if (this.draft) setShared("kt.kanban.launched", { draft: this.draft, tab: c.args.name ?? c.args.tab, space: c.name === "tab.new" ? c.args.space : null,
         folder: c.args.folder ?? null, machine: p.space.machine ?? null, at: Date.now() });
     };
-    if (!(this.worktree && p.git)) {
+    // A workflow leading the consigne makes its own issue (and worktree): the project's checkout, no gwm here.
+    if (!(this.worktree && p.git) || this.owner()) {
       this.done = this.projects();
       show();
       go(startCommand({ space: p.space.id, argv, name, task }));
@@ -581,6 +694,17 @@ export default class NewThread extends View {
     const line = first.split("\n")[0];
     const said = line.length > 60 || first.includes("\n") ? `${line.slice(0, 60)}…` : line;
     const agent = argv ? `${argv.join(" ")}${said ? ` « ${said} »` : ""}` : tr("agent.none");
+    // A workflow owns the checkout: what it will do, from the project's checkout.
+    const own = git ? this.owner() : null;
+    if (own) {
+      const cmd = `/${own}`;
+      const away = checkoutOf(own) === "worktree";
+      return this.facts(t, [
+        [tr("fact.branch"), away ? tr("branch.byFlow", { cmd }) : tr("branch.fromFlow", { branch: p.space.branch ?? "—", cmd }), true],
+        [tr("fact.folder"), away ? tr("folder.byFlow", { name: p.name, cmd }) : tilde(p.space.folder) || "—", !away],
+        [tr("fact.agent"), agent, true],
+      ]);
+    }
     if (!tree) {
       return this.facts(t, [
         [tr("fact.folder"), tilde(p.space.folder) || "—", true],
@@ -610,7 +734,10 @@ export default class NewThread extends View {
     this.project = Math.min(this.project, Math.max(0, ps.length - 1));
     const p = ps[this.project];
     const git = Boolean(p?.git);
-    const tree = git && this.worktree;
+    // A workflow leading the consigne owns the checkout (skills.js checkoutOf); else kt-new's pick.
+    const own = git ? this.owner() : null;
+    const away = own ? checkoutOf(own) === "worktree" : git && this.worktree;
+    const tree = git && this.worktree && !own; // kt-new makes the worktree (gwm)
     const spec = tree ? issueOf(this.name) : null;
     // kbrdn.dev `kbd`: a small mono pill.
     const kbd = (k) => div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
@@ -646,7 +773,7 @@ export default class NewThread extends View {
     const dark = settings().dark;
     const tint = p ? projectTint(p.space) : null;
     const band = tint ? (String(tint).startsWith("#") ? tint : t[tint] ?? t.accent) : t.accent;
-    const subtitle = [p?.name ?? tr("sub.noProject"), tree ? tr("sub.worktree") : git ? tr("sub.current") : tr("sub.folder"), AGENTS[this.agent][0].toLowerCase()].join(" · ");
+    const subtitle = [p?.name ?? tr("sub.noProject"), away ? tr("sub.worktree") : git ? tr("sub.current") : tr("sub.folder"), AGENTS[this.agent][0].toLowerCase()].join(" · ");
     // The field typed in looks live (INSERT); in NORMAL they rest, without their caret.
     const typing = keyed && this.vim.insert;
     const focused = typing && this.field === "name";
@@ -664,11 +791,59 @@ export default class NewThread extends View {
         .on_click((_e, cx) => { this.field = "task"; this.vim.edit(); this.handle.focus(); cx.notify(); })
         .child(h_flex().gap(8).items_center().font_family(MONO).text_size(10).text_color(t.muted)
           .child(div().flex_1().child(tr("task.label")))
+          // The agent, at hand while the consigne types: a click (or ctrl+a) takes the next one.
+          .child(h_flex().id("kt-n-agent").h(18).px(7).gap(5).items_center().rounded_full().border(1)
+            .border_color(alpha(t.accent, "4d")).bg(alpha(t.accent, "14")).text_color(t.accent).cursor_pointer()
+            .hover((s) => s.bg(alpha(t.accent, "24")))
+            .tooltip(tr("agent.tip"))
+            .on_click((_e, cx) => { this.cycle("agent", 1); cx.notify(); })
+            .child(AGENTS[this.agent][0].toUpperCase())
+            .child(div().text_color(t.dim).child("ctrl+a"))) // i18n: tech
           .child(div().text_color(t.dim).child("ctrl+o"))) // i18n: tech
         .when(!this.task && !onTask, (el) => el.child(div().text_color(t.dim).child(tr("task.ph"))))
         .children((this.task || onTask ? lines : []).map((l, i) => h_flex().min_h(19).items_center().text_color(t.foreground)
           .child(div().min_w(0).child(l))
           .when(onTask && i === lines.length - 1, (el) => el.child(div().flex_none().w(2).h(16).rounded(1).bg(t.accent))))));
+    // The workflow presets (skills.js): libre, then the installed ones; the one leading the consigne is lit.
+    const lit = this.flow();
+    const flows = this.skills.length ? presets(this.skills) : [];
+    const setFlow = (name) => (_e, cx) => {
+      this.setFlow(name);
+      this.handle.focus();
+      cx.notify();
+    };
+    const flowRow = flows.length > 0 && row(tr("row.workflow"), this.segmented(t, "kt-n-wf", [
+      this.chip(t, "kt-n-wf-free", tr("flow.free"), !lit, setFlow(null)).tooltip(tr("flow.freeTip")),
+      ...flows.map((e, i) => this.chip(t, `kt-n-wf${i}`, e.name.replace(/^me:/, ""), lit === e.name, setFlow(e.name)).tooltip(e.description || `/${e.name}`)),
+    ], this.scrolls.flow), "flow");
+    // The completion under the consigne (skills.js complete): `/name`, what it does, where it comes from.
+    const comp = this.completion();
+    const at = comp ? Math.min(this.pick, Math.max(0, comp.items.length - 1)) : 0;
+    // Its height (skills.js fit): as many rows as the window leaves under the card without the list
+    // (measured: the card's height less the list's and its gap), START included; too low, the Workflow
+    // row goes while it's open. Closed: nothing measured, nothing hidden.
+    if (!comp) this.listH = 0;
+    const room = comp?.items.length
+      ? fit({ win: this.size?.height, base: (this.cardH ?? 0) - (this.listH ? this.listH + 12 : 0), flowShown: !this.flowOut, flow: flowRow ? 48 : 0 })
+      : { rows: 6, flow: true };
+    this.flowOut = Boolean(flowRow) && !room.flow;
+    const compList = comp && this.block(t).id("kt-n-list")
+      .on_size_change((size, cx) => {
+        if (Math.abs((this.listH ?? 0) - size.height) < 0.5) return;
+        this.listH = size.height;
+        cx.notify();
+      })
+      .child(comp.items.length
+      ? v_flex()
+        .child(v_flex().id("kt-n-complete").max_h(room.rows * 31 + 7).overflow_y_scroll().track_scroll(this.scrolls.complete).p(4).gap(1)
+          .children(comp.items.map((e, i) => h_flex().id(`kt-n-c${i}`).h(30).px(10).gap(10).flex_none().items_center().rounded(8).cursor_pointer()
+            .when(i === at, (el) => el.bg(alpha(t.accent, "24")))
+            .on_click((_e, cx) => { this.task = insert(this.task, e.name); this.pick = 0; this.handle.focus(); cx.notify(); })
+            .child(div().flex_none().max_w(260).truncate().font_family(MONO).text_size(12).text_color(i === at ? t.accent : t.foreground).child(`/${e.name}`)) // i18n: tech
+            .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(e.description))
+            .child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(tr(`src.${e.source}`))))))
+        .child(div().px(14).py(6).border_t(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.dim).child(tr("complete.keys")))
+      : div().px(14).py(10).text_size(12).text_color(t.muted).child(tr(`complete.${comp.note}`, { q: comp.q, agent: AGENTS[this.agent][0] })));
     // The modals' motion (ANIMATIONS.md, kt-confirm's): the veil fades in and the card rises 6 px,
     // MS.open, once, on the first size report, and goes back out on dismiss (motion.js sheet);
     // reduced motion: there at once.
@@ -706,6 +881,12 @@ export default class NewThread extends View {
       .on_mouse_down("left", (_e, cx) => {
         cx.stop_propagation();
         this.handle.focus();
+      })
+      // Its height, for the completion's (fit above).
+      .on_size_change((size, cx) => {
+        if (Math.abs((this.cardH ?? 0) - size.height) < 0.5) return;
+        this.cardH = size.height;
+        cx.notify();
       })
       .w(CARD)
       .max_w_full())
@@ -760,7 +941,9 @@ export default class NewThread extends View {
                       ),
                   ),
               )
+              .when(Boolean(flowRow) && !this.flowOut, (el) => el.child(flowRow))
               .child(consigne)
+              .when(Boolean(compList), (el) => el.child(compList))
               .child(
                 v_flex()
                   .child(row(tr("row.project"), this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space))), this.scrolls.project), "project"))
@@ -768,10 +951,15 @@ export default class NewThread extends View {
                     el.child(
                       row(
                         tr("row.checkout"),
-                        this.segmented(t, "kt-n-co", [
-                          this.chip(t, "kt-n-cur", tr("chip.current"), !this.worktree, pick("worktree", false)),
-                          this.chip(t, "kt-n-wt", tr("chip.worktree"), this.worktree, pick("worktree", true)),
-                        ]),
+                        // A workflow owns it: its pick alone, and whose it is.
+                        own
+                          ? h_flex().min_w(0).gap(10).items_center()
+                            .child(this.segmented(t, "kt-n-co", [this.chip(t, "kt-n-own", away ? tr("chip.worktree") : tr("chip.current"), true, () => {}).tooltip(tr("checkout.ownTip"))]))
+                            .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("checkout.byFlow", { cmd: `/${own}` })))
+                          : this.segmented(t, "kt-n-co", [
+                            this.chip(t, "kt-n-cur", tr("chip.current"), !this.worktree, pick("worktree", false)),
+                            this.chip(t, "kt-n-wt", tr("chip.worktree"), this.worktree, pick("worktree", true)),
+                          ]),
                         "worktree",
                       ),
                     ),
