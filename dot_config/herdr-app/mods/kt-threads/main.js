@@ -389,6 +389,9 @@ export default class Threads extends View {
       const colors = { ...(shared("space.colors") ?? {}) };
       let recolor = false;
       const open = spaces().filter((s) => s.folder && !this.isHome(s));
+      // A new project's logos default to brand/projects/<name>.svg (or <name>-light.svg / -dark.svg).
+      const brand = open.some((s) => !next.some((x) => x.id === this.projectId(s))) ? await fs.readdir(`${appHome()}/brand/projects`).catch(() => []) : [];
+      const brandOf = (n, mode) => [`${n}-${mode}.svg`, `${n}.svg`].find((f) => brand.includes(f)) ?? null;
       for (const s of open) {
         const id = this.projectId(s);
         if (!id) continue; // unknown yet: next time
@@ -396,7 +399,9 @@ export default class Threads extends View {
         if (!e) {
           const order = next.reduce((m, x) => Math.max(m, (x.order ?? 0) + 1), 0);
           const repo = this.spaceRepo(s);
-          next = [...next, { id, name: repo?.linked ? repo.name : s.name, folder: JSON.parse(id)[1], machine: s.machine ?? null, color: colors[s.id] ?? null, logos: { light: null, dark: null }, order }];
+          const name = repo?.linked ? repo.name : s.name;
+          const logo = (mode) => (brandOf(name, mode) ? `brand/projects/${brandOf(name, mode)}` : null);
+          next = [...next, { id, name, folder: JSON.parse(id)[1], machine: s.machine ?? null, color: colors[s.id] ?? null, logos: { light: logo("light"), dark: logo("dark") }, order }];
           changed = true;
         } else if (!this.seen.has(s.id)) {
           if (e.color && colors[s.id] !== e.color) { colors[s.id] = e.color; recolor = true; }
