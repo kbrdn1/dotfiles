@@ -45,7 +45,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, run, theme, props, closeOverlay, shared, setShared, exec, settings, openOverlay, nextCommand, checking, home, readTextFile } from "herdr";
+import { spaces, run, theme, props, closeOverlay, shared, setShared, exec as hostExec, settings, openOverlay, nextCommand, checking, home, readTextFile, knownAgents } from "herdr";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
 import { skeleton } from "./skeleton.js";
@@ -55,11 +55,19 @@ import { bump, gitTopics } from "./bus.js";
 import { ORDER, scan, fit, suggest, insert, presets, leading, withWorkflow, checkoutOf } from "./skills.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine away refuses gwm at
+// once and says so (notice); whether it logs in as root (isRoot). remote.js: the rest of #63.
+import { guard, isOffline, isRoot, reachable, notice } from "./machines.js";
+import { installedOn, okKey, mustConfirm, chipLabel } from "./remote.js";
 
 const tr = makeT(strings);
+const exec = guard(hostExec);
 // The skills' last list and each file's entry by its mtime, kept from one opening to the next (module
 // code outlives the dialog): an opening shows the last list at once and re-reads only changed files.
 const memo = { list: [], files: new Map() };
+// Each other machine's agents (knownAgents({ on })), asked on a gesture only and kept for the app's run:
+// that check is a command run on the machine (Kylian's decision, 2026-11-19). A failed check isn't kept.
+const agentsOn = {};
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const tilde = (p) => (p && p.startsWith(home()) ? `~${p.slice(home().length)}` : p ?? "");
@@ -167,6 +175,12 @@ export default class NewThread extends View {
           this.handle.focus();
           this.approve(cx);
         }
+        // kt-confirm's yes to an agent as root (askRoot): that launch, confirmed, starts.
+        if (c === "root") {
+          this.handle.focus();
+          this.rootOk = this.rootAsk;
+          this.start(cx);
+        }
         cx.notify();
       }
     });
@@ -213,6 +227,24 @@ export default class NewThread extends View {
     return AGENTS[this.agent]?.[1]?.[0] === "claude";
   }
 
+  // The selected project's machine, null for this computer.
+  machine() {
+    return this.projects()[this.project]?.space.machine ?? null;
+  }
+
+  // Which agents the selected project's machine has (knownAgents, remote.js): on a gesture only
+  // (choose(), « vérifier »), once per machine (agentsOn), never during a check nor on a machine away.
+  checkAgents(cx) {
+    const m = this.machine();
+    if (!m || m in agentsOn || this.checkingOn || checking() || !reachable(m)) return;
+    this.checkingOn = m;
+    cx.spawn(async (cx) => {
+      try { agentsOn[m] = await knownAgents({ on: m }); } catch {} // not kept: « vérifier » asks again
+      this.checkingOn = null;
+      cx.notify();
+    });
+  }
+
   // The workflow presets' names, as installed (ORDER until the first scan of this machine is in).
   flowNames() {
     return this.skills.length ? presets(this.skills).map((e) => e.name) : ORDER;
@@ -220,7 +252,8 @@ export default class NewThread extends View {
 
   // The workflow the consigne starts with, for Claude; in a git project, it owns the checkout.
   flow() {
-    return this.claude() ? leading(this.task, this.flowNames()) : null;
+    // On another machine, this Mac's presets aren't offered (they may not be installed there).
+    return this.claude() && !this.machine() ? leading(this.task, this.flowNames()) : null;
   }
   owner() {
     return this.projects()[this.project]?.git ? this.flow() : null;
@@ -249,7 +282,9 @@ export default class NewThread extends View {
   // { q, items, note }; Codex, Vibe and the shell get a note (strings.js' complete.<note>).
   completion() {
     if (this.field !== "task" || !this.vim.insert || this.busy) return null;
-    return suggest(this.skills, this.task, AGENTS[this.agent][1]?.[0] ?? null, { project: this.projectTop(), loading: this.loading, shut: this.shut });
+    const c = suggest(this.skills, this.task, AGENTS[this.agent][1]?.[0] ?? null, { project: this.projectTop(), loading: this.loading, shut: this.shut });
+    // Another machine: these are this Mac's skills, none offered there (a note says so).
+    return c && this.machine() && !["other", "shell"].includes(c.note) ? { ...c, items: [], note: "remote" } : c; // i18n: tech
   }
 
   // One entry per project: its repo's main-checkout space (else the first),
@@ -300,11 +335,13 @@ export default class NewThread extends View {
     this[field] = value;
     if (field === "worktree") this.chose = true;
     if (field === "type") this.typeChosen = true;
+    if (field === "agent" || field === "project") this.nudge = null;
     if (field === "project") {
       this.wantProject = null; // the person's pick wins over props.project
       this.error = null;
       this.trust = null;
       this.guessCheckout();
+      this.wantCheck = true; // a gesture: its machine's agents are asked at the next render (checkAgents)
     }
   }
 
@@ -452,6 +489,14 @@ export default class NewThread extends View {
     const p = this.projects()[this.project];
     if (!p) return;
     const [label, argv, prompt] = AGENTS[this.agent];
+    const machine = p.space.machine ?? null;
+    // Checked and not on that machine: said, not started.
+    if (installedOn(agentsOn[machine], argv) === false) {
+      this.nudge = "agent";
+      return;
+    }
+    // An agent on a machine that logs in as root: kt-confirm first, which starts it again (remote.js).
+    if (mustConfirm({ machine, argv, root: isRoot(machine), ok: this.rootOk })) return this.askRoot(p, argv);
     localStorage.setItem("agent", label);
     // Remembered only when the person picked it (a "#N" guess isn't a preference).
     if (this.chose) localStorage.setItem("worktree", this.worktree ? "yes" : "no");
@@ -520,9 +565,15 @@ export default class NewThread extends View {
         go(startCommand({ space: p.space.id, open: open?.id ?? null, path, machine: p.space.machine, argv, name: tab, task: message }));
         this.dismiss(cx);
       } catch (error) {
+        this.busy = false;
+        // The machine away (machines.js): refused at once, without the 10 min timeout; its notice.
+        if (isOffline(error)) {
+          this.error = { offline: isOffline(error) };
+          cx.notify();
+          return;
+        }
         const raw = String(error?.message ?? error);
         const kind = explain(raw);
-        this.busy = false;
         this.error = { title: tr(`gwm.${kind}.title`), text: tr(`gwm.${kind}.text`, { issue: spec.issue }), raw };
         cx.notify();
       }
@@ -551,6 +602,32 @@ export default class NewThread extends View {
         consequence: tr("trust.consequence"),
         label: tr("trust.label"),
         command: { name: "kt-new.trust" },
+      },
+    });
+  }
+
+  // An agent as root on another machine (remote.js mustConfirm): kt-confirm (danger), answering
+  // `kt-new.root`, which starts this launch again, confirmed for this machine and agent only.
+  askRoot(p, argv) {
+    const machine = p.space.machine;
+    this.rootAsk = okKey(machine, argv);
+    openOverlay({
+      mod: "kt-confirm",
+      kind: "dialog",
+      width: 1,
+      height: 1,
+      frame: "none",
+      props: {
+        title: tr("root.title", { machine }),
+        tone: "danger",
+        danger: true,
+        subtitle: [machine, "root", argv.join(" ")], // i18n: tech
+        facts: [[tr("fact.machine"), machine], [tr("fact.repo"), p.name], [tr("fact.agent"), argv.join(" ")]],
+        detail: tr("root.detail", { machine }),
+        warning: tr("root.warning"),
+        consequence: tr("root.consequence", { machine }),
+        label: tr("root.label"),
+        command: { name: "kt-new.root" },
       },
     });
   }
@@ -686,7 +763,10 @@ export default class NewThread extends View {
             .child(tr("trust.button"))),
       ]);
     }
-    if (this.error) return this.section(t, mark("circle-alert", t.ansi1), this.error.title, this.error.text, [this.error.raw && this.code(t, "kt-n-raw", [this.error.raw], 120)]);
+    // The machine away (machines.js): its state and what to do; back meanwhile: what Enter will do.
+    const away = this.error?.offline ? notice(t, this.error.offline, { id: "kt-n-offline" }) : null;
+    if (away) return away;
+    if (this.error && !this.error.offline) return this.section(t, mark("circle-alert", t.ansi1), this.error.title, this.error.text, [this.error.raw && this.code(t, "kt-n-raw", [this.error.raw], 120)]);
     if (!p) return this.section(t, mark("folder", t.dim), tr("noProject.title"), tr("noProject.text"));
     const [, argv, prompt] = AGENTS[this.agent];
     const name = this.name.trim();
@@ -729,7 +809,7 @@ export default class NewThread extends View {
     ]);
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const still = Boolean(shared("kt.reducedMotion"));
     const m = frame(this.motion, still);
@@ -739,6 +819,15 @@ export default class NewThread extends View {
     this.project = Math.min(this.project, Math.max(0, ps.length - 1));
     const p = ps[this.project];
     const git = Boolean(p?.git);
+    // A project picked (choose): its machine's agents, asked now (checkAgents: once, on another machine only).
+    if (this.wantCheck) {
+      this.wantCheck = false;
+      this.checkAgents(cx);
+    }
+    // Another machine: its name on the chips and the subtitle; as root, a line under the rows (remote.js).
+    const mach = p?.space.machine ?? null;
+    const asRoot = Boolean(mach) && isRoot(mach) === true && Boolean(AGENTS[this.agent][1]);
+    const rootBadge = (el) => el.child(div().flex_none().px(4).rounded(4).bg(alpha(t.blocked, "24")).text_color(t.blocked).text_size(9.5).child("ROOT")); // i18n: tech
     // A workflow leading the consigne owns the checkout (skills.js checkoutOf); else kt-new's pick.
     const own = git ? this.owner() : null;
     const away = own ? checkoutOf(own) === "worktree" : git && this.worktree;
@@ -773,12 +862,12 @@ export default class NewThread extends View {
       cx.notify();
     };
     const placeholder = tree ? (p ? tr("ph.issueIn", { name: p.name }) : tr("ph.issue")) : p ? tr("ph.threadIn", { name: p.name }) : tr("ph.thread");
-    const nudge = this.nudge === "issue" ? tr("nudge") : null;
+    const nudge = this.nudge === "issue" ? tr("nudge") : this.nudge === "agent" ? tr("nudge.agent", { agent: AGENTS[this.agent][0], machine: mach }) : null;
     // The head's band: the project's color (kt-projects' registry, else its space's), else the accent.
     const dark = settings().dark;
     const tint = p ? projectTint(p.space) : null;
     const band = tint ? (String(tint).startsWith("#") ? tint : t[tint] ?? t.accent) : t.accent;
-    const subtitle = [p?.name ?? tr("sub.noProject"), away ? tr("sub.worktree") : git ? tr("sub.current") : tr("sub.folder"), AGENTS[this.agent][0].toLowerCase()].join(" · ");
+    const subtitle = [p?.name ?? tr("sub.noProject"), ...(mach ? [mach] : []), away ? tr("sub.worktree") : git ? tr("sub.current") : tr("sub.folder"), AGENTS[this.agent][0].toLowerCase()].join(" · ");
     // The field typed in looks live (INSERT); in NORMAL they rest, without their caret.
     const typing = keyed && this.vim.insert;
     const focused = typing && this.field === "name";
@@ -817,7 +906,8 @@ export default class NewThread extends View {
       this.handle.focus();
       cx.notify();
     };
-    const flowRow = flows.length > 0 && row(tr("row.workflow"), this.segmented(t, "kt-n-wf", [
+    // On another machine: none (this Mac's presets, flow()).
+    const flowRow = flows.length > 0 && !mach && row(tr("row.workflow"), this.segmented(t, "kt-n-wf", [
       this.chip(t, "kt-n-wf-free", tr("flow.free"), !lit, setFlow(null)).tooltip(tr("flow.freeTip")),
       ...flows.map((e, i) => this.chip(t, `kt-n-wf${i}`, e.name.replace(/^me:/, ""), lit === e.name, setFlow(e.name)).tooltip(e.description || `/${e.name}`)),
     ], this.scrolls.flow), "flow");
@@ -853,7 +943,7 @@ export default class NewThread extends View {
       : comp.note === "loading" ? S.pulse(v_flex().id("kt-n-complete-sk").p(4).gap(1)
         .child(S.list(3, { h: 30, icon: 0, lines: [0.6], gap_y: 1 }))
         .child(div().px(10).py(6).font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("complete.loading"))))
-      : div().px(14).py(10).text_size(12).text_color(t.muted).child(tr(`complete.${comp.note}`, { q: comp.q, agent: AGENTS[this.agent][0] })));
+      : div().px(14).py(10).text_size(12).text_color(t.muted).child(tr(`complete.${comp.note}`, { q: comp.q, agent: AGENTS[this.agent][0], machine: mach })));
     // The modals' motion (ANIMATIONS.md, kt-confirm's): the veil fades in and the card rises 6 px,
     // MS.open, once, on the first size report, and goes back out on dismiss (motion.js sheet);
     // reduced motion: there at once.
@@ -955,7 +1045,9 @@ export default class NewThread extends View {
               .when(Boolean(compList), (el) => el.child(compList))
               .child(
                 v_flex()
-                  .child(row(tr("row.project"), this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space))), this.scrolls.project), "project"))
+                  .child(row(tr("row.project"), this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, chipLabel(x.name, x.space.machine), i === this.project, pick("project", i), spaceColor(t, x.space))
+                    // A machine that logs in as root: said on its chip (machines.js isRoot).
+                    .when(Boolean(x.space.machine) && isRoot(x.space.machine) === true, (el) => rootBadge(el).tooltip(tr("root.tip", { machine: x.space.machine })))), this.scrolls.project), "project"))
                   .when(git, (el) =>
                     el.child(
                       row(
@@ -974,9 +1066,20 @@ export default class NewThread extends View {
                     ),
                   )
                   .when(tree, (el) => el.child(row(tr("row.type"), this.segmented(t, "kt-n-ts", TYPES.map((n, i) => this.chip(t, `kt-n-t${i}`, n, i === this.type, pick("type", i))), this.scrolls.type), "type")))
-                  .child(row(tr("row.agent"), this.segmented(t, "kt-n-as", AGENTS.map(([n], i) => this.chip(t, `kt-n-a${i}`, n, i === this.agent, pick("agent", i)))), "agent")),
+                  .child(row(tr("row.agent"), h_flex().min_w(0).gap(8).items_center()
+                    // Checked on that machine and missing there: dimmed, said on hover (remote.js installedOn).
+                    .child(this.segmented(t, "kt-n-as", AGENTS.map(([n, argv], i) => this.chip(t, `kt-n-a${i}`, n, i === this.agent, pick("agent", i))
+                      .when(installedOn(agentsOn[mach], argv) === false, (el) => el.opacity(0.45).tooltip(tr("agent.missing", { machine: mach }))))))
+                    // Not checked yet on that machine: asked on this click (a command run there, once).
+                    .when(Boolean(mach) && !(mach in agentsOn), (el) => el.child(h_flex().id("kt-n-check").h(24).px(9).flex_none().items_center().rounded_full()
+                      .border(1).border_color(t.border).font_family(MONO).text_size(10.5).text_color(t.muted)
+                      .tooltip(tr("agents.checkTip", { machine: mach }))
+                      .when(this.checkingOn !== mach && reachable(mach), (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+                        .on_click((_e, cx) => { this.checkAgents(cx); cx.notify(); }))
+                      .child((this.checkingOn === mach ? tr("agents.checking") : tr("agents.check")).toUpperCase()))), "agent")),
               )
               .when(Boolean(nudge), (el) => el.child(div().px(4).text_size(12).text_color(t.blocked).child(nudge)))
+              .when(asRoot, (el) => el.child(div().px(4).text_size(12).text_color(t.blocked).child(tr("root.line", { machine: mach }))))
               .child(this.state(t, p, git, tree, spec)),
           )
           // The foot, under a dashed rule: the keys, the branch to be, Start.
