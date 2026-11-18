@@ -10,6 +10,9 @@
   // ══════════════════════════════════════════════════════════════════════
   // Theme & Appearance
   // ══════════════════════════════════════════════════════════════════════
+  "cursor_animation": {
+    "enabled": true
+  },
   "ssh_connections": [
     {
       "host": "main-vps",
@@ -191,6 +194,7 @@
     "enable_preview_multibuffer_from_code_navigation": true,
   },
   "project_panel": {
+    "folder_indicator": "icon",
     "default_width": 300,
     "dock": "right",
     "auto_open": {
@@ -210,7 +214,6 @@
     "auto_reveal_entries": true,
     "button": true,
     "file_icons": true,
-    "folder_icons": true,
     "show_diagnostics": "all",
     "scrollbar": {
       "show": "auto",
@@ -220,6 +223,7 @@
     },
   },
   "outline_panel": {
+    "folder_indicator": "icon",
     "auto_fold_dirs": true,
     "auto_reveal_entries": true,
     "button": true,
@@ -227,7 +231,6 @@
     "dock": "left",
     "expand_outlines_with_depth": 2,
     "file_icons": true,
-    "folder_icons": true,
     "git_status": true,
     "indent_guides": {
       "show": "always",
@@ -244,7 +247,7 @@
     "button": true,
     "collapse_untracked_diff": true,
     "default_width": 300,
-    "dock": "left",
+    "dock": "right",
     "fallback_branch_name": "dev",
     "scrollbar": {
       "show": "auto",
@@ -302,7 +305,7 @@
   // ══════════════════════════════════════════════════════════════════════
   "agent": {
     "new_thread_location": "new_worktree",
-    "dock": "right",
+    "dock": "left",
     "default_model": {
       "provider": "copilot_chat",
       "model": "claude-opus-4.6",
@@ -436,6 +439,8 @@
     },
     "claude-acp": {
       "default_config_options": {
+        "model": "opus[1m]",
+        "fast": false,
         "mode": "bypassPermissions"
       },
       "type": "registry",
@@ -447,7 +452,8 @@
           "bypassPermissions"
         ],
         "model": [
-          "default"
+          "default",
+          "opus[1m]"
         ]
       }
     },

@@ -102,6 +102,16 @@ Si `/sc:git` est disponible et adapté, délègue-lui le groupement. Sinon, stag
 
 Affiche `git log --oneline @{u}..HEAD` après chaque commit.
 
+### Étape 3 bis — Docs, premier passage, avant la PR (si le repo a un gate docs)
+
+Si le repo a un `check_command` pour `me:loop:docs-sync` (surface publique énumérable : `--help` d'un CLI, OpenAPI, liste de routes — voir la skill), lance la boucle **maintenant**, sur le code figé, sur la branche feature :
+
+```
+/me:loop:docs-sync
+```
+
+Commite ce qu'elle change en commit(s) `📝 docs(<scope>): …` à part. Les docs partent dans la PR dès le premier push : l'axe **spec** de la review les lit comme l'intention réalisée. Pas de gate pour ce repo → skip, dis-le, n'en invente pas.
+
 ### Étape 4 — Push + PR
 
 ```bash
@@ -155,7 +165,17 @@ Source de review **par défaut** : la boucle **`/me:loop:claude-review-pr`** (ag
 
 En **second plan**, l'utilisateur déclenche `/me:check-reviews [PR#]` **manuellement** selon le besoin (cascade interne cloud/CLI/bots).
 
-Puis, review propre, **`/me:loop:ci-until-green`** : il lit les checks du **SHA exact** de `HEAD` (pas « la branche »), refuse de conclure tant que quelque chose n'est pas poussé, et ne lit jamais « zéro check » comme une CI verte. Ne pas merger avant `CI_FAILED=0 CI_PENDING=0` avec `CI_TOTAL ≥ 1`.
+⛔ Pendant la boucle, **rien d'autre n'écrit dans l'arbre** — ni `docs-sync`, ni formatter, ni édition manuelle : les reviewers lisent l'arbre à chaque passe.
+
+### Étape 5 bis — Docs, second passage, seulement si la review a fait bouger le code
+
+```bash
+git log --oneline --since="$(gh pr view --json createdAt -q .createdAt)" -- . ':!docs' ':!**/*.md'
+```
+
+Non vide → relance `/me:loop:docs-sync`, commit `📝 docs(sync): …`, push. Vide → rien à faire, dis-le. Sautée si le repo n'a pas de gate docs (étape 3 bis).
+
+Puis, review propre et docs posées, **`/me:loop:ci-until-green`** : il lit les checks du **SHA exact** de `HEAD` (pas « la branche »), refuse de conclure tant que quelque chose n'est pas poussé, et ne lit jamais « zéro check » comme une CI verte. Ne pas merger avant `CI_FAILED=0 CI_PENDING=0` avec `CI_TOTAL ≥ 1`.
 
 ⚠️ La boucle review l'arbre du **répertoire courant** sur la **branche courante** : assure-toi de rester sur la branche de la PR (pas de retour sur `main`/`dev`) avant de la lancer.
 

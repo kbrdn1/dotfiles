@@ -13,11 +13,20 @@
 
 - **Cible** : Luxembourg. Frontalier depuis Nancy aujourd'hui, **installation prévue secteur Thionville**
   (Thionville → Luxembourg-Ville ≈ 30 min, contre ≈ 1 h 45 depuis Nancy — c'est un argument, il se dit).
-- **Disponibilité** : formulation affichée sur les CV et lettres = **« dès que possible, préavis
-  négociable »** (choix du 31/07/2026). Réalité à tenir en entretien : préavis négociable,
-  1 semaine dans l'idéal, **1 mois maximum**.
-- **Confidentialité** : l'employeur actuel n'est **pas** au courant. Rien de public, rien de commité
-  dans `kbrdn.dev` (repo GitHub public). Livrables dans iCloud `Travail/CV/`.
+- **Disponibilité** : Kylian a **quitté Jewely x Flippad en septembre 2026** (fin du CDI) ; le
+  portfolio affiche « Ouvert aux opportunités ». Formulation des CV depuis le 27/10/2026 :
+  **« Ouvert aux opportunités »** / « Open to opportunities » (reprise telle quelle du portfolio).
+  « Disponible immédiatement » serait plus fort mais n'est qu'une déduction : **à confirmer avec
+  Kylian** avant de l'écrire.
+  (Avant son départ : « dès que possible, préavis négociable », choix du 31/07/2026 — caduc.)
+- **Confidentialité** : la contrainte vis-à-vis de l'employeur est tombée avec son départ. Reste :
+  rien de candidature dans `kbrdn.dev` (repo GitHub public). Livrables dans iCloud `Travail/CV/`.
+  ⚠️ Depuis le commit d4448b3 du portfolio, le CV de base peut être proposé en téléchargement
+  public sur kbrdn.dev (URL en variable de dépôt) : tout ce qu'il contient devient public.
+- **Contact affiché** (27/10/2026, source : portfolio) : `hello@kbrdn.dev`, kbrdn.dev, github.com/kbrdn1.
+- **Ne jamais citer** (décision du 27/10/2026) : Rolex, Tudor, volumes d'affaires des clients,
+  parts ou pourcentages de commits. Les tableaux de commits ci-dessous restent comme preuve
+  interne, pas comme contenu de CV.
 - **Nationalité** : française — citoyen UE, aucune démarche de permis de travail.
 - **Diplômes réellement obtenus** : BAC+2 CCI Longwy EESC, Bachelor MNS.
   **Le cursus Ingénierie Informatique (2023-2025) n'a pas donné lieu à diplôme.**
@@ -56,9 +65,70 @@
 
 ---
 
-## Expérience — Jewely x Flippad (oct. 2023 → présent)
+## Expérience — Jewely x Flippad (oct. 2023 → sept. 2026)
 
-CDI depuis **déc. 2025**, précédemment alternance. *Source : i18n/locales/fr.ts du portfolio — « CDI (anciennement alternance) ».*
+Développeur Full Stack. CDI de **déc. 2025 à sept. 2026**, précédemment alternance (oct. 2023 →
+nov. 2025). *Source : i18n/locales/fr.ts du portfolio — « CDI (anciennement alternance) » ;
+`app/utils/career.ts` — `endDate: '2026-09'`.*
+
+### Projets — source portfolio (relevé du 27/10/2026)
+*Source : portfolio `kbrdn.dev-v2`, branche `feat/#86`, `i18n/locales/{fr,en}.ts`
+(`experiencePage.work.*`, `experiencePage.summaries.flippad`, `experiences.flippad.tasks`) et
+`app/utils/career.ts` (`PROJECTS`, dates et stacks). Le portfolio est la source la plus récente :
+en cas d'écart avec les sections plus bas, il fait foi.*
+
+Résumé portfolio : « Trois ans chez Jewely x Flippad, d'abord en alternance puis en CDI : un ERP
+pour les bijouteries de luxe, un configurateur de bijoux multi-marques, le back-office
+d'Assmat-Facile, la refonte de Fiches Pédagogiques, puis la reprise du e-commerce Jewely,
+déployés sur AWS et Heroku par GitHub Actions. » Intro : « Près de quatre ans en entreprise,
+d'abord en alternance ».
+
+- **Jewely E-commerce** (juin → sept. 2026) — reprise et évolutions d'un CMS e-commerce
+  multi-boutiques existant, jusqu'à son départ. Laravel 13, PHP 8.5, Vue 3, Inertia, TypeScript,
+  MySQL, Redis, Docker Swarm, GitHub Actions.
+  - Versioning SemVer, un changelog par version, procédure de release : **v1.0.0 → v1.11.1 en trois mois**.
+  - Montée vers **Laravel 13 et PHP 8.5**, Inertia 3 et Vite 7, passage à Bun.
+  - Fonctionnalités et moyens de paiement activables boutique par boutique ; intégration de l'API
+    de stock d'une marque horlogère (**ne pas nommer la marque**).
+  - Référencement récupéré (sitemap, redirections des anciennes URLs, données structurées),
+    tableau de bord en TypeScript strict, CI de tests.
+- **Fiches Pédagogiques** (oct. 2024 → sept. 2026) — chef de projet et développeur back-end.
+  Plateforme de ressources pédagogiques pour l'école primaire (petite section → CM2). Refaite de
+  zéro : **a créé l'API et en a écrit l'essentiel**, puis repris une large part du front en 2026.
+  Laravel 13, PHP 8.5, MySQL, Redis, Elasticsearch, Stripe, Nuxt 4, TypeScript, Go, AWS.
+  - Refonte **mise en production avec la v1.0.0 en mai 2026**, **63 versions** publiées avec
+    changelog sur l'API. (L'article de blog date la v1.0 du **front** à mars 2026 — les deux tiennent.)
+  - Migration de l'ancienne base : **plusieurs millions d'enregistrements en environ une heure**,
+    par un outil réécrit **en Go** (première preuve professionnelle de Go).
+  - Recherche Elasticsearch avec analyseur français, abonnements Stripe aux webhooks idempotents,
+    licences d'établissement et mandats administratifs.
+  - Double authentification, connexion Google, aperçus FFmpeg et PDF, montées vers Laravel 12 puis 13.
+- **Jewely Configurator** (avr. → oct. 2024) — conception et développement, **construit presque
+  seul**. Configurateur de bijoux multi-marques livré en plugin WordPress, prix en temps réel,
+  panier WooCommerce. Vue 3, Pinia, Panda CSS, Hono, Prisma, AWS Lambda, WooCommerce, Bun.
+  - Monorepo Bun de trois applications : plugin, back-office, API.
+  - Back-office des marques, collections, modèles, configurations, guides des tailles.
+  - API serverless Hono + Prisma sur AWS Lambda, reliée à l'API REST de WooCommerce.
+- **Assmat Facile** (janv. 2024 → juin 2026) — développeur full stack, reprise d'une base
+  existante. Symfony 5.4, PHP 8.1, Doctrine, MySQL, Stripe, React, TypeScript, Heroku.
+  - Back-office : utilisateurs, finance et remboursements, statistiques (CA, churn, paiements),
+    exports, rapport annuel.
+  - Abonnement par mandat administratif pour les relais petite enfance : bons de commande et
+    factures PDF, e-mails, tâches planifiées.
+  - Refonte du tunnel de paiement et des webhooks Stripe ; mise à jour annuelle des paramètres
+    réglementaires (SMIC, cotisations) jusqu'en 2026.
+- **Jewely ERP** (oct. 2023 → janv. 2024) — en alternance, premiers mois chez Flippad.
+  Laravel, Vue 3, Vuex, MariaDB, Sanctum, Alma, Docker, AWS.
+  - Endpoints de l'API : employés, fournisseurs, catégories, emplacements, images produits,
+    réparations, commandes.
+  - Écrans des commandes et des réparations ; paiement en plusieurs fois Alma, demandes de
+    paiement par SMS et e-mail.
+  - ⚠️ **Écart à trancher avec Kylian** : le portfolio borne l'ERP à oct. 2023 → janv. 2024, alors
+    que l'analyse git plus bas lui attribue le module d'import (déc. 2025 → mars 2026). Le bullet
+    « import à plugins » est retiré du CV de base tant que ce n'est pas réconcilié.
+- **Transverse** (`experiences.flippad.tasks`) : déploiement production et pré-production sur AWS
+  et Heroku via GitHub Actions ; montées de version des produits (Laravel 12 puis 13, PHP 8.5) et
+  de leurs dépendances ; versioning SemVer, changelogs par version et procédures de release.
 
 ### Fiches Pédagogiques — refonte complète
 *Source : `app/content/fr/blogs/fiches-pedagogiques.mdx`, article publié.*
@@ -97,8 +167,10 @@ CDI depuis **déc. 2025**, précédemment alternance. *Source : i18n/locales/fr.
 - Déploiement production et pré-production sur **AWS et Heroku via GitHub Actions** :
   API Gateway, Lambda, EC2, S3, CloudWatch.
 
-### Période CDI (déc. 2025 → aujourd'hui)
-*Source : analyse des dépôts git locaux, relevé du 25/07/2026. Tous les chiffres sont vérifiables
+### Période CDI (déc. 2025 → sept. 2026)
+*Source : analyse des dépôts git locaux, relevé du 25/07/2026 — **antérieur au portfolio**, qui fait
+foi en cas d'écart (versions, dates, Laravel 13). Chiffres de commits : preuve interne, jamais sur le CV.*
+*Tous les chiffres sont vérifiables
 par `git log --author=kylianb1@icloud.com`.*
 
 **2 980 commits depuis le 1er décembre 2025**, répartis sur six dépôts :
@@ -130,7 +202,7 @@ Un socle, trois boutiques de marque, deux en production.
   comme source unique, changelog tenu, propagation `dev → main → preprod` sur un monorepo multi-boutiques.
 - Synchronisation ERP → e-commerce : exclusion de marques, backfill, caractéristiques produit,
   l'ERP promu source de vérité.
-- Intégrations : Tudor e-Stock (+ tracking UTM), Instagram Graph API, microsites de marques
+- Intégrations (⛔ ne pas nommer la marque horlogère sur un CV/une lettre) : Tudor e-Stock (+ tracking UTM), Instagram Graph API, microsites de marques
   horlogères, i18n N-langues du branding, sitemaps, recherche, médias vidéo.
 - Analyses techniques rédigées : intégration Lyzi crypto, Tudor e-Stock, Apple/Google/Samsung Pay,
   évaluation de l'upgrade Laravel 13.
@@ -178,7 +250,7 @@ d'environnement (né d'un incident réel : `RefreshDatabase` lancé contre une b
 API JSON + daemon, mode workspace multi-repo. **1.0 fin juin 2026**, contrats machine gelés sous
 SemVer. libgit2 vendored. Remplace des wrappers bash par projet.
 
-### LazyCurl — client HTTP en TUI (Go)
+### LazyCurl — client HTTP en TUI (Go) — **archivé** (statut portfolio au 27/10/2026)
 Bubble Tea + Lipgloss. Layout multi-panneaux inspiré de Lazygit, navigation vim, collections
 versionnables avec le code (`.lazycurl/`), variables d'environnement `{{var}}`, scripting JavaScript
 (75+ méthodes d'API), assertions de test (16 matchers), import de commandes cURL, de specs
@@ -190,7 +262,23 @@ bootstrap en une commande. Open source.
 
 ### kbrdn.dev
 Portfolio et blog technique : Nuxt 4, Nuxt Content v3 (collections), i18n FR/EN, Nuxt UI v4,
-Tailwind 4, Docker multi-stage, CI/CD GitHub Actions vers Dokploy sur VPS.
+Tailwind 4, Docker multi-stage, image GHCR déployée par SSH sur VPS via GitHub Actions (plus de Dokploy).
+
+### Autres projets maintenus et contributions amont
+*Source : portfolio, `app/utils/career.ts` (`OPEN_SOURCE_PROJECTS`, `UPSTREAM`) et
+`experiencePage.openSource.*`, relevé du 27/10/2026. Statuts = libellés du site.*
+
+- **gwm** — publié ; canaux : crates.io, Homebrew, Scoop, aqua, Nix, .deb, .rpm, AUR ; site gwm.kbrdn.dev.
+- **vellum** (Rust, ratatui) — **en développement** : client SQL en TUI, diff à la GitHub pour chaque écriture.
+- **herdr-plugin-gwm** (Shell) — publié : plugin herdr qui pilote gwm.
+- **claude-crosstalk** (TypeScript) — publié : mod Claude pour lire et rejoindre les conversations
+  entre plusieurs sessions Claude Code.
+- **kbrdn-docs** (Astro) — publié : monorepo de documentation multi-produits, Astro Starlight + Bun workspaces.
+- **LazyCurl** (Go) — **archivé**.
+- Contributions amont : PR **fusionnées** — manifeste gwm dans `microsoft/winget-pkgs`, gwm dans
+  `aquaproj/aqua-registry`, gwm dans `ratatui/awesome-ratatui` ; PR **en revue** — paquet gwm pour
+  `NixOS/nixpkgs` ; issues signalées — `folke/snacks.nvim`, `steipete/CodexBar`,
+  `zenbu-labs/terminal-browser`, `pdphilip/elasticlens`.
 
 ---
 
@@ -249,11 +337,14 @@ Orthographe : « jeux vidéo » — *vidéo* est invariable en apposition. Ne pa
 
 ## Accroches — variantes
 
-**Défaut (full stack)**
-> Développeur full stack depuis 2022, en CDI chez Jewely x Flippad après deux ans d'alternance dans
-> la même équipe. Project lead et architecte backend de la refonte complète d'une plateforme
-> éducative : 17 mois, 3 développeurs, ~4 000 commits côté API. Du TypeScript/Vue au Laravel/Node
-> jusqu'au déploiement AWS.
+> ⚠️ Variantes rédigées avant le départ de Flippad (sept. 2026) : toute mention « en CDI chez… »
+> se met au passé avant usage. La variante par défaut ci-dessous est à jour (27/10/2026).
+
+**Défaut (full stack)** — celle de `profil.fr.json`
+> Développeur full stack, du code à la production : près de quatre ans en entreprise, dont trois
+> chez Jewely x Flippad (alternance puis CDI, jusqu'en septembre 2026). Chef de projet et
+> développeur back-end de la refonte de Fiches Pédagogiques, puis reprise du e-commerce Jewely.
+> TypeScript, Vue, Nuxt et AWS ; à côté, des outils open source en Rust et en Go.
 
 **Backend / architecture**
 > Architecte backend et project lead d'une refonte de plateforme menée sur 17 mois : une centaine

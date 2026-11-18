@@ -110,6 +110,15 @@ echo "DOCS_MISSING=$MISS"
 | lib TS publiée | exports publics | `jq '.exports' package.json`, ou l'API extractor du projet |
 | config à clés | clés reconnues | le parseur de config du projet, ou son schéma |
 
+## Où il se place dans les workflows (depuis 2026-09-19)
+
+Deux passages, dans `git-flow-worktree` / `git-flow-branch` et leurs variantes spec :
+
+1. **Brouillon** — après l'implémentation, **avant la PR**, sur le code figé : les docs partent dans la PR dès le premier push, l'axe **spec** de `me:loop:claude-review-pr` les lit comme l'intention réalisée (un écart doc/code devient un finding).
+2. **Final** — après la review, **seulement si le code a bougé** depuis l'ouverture de la PR : `git log --oneline --since="$(gh pr view --json createdAt -q .createdAt)" -- . ':!docs' ':!**/*.md'` non vide → relancer, commit `📝 docs(sync): …`, push ; vide → rien.
+
+⛔ **Jamais pendant la review** : les deux reviewers lisent l'arbre du worktree à chaque passe ; une écriture concurrente change leur base, et son résultat serait de toute façon réécrit au final. Un repo sans `check_command` saute les deux passages **en le disant** — pas de gate inventé.
+
 ## Cycle
 
 - **Discovery** :

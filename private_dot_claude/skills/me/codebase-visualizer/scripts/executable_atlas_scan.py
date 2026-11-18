@@ -28,7 +28,7 @@ from pathlib import Path
 
 EXT_LANG = {
     ".rs": "rust", ".ts": "ts", ".tsx": "ts", ".js": "ts", ".jsx": "ts", ".mjs": "ts",
-    ".py": "python", ".go": "go", ".php": "php",
+    ".py": "python", ".go": "go", ".php": "php", ".vue": "ts",
 }
 SKIP_DIRS = {"target", "node_modules", "vendor", "dist", "build", ".git", "__pycache__"}
 # une ligne de commentaire par langage — sert à séparer import réel et mention de doc
@@ -60,6 +60,13 @@ EXT_REF = {
     "php": re.compile(r"^\s*use\s+(?:function\s+|const\s+)?([A-Z]\w*(?:\\[A-Z]\w*){0,2})\\", re.M),
 }
 RUST_STD = {"crate", "self", "super", "std", "core", "alloc", "proc_macro"}
+# `Path.with_suffix("")`/`.stem` coupent *une* extension : `user.d.ts` devient
+# `user.d`, et les 443 refs `~/types/...` du front ne résolvaient plus rien.
+CODE_EXT = re.compile(r"\.d\.ts$|\.(?:rs|ts|tsx|js|jsx|mjs|py|go|php|vue)$")
+
+
+def no_ext(p: str) -> str:
+    return CODE_EXT.sub("", p)
 # Les binaires que le code appelle : une dépendance de *runtime*, invisible de
 # tout manifeste, et souvent la plus structurante (gwm n'édite aucun token
 # parce qu'il shelle `gh`).
@@ -142,14 +149,14 @@ def module_name(path: str, lang: str, roots: dict[str, str] | None = None) -> st
                 tail = parts[len(pre):]
                 if not tail:
                     return roots[dirp]
-                return "::".join([roots[dirp].replace("\\", "::"), *tail[:-1], Path(tail[-1]).stem])
+                return "::".join([roots[dirp].replace("\\", "::"), *tail[:-1], no_ext(tail[-1])])
     for root_dir in ("src", "lib", "app", "internal", "pkg"):
         if parts and parts[0] == root_dir:
             parts = parts[1:]
             break
     if not parts:
         return p.stem
-    stem = Path(parts[-1]).stem
+    stem = no_ext(parts[-1])
     head = parts[:-1]
     if stem in ("mod", "index", "__init__"):  # le fichier EST son dossier
         return "::".join(head) if head else stem
@@ -201,16 +208,37 @@ def rust_refs(blob: str, crate: str, module: str) -> list[str]:
     return out
 
 
-def resolve(ref: str, index: dict[str, str], lang: str, from_path: str) -> str | None:
+# Alias de bundler → chemin depuis la racine. Nuxt/Vite : `~` et `@` pointent le
+# srcDir (`app/` en Nuxt 4), `~~` et `@@` la racine du dépôt. Sans eux, 808 des
+# refs du front tombaient dans la boucle de pop et se résolvaient sur un barrel
+# parent — ou nulle part (52 arêtes pour 1016 modules).
+TS_ALIAS = (("~~/", ""), ("@@/", ""), ("~/", "app/"), ("@/", "app/"))
+
+
+def by_path(cand: str, index: dict[str, str], rmap: dict[str, str] | None = None) -> str | None:
+    """Chemin → module, en essayant `cand` puis `cand/index`. Le barrel
+    (`composables/index.ts` → module `composables`) est partout en TS : sans le
+    second essai, `from './composables'` ne résout jamais."""
+    cand = no_ext(Path(cand).as_posix())
+    if rmap is None:
+        rmap = {no_ext(Path(p).as_posix()): n for n, p in index.items()}
+    return rmap.get(cand) or rmap.get(f"{cand}/index")
+
+
+def resolve(ref: str, index: dict[str, str], lang: str, from_path: str,
+            rmap: dict[str, str] | None = None) -> str | None:
     """Résout une référence vers le module le plus spécifique qui existe."""
     if lang in ("ts", "python") and ref.startswith("."):
         base = Path(from_path).parent
         cand = os.path.normpath(base / ref.lstrip(".").replace(".", "/")) if lang == "python" \
             else os.path.normpath(base / ref)
-        for name, path in index.items():
-            if Path(path).with_suffix("").as_posix() == Path(cand).as_posix():
-                return name
-        return None
+        return by_path(cand, index, rmap)
+    if lang == "ts":
+        if ref.startswith("#"):
+            return None            # `#app`, `#imports` : virtuels Nuxt, hors dépôt
+        for pre, sub in TS_ALIAS:
+            if ref.startswith(pre):
+                return by_path(sub + ref[len(pre):], index, rmap)
     parts = ref.replace("/", "::").replace("\\", "::").replace(".", "::").split("::")
     while parts:  # préfixe le plus long d'abord — corrige la granularité du grep naïf
         cand = "::".join(parts)
@@ -484,6 +512,10 @@ def scan(root: Path, rev: str | None) -> dict:
     modules: dict[str, dict] = {}
     edges: dict[tuple[str, str], str] = {}
     syms: dict[tuple[str, str], set[str]] = {}
+    # Le total d'arêtes ne dit pas si la résolution marche ; la liste de ce qui
+    # rate, si. Un `~/` qui traîne là = le résolveur d'alias ne prend pas.
+    missed: Counter = Counter()
+    rmap = {no_ext(Path(p).as_posix()): n for n, p in index.items()}
 
     for name, path in index.items():
         text = read(root, path, rev)
@@ -500,8 +532,12 @@ def scan(root: Path, rev: str | None) -> dict:
             for ref in refs:
                 if not ref:
                     continue
-                target = resolve(ref, index, lang, path)
-                if not target or target == name:
+                target = resolve(ref, index, lang, path, rmap)
+                if not target:
+                    if kind == "import":
+                        missed[ref.split("/")[0].split("::")[0]] += 1
+                    continue
+                if target == name:
                     continue
                 key = (name, target)
                 # un import réel écrase toujours une simple mention de doc
@@ -557,6 +593,7 @@ def scan(root: Path, rev: str | None) -> dict:
                   for (f, t), s in sorted(edges.items())],
         "stats": stats(root, paths, rev, modules),
         "git": git_meta(root, rev),
+        "missed": dict(missed.most_common(20)),
     }
     data["stack"] = stack(root, rev, paths, data, bins, mans)
     return data
@@ -768,6 +805,98 @@ def inject(html_path: Path, data: dict, prev: dict | None) -> int:
 # --------------------------------------------------------------------------- stack → atlas
 
 
+# --------------------------------------------------------------- forge & changelog
+
+
+def gh_json(args: list[str], root: Path):
+    """`gh` en JSON, ou None. Best-effort : pas de gh, pas de remote GitHub, pas
+    de réseau ou dépôt privé sans droits — l'atlas doit rester constructible."""
+    r = subprocess.run(["gh", *args], cwd=root, capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    try:
+        return json.loads(r.stdout or "null")
+    except json.JSONDecodeError:
+        return None
+
+
+def age_days(iso: str) -> int:
+    from datetime import datetime, timezone
+    try:
+        d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return max(0, (datetime.now(timezone.utc) - d).days)
+    except (ValueError, TypeError):
+        return 0
+
+
+def forge(root: Path, owner) -> dict:
+    """Issues et PR ouvertes, PR rattachées aux blocs qu'elles touchent.
+
+    Le rattachement est ce qui distingue cette section d'un `gh pr list` : il
+    demande un appel par PR (`--json files`), donc il est plafonné. Une issue
+    n'a pas de fichiers ; elle hérite des blocs de la PR qui la référence, et
+    reste sans bloc sinon — ce qui est l'information, pas un trou."""
+    issues = gh_json(["issue", "list", "--state", "open", "--limit", "40",
+                      "--json", "number,title,labels,createdAt,url"], root) or []
+    prs = gh_json(["pr", "list", "--state", "open", "--limit", "25",
+                   "--json", "number,title,isDraft,createdAt,url,body,headRefName"], root) or []
+    out_prs = []
+    for pr in prs[:25]:
+        files = gh_json(["pr", "view", str(pr["number"]), "--json", "files"], root) or {}
+        paths = [f["path"] for f in (files.get("files") or [])]
+        blocks = sorted({b for p in paths if (b := owner(p))})
+        closes = sorted({int(x) for x in re.findall(
+            r"(?:closes|fixes|resolves)\s+#(\d+)", pr.get("body") or "", re.I)})
+        out_prs.append({"n": pr["number"], "title": pr["title"], "draft": int(pr["isDraft"]),
+                        "age": age_days(pr["createdAt"]), "files": len(paths),
+                        "by": blocks, "closes": closes, "url": pr["url"]})
+    by_issue: dict[int, list[str]] = {}
+    for pr in out_prs:
+        for n in pr["closes"]:
+            by_issue.setdefault(n, []).extend(pr["by"])
+    out_issues = [{"n": i["number"], "title": i["title"],
+                   "labels": [l["name"] for l in (i.get("labels") or [])][:4],
+                   "age": age_days(i["createdAt"]), "url": i["url"],
+                   "by": sorted(set(by_issue.get(i["number"], [])))} for i in issues]
+    return {"issues": out_issues, "prs": out_prs}
+
+
+CL_SECTION = re.compile(r"^###?\s+(.+?)\s*$", re.M)
+CL_ITEM = re.compile(r"^\s*[-*]\s+", re.M)
+
+
+def changelogs(root: Path, rev: str | None, paths: list[str]) -> list[dict]:
+    """Un résumé par version depuis `changelogs/*.md`, sinon depuis CHANGELOG.md.
+
+    On ne recopie pas le changelog — git l'a déjà. On garde ce qu'une carte peut
+    montrer : la cadence des versions et le poids relatif de chaque rubrique."""
+    files = sorted(p for p in paths
+                   if re.match(r"changelogs?/v?\d+\.\d+\.\d+\.md$", p, re.I))
+    out = []
+    for p in files:
+        txt = read(root, p, rev)
+        ver = re.search(r"(\d+\.\d+\.\d+)", p).group(1)
+        date = (re.search(r"(\d{4}-\d{2}-\d{2})", txt) or [None, ""])[1] if re.search(
+            r"(\d{4}-\d{2}-\d{2})", txt) else ""
+        secs, cur = {}, None
+        for line in txt.splitlines():
+            if m := re.match(r"^###?\s+(.+?)\s*$", line):
+                cur = m.group(1).strip()[:38]
+                if re.match(r"^v?\d", cur):        # un titre de version, pas une rubrique
+                    cur = None
+                elif cur:
+                    secs.setdefault(cur, 0)
+            elif cur and re.match(r"^\s*[-*]\s+", line):
+                secs[cur] += 1
+        # une rubrique vide est un titre de structure, pas une rubrique
+        secs = {k: v for k, v in secs.items() if v}
+        out.append({"v": ver, "date": date, "path": p,
+                    "n": sum(secs.values()),
+                    "secs": dict(sorted(secs.items(), key=lambda kv: -kv[1])[:8])})
+    out.sort(key=lambda x: [int(n) for n in x["v"].split(".")], reverse=True)
+    return out[:14]
+
+
 def atlas_blocks(html_path: Path) -> list[tuple[str, list[str], list[str]]]:
     """(id, chemins gardés, chemins exclus) de chaque bloc, lus dans le DATA."""
     out = []
@@ -779,7 +908,8 @@ def atlas_blocks(html_path: Path) -> list[tuple[str, list[str], list[str]]]:
     return out
 
 
-def stack_for(html_path: Path, data: dict) -> str:
+def stack_for(html_path: Path, data: dict, root: Path, rev: str | None,
+               paths: list[str], with_gh: bool = True) -> str:
     """`const STACK = {…}` prêt à coller : le dossier technique, plus le lien
     mesuré entre chaque dépendance et les blocs du dessin qui l'importent.
 
@@ -849,6 +979,11 @@ def stack_for(html_path: Path, data: dict) -> str:
         ({"n": n, "by": sorted(b)} for n, b in canon.items()
          if len(b) > 1 and n not in declared),
         key=lambda x: (-len(x["by"]), x["n"]))[:12]
+    # Ce que git sait et que le code ne dit pas : ce qui est ouvert, et le rythme
+    # des versions. Rattaché aux blocs quand c'est mesurable.
+    st["changelog"] = changelogs(root, rev, paths)
+    if with_gh:
+        st["forge"] = forge(root, owner)
     return "const STACK = " + json.dumps(st, indent=2, ensure_ascii=False) + ";"
 
 
@@ -869,6 +1004,8 @@ def main() -> int:
     ap.add_argument("--churn", metavar="SINCE", default="12 months ago",
                     help="fenêtre du churn git (défaut : 12 months ago)")
     ap.add_argument("--stack", action="store_true", help="n'imprimer que le dossier technique")
+    ap.add_argument("--no-gh", action="store_true",
+                    help="ne pas interroger gh (issues/PR) — un appel par PR, c'est le point lent")
     ap.add_argument("--stack-for", type=Path, metavar="ATLAS",
                     help="dossier technique en `const STACK = {…}`, deps reliées aux blocs de cet atlas")
     a = ap.parse_args()
@@ -885,7 +1022,8 @@ def main() -> int:
     prev = scan(a.root, a.diff) if a.diff else None
 
     if a.stack_for:
-        print(stack_for(a.stack_for, data))
+        print(stack_for(a.stack_for, data, a.root, a.rev,
+                        list_files(a.root, a.rev), not a.no_gh))
         return 0
 
     if a.stack:

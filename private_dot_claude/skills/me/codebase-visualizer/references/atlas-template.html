@@ -65,6 +65,12 @@ button{cursor:pointer}
 
 /* ---------- shell ---------- */
 #shell{display:flex;flex:1 1 auto;min-height:0}
+/* Poignées de redimensionnement. 4px de large, zone de saisie élargie par un
+   ::after — 4px se rate à la souris, 12px se voit dans la mise en page. */
+.rsz{flex:0 0 4px;position:relative;cursor:col-resize;background:transparent;z-index:5}
+.rsz::after{content:"";position:absolute;inset:0 -4px;}
+.rsz:hover,.rsz.on{background:var(--accent-dim)}
+.rsz:focus-visible{outline:1px solid var(--accent);outline-offset:-1px}
 
 /* ---------- sidebar ---------- */
 #side{width:216px;flex:0 0 216px;border-right:1px solid var(--line);overflow-y:auto;padding:0 0 24px;display:flex;flex-direction:column}
@@ -84,6 +90,21 @@ button{cursor:pointer}
 .row .sz{font-size:8.5px;color:var(--soft);white-space:nowrap}
 .row.on .sz{color:var(--text)}
 .row .hub{color:var(--special);font-size:9px}
+#doc .kv .k a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent-dim)}
+#doc .kv .k a:hover{border-bottom-color:var(--accent)}
+#doc .pats{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:20px}
+#doc .pat{margin:0;border:1px solid var(--rule);background:var(--paper2);padding:10px 12px 12px}
+#doc .pat figcaption{font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+#doc .pat .stat{font-size:8.5px;color:var(--soft);font-variant-numeric:tabular-nums;margin:4px 0 6px}
+#doc .pat .who{display:flex;flex-wrap:wrap;gap:4px}
+#doc .pat .note{font-size:9.5px;color:var(--text-dim);line-height:1.55;margin:8px 0 0;border-top:1px solid var(--rule);padding-top:7px}
+#doc .relbar{display:inline-flex;align-items:center;justify-content:flex-end;height:14px;
+  background:var(--accent-dim);border:1px solid var(--accent);margin-right:6px;padding:0 4px}
+#doc .relbar i{font-style:normal;font-size:8px;color:var(--accent-dark)}
+#doc .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin:0 0 18px}
+#doc .tile{background:var(--paper2);padding:9px 11px;display:flex;flex-direction:column;gap:3px}
+#doc .tile .k{font-size:8px;letter-spacing:.13em;text-transform:uppercase;color:var(--soft)}
+#doc .tile .v{font-size:12px;color:var(--text);font-variant-numeric:tabular-nums}
 #legend{margin:14px 8px 0;padding:9px 10px;border:1px solid var(--rule);font-size:8.5px;color:var(--soft);line-height:1.7}
 #legend b{color:var(--text-dim);font-weight:400}
 #legend .sw{display:inline-block;width:14px;border-top:1px solid var(--line);vertical-align:middle;margin-right:5px}
@@ -164,6 +185,9 @@ mark{background:var(--accent-dim);color:var(--accent);padding:0 3px}
 #flow h2{font-size:9px;letter-spacing:.13em;color:var(--soft);text-transform:uppercase;margin:0 0 8px;font-weight:400}
 #flow .card{border:1px solid var(--rule);background:var(--paper2);margin-bottom:16px}
 #flow .head{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--rule)}
+#flow .head button[data-scope]{margin-left:6px}
+#flow .head button[data-scope]:first-of-type{margin-left:auto}
+#flow .head button.on{background:var(--accent);border-color:var(--accent);color:var(--bg)}
 #flow .head button{margin-left:auto;border:1px solid var(--line);padding:2px 8px;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase}
 #flow .head button:hover{background:var(--accent-dim);border-color:var(--accent);color:var(--accent-dark)}
 #flow .render{position:relative;overflow:hidden;height:64vh;min-height:340px;cursor:grab;
@@ -291,6 +315,7 @@ mark{background:var(--accent-dim);color:var(--accent);padding:0 3px}
         <div><span style="color:var(--special)">◆</span> hub / dépendance mutuelle</div>
       </div>
     </div>
+    <div class="rsz" id="rszL" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize sidebar"></div>
     <div id="stage">
       <svg id="svg" role="img" aria-label="Carte isométrique du dépôt"></svg>
       <button id="back">← Come back out</button>
@@ -300,6 +325,7 @@ mark{background:var(--accent-dim);color:var(--accent);padding:0 3px}
       <div id="payload"></div>
       <div id="hints">Hover to read · Click to pin · Double-click to go inside · Drag to pan · Scroll to zoom</div>
     </div>
+    <div class="rsz" id="rszR" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Resize panel"></div>
     <div id="panel">
       <div id="tabs"><button class="on" data-t="what">What it does</button><button data-t="how">How it's built</button></div>
       <div id="body"></div>
@@ -736,6 +762,29 @@ const I18N = { fr: {
     legend: ["<b>hauteur</b> = lignes de code", "<b>dalle plate</b> = stockage",
              "import (compilation)", "flux à l'exécution", "relation de conception",
              "donnée en transit", "hub / dépendance mutuelle"],
+    legendDiff: "a grossi · a rétréci · nouveau depuis la révision comparée",
+    openWork: "Travail ouvert", noBlock: "aucun bloc touché pour l'instant",
+    patternsTitle: "Patrons de structure",
+    patternsHint: "Détectés depuis le graphe mesuré, pas écrits : un registre est un petit bloc au fan-out démesuré que ses propres cibles réimportent ; une fondation est un bloc dont tout dépend et qui ne dépend presque de rien ; une inversion est une arête qui remonte l'ordre des couches. La phrase sous un schéma, quand il y en a une, est la part que le chiffre ne dit pas.",
+    pattern_registry: "Registre", pattern_foundation: "Fondation partagée",
+    pattern_inversion: "Inversion de couche", pattern_crossroads: "Carrefour",
+    median: "médiane du dépôt", inRing: "dans le plus grand anneau",
+    outImports: "imports sortants", inImports: "modules l'importent", perKLoc: "pour 1k lignes",
+    andBack: "et retour",
+    groupFlow: "Entre les sections", blocks: "blocs", imports: "imports",
+    groupNote: "Un nœud par section du rail, une arête par frontière réellement franchie, épaisse comme le nombre d'imports qui la traversent. Le violet remonte — une section qui dépend d'une autre placée avant elle.",
+    scopeMain: "Chemin principal", scopeFull: "Graphe complet",
+    openWorkHint: "Issues et pull requests ouvertes, lues dans la forge. Une PR est rattachée aux blocs où tombent les fichiers qu'elle modifie — ce qu'une simple liste ne dit pas ; une issue hérite des blocs de la PR qui la ferme.",
+    releases: "Versions", releasesHint: "Une ligne par fichier de version sous changelogs/. La barre est le nombre d'entrées, les puces sont les rubriques — la forme d'une release, pas son texte.",
+    legendMatrix: ["<b>ligne → colonne</b> = la ligne importe la colonne",
+                   "sens déclaré", "sens inverse — sous la diagonale, c'est un cycle",
+                   "mutuel : les deux sens mesurés"],
+    legendHotspots: ["<b>x</b> = commits-fichiers sur la fenêtre",
+                     "<b>y</b> = lignes de code",
+                     "<b>cercle</b> = au-dessus de la médiane sur les deux axes"],
+    legendDoc: ["<b>recalculé</b> depuis les arêtes que la carte dessine",
+                "<b>cliquer une puce</b> pour sauter sur ce bloc",
+                "rien sur ces deux pages n'est de la prose écrite à la main"],
     talksTo: "Parle à", calledBy: "Appelé par", reach: "Portée", growth: "Croissance",
     source: "Source", inside: "à l'intérieur", pinned: "épinglé", whatsInThere: "Ce qu'il y a dedans",
     stepAfter: "L'étape suivante", step: (i, n) => `Étape ${i} / ${n}`,
@@ -1703,7 +1752,12 @@ const STACK = {
 /* ==================================================================== */
 
 const SVGNS = "http://www.w3.org/2000/svg";
-const KX = 26, KY = 14.3, KH = 16;
+/* KY/KX fixe l'angle du losange, donc son rapport largeur/hauteur : à 14.3/26
+   (0.55) une grille carrée sort 1.8× plus large que haute, alors qu'un stage
+   16:9 moins ses deux panneaux fait ~1.5. Le fit était donc toujours borné par
+   la largeur et la ville rétrécissait. 16.5/26 (0.63, ~32°) reste isométrique
+   à l'œil et remplit le cadre. */
+const KX = 26, KY = 16.5, KH = 16;
 const proj = (gx, gy, h = 0) => [(gx - gy) * KX, (gx + gy) * KY - h * KH];
 const el = (n, a = {}) => { const e = document.createElementNS(SVGNS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
 const byId = Object.fromEntries(STRUCTURES.map(s => [s.id, s]));
@@ -1724,7 +1778,7 @@ const HUB = (() => {
 })();
 const isHub = id => FANIN(id) >= HUB || FANOUT(id) >= HUB;
 
-const state = { sel: null, pin: null, inside: null, trace: -1, tab: "what",
+const state = { sel: null, pin: null, inside: null, trace: -1, tab: "what", flowScope: "main",
                 tx: 0, ty: 0, s: 1, flowing: true, diff: false, view: 'iso', lang: 'en' };
 
 const svg = document.getElementById("svg");
@@ -1809,7 +1863,7 @@ function build() {
   world = el("g", { id: "world" });
   const ground = { iso: "url(#grid)", hotspots: "url(#gridSquare)", matrix: "none" }[state.view];
   if (ground !== "none")
-    world.appendChild(el("rect", { x: -4000, y: -4000, width: 8000, height: 8000, fill: ground }));
+    world.appendChild(el("rect", { id: "ground", x: -4000, y: -4000, width: 8000, height: 8000, fill: ground }));
   svg.appendChild(world);
   if (state.view === "matrix") buildMatrix();
   else if (state.view === "hotspots") buildHotspots();
@@ -1930,6 +1984,20 @@ function applyTransform() {
   const r = stage.getBoundingClientRect();
   world.setAttribute("transform", `translate(${r.width / 2 + state.tx} ${r.height / 2 + state.ty}) scale(${state.s})`);
 }
+/* La bbox de `world` inclut la dalle de fond de 8000×8000 : la mesurer telle
+   quelle ramène toujours le zoom au plancher. On unit les enfants réels. */
+function contentBBox() {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const c of world.children) {
+    if (c.id === "ground") continue;
+    const r = c.getBBox();
+    if (!r.width && !r.height) continue;
+    x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y);
+    x1 = Math.max(x1, r.x + r.width); y1 = Math.max(y1, r.y + r.height);
+  }
+  return Number.isFinite(x0) ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+                             : { x: 0, y: 0, width: 0, height: 0 };
+}
 function fit() {
   const r = stage.getBoundingClientRect();
   if (state.view === "matrix") {
@@ -1938,9 +2006,17 @@ function fit() {
   } else if (state.view === "hotspots") {
     state.tx = 0; state.ty = 0;
     state.s = Math.min(1.4, Math.max(.5, Math.min(r.width / 820, r.height / 560)));
+  } else if (state.inside) {
+    state.tx = 0; state.ty = -60; state.s = 1.05;
   } else {
-    state.tx = 0; state.ty = state.inside ? -60 : -Math.min(160, r.height * .22);
-    state.s = state.inside ? 1.05 : Math.min(1.25, Math.max(.58, r.width / 1240));
+    const b = contentBBox();
+    const padX = 56, padY = 76;          // marge + la barre de hints en bas
+    state.s = b.width && b.height
+      ? Math.min(1.25, Math.max(.3, Math.min((r.width - padX) / b.width,
+                                             (r.height - padY) / b.height)))
+      : 1;
+    state.tx = -(b.x + b.width / 2) * state.s;
+    state.ty = -(b.y + b.height / 2) * state.s;
   }
   applyTransform();
 }
@@ -2026,7 +2102,21 @@ function paint() {
     <div>${ins.map(e => pill(e, "in")).join("") ||
       (s.fanIn ? `<span class="pill">${t("noEdge")(s.fanIn)}</span>`
                : `<span class="pill">${t("entrySurface")}</span>`)}</div>
-    ${hub}${deltaLine(s)}${fileLinks(s)}`;
+    ${hub}${deltaLine(s)}${openWork(s)}${fileLinks(s)}`;
+}
+
+/* Les issues et PR ouvertes qui touchent ce bloc. Le rattachement vient des
+   fichiers de la PR, pas du titre : c'est ce qui le distingue d'un `gh pr list`. */
+function openWork(s) {
+  const F = (typeof STACK === "object" && STACK && STACK.forge) || null;
+  if (!F) return "";
+  const prs = (F.prs || []).filter(x => (x.by || []).includes(s.id));
+  const iss = (F.issues || []).filter(x => (x.by || []).includes(s.id));
+  if (!prs.length && !iss.length) return "";
+  const row = (x, k) => `<a class="pill" href="${x.url}" target="_blank" rel="noopener" ` +
+    `title="${esc(x.title)}"><b>${k}${x.n}</b> ${esc(x.title.slice(0, 38))}</a>`;
+  return `<div class="sec">${t("openWork")}</div><div>` +
+    prs.map(x => row(x, "PR #")).join("") + iss.map(x => row(x, "#")).join("") + `</div>`;
 }
 
 /* --- rail ---------------------------------------------------------------- */
@@ -2165,7 +2255,8 @@ document.getElementById("zout").onclick = () => { state.s = Math.max(.3, state.s
 document.getElementById("btnFlow").onclick = e => {
   state.flowing = !state.flowing;
   state.flowing ? svg.unpauseAnimations() : svg.pauseAnimations();
-  e.target.textContent = state.flowing ? "Pause" : "Resume";
+  e.target.textContent = state.flowing ? t("pause") : t("resume");
+  paintLegend();
 };
 document.getElementById("btnTrace").onclick = () => {
   state.trace = (state.trace + 1) % TRACE.length;
@@ -2184,6 +2275,7 @@ if (REPO.prevRev) {
     document.getElementById("hints").textContent = state.diff
       ? `Diff vs ${REPO.prevRev} · green grew · red shrank · orange is new`
       : "Hover to read · Click to pin · Double-click to go inside · Drag to pan · Scroll to zoom";
+    paintLegend();
     sync();
   };
 } else btnDiff?.remove();
@@ -2232,6 +2324,29 @@ const UI_EN = {
   legend: ["<b>height</b> = lines of code", "<b>flat slab</b> = storage",
            "import (compile time)", "runtime flow", "design relationship",
            "data in transit", "hub / mutual dependency"],
+  legendDiff: "grew · shrank · new since the compared revision",
+  openWork: "Open work", noBlock: "no block touched yet",
+  patternsTitle: "Structural patterns",
+  patternsHint: "Detected from the measured graph, not written down: a registry is a small block with an outsized fan-out that its own targets import back; a foundation is a block everything depends on that depends on almost nothing; an inversion is an edge that climbs the layer order. The sentence under a diagram, when there is one, is the part a number cannot say.",
+  pattern_registry: "Registry", pattern_foundation: "Shared foundation",
+  pattern_inversion: "Layer inversion", pattern_crossroads: "Crossroads",
+  median: "repo median", inRing: "inside the largest ring",
+  outImports: "imports out", inImports: "modules import it", perKLoc: "per 1k lines",
+  andBack: "and back",
+  groupFlow: "Between the sections", blocks: "blocks", imports: "imports",
+  groupNote: "One node per section of the rail, one edge per boundary actually crossed, thick with the number of imports that cross it. Purple runs backwards — a section that depends on one earlier in the order.",
+  scopeMain: "Main path", scopeFull: "Full graph",
+  openWorkHint: "Open issues and pull requests, read from the forge. A pull request is attached to the blocks its changed files land in — which is what a plain listing cannot tell you; an issue inherits the blocks of the pull request that closes it.",
+  releases: "Releases", releasesHint: "One row per version file under changelogs/. The bar is the number of entries, the chips are the sections — the shape of a release, not its text.",
+  legendMatrix: ["<b>row → column</b> = the row imports the column",
+                 "declared direction", "reverse — below the diagonal is a cycle",
+                 "mutual: both directions measured"],
+  legendHotspots: ["<b>x</b> = file-commits over the window",
+                   "<b>y</b> = lines of code",
+                   "<b>circle</b> = above the median on both axes"],
+  legendDoc: ["<b>recomputed</b> from the same edges the map draws",
+              "<b>click a chip</b> to jump to that block on the map",
+              "nothing on these two pages is hand-written prose"],
   talksTo: "Talks to", calledBy: "Called by", reach: "Reach", growth: "Growth",
   source: "Source", inside: "inside", pinned: "pinned", whatsInThere: "What's in there",
   stepAfter: "The step after", step: (i, n) => `Step ${i} / ${n}`,
@@ -2342,6 +2457,16 @@ function buildMatrix() {
     cl.textContent = s.code;
     g.appendChild(cl);
   });
+
+  // Grille : sans elle, lire « quelle colonne » sur 36 blocs demande de
+  // suivre une ligne à l'œil nu. Trait fin partout, appuyé tous les 5.
+  for (let k = 0; k <= n; k++) {
+    const major = k % 5 === 0;
+    const o = { stroke: "var(--rule)", "stroke-width": major ? .7 : .4,
+                opacity: major ? .9 : .5 };
+    g.appendChild(el("line", { x1: PAD + k * C, y1: TOP, x2: PAD + k * C, y2: TOP + n * C, ...o }));
+    g.appendChild(el("line", { x1: PAD, y1: TOP + k * C, x2: PAD + n * C, y2: TOP + k * C, ...o }));
+  }
 
   order.forEach((rid, r) => {
     order.forEach((cid, c) => {
@@ -2518,8 +2643,11 @@ function svgEl(w, h) {
   return s;
 }
 
-function drawFlowchart() {
-  const edges = EDGES.filter(e => e.flow || e.mutual);
+/* `scope` : "main" = chemin principal et cycles, "full" = tout le graphe.
+   Le premier se lit, le second se vérifie — les deux servent, aucun ne remplace
+   l'autre, d'où la bascule plutôt qu'un choix figé dans le moteur. */
+function drawFlowchart(scope = "main") {
+  const edges = scope === "full" ? EDGES.slice() : EDGES.filter(e => e.flow || e.mutual);
   const ids = [...new Set(edges.flatMap(e => [e.f, e.t]))];
   const rank = ranks(edges, ids);
   const cols = {};
@@ -2635,14 +2763,94 @@ function drawSequence() {
   return svg;
 }
 
+/* Un nœud par section du rail, une arête par frontière franchie, épaisse comme
+   le nombre d'imports qui la traversent. C'est la vue qui répond « qui dépend de
+   qui » à l'échelle de l'architecture, là où 36 blocs et 78 arêtes noient. */
+function drawGroupGraph() {
+  const gOf = id => byId[id]?.group || "?";
+  const W = new Map();
+  for (const e of EDGES) {
+    const x = gOf(e.f), y = gOf(e.t);
+    if (x === y) continue;
+    W.set(`${x}\u0000${y}`, (W.get(`${x}\u0000${y}`) || 0) + 1);
+    if (e.mutual) W.set(`${y}\u0000${x}`, (W.get(`${y}\u0000${x}`) || 0) + 1);
+  }
+  // ordre du rail : c'est l'ordre que le lecteur a déjà en tête
+  const groups = [...new Set(STRUCTURES.map(s => s.group))];
+  const rank = Object.fromEntries(groups.map((g, i) => [g, i]));
+  const n = groups.length;
+  const NW = 152, NH = 40;
+  const R = Math.max(150, 34 * n + 60);
+  const Wd = 2 * R + NW + 90, H = 2 * R + NH + 110;
+  const cx = Wd / 2, cy = H / 2;
+  // top de la couronne : le premier groupe en haut, puis dans le sens horaire
+  const pos = {};
+  groups.forEach((g, i) => {
+    const a2 = -Math.PI / 2 + (i / n) * 2 * Math.PI;
+    pos[g] = { x: cx + R * Math.cos(a2) - NW / 2, y: cy + R * Math.sin(a2) - NH / 2,
+               ax: cx + R * Math.cos(a2), ay: cy + R * Math.sin(a2) };
+  });
+  const svg = svgEl(Wd, H), gE = el("g"), gN = el("g");
+  const max = Math.max(...W.values(), 1);
+
+  // point d'accroche sur le bord de la boîte, vers le centre du cercle
+  const anchor = (g, towards) => {
+    const p1 = pos[g], dx = towards.ax - p1.ax, dy = towards.ay - p1.ay;
+    const hw = NW / 2 + 4, hh = NH / 2 + 4;
+    const k = Math.min(Math.abs(dx) ? hw / Math.abs(dx) : Infinity,
+                       Math.abs(dy) ? hh / Math.abs(dy) : Infinity);
+    return [p1.ax + dx * k, p1.ay + dy * k];
+  };
+
+  for (const [k, cnt] of [...W].sort((a2, b2) => a2[1] - b2[1])) {
+    const [f, t2] = k.split("\u0000");
+    if (!pos[f] || !pos[t2]) continue;
+    const [x1, y1] = anchor(f, pos[t2]), [x2, y2] = anchor(t2, pos[f]);
+    // corde tirée vers le centre : deux arêtes opposées ne se superposent pas
+    const bend = .34;
+    const qx = cx + (((x1 + x2) / 2) - cx) * bend, qy = cy + (((y1 + y2) / 2) - cy) * bend;
+    const back = rank[t2] < rank[f];
+    gE.appendChild(el("path", {
+      d: `M${x1.toFixed(1)} ${y1.toFixed(1)} Q${qx.toFixed(1)} ${qy.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`,
+      fill: "none", stroke: back ? "var(--special)" : "var(--line)",
+      "stroke-width": (0.6 + 3.2 * (cnt / max)).toFixed(2),
+      opacity: back ? .95 : .75, "marker-end": "url(#arrowG)", class: "cellhi",
+      "data-pay": `${tGroup(f)} → ${tGroup(t2)} · ${cnt} ${t("imports")}` }));
+  }
+
+  groups.forEach(g => {
+    const p1 = pos[g], list = STRUCTURES.filter(s => s.group === g);
+    const loc = list.reduce((m, s) => m + (s.locNow || 0), 0);
+    const node = el("g", { class: "cellhi", "data-pay": list.map(s => s.name).join(" · ") });
+    node.appendChild(el("rect", { x: p1.x, y: p1.y, width: NW, height: NH,
+      fill: "var(--surface-0)", stroke: "var(--line)", "stroke-width": .9 }));
+    const t1 = el("text", { x: p1.x + NW / 2, y: p1.y + 17, "text-anchor": "middle",
+                            "font-size": 9.5, fill: "var(--text)" });
+    t1.textContent = tGroup(g).slice(0, 26);
+    const t2 = el("text", { x: p1.x + NW / 2, y: p1.y + 30, "text-anchor": "middle",
+                            "font-size": 8, fill: "var(--soft)" });
+    t2.textContent = `${list.length} ${t("blocks")}${loc ? " · " + kfmt(loc) + " " + t("lines") : ""}`;
+    node.append(t1, t2);
+    gN.appendChild(node);
+  });
+
+  const defs = el("defs");
+  defs.innerHTML = `<marker id="arrowG" viewBox="0 0 8 8" refX="7" refY="4"
+      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 z" fill="var(--line)"/></marker>`;
+  svg.append(defs, gE, gN);
+  return svg;
+}
 function buildFlow() {
   const flow = document.getElementById("flow");
-  const card = (title, svg, src, note) => {
+  const card = (title, svg, src, note, scoped) => {
     const c = document.createElement("div");
     c.className = "card";
-    c.innerHTML = `<div class="head"><h2>${title}</h2>
-        <button data-src>${t("mermaidSrc")}</button>
-        <button data-copy="${encodeURIComponent(src)}">${t("copy")}</button></div>
+    c.innerHTML = `<div class="head"><h2>${title}</h2>` +
+      (scoped ? `<button data-scope="main" class="${state.flowScope === "main" ? "on" : ""}">${t("scopeMain")}</button>` +
+                `<button data-scope="full" class="${state.flowScope === "full" ? "on" : ""}">${t("scopeFull")}</button>` : "") +
+      (src ? `<button data-src>${t("mermaidSrc")}</button>
+        <button data-copy="${encodeURIComponent(src)}">${t("copy")}</button>` : "") + `</div>
       <div class="render"></div>
       <div class="src"><pre>${esc(src)}</pre></div>`;
     c.querySelector(".render").appendChild(svg);
@@ -2650,7 +2858,8 @@ function buildFlow() {
   };
   flow.innerHTML = `<p class="hint">${t("flowHint")}</p>`;
   for (const { card: c, note } of [
-    card(t("depFlow"), drawFlowchart(), mermaidDeps(), t("flowNote")),
+    card(t("groupFlow"), drawGroupGraph(), "", t("groupNote")),
+    card(t("depFlow"), drawFlowchart(state.flowScope), mermaidDeps(), t("flowNote"), 1),
     card(t("reqTrace"), drawSequence(), mermaidTrace(), ""),
   ]) {
     flow.appendChild(c);
@@ -2659,6 +2868,9 @@ function buildFlow() {
       p.className = "hint"; p.textContent = note; flow.appendChild(p);
     }
   }
+  flow.querySelectorAll("button[data-scope]").forEach(b => b.onclick = () => {
+    state.flowScope = b.dataset.scope; buildFlow();
+  });
   flow.querySelectorAll("button[data-src]").forEach(b => b.onclick = () => {
     const box = b.closest(".card").querySelector(".src");
     box.classList.toggle("on");
@@ -2821,6 +3033,146 @@ const chip = s => `<button class="chip" data-id="${s.id}"><b>${esc(s.code)}</b>$
 const chipOf = id => byId[id] ? chip(byId[id]) : `<span class="pill">${esc(id)}</span>`;
 const h2 = (k, n) => `<h2>${t(k)}${n != null ? ` <span>${n}</span>` : ""}</h2>`;
 
+/* --- patrons de structure, détectés depuis les mesures --------------------
+   Le reste de cette vue est recalculé ; ces schémas le sont aussi, sinon ils
+   dériveraient dès le prochain commit — c'est exactement ce que la vue
+   Architecture était faite pour éviter. Trois signaux, tous mesurés :
+   un registre (fan-out dense + retour), une fondation (fan-in dense, presque
+   pas de fan-out), une inversion de couche (une arête qui remonte).
+   `PATTERNS[kind]` ajoute, quand il existe, la phrase que le chiffre ne dit
+   pas — la seule couche écrite à la main ici, et elle est optionnelle. */
+const perK = (n, loc) => (loc ? n / (loc / 1000) : 0);
+
+function patterns() {
+  const d = depths(), out = [];
+  const num = s2 => Number.isFinite(s2.locNow) ? s2.locNow : 0;
+  const meas = s2 => Number.isFinite(s2.fanIn) && Number.isFinite(s2.fanOut) && num(s2) > 0;
+  const back = new Set(EDGES.filter(e => e.mutual).flatMap(e => [e.f, e.t]));
+
+  // registre : beaucoup de sorties pour peu de lignes, et au moins un retour
+  const reg = STRUCTURES.filter(s2 => meas(s2) && s2.fanOut >= 8 &&
+      perK(s2.fanOut, num(s2)) >= 40 && back.has(s2.id))
+    .sort((a, b) => perK(b.fanOut, num(b)) - perK(a.fanOut, num(a)))[0];
+  if (reg) {
+    const leaves = EDGES.filter(e => e.f === reg.id).map(e => byId[e.t]).filter(Boolean);
+    out.push({ kind: "registry", head: reg, others: leaves.slice(0, 5),
+      stat: `${reg.fanOut} ${t("outImports")} · ${reg.loc} ${t("lines")} · ` +
+            `${perK(reg.fanOut, num(reg)).toFixed(0)} ${t("perKLoc")}` });
+  }
+
+  // fondation : tout le monde en dépend, elle ne dépend presque de personne
+  const fnd = STRUCTURES.filter(s2 => meas(s2) && s2.fanIn >= 20 && s2.fanOut <= s2.fanIn / 6)
+    .sort((a, b) => perK(b.fanIn, num(b)) - perK(a.fanIn, num(a)))[0];
+  if (fnd) {
+    const users = EDGES.filter(e => e.t === fnd.id).map(e => byId[e.f]).filter(Boolean);
+    out.push({ kind: "foundation", head: fnd, others: users.slice(0, 5),
+      stat: `${fnd.fanIn} ${t("inImports")} · ${fnd.fanOut} ${t("outImports")} · ` +
+            `${perK(fnd.fanIn, num(fnd)).toFixed(0)} ${t("perKLoc")}` });
+  }
+
+  // carrefour : autant d'entrées que de sorties, très au-dessus de la médiane —
+  // tout passe par là, donc tout casse ensemble
+  const meds = k => {
+    const v = STRUCTURES.filter(meas).map(s2 => s2[k]).sort((a, b) => a - b);
+    return v.length ? v[Math.floor(v.length / 2)] : 0;
+  };
+  const mi = meds("fanIn"), mo = meds("fanOut");
+  const cross2 = STRUCTURES.filter(s2 => meas(s2) && s2.fanIn > mi * 1.5 && s2.fanOut > mo * 1.5 &&
+      (!reg || s2.id !== reg.id) && (!fnd || s2.id !== fnd.id))
+    .sort((a, b) => (b.fanIn + b.fanOut) - (a.fanIn + a.fanOut))[0];
+  if (cross2) out.push({ kind: "crossroads", head: cross2,
+    others: EDGES.filter(e => e.f === cross2.id).map(e => byId[e.t]).filter(Boolean).slice(0, 4),
+    stat: `${cross2.fanIn} ${t("inImports")} · ${cross2.fanOut} ${t("outImports")} · ` +
+          `${t("median")} ${mi} / ${mo}` });
+
+  // inversion : une arête qui remonte l'ordre des couches. Dans un graphe très
+  // cyclique la profondeur s'aplatit — on retombe alors sur l'anneau mesuré,
+  // qui est la même information vue autrement.
+  let inv = EDGES.map(e => ({ e, up: (d[e.t] ?? 0) - (d[e.f] ?? 0) }))
+    .filter(x => x.up > 0 && byId[x.e.f] && byId[x.e.t])
+    .sort((a, b) => b.up - a.up)[0];
+  if (!inv) {
+    const ring = (cycles()[0] || []);
+    const set = new Set(ring);
+    const e = EDGES.find(x => set.has(x.f) && set.has(x.t) &&
+      byId[x.f]?.group !== byId[x.t]?.group);
+    if (e) inv = { e, up: 0 };
+  }
+  if (inv) out.push({ kind: "inversion", head: byId[inv.e.f], others: [byId[inv.e.t]],
+    stat: inv.up
+      ? `${t("layer")(d[inv.e.f] ?? 0)} → ${t("layer")(d[inv.e.t] ?? 0)} · ${tPay(inv.e) || inv.e.src || ""}`
+      : `${t("inRing")} · ${tPay(inv.e) || inv.e.src || ""}` });
+
+  return out;
+}
+
+/* Trois schémas, un par forme. Dessinés en SVG inline, palette des tokens. */
+function patternSvg(pt) {
+  const W = 300, H = 118, mid = H / 2;
+  const box = (x, y, w, h, label, strong) =>
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="var(--surface-0)" ` +
+    `stroke="var(--${strong ? "accent" : "line"})" stroke-width="${strong ? 1.3 : .9}"/>` +
+    `<text x="${x + w / 2}" y="${y + h / 2 + 3}" text-anchor="middle" ` +
+    `font-size="${w < 70 ? 6.5 : 8}" ` +
+    `fill="var(--${strong ? "accent" : "text-dim"})">` +
+    `${esc(String(label).slice(0, Math.max(8, Math.floor(w / 5))))}</text>`;
+  const arr = (x1, y1, x2, y2, col) =>
+    `<path d="M${x1} ${y1} L${x2} ${y2}" stroke="var(--${col || "line"})" stroke-width="1" ` +
+    `fill="none" marker-end="url(#pArrow)"/>`;
+  let body = "";
+  const n = Math.max(2, Math.min(4, pt.others.length));
+  if (pt.kind === "registry") {
+    const RY = 10, RH = 20, gap = (H - 26 - n * RH) / (n - 1 || 1);
+    body = box(10, mid - 14, 92, 28, pt.head.code + " " + pt.head.name, 1);
+    for (let i = 0; i < n; i++) {
+      const y = RY + i * (RH + gap);
+      body += box(184, y, 100, RH, pt.others[i]?.name ?? "…");
+      body += arr(104, mid, 182, y + RH / 2);
+    }
+    // le retour passe SOUS la ligne des cibles, jamais à travers
+    body += `<path d="M234 ${H - 5} L56 ${H - 5} L56 ${mid + 15}" stroke="var(--special)" ` +
+            `stroke-width="1.2" fill="none" marker-end="url(#pArrowV)"/>` +
+            `<text x="238" y="${H - 2}" font-size="7.5" fill="var(--special)">${t("andBack")}</text>`;
+  } else if (pt.kind === "foundation") {
+    // largeur dérivée du nombre de boîtes : à 5 boîtes de 84px elles se chevauchent
+    const gap = 7, bw = Math.min(88, (W - 20 - (n - 1) * gap) / n);
+    const x0 = (W - (n * bw + (n - 1) * gap)) / 2;
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * (bw + gap);
+      body += box(x, 8, bw, 22, pt.others[i]?.name ?? "…");
+      body += arr(x + bw / 2, 32, W / 2, mid + 16);
+    }
+    body += box(W / 2 - 98, mid + 18, 196, 28, pt.head.code + " " + pt.head.name, 1);
+  } else if (pt.kind === "crossroads") {
+    const gap = 6, bh = 18, n2 = Math.max(2, Math.min(4, pt.others.length));
+    const y0 = (H - (n2 * bh + (n2 - 1) * gap)) / 2;
+    for (let i = 0; i < n2; i++) {
+      const y = y0 + i * (bh + gap);
+      body += box(196, y, 92, bh, pt.others[i]?.name ?? "…");
+      body += arr(116, mid, 194, y + bh / 2);
+    }
+    for (let i = 0; i < 3; i++) {
+      const y = 18 + i * ((H - 36) / 2);
+      body += `<circle cx="10" cy="${y}" r="2.5" fill="var(--line)"/>` + arr(14, y, 24, mid);
+    }
+    body += box(26, mid - 14, 88, 28, pt.head.code + " " + pt.head.name, 1);
+  } else {
+    body = box(30, 12, 110, 26, t("layer")(2), 0) +
+           box(30, mid + 26, 110, 26, t("layer")(1), 0) +
+           box(168, 12, 110, 26, pt.others[0]?.name ?? "…", 0) +
+           box(168, mid + 26, 110, 26, pt.head.code + " " + pt.head.name, 1) +
+           `<path d="M223 ${mid + 26} L223 ${mid - 6} L223 40" stroke="var(--special)" ` +
+           `stroke-width="1.3" fill="none" marker-end="url(#pArrowV)"/>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="${esc(t("pattern_" + pt.kind))}">
+    <defs>
+      <marker id="pArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5"
+        orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" fill="var(--line)"/></marker>
+      <marker id="pArrowV" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5"
+        orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" fill="var(--special)"/></marker>
+    </defs>${body}</svg>`;
+}
+
 function buildArch() {
   const d = depths(), rows = new Map();
   STRUCTURES.forEach(s => {
@@ -2857,6 +3209,22 @@ function buildArch() {
       ).join("") + `</div>`
     : `<p class="hint">${t("noCycle")}</p>`);
 
+  const pats = patterns();
+  if (pats.length) {
+    const notes = (typeof PATTERNS === "object" && PATTERNS) || {};
+    out += h2("patternsTitle", pats.length) + `<p class="hint">${t("patternsHint")}</p>` +
+      `<div class="pats">` + pats.map(pt => {
+        const note = (L().patterns || {})[pt.kind] ?? notes[pt.kind];
+        return `<figure class="pat">
+          <figcaption>${t("pattern_" + pt.kind)}</figcaption>
+          ${patternSvg(pt)}
+          <div class="stat">${esc(pt.stat)}</div>
+          <div class="who">${[pt.head, ...pt.others].filter(Boolean).map(chip).join("")}</div>
+          ${note ? `<p class="note">${esc(note)}</p>` : ""}
+        </figure>`;
+      }).join("") + `</div>`;
+  }
+
   /* Rien à montrer quand un module *est* sa classe (PHP, Java) : le nom
      importé est alors le nom du module, que le graphe dit déjà. Une section
      vide vaudrait moins que pas de section. */
@@ -2880,7 +3248,25 @@ function buildStack() {
   if (!K) return `<p class="hint">${t("noStack")}</p>`;
   const langs = Object.entries(K.langs || {});
   const total = langs.reduce((a, b) => a + b[1], 0) || 1;
-  let out = `<p class="hint">${t("stackHint")}</p>`;
+  const mans = K.manifests || [];
+  const deps = mans.flatMap(m => m.deps || []);
+  const tools = mans.flatMap(m => Object.entries(m.toolchain || {}))
+    .map(([k, v]) => `${k} ${Array.isArray(v) ? v.length : v}`);
+  const ciOn = (K.ci || []).filter(c => !c.off).length;
+  const tiles = [
+    [t("languages"), langs.map(([l]) => l).join(" · ") || "—"],
+    [t("dep"), `${deps.filter(d => !d.dev).length} + ${deps.filter(d => d.dev).length} ${t("devDep")}`],
+    [t("undeclared"), String((K.undeclared || []).length)],
+    [t("shellsOut"), String((K.bins || []).length)],
+    [t("ci"), `${ciOn} / ${(K.ci || []).length}`],
+    [t("testSurface"), K.tests ? `${(K.tests.loc / total * 100).toFixed(0)}% ${t("ofCode")}` : "—"],
+  ];
+  let out = `<p class="hint">${t("stackHint")}</p>` +
+    `<div class="tiles">` + tiles.map(([k, v]) =>
+      `<div class="tile"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join("") +
+    `</div>` + (tools.length
+      ? `<div class="chips">` + tools.map(x => `<span class="pill">${esc(x)}</span>`).join("") + `</div>`
+      : "");
 
   out += h2("languages") + `<div class="bar">` + langs.map(([l, n], i) =>
       `<span class="seg s${i % 4}" style="width:${(n / total * 100).toFixed(1)}%"></span>`).join("")
@@ -2936,6 +3322,41 @@ function buildStack() {
     K.entry.map(p => REPO.repoUrl
       ? `<a class="pill" href="${href(p)}" target="_blank" rel="noopener"><code>${esc(p)}</code></a>`
       : `<span class="pill"><code>${esc(p)}</code></span>`).join("") + `</div>`;
+
+  // Cadence des versions : on ne recopie pas le changelog (git l'a déjà), on
+  // montre le poids relatif de chaque rubrique, version par version.
+  const cl = K.changelog || [];
+  if (cl.length) {
+    const max = Math.max(...cl.map(r => r.n), 1);
+    out += h2("releases", cl.length) + `<p class="hint">${t("releasesHint")}</p>` +
+      cl.map(r => `<div class="kv"><span class="k">` +
+        (REPO.repoUrl ? `<a href="${href(r.path)}" target="_blank" rel="noopener"><code>v${esc(r.v)}</code></a>`
+                      : `<code>v${esc(r.v)}</code>`) +
+        (r.date ? ` <em>${esc(r.date)}</em>` : "") + `</span><span>` +
+        `<span class="relbar" style="width:${Math.round(r.n / max * 108) + 12}px" ` +
+          `title="${r.n}"><i>${r.n}</i></span>` +
+        Object.entries(r.secs).map(([k, v]) =>
+          `<span class="pill dim">${esc(k)} <i>${v}</i></span>`).join("") +
+        `</span></div>`).join("");
+  }
+
+  const F = K.forge;
+  if (F && ((F.prs || []).length || (F.issues || []).length)) {
+    const line = (x, k) => `<div class="kv"><span class="k">` +
+      `<a href="${x.url}" target="_blank" rel="noopener">${k}${x.n}</a>` +
+      (x.draft ? ` <em>draft</em>` : "") + `</span><span>` +
+      `<span class="pill">${esc(x.title.slice(0, 78))}</span>` +
+      (x.labels || []).map(l => `<span class="pill dim">${esc(l)}</span>`).join("") +
+      (x.files ? `<span class="pill dim">${x.files} ${t("files")}</span>` : "") +
+      `<span class="pill dim">${x.age}d</span>` +
+      ((x.by || []).length ? (x.by || []).map(chipOf).join("")
+                           : `<span class="pill dim">${t("noBlock")}</span>`) +
+      `</span></div>`;
+    out += h2("openWork", (F.prs || []).length + (F.issues || []).length) +
+      `<p class="hint">${t("openWorkHint")}</p>` +
+      (F.prs || []).map(x => line(x, "PR #")).join("") +
+      (F.issues || []).map(x => line(x, "#")).join("");
+  }
   return out;
 }
 
@@ -2957,6 +3378,7 @@ function buildDoc() {
 function setView(v) {
   state.view = v;
   document.querySelectorAll("#views button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  paintLegend();
   document.getElementById("viewNote").textContent = VIEW_NOTE()[v] || "";
   const over = OVERLAY.has(v);
   document.getElementById("flow").classList.toggle("on", v === "flow");
@@ -3010,14 +3432,7 @@ function applyLang() {
   q("#hints").textContent = state.diff && REPO.prevRev
     ? t("diffHints")(REPO.prevRev) : t("hints");
   q("#viewNote").textContent = VIEW_NOTE()[state.view] || "";
-  const lg = t("legend");
-  q("#legend").innerHTML =
-    `<div>${lg[0]}</div><div>${lg[1]}</div>` +
-    `<div><span class="sw"></span>${lg[2]}</div>` +
-    `<div><span class="sw run"></span>${lg[3]}</div>` +
-    `<div><span class="sw dash"></span>${lg[4]}</div>` +
-    `<div><span class="dot"></span>${lg[5]}</div>` +
-    `<div><span style="color:var(--special)">◆</span> ${lg[6]}</div>`;
+  paintLegend();
   if (q("#topbar") && L().topbar) q("#topbar").innerHTML = L().topbar;
   else if (q("#topbar")) q("#topbar").innerHTML = TOPBAR_EN;
   sidebar(); build(); sync(); buildFlow(); buildDoc();
@@ -3028,6 +3443,71 @@ document.getElementById("btnLang").onclick = () => {
   state.lang = state.lang === "en" ? "fr" : "en";
   applyLang();
 };
+
+/* --- légende ------------------------------------------------------------- */
+/* Une légende figée ment vite : elle annonce des tirets longs à un atlas qui
+   n'a aucune arête `runtime`, et elle parle de hauteur dans la vue matrice.
+   Ici chaque ligne est conditionnée à ce que la vue courante dessine. */
+function paintLegend() {
+  const lg = t("legend"), rows = [];
+  if (state.view === "iso") {
+    const kinds = new Set(EDGES.map(e => e.src || "import"));
+    rows.push(`<div>${lg[0]}</div>`);
+    if (STRUCTURES.some(x => x.slab)) rows.push(`<div>${lg[1]}</div>`);
+    if (kinds.has("import")) rows.push(`<div><span class="sw"></span>${lg[2]}</div>`);
+    if (kinds.has("runtime")) rows.push(`<div><span class="sw run"></span>${lg[3]}</div>`);
+    if (kinds.has("design")) rows.push(`<div><span class="sw dash"></span>${lg[4]}</div>`);
+    if (EDGES.some(e => e.flow) && state.flowing) rows.push(`<div><span class="dot"></span>${lg[5]}</div>`);
+    if (MUTUAL.size || EDGES.some(e => e.mutual)) rows.push(`<div><span style="color:var(--special)">◆</span> ${lg[6]}</div>`);
+    if (state.diff && REPO.prevRev) rows.push(`<div><span class="dot" style="background:var(--success)"></span>${t("legendDiff")}</div>`);
+  } else if (state.view === "matrix") {
+    rows.push(...t("legendMatrix").map((x, i) =>
+      i === 0 ? `<div>${x}</div>`
+              : `<div><span class="dot" style="background:var(--${["accent","info","special"][i - 1]})"></span>${x}</div>`));
+  } else if (state.view === "hotspots") {
+    rows.push(...t("legendHotspots").map(x => `<div>${x}</div>`));
+  } else {
+    rows.push(...t("legendDoc").map(x => `<div>${x}</div>`));
+  }
+  document.getElementById("legend").innerHTML = rows.join("");
+}
+
+/* --- panneaux redimensionnables ------------------------------------------ */
+/* Le rail et le panneau sont à largeur fixe dans le CSS ; une carte à 36 blocs
+   avec des noms longs déborde des 216px, et un lecteur qui veut lire le
+   panneau veut souvent l'élargir. Largeur retenue par viewer (localStorage),
+   avec un try/catch : l'accesseur lui-même lève dans certains contextes. */
+function wireResize(handleId, targetId, key, side) {
+  const h = document.getElementById(handleId), el2 = document.getElementById(targetId);
+  if (!h || !el2) return;
+  const MIN = 150, MAX = 560;
+  const set = w => {
+    w = Math.max(MIN, Math.min(MAX, Math.round(w)));
+    el2.style.width = el2.style.flexBasis = w + "px";
+    el2.style.flexGrow = el2.style.flexShrink = "0";
+    try { localStorage.setItem(key, w); } catch {}
+    fit();
+  };
+  try { const v = +localStorage.getItem(key); if (v >= MIN && v <= MAX) set(v); } catch {}
+  let on = false;
+  h.addEventListener("mousedown", e => { on = true; h.classList.add("on"); e.preventDefault(); });
+  window.addEventListener("mousemove", e => {
+    if (!on) return;
+    const r = el2.getBoundingClientRect();
+    set(side === "left" ? e.clientX - r.left : r.right - e.clientX);
+  });
+  window.addEventListener("mouseup", () => { on = false; h.classList.remove("on"); });
+  h.addEventListener("dblclick", () => { try { localStorage.removeItem(key); } catch {}
+    el2.style.width = el2.style.flexBasis = ""; fit(); });
+  h.addEventListener("keydown", e => {
+    const d = e.key === "ArrowLeft" ? -16 : e.key === "ArrowRight" ? 16 : 0;
+    if (!d) return;
+    e.preventDefault();
+    set(el2.getBoundingClientRect().width + (side === "left" ? d : -d));
+  });
+}
+wireResize("rszL", "side", "atlas.side", "left");
+wireResize("rszR", "panel", "atlas.panel", "right");
 
 /* --- hooks de debug par hash : #s=<id> · #inside=<id> · #trace=<n> -------- */
 function fromHash() {

@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Génère la section STRUCTURES/EDGES de l'atlas fp-api-rest depuis fp-scan.json.
-Les chiffres viennent de la mesure ; les textes et le placement sont écrits à la main."""
+Les chiffres viennent de la mesure ; les textes et le placement sont écrits à la main.
+
+⚠️ Deux règles de mise en page que cet exemple montre *mal*, corrigées depuis :
+  · viser une grille **carrée** (6×6 pour 36 blocs) et non 7×4 — le fit recadre
+    sur le contenu, donc un losange très large rétrécit toute la ville ;
+  · l'air vient d'une **empreinte plus petite** (w/d à 1.7, 2.0 pour les gros)
+    à pas de grille constant, pas d'un CELL plus grand.
+Voir « Règles de mise en page » dans SKILL.md."""
 import json, math
 from collections import defaultdict
 

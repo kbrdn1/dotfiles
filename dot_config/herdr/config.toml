@@ -39,6 +39,9 @@ sidebar_width = 32
 show_agent_labels_on_pane_borders = true
 
 agent_panel_sort = "spaces"
+status_indicators = "symbols"
+tab_bar_position = "top"
+hide_tab_bar_when_single_tab = false
 [keys]
 # — Panes —
 focus_pane_left     = "prefix+h"
@@ -315,7 +318,7 @@ description = "open agent quota settings"
 enabled = true
 
 [ui.toast]
-delivery = "terminal"
+delivery = "system"
 
 [ui.sidebar]
 

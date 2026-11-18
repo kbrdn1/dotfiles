@@ -29,7 +29,7 @@
       "repo": "anthropics/claude-code"
     },
     "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/claude-code-plugins",
-    "lastUpdated": "2026-09-07T10:58:07.942Z"
+    "lastUpdated": "2026-11-18T05:48:01.968Z"
   },
   "claude-plugins-official": {
     "source": {
@@ -37,7 +37,7 @@
       "repo": "anthropics/claude-plugins-official"
     },
     "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/claude-plugins-official",
-    "lastUpdated": "2026-09-07T10:58:06.345Z"
+    "lastUpdated": "2026-11-18T05:47:45.619Z"
   },
   "claude-hud": {
     "source": {
@@ -70,5 +70,29 @@
     },
     "installLocation": "/Users/kbrdn1/.claude/plugins/marketplaces/ponytail",
     "lastUpdated": "2026-07-15T14:56:32.592Z"
+  },
+  "claude-crosstalk": {
+    "source": {
+      "source": "directory",
+      "path": "/Users/kbrdn1/Projects/Perso/claude-crosstalk"
+    },
+    "installLocation": "/Users/kbrdn1/Projects/Perso/claude-crosstalk",
+    "lastUpdated": "2026-09-18T23:34:07.183Z"
+  },
+  "claude-flow": {
+    "source": {
+      "source": "directory",
+      "path": "/Users/kbrdn1/Projects/Perso/claude-flow"
+    },
+    "installLocation": "/Users/kbrdn1/Projects/Perso/claude-flow",
+    "lastUpdated": "2026-11-18T00:17:28.894Z"
+  },
+  "herdr-bridge": {
+    "source": {
+      "source": "directory",
+      "path": "/Users/kbrdn1/Projects/Perso/herdr-bridge"
+    },
+    "installLocation": "/Users/kbrdn1/Projects/Perso/herdr-bridge",
+    "lastUpdated": "2026-11-18T04:25:58.017Z"
   }
 }

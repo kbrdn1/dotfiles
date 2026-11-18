@@ -135,6 +135,16 @@ Si `/sc:git` est disponible et adapté, délègue-lui le groupement des commits.
 
 Affiche `git log --oneline @{u}..HEAD` après chaque commit.
 
+### Étape 4 bis — Docs, premier passage, avant la PR (si le repo a un gate docs)
+
+Si le repo a un `check_command` pour `me:loop:docs-sync` (surface publique énumérable : `--help` d'un CLI, OpenAPI, liste de routes — voir la skill), lance la boucle **maintenant**, sur le code figé, depuis le worktree :
+
+```
+/me:loop:docs-sync
+```
+
+Commite ce qu'elle change en commit(s) `📝 docs(<scope>): …` à part. Les docs partent dans la PR dès le premier push : l'axe **spec** de la review les lit comme l'intention réalisée, un écart doc/code devient un finding. Pas de gate pour ce repo → skip, dis-le, n'en invente pas.
+
 ### Étape 5 — Push
 
 ```bash
@@ -194,7 +204,19 @@ cd "$(gwm path <slug>)"   # OBLIGATOIRE avant la review
 
 En **second plan**, l'utilisateur déclenche `/me:check-reviews [PR#]` **manuellement** selon le besoin (cascade interne cloud/CLI/bots).
 
-Puis, review propre, **`/me:loop:ci-until-green`** depuis le même worktree : il lit les checks du **SHA exact** de `HEAD` (pas « la branche »), refuse de conclure tant que quelque chose n'est pas poussé, et ne lit jamais « zéro check » comme une CI verte. Ne pas merger avant `CI_FAILED=0 CI_PENDING=0` avec `CI_TOTAL ≥ 1`.
+⛔ Pendant la boucle, **rien d'autre n'écrit dans l'arbre** — ni `docs-sync`, ni formatter, ni édition manuelle : les deux reviewers lisent l'arbre à chaque passe, une écriture concurrente change ce qu'ils jugent en cours de passe.
+
+### Étape 7 bis — Docs, second passage, seulement si la review a fait bouger le code
+
+La boucle de review corrige du code ; les docs de l'étape 4 bis peuvent décrire ce qui n'existe plus. Une commande tranche, depuis le worktree :
+
+```bash
+git log --oneline --since="$(gh pr view --json createdAt -q .createdAt)" -- . ':!docs' ':!**/*.md'
+```
+
+Non vide (des commits de code depuis l'ouverture de la PR) → relance `/me:loop:docs-sync`, commit `📝 docs(sync): …`, push. Vide → rien à faire, dis-le. Sautée entièrement si le repo n'a pas de gate docs (étape 4 bis).
+
+Puis, review propre et docs posées (7 bis), **`/me:loop:ci-until-green`** depuis le même worktree — sur le SHA final, docs comprises : il lit les checks du **SHA exact** de `HEAD` (pas « la branche »), refuse de conclure tant que quelque chose n'est pas poussé, et ne lit jamais « zéro check » comme une CI verte. Ne pas merger avant `CI_FAILED=0 CI_PENDING=0` avec `CI_TOTAL ≥ 1`.
 
 La boucle et `/me:check-reviews --local` reviewent le checkout du **répertoire courant** contre sa base. Lancés depuis le checkout principal (resté sur `dev`/`main`, possiblement avec d'autres fichiers non commités), ils reviewent le mauvais arbre et remontent du bruit hors PR. Préfère un scope `--base <branche-par-défaut>` à un scope en texte libre.
 
@@ -254,6 +276,8 @@ en perso, un cran au-dessus en pro) — le retex reste où il est et la lie.
 | 2     | Branche choisie + source convention       |
 | 3     | Path worktree + rapport bootstrap verbatim |
 | 4     | `git log --oneline @{u}..HEAD`            |
+| 4 bis | `DOCS_MISSING=… (surface …)` ou « pas de gate docs » |
 | 5     | Confirmation push                         |
 | 6     | URL PR                                    |
+| 7 bis | relancé (`DOCS_MISSING=…`) ou sauté, avec la raison |
 | 8     | Chemin de la note vault + template utilisé |

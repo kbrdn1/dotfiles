@@ -1,7 +1,7 @@
 ---
 name: codebase-visualizer
 description: Transforme un dépôt en carte d'architecture isométrique interactive (HTML autonome, thème Claude Dark), publiée en artifact — blocs dimensionnés aux vraies LOC, arêtes dérivées du graphe d'imports mesuré, points de données animés, drill-down "go inside", trace pas-à-pas, mode diff entre deux révisions, plus un dossier technique mesuré (couches, cycles de dépendances, hubs, manifestes, chaîne d'outils, CI, binaires appelés). Déclencheurs — "visualise ce codebase", "carte isométrique du repo", "atlas du codebase", "diagramme visuel de l'architecture", "codebase atlas", /me:codebase-visualizer. Sert aussi à mettre à jour ou étendre une carte existante. Pas pour un schéma de mécanisme isolé dans une réponse en prose (SVG inline), pas pour du Mermaid, pas pour une maquette d'UI produit.
-version: 2.1.0
+version: 2.2.0
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Artifact", "SendUserFile"]
 ---
 
@@ -17,13 +17,25 @@ dépôt en **six vues du même relevé**, avec un rail de structure à gauche et
 | **Matrix** | la DSM (Dependency Structure Matrix) triée en couches | les cycles, en un coup d'œil : une marque sous la diagonale = un retour en arrière, une cellule violette = une dépendance mutuelle. C'est la vue qui **scale** quand le graphe devient illisible en boîtes-et-flèches (NDepend, IntelliJ, Lattix) |
 | **Hotspots** | churn × taille en quatre quadrants | où l'effort part : CodeScene montre que les LOC valent la complexité cyclomatique comme proxy, et que croisées au churn elles pointent les cibles de refactoring |
 | **Diagram** | le graphe en flowchart en couches et la trace en diagramme de séquence, **dessinés en SVG**, avec le source mermaid derrière un bouton | lire le flux principal, et remettre la carte dans une doc, une issue ou un prompt |
-| **Architecture** | couches (profondeur depuis les feuilles), **cycles de dépendances** (Tarjan), ce qui traverse chaque frontière, surfaces d'entrée, fondations, hubs | la lecture structurelle : un cycle à trois blocs ou plus n'apparaît dans **aucune** autre vue (la matrice ne montre que les paires) |
-| **Stack** | langages, manifestes, dépendances **avec les blocs qui les importent**, deps utilisées sans être déclarées, binaires appelés, commandes de build, CI, surface de test, points d'entrée | avec quoi c'est construit — et le lien entre une ligne de manifeste et un endroit du dessin |
+| **Architecture** | couches, **cycles de dépendances** (Tarjan), **patrons de structure détectés**, ce qui traverse chaque frontière, surfaces d'entrée, fondations, hubs | la lecture structurelle : un cycle à trois blocs ou plus n'apparaît dans **aucune** autre vue (la matrice ne montre que les paires) |
+| **Stack** | tuiles de synthèse, langages, manifestes, dépendances **avec les blocs qui les importent**, deps non déclarées, binaires appelés, build, CI, tests, points d'entrée, **versions**, **issues et PR ouvertes** | avec quoi c'est construit, ce qui bouge en ce moment, et le lien entre une ligne de manifeste et un endroit du dessin |
+
+La vue **Diagram** porte trois cartes : *Entre les sections* (un nœud par section du rail sur une
+couronne, arêtes épaisses comme le nombre d'imports qui franchissent la frontière — le coup d'œil
+que 78 arêtes de blocs ne donnent pas), *Dependency flow* avec une bascule **Chemin principal /
+Graphe complet**, et la trace en diagramme de séquence.
 
 Les deux dernières vues sont des **documents scrollables**, pas du SVG, et **n'ont aucune prose à
 tenir à jour** : Architecture est entièrement recalculée depuis `EDGES` / `STRUCTURES`, Stack est
 entièrement lue dans `STACK` (produit par le scanner). Elles ne peuvent donc pas diverger de la
 carte. Chaque puce de bloc renvoie à l'isométrique, épinglée sur ce bloc.
+
+Le **rail** et le **panneau** se redimensionnent à la souris (poignée entre les colonnes, flèches au
+clavier, double-clic pour revenir au défaut) ; la largeur est retenue par viewer en `localStorage`.
+
+La **légende** n'est pas figée : elle ne montre que ce que la vue courante dessine réellement — pas
+de ligne « flux à l'exécution » dans un atlas sans arête `runtime`, pas de ligne « hauteur » dans la
+matrice, et une ligne diff qui n'apparaît qu'en mode diff.
 
 Deux bascules à droite de la barre de vues : **EN/FR** et **thème**. Le thème stampe `data-theme`
 (la page est dark-first mais se lit dans les deux sens, et le mermaid se régénère avec la bonne
@@ -143,6 +155,21 @@ Sur un gros dépôt, **écrire un générateur** plutôt que 36 blocs à la main
 > Si l'utilisateur demande explicitement de déléguer, un agent `Explore` "very thorough" peut faire
 > la partie narrative. La mesure, elle, passe toujours par le scanner.
 
+### Patrons de structure (vue Architecture)
+
+Quatre détecteurs, tous calculés depuis `EDGES` / `STRUCTURES` — donc jamais périmés :
+
+| Patron | Signal mesuré | Ce que ça dit |
+|---|---|---|
+| **Registre** | fan-out ≥ 8 **et** ≥ 40 sorties pour 1k lignes, **et** au moins un retour | un petit bloc importe ses propres feuilles, qui le réimportent |
+| **Fondation partagée** | fan-in ≥ 20 et fan-out ≤ fan-in / 6 | tout en dépend, elle ne dépend presque de rien |
+| **Carrefour** | fan-in **et** fan-out à 1,5× la médiane du dépôt | tout passe par là, donc tout casse ensemble |
+| **Inversion de couche** | une arête qui remonte la profondeur ; à défaut, une arête du plus grand anneau qui change de groupe | la forme concrète d'un cycle |
+
+Vérifié sur les deux dépôts fp : sur l'API le détecteur sort `contexts` (147 sorties pour 654
+lignes, 225 pour 1k) et `exceptions` (486 entrées, 2 sorties) — exactement ce qu'un lecteur humain
+aurait écrit, sans risque de dérive.
+
 ### Le dossier technique (`STACK`)
 
 Une fois les blocs posés, générer le dossier qui alimente les vues Architecture et Stack :
@@ -178,6 +205,14 @@ Ce qu'il mesure, et pourquoi chaque point vient d'un piège :
 - **`bins`** relève les `Command::new("…")` / `exec.Command` / `Process` : une dépendance
   d'exécution qu'aucun manifeste ne consigne, et souvent la plus structurante (gwm ne stocke aucun
   token parce qu'il shelle `gh`).
+- **`changelog`** résume un fichier par version sous `changelogs/` : date, nombre d'entrées, poids
+  de chaque rubrique. On ne recopie pas le changelog — git l'a déjà ; on montre la **cadence** et la
+  **forme** d'une release.
+- **`forge`** lit `gh` : issues et PR ouvertes, et surtout **le rattachement aux blocs**. Une PR est
+  rattachée aux blocs où tombent les fichiers qu'elle modifie (`gh pr view --json files`, un appel
+  par PR — c'est le point lent, `--no-gh` le coupe) ; une issue hérite des blocs de la PR qui la
+  ferme. C'est ce qui distingue la section d'un `gh pr list` habillé, et ça alimente aussi la ligne
+  « travail ouvert » du panneau d'un bloc.
 - **`edgeSyms`** relève ce qui traverse chaque frontière entre deux blocs — les noms réellement
   importés, gratuits au moment où la résolution coupe déjà la référence au bon endroit. Vide dans
   un langage à une classe par fichier (PHP, Java) : le nom importé **est** le module, et la section
@@ -189,9 +224,11 @@ Ce qu'il mesure, et pourquoi chaque point vient d'un piège :
 Copier `references/atlas-template.html` dans le scratchpad de session, **garder le moteur**, ne
 remplacer que la section entre `// ---- ATLAS DATA START ----` et `// ---- ATLAS DATA END ----` :
 
-- `REPO` — nom, kicker, titre, sous-titre, `repoUrl` + `sha` (liens vers le code), `prevRev`
-  (révision de comparaison ; **absente, le bouton Diff se retire tout seul**), `hScale:"sqrt"` quand
-  l'échelle linéaire écraserait tout (un bloc de 37k à côté d'un de 257).
+- `REPO` — nom, kicker, titre, sous-titre, `repoUrl` + `sha` (liens vers le code), `prevRev`,
+  `hScale:"sqrt"` quand l'échelle linéaire écraserait tout (un bloc de 37k à côté d'un de 257).
+  🔴 **`prevRev` = la dernière version majeure** (`git tag --sort=-v:refname | grep '\.0\.0$' | head -1`),
+  pas la version précédente : comparer à `v1.5.0` quand on est en `v1.6.0` ne montre qu'un sprint,
+  et le mode diff devient du bruit. **Absente, le bouton Diff se retire tout seul.**
 - `STRUCTURES` — `id`, `code` 2 caractères (uniques), `name`, `group` (= sections du rail),
   `loc` (label), `locNow` / `locPrev` (mode diff), `commits` / `churn` (vue hotspots),
   `fanIn` / `fanOut` (**mesurés**, pas comptés sur le dessin), `mod:[…]` (chemins réels : **un
@@ -210,7 +247,13 @@ remplacer que la section entre `// ---- ATLAS DATA START ----` et `// ---- ATLAS
 
   `mutual:1` marque une paire mutuellement dépendante — le moteur la colore en violet plutôt que de
   doubler le trait.
-- `EXTERNALS` — étiquettes hors-carte (APIs, CLIs externes).
+- `EXTERNALS` — étiquettes hors-carte (APIs, CLIs externes). `fit()` mesure la bbox réelle du
+  contenu, **étiquettes comprises**, donc un external ne se fait plus couper : viser |dx| ≳ 170 pour
+  qu'il sorte du losange, sans plafond haut.
+- `PATTERNS` — **optionnel** : `{registry|foundation|crossroads|inversion: "une phrase"}`. Les
+  schémas de la vue Architecture sont **détectés** ; cette clé n'ajoute que la phrase que le chiffre
+  ne dit pas. Une clé absente = pas de note, le schéma se suffit. C'est la **seule** couche écrite à
+  la main de cette vue — ne pas y remettre de la description, elle périmerait.
 - `TRACE` — 10 à 14 étapes `[structId, phrase]` suivant **une requête canonique réelle**.
 - `STACK` — le dossier technique, **jamais écrit à la main** : sortie de `--stack-for`. Un id de
   bloc inconnu dedans veut dire qu'il a été généré contre une autre version de l'atlas (le
@@ -230,18 +273,30 @@ remplacer que la section entre `// ---- ATLAS DATA START ----` et `// ---- ATLAS
 
 ### Règles de mise en page
 
-- Projection iso fixe : `x=(gx-gy)*26, y=(gx+gy)*14.3 - h*16`. Ne pas la redériver.
+- Projection iso : `x=(gx-gy)*26, y=(gx+gy)*16.5 - h*16`. Ne pas la redériver. ⚠️ Le rapport
+  `KY/KX` fixe l'aspect du losange : à 14.3/26 (0.55) une grille carrée sort **1,8× plus large que
+  haute**, alors qu'un stage 16:9 moins ses deux panneaux fait ~1,5 — le fit était donc toujours
+  borné par la largeur et la ville rétrécissait sans qu'on comprenne pourquoi. 16.5/26 (~32°) reste
+  isométrique à l'œil et remplit le cadre.
 - `at(i,j)` pose les blocs sur une grille de cellules : empreintes disjointes par construction.
   L'ordre du peintre trie par `gx+gy`, aucun z-index nécessaire.
-- Zones : entrées en haut du losange (i+j petit), cluster applicatif sur un flanc, domaine central
-  au milieu, satellites en bas, dalles de stockage en bordure, CI dans un coin.
-- `CELL` est le pas de la grille : **2.6 suffit pour des blocs bas, 3.2 quand ils sont hauts**
-  (échelle sqrt) — sinon un bloc haut masque le voisin dessiné derrière lui.
+- 🔴 **Viser une grille carrée.** 7×5 produit un losange très large que le fit rétrécit ; 6×6 pour
+  36 blocs, 6×5 pour 27, remplit le cadre. Compter les blocs, prendre la racine, arrondir.
+- **Un groupe du rail = une bande contiguë** du losange (une ligne `j`, ou une ligne et le début de
+  la suivante). Un groupe éparpillé dans le losange ne se lit pas comme un quartier.
+- Zones : entrées sur la bande du haut (j=0), cœur applicatif juste en dessous, domaine et services
+  au milieu, opérations et preuve en bas, dalles de stockage sur la dernière bande.
+- ⚠️ **L'air ne vient pas d'un `CELL` plus grand.** La vue se recadre sur le contenu : écarter les
+  blocs les rétrécit d'autant, gain net nul. L'air vient d'une **empreinte plus petite à pas de
+  grille constant** — `CELL 3.2` avec `w`/`d` à **1.7** (2.0 pour les blocs qu'on veut lire de
+  loin), pas 2.0–2.4.
 - Le plus gros sous-système = le bloc le plus haut. Le stockage = des dalles plates.
-- `EXTERNALS` : viser au-delà du bord du losange (|dx| ≳ 170) sinon l'étiquette tombe dans le
-  dessin ; pas trop loin non plus, sinon le panneau la coupe.
+- `EXTERNALS` : viser au-delà du bord du losange (|dx| ≳ 170). Depuis que `fit()` mesure la bbox
+  réelle (étiquettes comprises), il n'y a plus de plafond haut — mais un external très éloigné
+  élargit la bbox et rétrécit la ville, donc rester dans les ~250.
 - **Ne pas générer le placement automatiquement.** Un tri topologique produit des couches, pas une
-  ville ; le placement à la main est ce qui rend la carte lisible.
+  ville ; le placement à la main est ce qui rend la carte lisible. Un petit script qui réécrit
+  `...at(i,j), w:, d:` depuis une table id → cellule est en revanche la bonne façon de le refaire.
 
 ## Étape 3 — valider
 
@@ -297,9 +352,16 @@ purger tout ce qui décrit l'infra vivante : noms concrets de services/queues cl
 d'endpoints publics, préfixes ou formats de clés, emplacement des credentials, IDs de projet.
 Grep final sur le préfixe cloud de la boîte, `@`, `secret`, `token`, les chemins de montage.
 
+🔴 **Les titres d'issues ouvertes sont le nouveau point sensible.** Depuis que `STACK.forge` existe,
+un atlas ne publie plus seulement de la structure : il publie *la liste des bugs non corrigés*, avec
+leurs titres. Vu en vrai sur fp-front — une issue ouverte y décrit une session qui n'est jamais
+invalidée. Sortir un atlas de l'entreprise avec cette section, c'est publier une surface d'attaque
+datée. **Décider avant de partager** : `--no-gh` coupe la section, ou on la garde en assumant que
+l'artifact reste privé. Le dire à l'utilisateur, la décision est la sienne.
+
 ⚠️ **Passer le grep sur le bloc `STACK` aussi**, pas seulement sur le DATA écrit à la main : il est
 généré, donc il publie du texte que personne n'a relu — cibles de Makefile, noms de workflows et de
-jobs, points d'entrée, binaires appelés. Sur fp ça sort `aws-sso-login`, `ecr-login`,
+jobs, points d'entrée, binaires appelés, et désormais titres d'issues et de PR. Sur fp ça sort `aws-sso-login`, `ecr-login`,
 `aws-profile-project` : c'est de la **stack** (« ce projet déploie sur ECR via AWS SSO »), pas une
 identité d'infra — ni compte, ni ARN, ni registre, ni endpoint — donc ça reste. Le dire à
 l'utilisateur avant de partager, la décision est la sienne. Un faux positif classique : le job de CI
@@ -327,7 +389,15 @@ l'atlas de pourrir : la mesure se recalcule, le jugement se réécrit à la main
 
 `STACK` se regénère de la même façon — il se remplace en bloc, jamais à la main. Le refaire à chaque
 changement de dépendance ou de `mod:[…]`, sinon les vues Architecture et Stack décrivent un état
-antérieur du dépôt.
+antérieur du dépôt. Il porte aussi les issues/PR ouvertes : **il périme en quelques jours**, pas en
+quelques mois.
+
+🔴 **Après un `--inject`, rapatrier les chiffres dans le fichier DATA source.** L'injection écrit
+dans le **HTML construit** ; si l'atlas est assemblé depuis des fichiers DATA séparés, le prochain
+build réécrit silencieusement `loc`/`locNow`/`locPrev`/`churn`/`commits` avec les valeurs tapées à
+la main — sans erreur, et le validateur passe dans les deux cas. C'est le seul mode d'échec de ce
+skill qui ne se voit nulle part. Un petit script qui relit les lignes `{ id:"…"` du HTML et
+réinjecte ces clés dans le source suffit ; le faire **avant** toute autre édition.
 
 `--workspace <dir>` sort un résumé par dépôt sous une racine — la base pour une carte multi-repo
 (un bloc par repo, taille = LOC).
@@ -388,6 +458,22 @@ Terminer par **une** recommandation en tête, avec la raison du classement.
 - **Elle n'invente pas de vocabulaire.** Si le `CLAUDE.md` du repo a une section **Langage**, les
   blocs se nomment avec **ses** termes : « le module d'admission des Commandes », pas
   « le OrderIntakeHandler », pas « le service Order ».
+
+## Vérifier après coup
+
+En plus des six vues, contrôler :
+
+- la **légende** change bien avec la vue (elle est conditionnée à ce qui est dessiné) ;
+- les **poignées** de redimensionnement : glisser, double-cliquer pour réinitialiser, flèches au
+  clavier ; la largeur doit survivre à un rechargement ;
+- la vue **Diagram** : trois cartes, et la bascule *Chemin principal / Graphe complet* qui redessine ;
+- la vue **Architecture** : les schémas de patrons sortent des blocs attendus, et aucune boîte n'en
+  chevauche une autre (la géométrie s'adapte au nombre de boîtes) ;
+- la vue **Stack** : les tuiles en tête, les barres de version, et les liens d'issues/PR lisibles
+  dans les deux thèmes.
+
+Mesurer plutôt que juger à l'œil quand c'est possible — la console de la page expose `patterns()`,
+`contentBBox()` et `state.s`, ce qui répond à « pourquoi le zoom tombe » en un appel.
 
 ## Ce que ce skill ne fait pas
 
