@@ -92,7 +92,8 @@ export function sectionHead(t, { id, label, count, folded, ring, gap, toggle, ac
  * cursor, an accent ring on the ink over the row, in its radius. A closing row gets a neutral `o`:
  * no diff, no hover, no actions, its click does nothing. m: motion.js' state; cx: render's.
  * o: { id, map, dark, isOpen(f), isHot(f), toggle(f, cx), hover(f, on, cx), letter(f)?, actions(f)?,
- * root?, preview(f)?, tokens(f)? }; fold(f): the id of f's diff.
+ * root?, preview(f)?, tokens(f)?, sk? }; fold(f): the id of f's diff. `sk`: skeleton.js' skeleton(t, m),
+ * handed in so a copy without skeleton.js still loads: a diff being read shows its lines as bars.
  * Returns [{ el, f }] in order: f is the file of a live row, null for a closing row or a diff.
  */
 export function fileItems(t, m, cx, id, files, o, { ring = () => false, fold = (f) => `${id}:open:${f.path}` } = {}) {
@@ -334,7 +335,8 @@ export function diffBody(t, p, f, o) {
 function textDiff(t, p, f, o) {
   const note = (text, color) => div().px(12).py(10).rounded(12).border(1).border_color(t.border).bg(t.background)
     .font_family(MONO).text_size(11.5).text_color(color ?? t.muted).child(text);
-  if (f.loaded === false) return note(tr("loading"));
+  if (f.loaded === false) return o.sk ? o.sk.pulse(v_flex().id(`${o.id}:${f.path}:sk`).px(12).py(10).gap(1).rounded(12).border(1).border_color(t.border).bg(t.background)
+    .children([0.6, 0.85, 0.45, 0.7].map((w) => o.sk.line(w, { h: 6, lh: 17 })))) : note(tr("loading"));
   if (f.binary) return note(tr("binary"));
   if (!f.hunks.length) return note(f.status === "R" ? tr("renamed") : tr("noDiff"));
   words(f);

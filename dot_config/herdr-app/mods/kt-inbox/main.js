@@ -50,6 +50,7 @@ import { Select, lines } from "./select.js";
 import { planClose, planReview, describe, fitAsked } from "./bulk.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
+import { skeleton, still } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { roll, rollText } from "./roll.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): a PR's checks as steps, a bulk run's progress.
@@ -880,6 +881,17 @@ export default class Inbox extends View {
     return this.m ? pulse(this.m, el, loading) : el;
   }
 
+  // The detail's shape while GitHub answers (skeleton.js), breathing: the tabs' chips, the dashed rule,
+  // the description's paragraphs (13 px, 20 px lines).
+  bodySkeleton(t, id) {
+    const S = skeleton(t, this.m);
+    return S.pulse(v_flex().id(id)
+      .child(h_flex().px(12).py(10).gap(6).children([84, 72, 80].map((w) => S.block(w, 26, { r: 13 }))))
+      .child(this.dashed(t))
+      .child(v_flex().p(18).gap(14).children([3, 2, 3].map((n) => v_flex()
+        .children(Array.from({ length: n }, (_, i) => S.line(i === n - 1 ? 0.5 : 0.95, { h: 8, lh: 20 })))))));
+  }
+
   // A card (radius 16): the layout's work card (radius 20, padding 4) holds this page, so cards are concentric.
   card(t) {
     return v_flex().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background);
@@ -1143,7 +1155,11 @@ export default class Inbox extends View {
     // a kind, a refresh. `at` counts them as rows() builds them, the closing ones included: they are the
     // list's direct children, after the error's line, which scroll_to_item reveals.
     let at = this.error ? 1 : 0;
-    const rows = rowsOf(this.m, cx, "kti-rows", shown, (x) => x.key, (x, i) => {
+    // Before GitHub's first answer for this scope (nothing cached): rows in the shape of the items'
+    // (skeleton.js), breathing; then the list fades in over them, its rows at rest (still()).
+    const S = skeleton(t, this.m);
+    const unread = loading && !this.items.length && !this.error && !load(this.listKey());
+    const rows = rowsOf(S.arriving("kti-list") ? still(this.m) : this.m, cx, "kti-rows", shown, (x) => x.key, (x, i) => {
       if (i >= 0 && this.reveal && x.key === seek) {
         this.listScroll.scroll_to_item(at);
         this.reveal = false;
@@ -1211,11 +1227,13 @@ export default class Inbox extends View {
     // The bulk bar floats over the list's foot while rows are picked; the list keeps room for its last row.
     const bar = this.bulk(t);
     const list = this.card(t).flex_1().relative()
-      .child(v_flex().id("kti-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.listScroll).py(4).gap(2)
+      .child(S.swap("kti-list", !unread, () => v_flex().id("kti-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.listScroll).py(4).gap(2)
         .when(Boolean(bar), (el) => el.pb(64))
         .when(Boolean(this.error), (el) => el.child(this.empty(t, this.error, t.ansi1)))
-        .when(!shown.length && !this.error, (el) => el.child(this.empty(t, loading ? tr("loading") : this.items.length ? tr("noMatch") : tr("empty"), null, loading)))
-        .children(rows))
+        // A list already read stays as it is while it is read again (DATA-SYNC.md): empty, or no match.
+        .when(!shown.length && !this.error, (el) => el.child(this.empty(t, this.items.length ? tr("noMatch") : tr("empty"), null, loading)))
+        .children(rows),
+      () => v_flex().py(4).child(S.list(6, { h: 66, icon: 0, lines: [0.35, 0.85], px: 16, gap_y: 2 })), { grow: true }))
       .when(Boolean(bar), (el) => el.child(bar));
     return v_flex().w(400).flex_none().h_full().min_h(0).gap(4).child(controls).child(list);
   }
@@ -1294,13 +1312,15 @@ export default class Inbox extends View {
   // The keys' cursor while the Code zone has them, brought into view once after it moved.
   code(t, x, cx) {
     const d = this.diffs[x.key];
-    if (!d) return this.empty(t, tr("loadingDiff"), null, true);
+    // While the diff is read: its section head and file rows (28 px) as bars (skeleton.js), breathing.
+    if (!d) return ((S) => S.pulse(v_flex().id(`kti-code-sk-${x.key}`).p(4).gap(1).child(S.row({ h: 28, icon: 0, lines: [0.25], px: 8 }))
+      .child(S.list(5, { h: 28, icon: 14, lines: [0.5], px: 8, gap: 8, gap_y: 1 }))))(skeleton(t, this.m));
     if (d.error) return this.empty(t, d.error, t.ansi1);
     if (!d.files.length) return this.empty(t, tr("noFiles"));
     const dark = settings().dark !== false, root = d.root ?? null;
     const k = (f) => `${x.key}:${f.path}`;
     const o = {
-      id: `kti-f-${x.key}`, map: this.map, dark, root, compact: true,
+      id: `kti-f-${x.key}`, map: this.map, dark, root, compact: true, sk: skeleton(t, this.m),
       preview: (f) => this.previews[k(f)],
       tokens: (f) => { const tk = this.tokens[k(f)]; return tk?.mode === (dark ? "dark" : "light") ? tk : null; },
       isOpen: (f) => this.openFiles.has(k(f)),
@@ -1350,7 +1370,8 @@ export default class Inbox extends View {
 
   checksView(t, x, d) {
     const cs = d?.checks ?? [];
-    if (!d?.data) return this.empty(t, tr("loadingChecks"), null, true);
+    // While GitHub answers: check rows (38 px, a dot and a name) as bars (skeleton.js), breathing.
+    if (!d?.data) return ((S) => S.pulse(v_flex().id(`kti-checks-sk-${x.key}`).py(4).child(S.list(4, { h: 38, icon: 8, round: true, lines: [0.45], px: 16, gap_y: 2 }))))(skeleton(t, this.m));
     if (!cs.length) return this.empty(t, tr("noChecks"));
     const c = this.checkCounts(cs);
     // The counts by kind, then the steps as wide as the card (« n / total » is theirs).
@@ -1372,7 +1393,8 @@ export default class Inbox extends View {
   body(t, x, d, cx) {
     const data = d?.data;
     const card = this.card(t).flex_1();
-    if (!data) return card.child(this.empty(t, d?.error ?? tr("loading"), d?.error ? t.ansi1 : t.dim, !d?.error));
+    if (!data && d?.error) return card.child(this.empty(t, d.error, t.ansi1));
+    if (!data) return card.child(this.bodySkeleton(t, `kti-body-sk-${x.key}`));
     const scroll = (id) => v_flex().id(id).flex_1().min_h(0).overflow_y_scrollbar();
     if (x.kind === "issue") {
       const comments = data.comments ?? [];
@@ -1402,7 +1424,8 @@ export default class Inbox extends View {
     const panel = v_flex().flex_1().min_w(0).h_full().min_h(0).gap(4);
     if (!x) {
       const busy = Boolean(this.inflight[this.listKey()]);
-      return panel.child(this.card(t).flex_1().child(this.empty(t, busy ? tr("loading") : tr("pick"), null, busy)));
+      // Nothing listed yet while GitHub answers: the detail's shape (skeleton.js); else « pick one ».
+      return panel.child(this.card(t).flex_1().child(busy && !this.items.length ? this.bodySkeleton(t, "kti-pick-sk") : this.empty(t, tr("pick"))));
     }
     const d = this.details[x.key];
     // The detail fades in each time another item opens (its id carries the item).

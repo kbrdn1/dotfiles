@@ -494,7 +494,7 @@ export default class History extends View {
     const dark = settings().dark !== false;
     const o = {
       // The same compact rows as Changes (diffview.js's compactRow, byte-identical copy).
-      id: "hi", map: this.map, dark, root: this.on ? null : this.root, compact: true,
+      id: "hi", map: this.map, dark, root: this.on ? null : this.root, compact: true, sk: this.S,
       preview: this.on ? null : (f) => this.previews[f.path],
       tokens: (f) => (this.tokens[f.path]?.mode === (dark ? "dark" : "light") ? this.tokens[f.path] : null),
       isOpen: (f) => this.open.has(f.path),

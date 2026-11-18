@@ -516,7 +516,7 @@ export default class Changes extends View {
     const folded = Boolean(this.fold[name]);
     const dark = settings().dark !== false;
     const o = {
-      id: `cg:${name}`, map: this.map, dark, root: this.on ? null : this.root, compact: true,
+      id: `cg:${name}`, map: this.map, dark, root: this.on ? null : this.root, compact: true, sk: skeleton(t, this.motion),
       preview: this.on ? null : (f) => this.previews[`${name}:${f.path}`],
       tokens: (f) => { const tk = this.tokens[`${name}:${f.path}`]; return tk?.mode === (dark ? "dark" : "light") ? tk : null; },
       isOpen: (f) => this.open.has(`${name}:${f.path}`),

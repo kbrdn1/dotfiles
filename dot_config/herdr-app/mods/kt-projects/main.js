@@ -590,16 +590,16 @@ export default class Projects extends View {
             div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(all ? `${shown.length}${all.length >= MAX_FILES ? "+" : ""}` : "…"),
             () => { this.typing = "filter"; }))
           .child(toggle()))
-        // While the folder is read: what is read, then rows in the shape of the images' (skeleton.js),
-        // breathing; the images fade in over them.
+        // While the folder is read: rows in the shape of the images' (skeleton.js), breathing, what is
+        // read under them; the images fade in over them.
         .child(v_flex().id("kp-files").flex_1().min_h(0).p(4).gap(1).rounded(10).border(1).border_color(t.border).bg(t.surface).overflow_y_scrollbar()
           .child(S.swap("kp-files", Boolean(all), () => v_flex().gap(1)
             .when(!shown.length, (el) => el.child(div().p(8).child(all.length
               ? say("list-filter", tr("noImageMatch", { q: this.filter }))
               : say("file", tr("noImage")))))
             .children(shown.map(fileRow)),
-          () => v_flex().gap(1).child(div().px(8).py(6).font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("reading")))
-            .child(S.list(6, { h: 30, icon: 18, lines: [0.5], px: 8, gap_y: 1 })))));
+          () => v_flex().gap(1).child(S.list(6, { h: 30, icon: 18, lines: [0.5], px: 8, gap_y: 1 }))
+            .child(div().px(8).py(6).font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("reading"))))));
       // The logo candidates of the folder: looking, the ones found (and an evident light/dark pair), none.
       const candidates = h_flex().id("kp-cands").px(12).pt(8).pb(10).min_h(48).gap(8).items_center()
         // While they are looked for: three thumbs as dots and what is looked for (skeleton.js), breathing.

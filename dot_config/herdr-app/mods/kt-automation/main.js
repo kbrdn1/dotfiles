@@ -789,10 +789,10 @@ export default class Automation extends View {
         .border_color(alpha(t.ansi1, "66")).bg(alpha(t.ansi1, "14"))
         .child(svg(I("circle-alert")).size(12).flex_none().mt(2).text_color(t.ansi1))
         .child(div().flex_1().min_w(0).text_size(12).line_height("17px").text_color(t.foreground).child(st.error))))
-      // While gwm lists them: what runs, then worktree rows as bars (skeleton.js), breathing.
+      // While gwm lists them: worktree rows as bars (skeleton.js), breathing, what runs under them.
       .when(!st.wts, (el) => el.child(((S) => S.pulse(v_flex().id("kta-wts-sk")
-        .child(div().px(12).py(6).font_family(MONO).text_size(11).text_color(t.dim).child("gwm list…")) // i18n: tech
-        .child(S.list(3, { h: 38, icon: 13, lines: [0.4], px: 16, gap_y: 2 }))))(skeleton(t, this.m))))
+        .child(S.list(3, { h: 38, icon: 13, lines: [0.4], px: 16, gap_y: 2 }))
+        .child(div().px(12).py(6).font_family(MONO).text_size(11).text_color(t.dim).child("gwm list…"))))(skeleton(t, this.m)))) // i18n: tech
       .children(rows);
   }
 

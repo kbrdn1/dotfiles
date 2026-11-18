@@ -508,12 +508,12 @@ export class Add {
         active: this.market ?? "*",
         onPick: (key) => { this.market = key === "*" || key === this.market ? null : key; this.hl = 0; },
       })))
-      // While the catalogs are read: what is read, then cards in the shape of the catalog's (skeleton.js),
-      // breathing; the list fades in over them.
+      // While the catalogs are read: cards in the shape of the catalog's (skeleton.js), breathing, what
+      // is read under them; the list fades in over them.
       .child(((S) => S.swap("ktp-av", this.items !== null, () => v_flex().id("ktp-av-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(4)
         .children(kids.length ? kids : [empty(t, all.length ? tr("noPluginMatch") : tr("allInstalled"))]),
-      () => v_flex().gap(4).child(div().px(8).py(4).font_family(MONO).text_size(11).text_color(t.dim).child(tr("readingCatalogsCap")))
-        .children([0, 1, 2, 3, 4, 5].map((k) => S.block(null, 52).child(S.row({ h: 50, icon: 0, lines: [0.4, 0.75], k })))), { grow: true }))(skeleton(t, this.m)))
+      () => v_flex().gap(4).children([0, 1, 2, 3, 4, 5].map((k) => S.block(null, 52).child(S.row({ h: 50, icon: 0, lines: [0.4, 0.75], k }))))
+        .child(div().px(8).py(4).font_family(MONO).text_size(11).text_color(t.dim).child(tr("readingCatalogsCap"))), { grow: true }))(skeleton(t, this.m)))
       .when(rows.length > PAGE, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim)
         .child(tr("paging", { from: page * PAGE + 1, to: page * PAGE + slice.length, n: rows.length }))))
       .when(this.errors.length > 0, (el) => el.child(div().flex_none().text_size(11.5).text_color(t.dim)

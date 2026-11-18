@@ -649,12 +649,12 @@ export default class Plugins extends View {
 
   list(t, shown, cx) {
     const box = card(t).flex_1().min_w(0).h_full();
-    // Before the first read: what is read, then cards in the shape of the plugins' rows (skeleton.js),
-    // breathing; the list fades in over them, its rows at rest (still(): no opening from 0 under it).
+    // Before the first read: cards in the shape of the plugins' rows (skeleton.js), breathing, what is
+    // read under them; the list fades in over them, its rows at rest (still(): no opening from 0 under it).
     const S = skeleton(t, this.m);
     if (!this.scanned && !this.error) return box.child(S.swap("ktp-list", false, null, () => v_flex().p(4).gap(4)
-      .child(div().px(8).py(4).font_family(MONO).text_size(11).text_color(t.dim).child(tr("readingList")))
-      .children([0, 1, 2, 3, 4, 5].map((k) => S.block(null, 84).child(S.row({ h: 82, icon: 14, lines: [0.35, 0.8], k }))))));
+      .children([0, 1, 2, 3, 4, 5].map((k) => S.block(null, 84).child(S.row({ h: 82, icon: 14, lines: [0.35, 0.8], k }))))
+      .child(div().px(8).py(4).font_family(MONO).text_size(11).text_color(t.dim).child(tr("readingList")))));
     if (!shown.length) {
       const text = this.error ?? (this.busy ? tr("readingList") : this.items.length ? tr("noMatch") : tr("none"));
       return box.child(empty(t, text, this.error ? t.ansi1 : t.dim));

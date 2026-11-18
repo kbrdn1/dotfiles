@@ -848,11 +848,11 @@ export default class NewThread extends View {
             .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(e.description))
             .child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(tr(`src.${e.source}`))))))
         .child(div().px(14).py(6).border_t(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.dim).child(tr("complete.keys")))
-      // While the skills are read: what is read, then rows in the shape of the suggestions' (30 px,
-      // skeleton.js), breathing.
+      // While the skills are read: rows in the shape of the suggestions' (30 px, skeleton.js), breathing,
+      // what is read under them.
       : comp.note === "loading" ? S.pulse(v_flex().id("kt-n-complete-sk").p(4).gap(1)
-        .child(div().px(10).py(6).font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("complete.loading")))
-        .child(S.list(3, { h: 30, icon: 0, lines: [0.6], gap_y: 1 })))
+        .child(S.list(3, { h: 30, icon: 0, lines: [0.6], gap_y: 1 }))
+        .child(div().px(10).py(6).font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("complete.loading"))))
       : div().px(14).py(10).text_size(12).text_color(t.muted).child(tr(`complete.${comp.note}`, { q: comp.q, agent: AGENTS[this.agent][0] })));
     // The modals' motion (ANIMATIONS.md, kt-confirm's): the veil fades in and the card rises 6 px,
     // MS.open, once, on the first size report, and goes back out on dismiss (motion.js sheet);
