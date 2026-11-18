@@ -279,6 +279,7 @@
     "mode": "hold"
   },
   "skipDangerousModePermissionPrompt": true,
+  "crossSessionInbound": "accept",
   "editorMode": "vim",
   "teammateMode": "auto",
   "remoteControlAtStartup": true,
