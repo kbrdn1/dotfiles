@@ -43,6 +43,7 @@ import { filterOf, filtering, openFirst, moveInGroup } from "./thread-filter.js"
 import * as model from "./threads-model.js";
 import { age, duration, until, label, startOf, endOf, isAlive, FADE, PROJECT_COLORS, assignColors, sortRegistry, where } from "./threads-model.js";
 import * as io from "./threads-io.js";
+import { pollMachines } from "./machines.js";
 import { Vim, keysOf, step } from "./vim.js";
 // Copied byte for byte from mods/kbrdn-toast/decide.js (a mod can't import from another folder): edit
 // there, then copy.
@@ -292,6 +293,7 @@ export default class Threads extends View {
       cx.timer.every(1500, (cx) => this.readDecisions(cx));
       cx.timer.every(15000, (cx) => this.readReports(cx));
       cx.timer.every(5000, (cx) => this.syncProjects(cx));
+      pollMachines(cx); // #60: shared "kt.machines" from hc machine ls, every 15 s (machines.js)
       // `kt-threads.density` (a key, or `herdr-app do`) flips the cards like the icon by THREADS;
       // `kt-threads.projects` opens or closes the project picker; `kt-threads.every` flips every
       // project / the shown one (the icon by THREADS); `kt-threads.archived` flips the archived view;

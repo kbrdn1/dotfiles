@@ -12,5 +12,6 @@
 | `viz.js` | graphes dither (port MIT des visuels Monocode) | en-tête du fichier |
 | `skeleton.js` | skeletons de chargement (barres, cartes, rangées, une pulsation par région), avec `motion.js` | `ANIMATIONS.md` (11), en-tête du fichier |
 | `i18n.js` | français et anglais | `I18N.md` |
+| `machines.js` | état des autres machines (`shared("kt.machines")`, publié par kt-threads), garde des `exec` et `readTextFile` distants | en-tête du fichier, `DATA-SYNC.md` |
 
 Les `*.check.mjs` se lancent avec **Bun**, pas avec Node : `bun mods/kt-keys/<nom>.check.mjs`. Ils importent `bun` pour simuler `herdr` et `gpui-kit`, si bien que Node échoue sur un faux rouge.
