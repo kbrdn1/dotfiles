@@ -116,7 +116,7 @@ const WRITE_API = [
   /\bopen\s*\([^)]*,\s*['"][wax]b?\+?['"]/, /\.write_(text|bytes)\s*\(/, /\bshutil\.(copy\w*|move)\s*\(/, // python
   /\b(writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync)\s*\(/, /\bBun\.write\s*\(/, // node, bun
   /\bFile\.(write|open\s*\([^)]*['"][wa])/, /\bIO\.write\s*\(/, // ruby
-  /\bopen\s*\(?\s*[\w$]+\s*,\s*['"]\+?>/, // perl
+  /\bopen\s*\(?\s*(?:my\s+|our\s+|local\s+)?[\w$]+\s*,\s*['"]\+?>/, // perl, dont open(my $fh, ">>", …)
 ];
 const INTERP = /^(python3?|python3\.\d+|node|bun|deno|ruby|perl|osascript)$/;
 
@@ -144,7 +144,7 @@ export function verdict(cmd: string, cwd = process.cwd(), globs: RegExp[] = allo
       }
     }
     // sed -i / perl -i / ruby -i : édition en place
-    if ((w === "sed" || w === "gsed" || w === "perl" || w === "ruby") && ws.slice(i + 1).find((x, k, a) => a.slice(0, k).every((y) => !SEP.has(y)) && /^(-[a-zA-Z]*i|--in-place)/.test(x))) {
+    if ((w === "sed" || w === "gsed" || w === "perl" || w === "ruby") && ws.slice(i + 1).find((x, k, a) => a.slice(0, k).every((y) => !SEP.has(y)) && /^(-[a-zA-Z0-9]*i|--in-place)/.test(x))) { // -0pi, -0777i
       const args = [];
       for (let j = i + 1; j < ws.length && !SEP.has(ws[j]); j++) args.push(ws[j]);
       // sans -e, le premier argument qui n'est pas une option est le script, pas un fichier

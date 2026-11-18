@@ -38,6 +38,11 @@ const cases: [string, boolean][] = [
   [`git commit -m "voir <<'EOF' dans le doc"`, false],
   [`echo a; python3 - <<'PY'\nopen("src/x.py","w").write("y")\nPY`, true],
   [`cat <<< "texte" | wc -l`, false],
+  // perl, variantes vues le 2026-11-18 (un agent a écrit KEYMAP.md ainsi)
+  [`perl -0pi -e 's/a/b/' data/orchestrator/KEYMAP.md`, true],
+  [`perl -e 'open(my $fh, ">>", "x.md"); print $fh "y"'`, true],
+  [`perl -e 'open my $fh, ">", "x.md" or die; print $fh "y"'`, true],
+  [`perl -ne 'print if /a/' x.md`, false],
 ];
 let bad = 0;
 for (const [cmd, deny] of cases) {
