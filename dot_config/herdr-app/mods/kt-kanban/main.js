@@ -37,7 +37,11 @@
 // card, opens its menu (kanban.js cardMenu), anchored to it (gpui-base's Popup): those choices first,
 // then go, the drawer, pin, snooze, archive, the PR, the issue, Zed, the branch copied, the thread
 // closed (kt-confirm); a draft's: launch, edit, delete. j / k move in it, enter runs, esc or q shuts it,
-// and an item's key (o p 1 2 3 0 O I e, L i x) runs it. The cost is the drawer's (and, with the columnCost option, off by default, the
+// and an item's key (o p 1 2 3 0 O I e, L i x) runs it. The board's look (#34), the view's like its
+// limits: a column's width (auto, or 200 to 420 px: < / > on the cursor's column, = back to auto, or its
+// head's selector), its columns hidden (the head's selector; a reminder at the board's end shows them
+// again, with their counts), the cards' density (D, the header's fifth button: normal, compact, the
+// title and status only, or detailed). The cost is the drawer's (and, with the columnCost option, off by default, the
 // column heads'). It lists every project's threads, whatever the sidebar's scope or filter: its
 // views decide (GitHub Projects), through the filter typed after `/` (the archived only with
 // is:archived), then the slice. A click or enter: back to the thread, on that agent (agent.focus).
@@ -60,7 +64,7 @@ import * as io from "./threads-io.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
   costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
-  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart, takesFocus } from "./kanban.js";
+  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart, takesFocus, WIDTH, stepWidth, laneWidths, toggleHidden } from "./kanban.js";
 // The sidebar's decisions (a byte-identical copy of kbrdn-toast's decide.js): what a blocked agent waits
 // on, its pills, and its answer (press, the sidebar's and the toast's path).
 import { decide, decisionButtons, press as answer } from "./decide.js";
@@ -97,7 +101,7 @@ const PR = {
 const PR_EVERY = 180e3; // a branch's PR, asked of gh at most this often (kt-threads')
 const STALE = 10e3; // back on the page, what was read longer ago is read again (DATA-SYNC.md)
 const PAGE_ROWS = 8; // the cards a column shows: ctrl-d / ctrl-u move half of it
-const COL_W = 240; // a column's least width: a card stays readable
+const COL_W = WIDTH.auto; // an auto column's least width: a card stays readable
 const DRAWER_W = 360; // the drawer's width (the board narrows beside it)
 // A column's color, a theme name: the status' own; a phase's along the way (delivery green, wrap-up done).
 const TINT = {
@@ -105,10 +109,10 @@ const TINT = {
   prep: "ansi4", spec: "ansi5", impl: "working", ship: "ansi2", close: "done", other: "dim", none: "idle",
 };
 // The header's buttons, their keys and icons; mod.json declares the options (MOD-OPTIONS.md).
-const OPT_KEYS = { c: "column", b: "group", s: "slice", t: "sort" };
-const OPT_SHARED = { column: "kt.opt.kt-kanban.column", group: "kt.opt.kt-kanban.group", slice: "kt.opt.kt-kanban.slice", sort: "kt.opt.kt-kanban.sort" };
-const OPT_ICON = { column: K("columns-3"), group: K("rows-3"), slice: I("panel-left"), sort: K("arrow-down-wide-narrow") };
-const KEY_OF = { column: "c", group: "b", slice: "s", sort: "t" };
+const OPT_KEYS = { c: "column", b: "group", s: "slice", t: "sort", D: "density" };
+const OPT_SHARED = { column: "kt.opt.kt-kanban.column", group: "kt.opt.kt-kanban.group", slice: "kt.opt.kt-kanban.slice", sort: "kt.opt.kt-kanban.sort", density: "kt.opt.kt-kanban.density" };
+const OPT_ICON = { column: K("columns-3"), group: K("rows-3"), slice: I("panel-left"), sort: K("arrow-down-wide-narrow"), density: I("layout-list") };
+const KEY_OF = { column: "c", group: "b", slice: "s", sort: "t", density: "D" };
 const PICKS = "kt.kanban.slicePick"; // { project: key | null, program: key | null }
 const VIEWS = "kt.kanban.views"; // { current, list }: the saved views (kanban.js viewsOf)
 const DRAFTS = "kt.kanban.drafts"; // [{ id, title, task, space, project, at }]: the draft cards (kanban.js draftsOf)
@@ -124,6 +128,7 @@ function opts() {
     group: choice("group", shared("kt.opt.kt-kanban.group")),
     slice: choice("slice", shared("kt.opt.kt-kanban.slice")),
     sort: choice("sort", shared("kt.opt.kt-kanban.sort")),
+    density: choice("density", shared("kt.opt.kt-kanban.density")),
   };
 }
 
@@ -149,6 +154,9 @@ export default class Kanban extends View {
     const saved = currentView(viewsOf(shared(VIEWS)));
     this.query = saved.filter;
     this.limits = { ...saved.limits }; // column key -> its soft limit (WIP)
+    this.widths = { ...saved.widths }; // column key -> its width set (none: auto)
+    this.shownW = {}; // column key -> the width it is drawn at (an auto column's < / > start there)
+    this.hidden = [...saved.hidden]; // the column keys hidden
     this.renaming = null; // the view whose tab is a field (its name being typed: this.draft)
     this.draft = "";
     this.viewMenu = false; // the current view's actions shown in the tab row
@@ -379,10 +387,12 @@ export default class Kanban extends View {
 
   // ---------- saved views (kanban.js; the tabs over the board) ----------
 
-  // What shows, as a view's settings: the choices, the slice picked, the filter, the limits.
+  // What shows, as a view's settings: the choices, the slice picked, the filter, the limits, the widths,
+  // the hidden columns.
   shownView() {
     const o = opts();
-    return { ...o, pick: o.slice === "none" ? null : (shared(PICKS) ?? {})[o.slice] ?? null, filter: this.query, limits: this.limits };
+    return { ...o, pick: o.slice === "none" ? null : (shared(PICKS) ?? {})[o.slice] ?? null, filter: this.query, limits: this.limits,
+      widths: this.widths, hidden: this.hidden };
   }
 
   setViews(views) {
@@ -395,6 +405,8 @@ export default class Kanban extends View {
     if (v.slice !== "none") setShared(PICKS, { ...(shared(PICKS) ?? {}), [v.slice]: v.pick });
     this.query = v.filter;
     this.limits = { ...v.limits };
+    this.widths = { ...v.widths };
+    this.hidden = [...v.hidden];
     this.limitEdit = null;
     this.renaming = null; // another tab, a copy, a discard, a delete: no tab stays a field
     this.reveal = true;
@@ -562,6 +574,13 @@ export default class Kanban extends View {
       const key = this.board.keys[this.at?.c ?? 0];
       const n = this.board.lanes.reduce((s, lane) => s + (lane.cols[this.at?.c ?? 0]?.threads.filter((x) => !x.draft).length ?? 0), 0);
       if (key) this.limits = stepLimit(this.limits, key, name === "+" ? 1 : -1, n);
+      return true;
+    }
+    // < / > the cursor's column narrower / wider, = back to auto (the view's, as its limit).
+    if (name === "<" || name === ">" || name === "=") {
+      this.vim.normal();
+      const key = this.board.keys[this.at?.c ?? 0];
+      if (key) this.widths = stepWidth(this.widths, key, name === "<" ? -1 : name === ">" ? 1 : 0, this.shownW);
       return true;
     }
     // The drawer: space or o opens it on the cursor's card (again: shuts it); enter keeps going to the agent.
@@ -1000,7 +1019,8 @@ export default class Kanban extends View {
   // A column's head: its color's dot, its name, its count rolling, `n / limit` with a soft limit (in the
   // warning color past it: nothing is blocked), and on the right, with mod.json's columnCost option (off
   // by default), what its cards cost together (rolling, in costLevel's color). A click on the count shows
-  // the limit's stepper under it (or + / - on the cursor's column); the limit belongs to the view.
+  // the limit's stepper under it (or + / - on the cursor's column), the width's (< / > / =) and « Masquer »
+  // (while another column shows); they belong to the view.
   // The drafts (in the column a draft lands in) count apart, « +k », outside the limit; that column's head
   // has the « + » of a new draft (n).
   colHead(t, key, cards) {
@@ -1011,6 +1031,7 @@ export default class Kanban extends View {
     const over = Boolean(lim) && n > lim;
     const cost = costOf(list);
     const editing = this.limitEdit === key;
+    const width = this.widths[key];
     const mono = (el) => el.font_family(MONO).text_size(11);
     const step = (id, label, onClick) => h_flex().id(`kk-lim-${id}-${key}`).flex_none().h(22).px(8).items_center().justify_center().rounded(6).border(1)
       .border_color(t.border).bg(t.background).text_size(12).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -1038,12 +1059,22 @@ export default class Kanban extends View {
         .when(cost > 0 && shared("kt.opt.kt-kanban.columnCost") === true, (el) => el.child(div().id(`kk-cost-${key}`).flex_none().tooltip(tr("cost.sum"))
           .child(mono(roll(this.m, `kk-cost-n-${key}`, `$${fnum(cost, 2)}`, 14, { snap: 2 })).text_color(levelColor(t, costLevel(cost), { okGreen: true }))))))
       .when(editing, (el) => el.child(h_flex().h(32).px(14).gap(6).items_center()
-        .child(div().flex_none().text_size(12).text_color(t.muted).child(tr("limit")))
+        .child(div().flex_none().w(52).text_size(12).text_color(t.muted).child(tr("limit")))
         .child(step("minus", "−", () => { this.limits = stepLimit(this.limits, key, -1, n); }))
         .child(mono(div()).flex_none().w(28).text_center().text_color(lim ? t.foreground : t.dim).child(lim ? String(lim) : "—"))
         .child(step("plus", "+", () => { this.limits = stepLimit(this.limits, key, 1, n); }))
         .child(div().flex_1())
-        .when(Boolean(lim), (el) => el.child(step("none", tr("limit.none"), () => { this.limits = stepLimit(this.limits, key, -lim, n); })))));
+        .when(Boolean(lim), (el) => el.child(step("none", tr("limit.none"), () => { this.limits = stepLimit(this.limits, key, -lim, n); }))))
+        // #34: its width (< / > / = on the keys), then hiding it (the reminder at the board's end shows it again).
+        .child(h_flex().h(32).px(14).gap(6).items_center()
+          .child(div().flex_none().w(52).text_size(12).text_color(t.muted).child(tr("width")))
+          .child(step("narrow", "−", () => { this.widths = stepWidth(this.widths, key, -1, this.shownW); }))
+          .child(mono(div()).flex_none().w(28).text_center().text_color(width ? t.foreground : t.dim).child(width ? String(width) : tr("width.auto")))
+          .child(step("wide", "+", () => { this.widths = stepWidth(this.widths, key, 1, this.shownW); }))
+          .child(div().flex_1())
+          .when(Boolean(width), (el) => el.child(step("auto", tr("width.auto"), () => { this.widths = stepWidth(this.widths, key, 0); }))))
+        .when(this.board.keys.length > 1, (el) => el.child(h_flex().h(32).px(14).items_center()
+          .child(step("hide", tr("col.hide"), () => { this.hidden = toggleHidden(this.hidden, key, this.board.all); this.limitEdit = null; })))));
   }
 
   // One card, ~240 px wide. `col` goes into every id: a card changing column is drawn twice for a moment
@@ -1067,6 +1098,12 @@ export default class Kanban extends View {
     // First, what matters (Kylian: « pas du tout le coût »): what the agent waits on from you when it is
     // blocked (the sidebar's decision: decide.js' dialog, else herdr-bridge's pending, else that it
     // waits), else what it does now or answered (the sidebar's live line). Two lines at most.
+    // The density (#34, the view's): compact, the title row only (its status: the agent's logo, the
+    // column), except a blocked card, which keeps what it asks on one line with its pills (Kylian: what
+    // the agent waits on is what matters); detailed, what it asks or does on four lines and its model,
+    // context and cost besides.
+    const full = this.density !== "compact";
+    const clamp = this.density === "detailed" ? 64 : 32;
     const asking = th.status === "blocked" ? this.askOf(th) : null;
     // Its answer there, as the sidebar's pills (decide.js decisionButtons: Accepter, Refuser, other
     // choices; Ouvrir with none, which goes to the agent as the card's click). Never on a leaving copy:
@@ -1076,15 +1113,27 @@ export default class Kanban extends View {
       if (res?.ok && !d.pending.options?.length) this.open(th);
       this.decided(res, cx);
     } }) : null;
-    const upfront = asking
+    const upfront = asking && !full
+      ? h_flex().id(`kk-ask1-${key}`).h(26).px(8).gap(6).items_center().rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
+        .tooltip(asking.detail ? `${asking.title} · ${asking.detail}` : asking.title)
+        .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.blocked).child(asking.title))
+        .when(Boolean(pills), (el) => el.child(pills))
+      : asking
       ? v_flex().px(8).py(5).gap(2).rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
         .child(h_flex().gap(6).items_center()
           .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
           .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.blocked).child(asking.title)))
-        .when(Boolean(asking.detail), (el) => el.child(div().max_h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.foreground).child(asking.detail)))
+        .when(Boolean(asking.detail), (el) => el.child(div().max_h(clamp).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.foreground).child(asking.detail)))
         .when(Boolean(pills), (el) => el.child(h_flex().pt(3).child(pills)))
-      : th.line ? div().max_h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(th.status === "working" ? t.muted : t.dim).child(`↳ ${th.line}`)
+      : full && th.line ? div().max_h(clamp).overflow_hidden().text_size(11.5).line_height("16px").text_color(th.status === "working" ? t.muted : t.dim).child(`↳ ${th.line}`)
         : null;
+    // Detailed: the model (and its effort), the context, the cost, in their levels' colors.
+    const figures = this.density === "detailed" && [
+      th.model && mono(t.muted, [th.model, th.effort].filter(Boolean).join(" · ")),
+      th.ctx != null && mono(levelColor(t, ctxLevel(th.ctx, th.sl?.window)), tr("drawer.ctx", { n: Math.round(th.ctx) })),
+      th.cost != null && mono(levelColor(t, costLevel(th.cost, th.model), { okGreen: true }), `$${fnum(th.cost, 2)}`),
+    ].filter(Boolean);
     // Then the flow's step, then the PR (its state's color, a draft in dim as kt-flow) and its CI (/me:report's,
     // else the drawer's checks): passed, failing, running, as icons and counts; the issue, the sub-agents.
     const look = !th.pr ? null : th.pr.state === "OPEN" && (th.pr.draft ?? th.pr.isDraft) ? { ...PR.OPEN, color: "dim" } : PR[th.pr.state] ?? PR.OPEN;
@@ -1121,19 +1170,20 @@ export default class Kanban extends View {
         .when(th.pinned, (el) => el.child(svg(I("pin")).size(11).flex_none().text_color(t.dim)))
         .child(corner))
       .when(Boolean(upfront), (el) => el.child(upfront))
-      .when(Boolean(step), (el) => el.child(h_flex().h(16).gap(6).items_center()
+      .when(full && Boolean(step), (el) => el.child(h_flex().h(16).gap(6).items_center()
         // The step's dot breathes while the agent works (an active state: ANIMATIONS.md).
         .child(div().id(`kk-step-${key}`).size(6).rounded(3).flex_none().bg(t.accent)
           .when(working && !this.m.reduced, (d) => d.loop("opacity", { from: 0.35, to: 1, period: 1400 })))
         .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(step))))
-      .when(facts.length > 0, (el) => el.child(h_flex().h(16).gap(10).items_center().overflow_hidden().children(facts)))
+      .when(full && facts.length > 0, (el) => el.child(h_flex().h(16).gap(10).items_center().overflow_hidden().children(facts)))
+      .when(Boolean(figures?.length), (el) => el.child(h_flex().id(`kk-fig-${key}`).h(16).gap(10).items_center().overflow_hidden().children(figures)))
       // Last, where it is: its project, its branch (a worktree's icon in a linked one).
-      .child(h_flex().h(16).gap(6).items_center()
+      .when(full, (el) => el.child(h_flex().h(16).gap(6).items_center()
         .child(this.mark(t, th.project, 12))
         .child(div().flex_none().max_w(96).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(th.project.name.toUpperCase()))
         .when(Boolean(th.branch), (el) => el
           .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
-          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch)))));
+          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch))))));
   }
 
   // A right-click opens the card's menu; while it shows, gpui-base's Popup anchors it under the card
@@ -1227,7 +1277,12 @@ export default class Kanban extends View {
       k++;
       return div().w_full().pb(6).child(this.card(t, th, col.key, i >= 0 && th.id === cur, i < 0, now, cx));
     });
-    return v_flex().id(`kk-lane-${col.key}`).flex_1().min_w(COL_W).h_full().rounded(16).border(1).border_color(t.border).bg(t.chrome)
+    // Its width set (the view's): as set; auto: it shares the board, COL_W at least. The width it is drawn
+    // at is noted (no redraw: only < / > read it).
+    const w = this.widths[col.key];
+    return v_flex().id(`kk-lane-${col.key}`).when(Boolean(w), (el) => el.w(w).flex_none()).when(!w, (el) => el.flex_1().min_w(COL_W))
+      .on_size_change((size) => { this.shownW[col.key] = size.width; })
+      .h_full().rounded(16).border(1).border_color(t.border).bg(t.chrome)
       .child(this.colHead(t, col.key, col.threads))
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(t[TINT[col.key]] ?? t.dim, "4d")))
       .child(v_flex().id(`kk-list-${col.key}`).flex_1().min_h(0).overflow_y_scrollbar().when(Boolean(scroll), (el) => el.track_scroll(scroll)).p(6)
@@ -1241,9 +1296,11 @@ export default class Kanban extends View {
   // be a second height level in it (ANIMATIONS.md). Everything scrolls together, both ways: the columns
   // are as wide as the board allows, 240 at least.
   lanes(t, b, cur, now, cx) {
-    const n = b.keys.length;
-    const w = Math.max(COL_W, Math.floor(((this.lanesW ?? 0) - 12 - 4 * (n - 1)) / n));
-    const total = n * w + 4 * (n - 1);
+    // A width per column, the heads' and every lane's cells (kanban.js laneWidths: a set one as set, the
+    // auto ones share the rest, COL_W at least).
+    const ws = laneWidths(b.keys, this.widths, (this.lanesW ?? 0) - 12);
+    b.keys.forEach((k, c) => { this.shownW[k] = ws[c]; });
+    const total = ws.reduce((s, x) => s + x, 0) + 4 * (ws.length - 1);
     // A column's cards in every lane: its head's count, limit and cost are the whole column's.
     const all = b.keys.map((_k, c) => b.lanes.flatMap((lane) => lane.cols[c].threads));
     if (this.reveal && this.at && atCard(b, this.at)) {
@@ -1251,8 +1308,8 @@ export default class Kanban extends View {
       this.reveal = false;
     }
     const lane = (ln, l) => {
-      const body = collapse(this.m, `kk-fold-${ln.key}`, ln.open, () => h_flex().gap(4).items_start().children(ln.cols.map((col) =>
-        v_flex().w(w).flex_none().min_h(44).p(6).gap(6).rounded(12).border(1).border_color(t.border).bg(t.chrome)
+      const body = collapse(this.m, `kk-fold-${ln.key}`, ln.open, () => h_flex().gap(4).items_start().children(ln.cols.map((col, c) =>
+        v_flex().w(ws[c]).flex_none().min_h(44).p(6).gap(6).rounded(12).border(1).border_color(t.border).bg(t.chrome)
           .children(col.threads.map((th) => enter(this.m, div().w_full().child(this.card(t, th, col.key, th.id === cur && this.at?.l === l, false, now, cx)),
             `kk-in-${ln.key}-${col.key}-${th.id}`, { dy: 0 }))))), { cx });
       return v_flex().id(`kk-ln-${ln.key}`).w(total).flex_none().gap(4).pt(6)
@@ -1276,7 +1333,7 @@ export default class Kanban extends View {
         cx.notify();
       })
       .child(h_flex().w(total).flex_none().gap(4).children(b.keys.map((k, c) =>
-        v_flex().w(w).flex_none().rounded(12).border(1).border_color(t.border).bg(t.chrome).child(this.colHead(t, k, all[c])))))
+        v_flex().w(ws[c]).flex_none().rounded(12).border(1).border_color(t.border).bg(t.chrome).child(this.colHead(t, k, all[c])))))
       .children(b.lanes.map(lane))
       .when(!b.lanes.length, (el) => el.child(div().p(12).text_size(12.5).text_color(t.dim).child(tr("noMatch"))));
   }
@@ -1428,10 +1485,10 @@ export default class Kanban extends View {
         .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(th.title ? t.foreground : t.dim).child(th.title || tr("draft.untitled")))
         .child(div().flex_none().h(16).px(6).flex().items_center().rounded_full().border(1).border_dashed().border_color(t.input)
           .font_family(MONO).text_size(9).text_color(t.dim).child(tr("draft.tag"))))
-      .child(h_flex().h(16).gap(6).items_center()
+      .when(this.density !== "compact", (el) => el.child(h_flex().h(16).gap(6).items_center()
         .child(this.mark(t, th.project.key === "none" ? null : th.project, 12))
-        .child(div().flex_none().max_w(150).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(String(th.project.name ?? "").toUpperCase())))
-      .when(Boolean(first), (el) => el.child(div().h(16).min_w(0).truncate().text_size(11.5).text_color(t.dim).child(first)));
+        .child(div().flex_none().max_w(150).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(String(th.project.name ?? "").toUpperCase()))))
+      .when(this.density !== "compact" && Boolean(first), (el) => el.child(div().h(16).min_w(0).truncate().text_size(11.5).text_color(t.dim).child(first)));
   }
 
   // A draft's drawer: its head (the pen over the project's dither), its title and its consigne (i types
@@ -1498,6 +1555,23 @@ export default class Kanban extends View {
         .child(button("delete", tr("draft.delete"), "x", () => this.askDeleteDraft(th), t.ansi1)));
     return enter(this.m, v_flex().w(DRAWER_W).h_full().rounded(16).border(1).border_dashed().border_color(t.input).bg(t.background)
       .child(head).child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.input)).child(body), `kk-dr-${th.id}`, { dy: 0 });
+  }
+
+  // The hidden columns (GitHub Projects' « hidden columns »), at the board's end: how many, then each one,
+  // its dot, its name and its cards' count; a click shows it again (the view's, as hiding it).
+  hiddenStrip(t, b) {
+    const gone = b.all.filter((k) => !b.keys.includes(k));
+    return v_flex().id("kk-hidden").w(150).flex_none().ml(4).p(6).gap(2).rounded(16).border(1).border_dashed().border_color(t.border).bg(t.chrome)
+      .child(h_flex().h(28).px(6).gap(6).items_center().text_color(t.dim)
+        .child(svg(I("layers")).size(12).flex_none())
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(10).child(tr("hidden.title", { n: gone.length }).toUpperCase())))
+      .children(gone.map((k) => h_flex().id(`kk-hid-${k}`).h(28).px(6).gap(7).items_center().rounded(8).cursor_pointer()
+        .text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .tooltip(tr("hidden.show", { name: this.colName(k), n: b.counts[k] ?? 0 }))
+        .on_click((_e, cx) => { this.hidden = toggleHidden(this.hidden, k, b.all); this.reveal = true; cx.notify(); })
+        .child(div().size(7).rounded(4).flex_none().bg(t[TINT[k]] ?? t.dim))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).child(this.colName(k)))
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(String(b.counts[k] ?? 0)))));
   }
 
   // Slice by: the panel on the left, its field's values with their counts, « Tout » first; a click picks
@@ -1602,7 +1676,7 @@ export default class Kanban extends View {
     const values = (this.sliceList = o.slice === "none" ? [] : slices(kept, o.slice, pick));
     const onIt = sliced(kept, o.slice, pick);
     if (vis && !checking()) for (const th of onIt) this.wantPr(th);
-    const b = (this.board = board(onIt, { field: o.column, group: o.group, sort: o.sort, pins: world.pins, firstSeen: world.firstSeen, registry: world.registry, folded: this.folded }));
+    const b = (this.board = board(onIt, { field: o.column, group: o.group, sort: o.sort, pins: world.pins, firstSeen: world.firstSeen, registry: world.registry, folded: this.folded, hidden: this.hidden }));
     const focused = this.handle.is_focused();
     // The keyboard gone (a terminal clicked, ctrl-b t) while a tab was being renamed: the name stays as it
     // was. Only on that change, so the render right after startRename() doesn't end it before focus lands.
@@ -1647,7 +1721,7 @@ export default class Kanban extends View {
     // The toolbar under the tabs: the four choices, then the filter. One line that scrolls sideways on a
     // narrow page (FILTERS.md).
     const tools = h_flex().id("kk-tools").flex_none().h(44).px(10).gap(6).items_center().overflow_x_scroll()
-      .children(["column", "group", "slice", "sort"].map((k) => this.choiceButton(t, k, o[k])))
+      .children(["column", "group", "slice", "sort", "density"].map((k) => this.choiceButton(t, k, o[k])))
       .child(div().flex_1().min_w(8))
       .when(Boolean(notice), (el) => el.child(notice))
       .child(field);
@@ -1665,6 +1739,7 @@ export default class Kanban extends View {
     // slice panel on its left.
     if (this.reveal && o.group !== "project") this.boardScroll.scroll_to_item(this.at.c);
     this.menuDrawn = false;
+    this.density = o.density; // the cards' (card(), draftCard())
     const area = o.group === "project"
       ? this.lanes(t, b, cur, now, cx)
       : h_flex().id("kk-board").flex_1().min_w(0).h_full().gap(4).items_start().overflow_x_scroll().track_scroll(this.boardScroll)
@@ -1681,6 +1756,7 @@ export default class Kanban extends View {
     const main = h_flex().flex_1().min_h(0).items_start()
       .when(o.slice !== "none", (el) => el.child(this.slicePanel(t, o.slice, values, kept.length).mr(4)))
       .child(area)
+      .when(b.keys.length < b.all.length, (el) => el.child(this.hiddenStrip(t, b)))
       .child(drawer);
     // No frame of its own: the work card around it paints the background. Each arrival fades it in.
     return enter(m, v_flex().size_full().gap(4).text_color(t.foreground).child(head).child(main), `kk-page-${this.arrivals}`, { dy: 0 })

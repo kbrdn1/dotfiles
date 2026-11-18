@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
-  costOf, cleanLimits, stepLimit, checkSteps, ciCount, cardMenu, menuStart, takesFocus, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
+  costOf, cleanLimits, stepLimit, WIDTH, cleanWidths, stepWidth, laneWidths, cleanHidden, toggleHidden, checkSteps, ciCount, cardMenu, menuStart, takesFocus, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
 
@@ -171,12 +171,50 @@ assert.deepEqual(stepLimit({}, "idle", -1, 4), {});
 assert.deepEqual(stepLimit({ idle: 4 }, "idle", 1), { idle: 5 });
 assert.deepEqual(stepLimit({ idle: 1, done: 2 }, "idle", -1), { done: 2 }); // down to 0: gone
 
+// #34, a column's width: from auto's 240, 20 px a step, 200 to 420; = back to auto; several at once.
+assert.deepEqual(stepWidth({}, "idle", 1), { idle: 260 });
+assert.deepEqual(stepWidth({}, "idle", -1), { idle: 220 });
+assert.deepEqual(stepWidth({ idle: 200 }, "idle", -1), { idle: 200 });
+assert.deepEqual(stepWidth({ idle: 420 }, "idle", 1), { idle: 420 });
+assert.deepEqual(stepWidth({ idle: 300, done: 260 }, "idle", 0), { done: 260 });
+assert.deepEqual(stepWidth({ idle: 300 }, ["idle", "done"], 1), { done: 260, idle: 320 });
+// An auto column steps from the width it is drawn at (rounded to 20, in bounds): > never narrows it.
+assert.deepEqual(stepWidth({}, "idle", 1, { idle: 350 }), { idle: 380 }); // 350 → 360, + 20
+assert.deepEqual(stepWidth({}, "idle", -1, { idle: 350 }), { idle: 340 });
+assert.deepEqual(stepWidth({}, "idle", 1, { idle: 500 }), { idle: 420 });
+assert.deepEqual(stepWidth({}, "idle", -1, { idle: 150 }), { idle: 200 });
+assert.deepEqual(stepWidth({ idle: 300 }, "idle", 1, { idle: 350 }), { idle: 320 }); // a set width: from it
+assert.deepEqual(cleanWidths({ idle: 199, done: 421, working: "300", blocked: 280 }), { blocked: 280 });
+assert.equal(WIDTH.auto, 240);
+// By project, the widths the lanes share: the set ones as set, the rest split what's left (240 at least).
+assert.deepEqual(laneWidths(["a", "b", "c"], { b: 300 }, 1000), [346, 300, 346]); // (1000 − 2 gaps of 4 − 300) / 2
+assert.deepEqual(laneWidths(["a", "b"], {}, 300), [240, 240]);
+assert.deepEqual(laneWidths(["a", "b"], { a: 200, b: 420 }, 2000), [200, 420]);
+// Hidden columns: once each, sorted; the last showing stays; shown again.
+assert.deepEqual(cleanHidden(["idle", "done", "idle", null]), ["done", "idle"]);
+assert.deepEqual(toggleHidden([], "idle", STATUSES), ["idle"]);
+assert.deepEqual(toggleHidden(["idle"], "idle", STATUSES), []);
+const allBut = STATUSES.filter((k) => k !== "working");
+assert.deepEqual(toggleHidden(allBut, "working", STATUSES), cleanHidden(allBut));
+// The board without them: their cards out, the cursor's columns without them; every column still
+// counted (the reminder, the panel); hiding them all shows them all.
+const hb = board(show, { hidden: ["done", "idle"] });
+assert.deepEqual([hb.keys, hb.all, hb.lanes[0].cols.map((c) => c.key)], [["blocked", "working"], STATUSES, ["blocked", "working"]]);
+assert.deepEqual(hb.counts, Object.fromEntries(STATUSES.map((k) => [k, show.filter((x) => (STATUSES.includes(x.status) ? x.status : "idle") === k).length])));
+assert.deepEqual(board(show, { hidden: STATUSES }).keys, STATUSES);
+assert.deepEqual(locate(hb, "tfx-3"), locate(hb, "nope")); // a card in a hidden column: out of reach
+
 // Saved views: the defaults; checked and complete; the tab's dot; save, add, duplicate, rename, delete.
 const vs = viewsOf(null);
 assert.deepEqual([vs.current, vs.list.map((v) => [v.id, v.name, v.filter])], ["all", [["all", null, ""], ["blocked", null, "status:blocked"], ["project", null, "project:@current"]]]);
 assert.deepEqual(vs.list.map((v) => v.id), DEFAULT_VIEWS.map((v) => v.id));
-assert.deepEqual(settingsOf({ column: "weird", slice: "none", pick: "x", filter: "  a ", limits: { idle: 0 } }),
-  { column: "status", group: "none", slice: "none", pick: null, sort: "activity", filter: "a", limits: {} });
+assert.deepEqual(settingsOf({ column: "weird", slice: "none", pick: "x", filter: "  a ", limits: { idle: 0 }, widths: { idle: 999, done: 260.5, working: 300 }, hidden: ["done", "done", 3], density: "huge" }),
+  { column: "status", group: "none", slice: "none", pick: null, sort: "activity", density: "normal", filter: "a", limits: {}, widths: { working: 300 }, hidden: ["done"] });
+// #34: widths, hidden columns and density are the view's too (its dot).
+assert.ok(dirty(currentView(viewsOf(null)), { widths: { idle: 260 } }));
+assert.ok(dirty(currentView(viewsOf(null)), { hidden: ["idle"] }));
+assert.ok(dirty(currentView(viewsOf(null)), { density: "compact" }));
+assert.ok(!dirty({ hidden: ["idle", "done"] }, { hidden: ["done", "idle"] })); // the same, in another order
 assert.deepEqual(viewsOf({ current: "gone", list: [{ id: "v1", name: "  " }, { nope: 1 }] }).list.map((v) => [v.id, v.name]), [["v1", null]]);
 assert.equal(viewsOf({ current: "gone", list: [{ id: "v1" }] }).current, "v1");
 assert.equal(viewsOf({ list: [{ nope: 1 }] }).current, "all"); // nothing usable: the defaults

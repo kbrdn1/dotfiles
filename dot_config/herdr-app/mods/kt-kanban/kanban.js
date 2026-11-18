@@ -14,6 +14,7 @@ export const OPTIONS = {
   group: ["none", "project"],
   slice: ["none", "project", "program"],
   sort: ["activity", "age", "cost", "name"],
+  density: ["normal", "compact", "detailed"], // a card: as #31, its title and status only, or more
 };
 /** A stored choice, the default when unknown. */
 export const choice = (opt, v) => (OPTIONS[opt].includes(v) ? v : OPTIONS[opt][0]);
@@ -160,13 +161,17 @@ export function archivePlan(threads, { days, now, memo = null }) {
 
 /** The board: its column keys and its lanes, [{ key, project, count, open, cols }]. No group: one lane
  *  (key "all"). By project: one per project, Home first, then those that need you, then the registry's
- *  order (threads-model's projectGroups); a lane only while it has a thread. `folded`: lane keys shut. */
-export function board(threads, { field = "status", group = "none", sort = "activity", pins = [], firstSeen = {}, registry = [], folded = new Set() } = {}) {
+ *  order (threads-model's projectGroups); a lane only while it has a thread. `folded`: lane keys shut.
+ *  `hidden`: column keys left out (their cards with them; never all of them); `all`, every column of the
+ *  field, and `counts`, the cards each holds, say them in the reminder and the panel. */
+export function board(threads, { field = "status", group = "none", sort = "activity", pins = [], firstSeen = {}, registry = [], folded = new Set(), hidden = [] } = {}) {
   const f = FIELDS[field] ?? FIELDS.status;
-  const keys = f.values(threads);
+  const all = f.values(threads);
+  const keys = all.some((k) => !hidden.includes(k)) ? all.filter((k) => !hidden.includes(k)) : all;
+  const counts = Object.fromEntries(all.map((k) => [k, threads.filter((th) => f.of(th) === k).length]));
   const lane = (key, list, project) => ({ key, project, count: list.length, open: !folded.has(key), cols: columns(list, field, { pins, sort, firstSeen, values: keys }) });
-  if (group !== "project") return { keys, lanes: [lane("all", threads, null)] };
-  return { keys, lanes: projectGroups(threads, pins, registry).map((g) => lane(g.key, g.threads, g.threads[0].project)) };
+  if (group !== "project") return { keys, all, counts, lanes: [lane("all", threads, null)] };
+  return { keys, all, counts, lanes: projectGroups(threads, pins, registry).map((g) => lane(g.key, g.threads, g.threads[0].project)) };
 }
 
 // Slice by: a field's value per thread, { key, name } (the program by its key; none without an agent).
@@ -366,9 +371,52 @@ export function stepLimit(limits, key, delta, count = 0) {
   return cleanLimits({ ...limits, [key]: next });
 }
 
+// ---------- the board's look (#34): column widths, hidden columns ----------
+
+/** A column's width: auto (it shares the board, `auto` px at least) or set, `min` to `max`, by `step`. */
+export const WIDTH = { min: 200, max: 420, step: 20, auto: 240 };
+
+/** The widths kept: whole px within bounds, by column key. */
+export const cleanWidths = (widths) => Object.fromEntries(Object.entries(widths ?? {})
+  .filter(([, w]) => Number.isInteger(w) && w >= WIDTH.min && w <= WIDTH.max).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+
+const clampW = (w) => Math.min(WIDTH.max, Math.max(WIDTH.min, w));
+
+/** < / > on a column, or on each of several (`keys`): a step narrower / wider; an auto column steps from
+ *  the width it is drawn at (`shown`, px by key: an auto column shares the board, often wider than 240),
+ *  rounded to a step and kept in bounds, else from auto's least width; 0 (=): back to auto. */
+export function stepWidth(widths, keys, delta, shown = {}) {
+  const next = { ...widths };
+  for (const k of [].concat(keys)) {
+    if (!delta) delete next[k];
+    else next[k] = clampW((widths?.[k] ?? clampW(Math.round((shown?.[k] ?? WIDTH.auto) / WIDTH.step) * WIDTH.step)) + delta * WIDTH.step);
+  }
+  return cleanWidths(next);
+}
+
+/** By project, a width per column (the lanes share them): a set one as set; the auto ones split what is
+ *  left of `avail` after the set ones and the gaps, `auto` px at least. */
+export function laneWidths(keys, widths, avail, gap = 4) {
+  const set = keys.map((k) => widths?.[k] ?? null);
+  const autos = set.filter((w) => w == null).length;
+  const left = avail - gap * Math.max(0, keys.length - 1) - set.reduce((s, w) => s + (w ?? 0), 0);
+  const auto = autos ? Math.max(WIDTH.auto, Math.floor(left / autos)) : 0;
+  return set.map((w) => w ?? auto);
+}
+
+/** The hidden columns kept: column keys, once each, sorted (two views compare as text). */
+export const cleanHidden = (hidden) => [...new Set((Array.isArray(hidden) ? hidden : []).filter((k) => typeof k === "string"))].sort();
+
+/** A column hidden, or shown again; the last one showing of `keys` (the field's columns) stays. */
+export function toggleHidden(hidden, key, keys) {
+  const now = cleanHidden(hidden);
+  if (now.includes(key)) return now.filter((k) => k !== key);
+  return keys.some((k) => k !== key && !now.includes(k)) ? cleanHidden([...now, key]) : now;
+}
+
 // ---------- saved views (tabs) ----------
 // A view: { id, name (null: the default's name, said in the language shown), column, group, slice,
-// pick (the slice's value), sort, filter, limits }. Stored in shared "kt.kanban.views" as { current,
+// pick (the slice's value), sort, density, filter, limits, widths, hidden }. Stored in shared "kt.kanban.views" as { current,
 // list }; nothing stored: the default views. What shows is the view's settings until one changes (then
 // the tab says it is modified), saved into it, or discarded (the view applied again).
 
@@ -383,8 +431,8 @@ export function settingsOf(v) {
   const slice = choice("slice", v?.slice);
   return {
     column: choice("column", v?.column), group: choice("group", v?.group), slice,
-    pick: slice === "none" ? null : v?.pick ?? null, sort: choice("sort", v?.sort),
-    filter: String(v?.filter ?? "").trim(), limits: cleanLimits(v?.limits),
+    pick: slice === "none" ? null : v?.pick ?? null, sort: choice("sort", v?.sort), density: choice("density", v?.density),
+    filter: String(v?.filter ?? "").trim(), limits: cleanLimits(v?.limits), widths: cleanWidths(v?.widths), hidden: cleanHidden(v?.hidden),
   };
 }
 
