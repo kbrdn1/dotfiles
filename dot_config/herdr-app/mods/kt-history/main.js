@@ -19,7 +19,7 @@
 
 import { View, div, svg, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, Scrollbar, ScrollHandle, VirtualListScrollHandle } from "gpui-base";
-import { exec, focused, panes, spaces, theme, layout, settings, readTextFile, appHome, nextCommand, checking, run, notify, openOverlay, shared, watchFolder } from "herdr";
+import { exec as hostExec, focused, panes, spaces, theme, layout, settings, readTextFile, appHome, nextCommand, checking, run, notify, openOverlay, shared, watchFolder } from "herdr";
 import { parsePatch } from "./diff.js";
 import { ICON_MAP } from "./icons.js";
 import { fileItems, palette, alpha, action, MONO, IMAGE, loadPreview, cleanPreviews, viewImages, colorize, cleanTokens } from "./diffview.js";
@@ -29,8 +29,13 @@ import { skeleton, readyFor } from "./skeleton.js";
 import { gitTopics, refreshOn } from "./bus.js";
 import { makeT, date } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a remote repo's machine away
+// refuses the read at once and says so (notice), and a remote repo is read every 60 s at most (#62).
+import { guard, isOffline, reachable, due, notice } from "./machines.js";
 
 const tr = makeT(strings);
+const exec = guard(hostExec);
+const REMOTE_EVERY = 60e3;
 // The header's pixel band (kt-keys' dither.js, a byte-identical copy).
 import { ditherBand, TOP } from "./dither.js";
 import { shouldRead } from "./reread.js";
@@ -210,7 +215,8 @@ export default class History extends View {
       }
     });
     this.refresh(cx);
-    cx.timer.every(10000, (cx) => this.refresh(cx));
+    // A remote repo: the bus and coming back read at once; this tick only every 60 s (DATA-SYNC.md).
+    cx.timer.every(10000, (cx) => { if (due(where().on, this.readAt, REMOTE_EVERY)) this.refresh(cx); });
     // The keyboard went away (Herdr doesn't always redraw then): drop the cursor. A hidden copy
     // doesn't render, so this tick notes that the tab went away: shown again, it reads and fades in.
     cx.timer.every(500, (cx) => {
@@ -336,6 +342,7 @@ export default class History extends View {
       try {
         // No folder at all: no repo, said as such (an answer, no skeleton left standing).
         const top = cwd ? await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }) : { code: 1 };
+        this.offline = null; // the machine answered
         if (top.code !== 0) {
           // Not a repo (a thread on ~): forget the key and the branch too, as kt-diff does, or coming back
           // to the same repo would find the same key and keep « pas de dépôt git ici ».
@@ -371,7 +378,9 @@ export default class History extends View {
         this.activity = perDay(act?.code === 0 ? act.stdout.split("\n").filter(Boolean).map(Number) : [], win.index);
         cx.notify();
       } catch (e) {
-        this.error = String(e);
+        // The machine away (machines.js): its notice, not a raw error.
+        this.offline = isOffline(e);
+        this.error = this.offline ? null : String(e);
         // Failed on another place than the one shown: its error, never the previous repo's commits.
         if (this.readFor !== at) { this.root = undefined; this.key = null; this.branch = null; this.commits = []; this.rows = []; this.activity = null; this.sel = null; this.detail = null; }
         cx.notify();
@@ -565,8 +574,12 @@ export default class History extends View {
     const sp = spaces().find((s) => s.active)?.id;
     if (vis) refreshOn(this, cx, "git", [...gitTopics(this.root), ...(sp ? [`agent:${sp}`] : [])], async (cx) => this.refresh(cx));
     if (!checking()) this.watchGit(cx);
+    // This place's machine was away (machines.js): back now (kt.machines or machines() moved), read at once.
+    const off = this.offline && this.offline === where().on ? this.offline : null;
+    if (off && vis && !checking() && reachable(off)) { this.offline = null; this.refresh(cx, true); }
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
+    const away = off ? notice(t, off, { id: "hi-offline" }) : null;
     const S = (this.S = skeleton(t, m)); // details() too
     // Read for this place (readyFor): before the first read, and after a change of thread, space or
     // worktree until its own read answers, the skeleton, never the previous repo's branch, curve, commits
@@ -623,7 +636,9 @@ export default class History extends View {
     // (skeleton.js), breathing.
     const empty = this.root === null ? tr("noRepo") : this.error ?? tr("noCommits");
     const list = v_flex().flex_1().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background).p(4)
-      .when(!n, (el) => el.child(!ready ? S.pulse(S.list(6, { h: ROW, icon: 10, round: true, lines: [0.6, 0.3] }).id("hi-list-sk"))
+      // Its machine away: the notice on top (over the commits last read, if any), no « pas de commit ».
+      .when(Boolean(away), (el) => el.child(away))
+      .when(!n && !(ready && away), (el) => el.child(!ready ? S.pulse(S.list(6, { h: ROW, icon: 10, round: true, lines: [0.6, 0.3] }).id("hi-list-sk"))
         : div().p(12).text_size(13).text_color(t.dim).child(empty)))
       .when(n > 0, (el) => el.child(div().flex_1().min_h(0).relative()
         .child(v_virtual_list("hi-list", n, ROW, (i) => this.commits[i].hash,

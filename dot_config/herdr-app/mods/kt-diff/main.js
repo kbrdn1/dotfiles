@@ -18,7 +18,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, ScrollHandle, Scrollbar } from "gpui-base";
-import { exec, focused, panes, spaces, theme, layout, settings, readTextFile, appHome, openOverlay, nextCommand, notify, checking, run, shared } from "herdr";
+import { exec as hostExec, focused, panes, spaces, theme, layout, settings, readTextFile, appHome, openOverlay, nextCommand, notify, checking, run, shared } from "herdr";
 import * as fs from "fs/promises";
 import { parsePatch } from "./diff.js";
 import { commitPrompt, cleanMessage, SYSTEM } from "./commitmsg.js";
@@ -33,8 +33,13 @@ import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 // kt-keys' roll.js (a byte-identical copy): the commit zone's +N −M roll to their new digits.
 import { roll } from "./roll.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a remote repo's machine away
+// refuses the read at once and says so (notice), and a remote repo is read every 15 s at most (#62).
+import { guard, isOffline, reachable, due, notice, localOnly } from "./machines.js";
 
 const tr = makeT(strings);
+const exec = guard(hostExec);
+const REMOTE_EVERY = 15e3;
 
 const ME = "diff"; // this block's id in the layout's "panel-body" stack
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -163,7 +168,8 @@ export default class Changes extends View {
       }
     });
     this.refresh(cx);
-    cx.timer.every(3000, (cx) => this.refresh(cx));
+    // A remote repo: the bus and coming back read at once; this tick only every 15 s (DATA-SYNC.md).
+    cx.timer.every(3000, (cx) => { if (due(where().on, this.readAt, REMOTE_EVERY)) this.refresh(cx); });
     // The keyboard went away (Herdr doesn't always redraw then): drop the cursor. A hidden copy
     // doesn't render, so this tick notes that the tab went away: shown again, it reads and fades in.
     cx.timer.every(500, (cx) => {
@@ -255,6 +261,7 @@ export default class Changes extends View {
       try {
         // No folder at all: no repo, said as such (an answer, no skeleton left standing).
         const top = cwd ? await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }) : { code: 1 };
+        this.offline = null; // the machine answered
         if (top.code !== 0) {
           if (this.root !== null) { this.root = null; this.branch = null; this.staged = []; this.changes = []; this.key = null; cx.notify(); }
           return;
@@ -297,7 +304,9 @@ export default class Changes extends View {
         for (const p of untracked.slice(0, MAX_FRESH)) if (fresh[p].loaded === false) await this.loadFresh(p, root, on);
         cx.notify();
       } catch (e) {
-        this.error = String(e);
+        // The machine away (machines.js): its notice, not a raw error.
+        this.offline = isOffline(e);
+        this.error = this.offline ? null : String(e);
         // Failed on another place than the one shown: its error, never the previous repo's files.
         if (this.readFor !== at) { this.root = undefined; this.branch = null; this.staged = []; this.changes = []; this.key = null; }
         cx.notify();
@@ -379,7 +388,10 @@ export default class Changes extends View {
           if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || tr("failedCode", { cmd, sub: args[0], code: r.code }));
           if (cmd === "git" && args[0] === "commit") { this.message = ""; this.input.set_value(""); this.note = r.stdout.trim().split("\n")[0]; }
         }
-      } catch (e) { this.error = String(e.message ?? e); }
+      } catch (e) {
+        this.offline = isOffline(e);
+        if (!this.offline) this.error = String(e.message ?? e);
+      }
       finally {
         // DATA-SYNC.md: stage, unstage, restore, clean, commit, push, PR: every mod showing this repo reads
         // again (on a failure too: a hook may have staged); a push or a PR moves GitHub's side as well.
@@ -472,7 +484,7 @@ export default class Changes extends View {
     return h_flex().id("cg-generate").flex_none().size(26).items_center().justify_center().rounded_full()
       .text_color(running ? t.accent : ready ? t.muted : t.dim)
       .when(!ready, (el) => el.opacity(0.5))
-      .tooltip(running ? tr("cancelGen") : ready ? tr("generate") : tr("stageFirst"))
+      .tooltip(running ? tr("cancelGen") : this.on ? localOnly(this.on) : ready ? tr("generate") : tr("stageFirst"))
       .when(ready, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { if (ready) this.generate(cx); cx.notify(); })
@@ -569,8 +581,12 @@ export default class Changes extends View {
     // DATA-SYNC.md: another mod's action on this repo, or an agent of this space that stopped working.
     const sp = spaces().find((s) => s.active)?.id;
     if (vis) refreshOn(this, cx, "git", [...gitTopics(this.root), ...(sp ? [`agent:${sp}`] : [])], async (cx) => { this.key = null; this.refresh(cx); });
+    // This place's machine was away (machines.js): back now (kt.machines or machines() moved), read at once.
+    const off = this.offline && this.offline === where().on ? this.offline : null;
+    if (off && vis && !checking() && reachable(off)) { this.offline = null; this.key = null; this.refresh(cx); }
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
+    const away = off ? notice(t, off, { id: "cg-offline" }) : null;
     const S = skeleton(t, m);
     // Read for this place (readyFor): before the first read, and after a change of thread, space or
     // worktree until its own read answers, the skeleton, never the previous repo's branch and files; and
@@ -620,7 +636,10 @@ export default class Changes extends View {
           .child(svg(I("plus")).size(13)).child(tr("stageAllCommit")))
         .child(div().px(10).pb(4).text_size(11).text_color(t.dim).child(tr("commitNote")))))
       .child(h_flex().child(this.button(t, "cg-pr", tr("createPr"), I("git-pull-request"), false, ready && Boolean(this.root) && !this.busy && !this.on,
-        (cx) => this.git(tr("createPr"), [["gh", ["pr", "create", "--fill", "--web"], 60e3]], cx))))
+        (cx) => this.git(tr("createPr"), [["gh", ["pr", "create", "--fill", "--web"], 60e3]], cx))
+        // --web opens a browser where gh runs: on another machine, not on this screen.
+        .when(Boolean(this.on), (el) => el.tooltip(localOnly(this.on)))))
+      .when(Boolean(away), (el) => el.child(away))
       .when(Boolean(this.error), (el) => el.child(div().px(12).py(8).rounded(12).border(1).border_color(alpha(p.err, "4d")).bg(alpha(p.err, "1a"))
         .font_family(MONO).text_size(11.5).text_color(p.err).child(this.error)))
       .when(Boolean(this.note) && !this.error, (el) => el.child(div().px(12).font_family(MONO).text_size(11.5).text_color(p.ok).child(this.note)));
@@ -656,7 +675,7 @@ export default class Changes extends View {
       .child(div().relative().flex_1().min_h(0)
         .child(v_flex().id("cg-list").size_full().overflow_y_scroll().track_scroll(this.listScroll).p(4).gap(1)
           .children(items)
-          .when(!staged.length && !changes.length, (el) => el.child(!ready
+          .when(!staged.length && !changes.length && (!ready || Boolean(empty)), (el) => el.child(!ready
             ? S.pulse(S.list(4, { h: 28, icon: 14, lines: [0.5], px: 8, gap: 8, gap_y: 1 }).mt(5).id("cg-list-sk"))
             : div().mt(5).px(12).py(6).text_size(12.5).text_color(t.dim).child(empty))))
         .child(Scrollbar.vertical("cg-list").absolute().inset_0()));

@@ -64,7 +64,7 @@ eq(deletePlan("/m/zz", ["/m/zz/../kt-keys/vim.js"], []), null, "escape refused")
 eq(deletePlan("/m/zz", ["/m/zzz/a.js"], []), null, "sibling refused");
 // SHARED watches every shared module, each with its reference mod, and that reference holds the file.
 const MODS = `${homedir()}/.config/herdr-app/mods`;
-for (const f of ["ring.js", "levels.js", "band.js", "select.js", "diffview.js", "diff.js", "reread.js", "icons.js", "companion-logo.js", "markdown.js", "markdown.strings.js", "machines.js"]) {
+for (const f of ["ring.js", "levels.js", "band.js", "select.js", "diffview.js", "diff.js", "reread.js", "icons.js", "companion-logo.js", "markdown.js", "markdown.strings.js", "machines.js", "machines.strings.js"]) {
   eq(typeof SHARED[f], "string", `${f} watched`);
   eq(readFileSync(`${MODS}/${SHARED[f]}/${f}`, "utf8").length > 0, true, `${f}: its reference ${SHARED[f]} holds it`);
 }

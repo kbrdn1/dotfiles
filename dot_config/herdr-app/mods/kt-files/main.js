@@ -15,7 +15,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, ScrollHandle, Scrollbar } from "gpui-base";
-import { spaces, panes, exec, readTextFile, settings, theme, layout, home, appHome, checking, run, nextCommand, notify, openOverlay, shared } from "herdr";
+import { spaces, panes, exec as hostExec, readTextFile as hostRead, settings, theme, layout, home, appHome, checking, run, nextCommand, notify, openOverlay, shared } from "herdr";
 import { ICON_MAP, catIcon } from "./icons.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
@@ -24,8 +24,14 @@ import { gitTopics, refreshOn } from "./bus.js";
 import { shouldRead } from "./reread.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a remote folder's machine away
+// refuses the read at once and says so (notice), and a remote folder is listed every 20 s at most (#62).
+import { guard, guardRead, isOffline, reachable, due, notice } from "./machines.js";
 
 const tr = makeT(strings);
+const exec = guard(hostExec);
+const readTextFile = guardRead(hostRead);
+const REMOTE_EVERY = 20e3;
 
 const ME = "files"; // this block's id in the layout's "panel-body" stack
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -135,7 +141,8 @@ export default class Files extends View {
       });
     }
     this.refresh(cx);
-    cx.timer.every(5000, (cx) => this.refresh(cx));
+    // A remote folder: the bus and coming back read at once; this tick only every 20 s (DATA-SYNC.md).
+    cx.timer.every(5000, (cx) => { if (due(machine(), this.readAt, REMOTE_EVERY)) this.refresh(cx); });
   }
 
   // ---------- keys (vim.js; kt-keys lists them) ----------
@@ -222,6 +229,7 @@ export default class Files extends View {
     cx.spawn(async (cx) => {
       try {
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
+        this.offline = null; // the machine answered
         if (location() !== key) return;
         const root = top.code === 0 ? top.stdout.trim() : cwd;
         if (root !== this.root || on !== this.on) {
@@ -248,7 +256,8 @@ export default class Files extends View {
           const st = await exec("git", ["status", "--porcelain"], { cwd: root, on });
           for (const l of st.stdout.split("\n").filter(Boolean)) this.marks[l.slice(3)] = l.startsWith("??") ? "U" : "M";
         }
-      } catch {
+      } catch (e) {
+        this.offline = isOffline(e); // the machine away (machines.js): its notice in the list
         this.paths = []; this.marks = {};
         // Failed on another place than the one listed: the previous repo's open file goes too.
         if (this.readFor !== key) this.show(null);
@@ -368,8 +377,12 @@ export default class Files extends View {
     // that stopped working.
     const sp = spaces().find((s) => s.active)?.id;
     if (vis) refreshOn(this, cx, "git", [...gitTopics(this.root), ...(sp ? [`agent:${sp}`] : [])], async (cx) => this.refresh(cx));
+    // This place's machine was away (machines.js): back now (kt.machines or machines() moved), list at once.
+    const off = this.offline && this.offline === machine() ? this.offline : null;
+    if (off && vis && !checking() && reachable(off)) { this.offline = null; this.refresh(cx); }
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
+    const away = off ? notice(t, off, { id: "tf-offline" }) : null;
     this.keyed = this.handle.is_focused();
     const typing = this.keyed && this.vim.insert;
     const onField = this.keyed && this.cur === "search"; // ctrl-n moved it to a row: the caret and INSERT say it types
@@ -446,7 +459,8 @@ export default class Files extends View {
             // « no files » or the previous place's tree. A later read of the same place keeps what it had
             // (DATA-SYNC.md).
             .when(!ready, (el) => el.child(((S) => S.pulse(S.list(8, { h: 24, icon: 13, lines: [0.45], px: 6, gap: 6 }).id("tf-list-sk")))(skeleton(t, m))))
-            .when(ready && paths.length === 0, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(!here ? tr("noFolder") : this.note ? tr(`note.${this.note}`) : this.root ? tr("noFiles") : tr("noFolder")))),
+            .when(ready && paths.length === 0 && Boolean(away), (el) => el.child(div().p(8).child(away)))
+            .when(ready && paths.length === 0 && !away, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(!here ? tr("noFolder") : this.note ? tr(`note.${this.note}`) : this.root ? tr("noFiles") : tr("noFolder")))),
         )
         .child(Scrollbar.vertical("tf-list").absolute().inset_0()));
     // The content fades in each time the tab is shown (the root keeps the keyboard), an opened file too.

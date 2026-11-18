@@ -9,6 +9,24 @@ const store = {};
 let layouts = [];
 let hcOut = { code: 0, stdout: "" };
 let sets = 0;
+const toasts = [];
+// A mock element: records its builder calls, children and handlers.
+const el = (kind) => {
+  const node = { kind, kids: [], props: {}, on: {} };
+  const p = new Proxy(node, {
+    get(target, k) {
+      if (k in target) return target[k];
+      return (...a) => {
+        if (k === "child") target.kids.push(a[0]);
+        else if (k === "when") return a[0] ? a[1](p) : p;
+        else if (k.startsWith("on_")) target.on[k] = a.at(-1);
+        else target.props[k] = a;
+        return p;
+      };
+    },
+  });
+  return p;
+};
 plugin({
   setup(b) {
     b.module("herdr", () => ({
@@ -17,9 +35,12 @@ plugin({
         setShared: (k, v) => { sets++; store[k] = v; },
         machines: () => layouts,
         hc: async () => hcOut,
+        notify: (n) => toasts.push(n),
       },
       loader: "object",
     }));
+    b.module("gpui-kit", () => ({ loader: "object", exports: { div: () => el("div") } }));
+    b.module("gpui-base", () => ({ loader: "object", exports: { h_flex: () => el("h"), v_flex: () => el("v") } }));
   },
 });
 const M = await import("./machines.js");
@@ -126,6 +147,13 @@ for (const [on, status] of [["vps-b", "login"], ["vps-c", "away"], ["vps-d", "lo
   assert.ok(Date.now() - t < 50, "refused at once");
 }
 assert.deepEqual(calls, [["git", null], ["git", null], ["git", "vps-a"]]);
+// A remote call without a timeout gets 10 s; one that names its own keeps it; this computer gets none added.
+const seen = [];
+const g2 = M.guard(async (cmd, args, options) => { seen.push(options?.timeout); return { code: 0 }; }, o);
+await g2("git", ["status"], { cwd: "/r", on: "vps-a" });
+await g2("gwm", ["new"], { cwd: "/r", on: "vps-a", timeout: 600000 });
+await g2("git", ["status"], { cwd: "/r" });
+assert.deepEqual(seen, [10000, 600000, undefined]);
 // An answer with a nonzero code is not an offline error.
 assert.equal(M.isOffline(new Error("exit 128")), null);
 assert.equal(M.isOffline(null), null);
@@ -135,5 +163,32 @@ assert.equal(await gr("/f"), "text");
 assert.equal(await gr("/f", { on: "vps-a" }), "text");
 assert.equal(M.isOffline(await gr("/f", { on: "vps-c" }).catch((e) => e)), "vps-c");
 assert.deepEqual(reads, [null, "vps-a"]);
+
+// ---- due: this computer every tick; another machine only once `every` ms passed since the last read.
+assert.equal(M.due(null, 1000, 15000, 2000), true);
+assert.equal(M.due("vps-a", 1000, 15000, 2000), false);
+assert.equal(M.due("vps-a", 1000, 15000, 16000), true);
+assert.equal(M.due("vps-a", undefined, 15000, 2000), true); // never read: now
+
+// ---- notice: nothing for a reachable machine; the state, its reason, and a login's command with Copy.
+const t = { border: "b", raised: "r", foreground: "f", muted: "m", dim: "d", blocked: "x", working: "w", hover: "h" };
+const text = (n) => (n == null ? "" : typeof n === "string" ? n : (n.kids ?? []).map(text).join(" "));
+const find = (n, pred) => (n && typeof n === "object" ? (pred(n) ? n : (n.kids ?? []).map((k) => find(k, pred)).find(Boolean) ?? null) : null);
+assert.equal(M.notice(t, null, { opts: o }), null);
+assert.equal(M.notice(t, "vps-a", { opts: o }), null);
+const away = M.notice(t, "vps-c", { id: "n", opts: o });
+assert.match(text(away), /vps-c injoignable/);
+assert.match(text(away), /connection refused/);
+assert.equal(find(away, (n) => n.props.id?.[0] === "n-copy"), null); // nothing to copy when away
+const login = M.notice(t, "vps-b", { id: "n", opts: o });
+assert.match(text(login), /vps-b : login requis/);
+assert.match(text(login), /hc machine login vps-b/);
+const copy = find(login, (n) => n.props.id?.[0] === "n-copy");
+let clip = null;
+copy.on.on_click(null, { write_to_clipboard: (s) => { clip = s; } });
+assert.equal(clip, "hc machine login vps-b");
+assert.equal(toasts.at(-1).body, "hc machine login vps-b");
+assert.match(text(M.notice(t, "vps-d", { opts: o })), /vps-d : connexion…/);
+assert.match(M.localOnly("vps-a"), /vps-a/);
 
 console.log("machines.js: ok");

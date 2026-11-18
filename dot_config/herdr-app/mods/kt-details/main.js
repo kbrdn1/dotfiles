@@ -7,7 +7,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, panes, run, shared, exec, home, layout, theme } from "herdr";
+import { spaces, panes, run, shared, exec as hostExec, home, layout, theme, checking } from "herdr";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
@@ -17,8 +17,13 @@ import { roll } from "./roll.js";
 // field opens and closes on its height (ANIMATIONS.md).
 import { motionState, frame, enter, collapse } from "./motion.js";
 import { skeleton, readyFor } from "./skeleton.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a remote folder's machine away
+// refuses the read at once and says so (notice), and a remote folder is read every 20 s at most (#62).
+import { guard, isOffline, reachable, due, notice, localOnly } from "./machines.js";
 
 const tr = makeT(strings);
+const exec = guard(hostExec);
+const REMOTE_EVERY = 20e3;
 
 // The command that opens a folder in your editor, and its name on the card.
 const EDITOR = ["zed"];
@@ -48,7 +53,8 @@ export default class Details extends View {
     this.handle = cx.focus_handle();
     this.motion = motionState();
     this.refresh(cx);
-    cx.timer.every(4000, (cx) => this.refresh(cx));
+    // A remote folder: the bus and a change of thread read at once; this tick only every 20 s (DATA-SYNC.md).
+    cx.timer.every(4000, (cx) => { if (due(this.machine(), this.readAt, REMOTE_EVERY)) this.refresh(cx); });
   }
 
   folder() {
@@ -69,9 +75,11 @@ export default class Details extends View {
     const key = JSON.stringify([on, cwd]);
     if (shared("kt.details") !== true || !cwd || this.looking) return;
     this.looking = true;
+    this.readAt = Date.now();
     cx.spawn(async (cx) => {
       try {
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
+        this.offline = null; // the machine answered
         // this.readFor: the place the card's data was read for, set with it (readyFor), a failure too.
         if (top.code !== 0) { this.git = { root: null, on }; this.readFor = key; }
         else {
@@ -94,7 +102,11 @@ export default class Details extends View {
           this.git = g;
           this.readFor = key;
         }
-      } catch (error) { this.git = null; this.note = String(error); this.readFor = key; }
+      } catch (error) {
+        // The machine away (machines.js): its notice, not a raw error.
+        this.offline = isOffline(error);
+        this.git = null; this.note = this.offline ? "" : String(error); this.readFor = key;
+      }
       finally { this.looking = false; cx.notify(); }
     });
   }
@@ -115,7 +127,10 @@ export default class Details extends View {
           }
         }
         if (!this.note && label === "Commit") this.message = "";
-      } catch (error) { this.note = String(error); }
+      } catch (error) {
+        this.offline = isOffline(error);
+        if (!this.offline) this.note = String(error);
+      }
       // DATA-SYNC.md: what this changed, for every mod showing it (on a failure too: a hook may have
       // staged); a push or a PR moves GitHub's side as well.
       bump(...gitTopics(root), ...(steps.some(([cmd, args]) => cmd === "gh" || args[0] === "push") ? ["gh"] : []));
@@ -196,7 +211,11 @@ export default class Details extends View {
     // Another mod's action on this repo, or an agent of this space that stopped working: read again.
     const sp = spaces().find((s) => s.active)?.id;
     refreshOn(this, cx, "git", [...gitTopics(this.git?.root ?? null), ...(sp ? [`agent:${sp}`] : [])], async (cx) => this.refresh(cx));
+    // The folder's machine was away (machines.js): back now (kt.machines or machines() moved), read at once.
+    const off = this.offline && this.offline === this.machine() ? this.offline : null;
+    if (off && !checking() && reachable(off)) { this.offline = null; this.refresh(cx); }
     const t = theme();
+    const away = off ? notice(t, off, { id: "td-offline" }) : null;
     const g = ready && cwd ? this.git : null;
     // The machine the card's folder is on: the editor only opens folders on this computer.
     const on = g?.on ?? this.machine();
@@ -241,6 +260,10 @@ export default class Details extends View {
       })
       .child(this.row(t, "td-where", "folder", tilde(g?.root ?? cwd), null, null))
       .when(!on && Boolean(g?.root ?? cwd), (el) => el.child(this.row(t, "td-open", "external-link", tr("openIn", { app: EDITOR_NAME }), null, (_e, cx) => this.openEditor(cx, g?.root ?? cwd))))
+      // On another machine: the same row, dimmed, saying why it doesn't open.
+      .when(Boolean(on) && Boolean(g?.root ?? cwd), (el) => el.child(this.row(t, "td-open", "external-link", tr("openIn", { app: EDITOR_NAME }), null, null)
+        .opacity(0.5).tooltip(localOnly(on))))
+      .when(Boolean(away), (el) => el.child(div().px(4).pt(4).child(away)))
       // Not read for this folder yet: the repo's block as bars (skeleton.js), breathing: the rule, the
       // branch and changes rows (32 px), the buttons (26 px).
       .when(!ready, (el) => el.child(((S) => S.pulse(v_flex().id("td-git-sk").gap(2)
@@ -294,7 +317,9 @@ export default class Details extends View {
               .gap(6)
               .child(this.small(t, "td-commit", "Commit", (_e, cx) => this.commit(cx), changed, true))
               .child(this.small(t, "td-push", "Push", (_e, cx) => this.act(cx, "Push", [["git", ["push", "-u", "origin", "HEAD"]]]), !changed && (g.ahead > 0 || !g.upstream)))
-              .child(this.small(t, "td-pr", "Pull request", (_e, cx) => this.act(cx, "Pull request", [["gh", ["pr", "create", "--fill", "--web"]]]), !changed)), // i18n: tech
+              // --web opens a browser where gh runs: on another machine, not on this screen.
+              .child(this.small(t, "td-pr", "Pull request", (_e, cx) => this.act(cx, "Pull request", [["gh", ["pr", "create", "--fill", "--web"]]]), !changed && !g.on) // i18n: tech
+                .when(Boolean(g.on), (el) => el.tooltip(localOnly(g.on)))),
           ), `td-git-${g.root}`, { dy: 0 })),
       )
       .when(Boolean(this.note), (el) => el.child(enter(m, div().px(8).pt(4).text_size(11).text_color(t.ansi1).child(this.note), `td-note-${this.note}`, { dy: 0 })));
