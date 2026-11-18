@@ -1,0 +1,351 @@
+// The Chat view's model: entries from chat-index.ts → turns → items → fold. Pure, no herdr
+// import: tested under bun (chat-model.check.mjs), copied as is wherever it's used.
+//
+// Adapted from Monocode (github.com/hardbeat920/monocode, MIT, Copyright (c) 2026 Nick):
+// src/features/sessions/model/transcriptActivity.ts (groupTurnItems, foldableWork, tallySteps,
+// dominantWorkKind) and claudeProtocol.ts (toolKindFromName).
+//
+// Copyright (c) 2026 Nick
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+// and associated documentation files (the "Software"), to deal in the Software without
+// restriction, including without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or
+// substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+// BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// Differences with Monocode, on purpose:
+// - thinking counts as work even with empty text (Claude Code keeps only the signature and
+//   thinkingDurationMs 9 times out of 10): it stays a "Réflexion · 4 s" step;
+// - no withoutSupersededInitialThinking, no yieldedAt, no approvals, no Mono turns: a JSONL
+//   has no pending permission, and a task-notification opens its own turn (chat-index.ts);
+// - words stay out (I18N.md): tally() returns counts, the mod says them.
+
+// ── Tools ────────────────────────────────────────────────────────────────────
+
+const TASKS = /^(TodoWrite|TaskCreate|TaskUpdate|TaskList|TaskGet)$/;
+
+/** read | edit | execute | search | skill | agent | tasks | other (toolKindFromName). */
+export function toolKind(name) {
+  const n = String(name ?? "").toLowerCase();
+  if (TASKS.test(name ?? "")) return "tasks";
+  if (/bash|command|shell|terminal/.test(n)) return "execute";
+  if (/edit|write|patch|replace/.test(n)) return "edit";
+  if (n.includes("read")) return "read";
+  if (/grep|glob|search/.test(n)) return "search";
+  if (n === "skill" || n === "skills") return "skill";
+  if (n === "agent" || n === "task") return "agent";
+  return "other";
+}
+
+/** What a run of calls was for: reads and searches are one thing, looking around. */
+export function category(kind) {
+  if (kind === "agent") return "agent";
+  if (kind === "edit") return "edit";
+  if (kind === "read" || kind === "search") return "research";
+  if (kind === "execute") return "run";
+  return "other";
+}
+
+/** A path as the row shows it: relative to the session's folder, else ~/… */
+export function rel(path, cwd, home) {
+  if (!path) return "";
+  if (cwd && path.startsWith(cwd + "/")) return path.slice(cwd.length + 1);
+  if (home && path.startsWith(home + "/")) return "~/" + path.slice(home.length + 1);
+  return path;
+}
+
+const firstLine = (s, max = 160) => {
+  const line = String(s ?? "").split("\n").find((l) => l.trim()) ?? "";
+  return line.length > max ? line.slice(0, max - 1) + "…" : line;
+};
+
+/** The row's title: data only (a path, a command, a pattern), "" when there is none. */
+export function toolTitle(name, input, cwd, home) {
+  const i = input ?? {};
+  const path = i.file_path ?? i.notebook_path ?? i.path;
+  switch (toolKind(name)) {
+    case "read":
+    case "edit":
+      if (path) return rel(path, cwd, home);
+      break;
+    case "execute":
+      if (i.command) return firstLine(i.command);
+      break;
+    case "search":
+      if (i.pattern) return i.path ? `${i.pattern} · ${rel(i.path, cwd, home)}` : i.pattern;
+      if (i.query) return firstLine(i.query);
+      break;
+    case "agent":
+      return firstLine(i.description ?? i.name ?? i.subagent_type ?? "");
+    case "skill":
+      return firstLine([i.skill, i.args].filter(Boolean).join(" "));
+  }
+  for (const k of ["description", "url", "query", "pattern", "prompt", "subject", "message"]) {
+    if (typeof i[k] === "string" && i[k].trim()) return firstLine(i[k]);
+  }
+  if (path) return rel(path, cwd, home);
+  return "";
+}
+
+/** ok | error | running | stopped. A call with no result in a settled turn was cut short. */
+export function toolState(block, live) {
+  if (block.result) return block.result.ok ? "ok" : "error";
+  return live ? "running" : "stopped";
+}
+
+// ── State: what the indexer has given so far ────────────────────────────────
+
+/**
+ * Takes one output of chat-index.ts into the state. A delta continues the state when it starts
+ * where the state ends, on the same file and session; anything else (another session, a file
+ * that shrank, a delta cut by the budget) replaces it.
+ */
+export function ingest(state, out) {
+  const same = state && out.path === state.path && (!out.session || !state.session || out.session === state.session);
+  if (same && out.start === state.end) {
+    return {
+      ...state,
+      session: state.session || out.session,
+      end: out.end,
+      size: out.size,
+      entries: out.entries.length ? state.entries.concat(out.entries) : state.entries,
+      meta: { ...state.meta, ...out.meta },
+    };
+  }
+  return {
+    path: out.path, session: out.session, start: out.start, end: out.end, size: out.size,
+    more: out.more, entries: out.entries, meta: { ...out.meta },
+  };
+}
+
+/** Older turns (`--to state.start`) put in front. */
+export function prepend(state, out) {
+  if (!state || out.path !== state.path || out.end !== state.start) return state;
+  return { ...state, start: out.start, more: out.more, entries: out.entries.concat(state.entries) };
+}
+
+/** Messages typed while the agent worked and not taken yet (queue-operation, FIFO). */
+export function pendingQueue(entries) {
+  const fifo = [];
+  for (const e of entries) {
+    if (e.k !== "queue") continue;
+    if (e.op === "enqueue") fifo.push(e);
+    else if (e.op === "dequeue") fifo.shift();
+    else if (e.op === "remove") {
+      const i = e.text != null ? fifo.findIndex((q) => q.text === e.text) : -1;
+      fifo.splice(i < 0 ? 0 : i, 1);
+    }
+  }
+  return fifo.filter((q) => q.text && !q.task);
+}
+
+// ── Turns ────────────────────────────────────────────────────────────────────
+
+/**
+ * Lines of one assistant message share its id (one block per line): one message, blocks in
+ * order. A line written twice (same uuid) counts once.
+ */
+export function merge(entries) {
+  const out = [];
+  const byMid = new Map();
+  const seen = new Set();
+  for (const e of entries) {
+    if (e.uuid && e.k !== "result") {
+      const key = e.k + e.uuid;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    if (e.k !== "assistant" || !e.mid) {
+      out.push(e);
+      continue;
+    }
+    const first = byMid.get(e.mid);
+    if (first) first.blocks.push(...e.blocks);
+    else {
+      const copy = { ...e, blocks: [...e.blocks] };
+      byMid.set(e.mid, copy);
+      out.push(copy);
+    }
+  }
+  return out;
+}
+
+/**
+ * The turns, each opened by the entry chat-index.ts marked `turn` (a prompt, a peer's message,
+ * a task-notification). What comes before the first one is a turn without opener. Only the last
+ * turn can be live: the mod says so from the agent's status.
+ */
+export function build(entries, opts = {}) {
+  const live = !!opts.live;
+  const merged = merge(entries);
+  const tools = new Map();
+  const turns = [];
+  let cur = null;
+  const open = (user) => {
+    cur = { id: user?.uuid ?? `head-${user?.o ?? 0}`, user, files: [], blocks: [], ms: null };
+    turns.push(cur);
+  };
+  for (const e of merged) {
+    if (e.k === "user" && e.turn) {
+      open(e);
+      continue;
+    }
+    if (e.k === "queue" || e.k === "meta") continue;
+    if (!cur) open(null);
+    if (e.k === "file") cur.files.push(e.path);
+    else if (e.k === "assistant") {
+      e.blocks.forEach((b, n) => {
+        if (b.t === "text") cur.blocks.push({ role: "prose", id: `${e.uuid}:${n}`, text: b.text, at: e.at });
+        else if (b.t === "thinking") cur.blocks.push({ role: "thinking", id: `${e.uuid}:${n}`, ms: b.ms ?? null, text: b.text ?? "" });
+        else if (b.t === "tool") {
+          const block = { role: "tool", id: b.id, name: b.name, kind: b.kind, title: b.title, input: b.input, at: e.at, result: null };
+          tools.set(b.id, block);
+          cur.blocks.push(block);
+        }
+      });
+    } else if (e.k === "result") {
+      const tool = tools.get(e.tool);
+      if (tool) tool.result = e;
+    } else if (e.k === "notice") {
+      if (e.kind === "duration") cur.ms = e.ms;
+      else if (e.kind === "summary") {
+        let last = null;
+        for (const b of cur.blocks) if (b.role === "notice" && b.kind === "compact" && b.text == null) last = b;
+        if (last) last.text = e.text;
+        else cur.blocks.push({ role: "notice", id: `n${e.o}`, kind: "compact", text: e.text });
+      } else cur.blocks.push({ role: "notice", id: `n${e.o}:${e.kind}`, ...e });
+    } else if (e.k === "user") {
+      // A message delivered mid-turn (queued_command): an interjection, not a new turn.
+      cur.blocks.push({ role: "note", id: e.uuid ?? `u${e.o}`, text: e.text, from: e.from ?? null, at: e.at });
+    }
+  }
+  turns.forEach((turn, n) => {
+    turn.live = live && n === turns.length - 1;
+    for (const b of turn.blocks) if (b.role === "tool") b.state = toolState(b, turn.live);
+    turn.items = items(turn.blocks, !turn.live);
+    turn.fold = fold(turn.items);
+  });
+  return turns;
+}
+
+const isProse = (b) => b.role === "prose" && !!b.text?.trim();
+const isSubagent = (b) => b.role === "tool" && b.kind === "agent";
+const isActivity = (b) => b.role === "thinking" || b.role === "tool";
+
+/**
+ * groupTurnItems: runs of calls and thinking become one activity item, prose stands alone. A
+ * live turn keeps its sub-agents on their own rows (that's where the reader watches) and its
+ * interjections too; once settled they join the work, except a sub-agent that failed.
+ */
+export function items(blocks, settled = true) {
+  const out = [];
+  let steps = [];
+  const flush = () => {
+    if (steps.length) out.push({ type: "activity", id: steps[0].id, steps });
+    steps = [];
+  };
+  for (const b of blocks) {
+    if (b.role === "prose" && !isProse(b)) continue;
+    if (isSubagent(b) && (!settled || b.state === "error")) {
+      flush();
+      const last = out[out.length - 1];
+      if (last?.type === "subagents") last.runs.push(b);
+      else out.push({ type: "subagents", id: b.id, runs: [b] });
+      continue;
+    }
+    if (isActivity(b) || (settled && b.role === "note")) {
+      steps.push(b);
+      continue;
+    }
+    flush();
+    out.push({ type: "block", id: b.id, block: b });
+  }
+  flush();
+  return out;
+}
+
+const foldable = (item) => item.type === "subagents" || item.type === "activity" || (item.type === "block" && isProse(item.block));
+
+/**
+ * foldableWork: from the first thing the agent did up to the last work it has already narrated
+ * past, leaving the prompt above and the answer below. A notice (compaction, error,
+ * interruption) is neither, so the fold stops at it. null when nothing folds.
+ */
+export function fold(list) {
+  let end = -1;
+  let answered = false;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const item = list[i];
+    if (item.type === "activity") {
+      if (answered) {
+        end = i;
+        break;
+      }
+      continue;
+    }
+    if (item.type === "block" && isProse(item.block)) answered = true;
+  }
+  if (end < 0) return null;
+  let start = end;
+  while (start > 0 && foldable(list[start - 1])) start--;
+  return { start, end };
+}
+
+/** Every step inside a fold (sub-agents keep their own rows, outside the count). */
+export function foldedSteps(list, f) {
+  return list.slice(f.start, f.end + 1).flatMap((it) => (it.type === "activity" ? it.steps : it.type === "block" ? [it.block] : []));
+}
+
+const KIND_ORDER = ["edit", "run", "agent", "research", "other"];
+
+/**
+ * tallySteps: what a run of work adds up to, as counts; the mod says them ("4 lectures · 2
+ * modifs · 3 commandes"). Reads and edits count distinct files. `order` is the kinds in the
+ * order the agent first did them, `kind` the dominant one (its icon), `current` the kind of the
+ * last call (present tense while live).
+ */
+export function tally(steps) {
+  const t = { order: [], reads: 0, edits: 0, searches: 0, runs: 0, agents: 0, others: 0, thoughts: 0, thinkMs: 0, notes: 0, errors: 0, kind: null, current: null };
+  const reads = new Set();
+  const edits = new Set();
+  const counts = new Map();
+  for (const b of steps) {
+    if (b.role === "note") {
+      t.notes++;
+      continue;
+    }
+    if (b.role === "thinking") {
+      t.thoughts++;
+      t.thinkMs += b.ms ?? 0;
+      continue;
+    }
+    if (b.role !== "tool") continue;
+    const c = category(b.kind);
+    if (!t.order.includes(c)) t.order.push(c);
+    counts.set(c, (counts.get(c) ?? 0) + 1);
+    t.current = c;
+    if (b.state === "error") t.errors++;
+    const target = b.input?.path ?? b.id;
+    if (c === "edit") edits.add(target);
+    else if (c === "agent") t.agents++;
+    else if (c === "run") t.runs++;
+    else if (c === "research") {
+      if (b.kind === "search") t.searches++;
+      else reads.add(target);
+    } else t.others++;
+  }
+  t.reads = reads.size;
+  t.edits = edits.size;
+  for (const k of KIND_ORDER) if ((counts.get(k) ?? 0) > (counts.get(t.kind) ?? 0)) t.kind = k;
+  if (!t.kind) t.kind = t.notes && !t.thoughts ? "note" : "think";
+  return t;
+}
