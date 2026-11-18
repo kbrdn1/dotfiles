@@ -20,7 +20,11 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui-base";
 import { theme, settings, props, openOverlay, closeOverlay, notify, pickFolder, home } from "herdr";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
+import { makeT } from "./i18n.js";
+import words from "./form.strings.js";
 
+// Its own words (I18N.md), copied with it; a method's are its mod's (add.js).
+const tr = makeT(words);
 const MONO = "Monaspace Krypton";
 const CARD = 580;
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -85,7 +89,7 @@ export class AddMenu {
     return v_flex().id("add-menu").w_full().p(4).gap(2).rounded(16).bg(t.popover).border(1).border_color(t.border).shadow_lg()
       .track_focus(this.handle)
       .on_key_down((e, cx) => { if (this.press(e)) { cx.stop_propagation(); cx.notify(); } })
-      .child(h_flex().h(28).px(10).items_center().child(eyebrow(t, "Ajouter", t.dim).flex_1()).when(keyed, (el) => el.child(mode(t, this.vim.label, false))))
+      .child(h_flex().h(28).px(10).items_center().child(eyebrow(t, tr("add"), t.dim).flex_1()).when(keyed, (el) => el.child(mode(t, this.vim.label, false))))
       .children(this.methods.map((m, i) => {
         const cursor = keyed && i === this.cur;
         return h_flex().id(`add-m-${m.id}`).h(52).p(6).pr(10).gap(10).items_center().rounded(12).border(1)
@@ -235,7 +239,7 @@ export class AddForm {
     const plan = this.plan;
     cx.spawn(async (cx) => {
       let n;
-      try { n = await plan.run(); } catch (e) { n = { level: "error", title: "Échec", body: String(e?.message ?? e) }; }
+      try { n = await plan.run(); } catch (e) { n = { level: "error", title: tr("failed"), body: String(e?.message ?? e) }; }
       this.plan = null; // ran: its cleanup is its own
       notify({ ...n, timeout: n.level === "success" ? 5000 : 10000 });
       closeOverlay(props().overlay);
@@ -334,7 +338,7 @@ export class AddForm {
     const open = this.reveal === id;
     return h_flex().id(`add-eye-${id}`).size(30).flex_none().items_center().justify_center().rounded(10)
       .text_color(open ? t.accent : t.dim).cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground))
-      .tooltip(open ? "Masquer" : "Afficher le temps de la saisie")
+      .tooltip(open ? tr("hide") : tr("show"))
       .on_click((_e, cx) => {
         if (open) { this.reveal = null; s.set_masked(true); }
         else { this.reveal = id; s.set_masked(false); s.focus(); }
@@ -375,7 +379,7 @@ export class AddForm {
         .child(h_flex().id(`add-row-${d.id}`).h(26).px(6).gap(6).items_center().rounded(8).text_size(12).text_color(t.muted)
           .cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => { const j = this.addRow(d); this.focusOn([`${d.id}.${j}.k`, s.rows[j].k]); cx.notify(); })
-          .child(svg(I("plus")).size(12)).child(d.more ?? "Une ligne de plus"));
+          .child(svg(I("plus")).size(12)).child(d.more ?? tr("oneMore")));
     } else if (d.kind === "json") {
       // Typed in: the text as is; left: masked (`mask`), a click types in it again.
       const on = this.focus === d.id;
@@ -396,12 +400,12 @@ export class AddForm {
           .border_color(t.border).text_size(12).text_color(t.muted).cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => {
             cx.spawn(async (cx) => {
-              const f = await pickFolder({ prompt: "Choisir" }).catch(() => null);
+              const f = await pickFolder({ prompt: tr("choose") }).catch(() => null);
               if (f) s.input.set_value(f);
               cx.notify();
             });
           })
-          .child(svg(I("folder")).size(13)).child("Choisir…")));
+          .child(svg(I("folder")).size(13)).child(tr("chooseDots"))));
     }
     return v_flex().gap(6).child(head).child(body);
   }
@@ -415,8 +419,8 @@ export class AddForm {
   confirmView(t) {
     const p = this.plan;
     return [
-      v_flex().gap(6).child(eyebrow(t, p.cwd ? `Commande · dans ${tilde(p.cwd)}` : "Commande")).child(this.block(t, p.shown)),
-      p.preview && v_flex().gap(6).child(eyebrow(t, p.previewLabel ?? "Aperçu")).child(this.block(t, p.preview, t.muted)),
+      v_flex().gap(6).child(eyebrow(t, p.cwd ? tr("commandIn", { path: tilde(p.cwd) }) : tr("command"))).child(this.block(t, p.shown)),
+      p.preview && v_flex().gap(6).child(eyebrow(t, p.previewLabel ?? tr("preview"))).child(this.block(t, p.preview, t.muted)),
       p.note && h_flex().gap(8).items_start().child(svg(I("circle-alert")).size(13).flex_none().mt(2).text_color(t.ansi3))
         .child(div().flex_1().min_w(0).text_size(12.5).line_height("18px").text_color(t.muted).child(p.note)),
     ].filter(Boolean);
@@ -444,22 +448,22 @@ export class AddForm {
         .child(v_flex().id("add-body").max_h(620).overflow_y_scrollbar().p(16).gap(14)
           .child(h_flex().gap(10).items_center()
             .child(svg(this.m.icon).size(16).flex_none().text_color(t.accent))
-            .child(div().flex_1().min_w(0).text_size(15).font_semibold().text_color(t.foreground).child(confirm ? "Confirmer" : this.m.title))
+            .child(div().flex_1().min_w(0).text_size(15).font_semibold().text_color(t.foreground).child(confirm ? tr("confirm") : this.m.title))
             .child(mode(t, typing ? "INSERT" : "NORMAL", typing))
             .child(kbd("esc")))
-          .child(div().text_size(12.5).line_height("18px").text_color(t.muted).child(confirm ? "Rien n'est fait avant « " + (this.plan?.label ?? "Ajouter") + " ». Les secrets restent masqués ici ; la commande reçoit les vraies valeurs." : this.m.intro))
+          .child(div().text_size(12.5).line_height("18px").text_color(t.muted).child(confirm ? tr("nothingYet", { label: this.plan?.label ?? tr("add") }) : this.m.intro))
           .children(confirm && this.plan ? this.confirmView(t) : this.fields.map((d, i) => this.field(t, d, i))))
         .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
         .child(h_flex().flex_none().px(12).py(10).gap(8).items_center()
           .child(h_flex().flex_1().min_w(0).gap(6).items_center()
             .when(busy, (el) => el.child(svg(I("refresh-cw")).size(12).flex_none().spin(900).text_color(t.dim))
-              .child(div().text_size(12).text_color(t.dim).child(this.step === "planning" ? "Vérification…" : "En cours…")))
+              .child(div().text_size(12).text_color(t.dim).child(this.step === "planning" ? tr("checking") : tr("running"))))
             .when(!busy && Boolean(this.error), (el) => el.child(div().min_w(0).text_size(12).line_height("17px").text_color(t.ansi1).child(this.error)))
             .when(!busy && !this.error, (el) => el.child(h_flex().gap(5).items_center().text_size(11).text_color(t.dim)
-              .child(kbd("↵")).child(confirm ? (this.plan?.label ?? "Ajouter").toLowerCase() : "vérifier la commande"))))
+              .child(kbd("↵")).child(confirm ? (this.plan?.label ?? tr("add")).toLowerCase() : tr("checkCommand")))))
           .when(!busy, (el) => el
-            .child(this.button(t, "add-no", confirm ? "Retour" : "Annuler", false, () => (confirm ? this.back() : this.close())))
-            .child(this.button(t, "add-yes", confirm ? this.plan?.label ?? "Ajouter" : "Vérifier", true, (cx) => (confirm ? this.run(cx) : this.submit(cx)))))));
+            .child(this.button(t, "add-no", confirm ? tr("back") : tr("cancel"), false, () => (confirm ? this.back() : this.close())))
+            .child(this.button(t, "add-yes", confirm ? this.plan?.label ?? tr("add") : tr("verify"), true, (cx) => (confirm ? this.run(cx) : this.submit(cx)))))));
     return div().id("add-veil").size_full().flex().items_center().justify_center().bg(veil())
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))

@@ -84,8 +84,9 @@ const KINDS = [["skills", "skill", "skills"], ["commands", "commande", "commande
   ["mcp", "MCP", "MCP"], ["mods", "mod", "mods"], ["lsp", "LSP", "LSP"]];
 
 /** "6 skills · 3 hooks" (only what it has), "" for nothing. */
-export function summary(c) {
-  return KINDS.filter(([k]) => c?.[k]?.length).map(([k, one, many]) => `${c[k].length} ${c[k].length > 1 ? many : one}`).join(" · ");
+// `name(kind, n)`: the mod's words for n of a kind (I18N.md), else this file's French.
+export function summary(c, name = (k, n) => { const [, one, many] = KINDS.find(([x]) => x === k); return `${n} ${n > 1 ? many : one}`; }) {
+  return KINDS.filter(([k]) => c?.[k]?.length).map(([k]) => name(k, c[k].length)).join(" · ");
 }
 
 /** A path from a plugin's manifest ("./hooks/x.json") under its folder. */
@@ -101,7 +102,7 @@ export function cli(args) {
     } else if (a && typeof a === "object" && "url" in a) {
       if (/^(https?|ssh|git):\/\/[^\s\0-\x1f]+$|^[\w.-]+@[\w.-]+:[^\s\0-\x1f]+$/.test(a.url)) return a.url;
     } else if (/^[\w][\w.@:/-]*$|^--?[a-z][\w-]*$/i.test(String(a))) return String(a);
-    throw new Error(`argument refusé : ${JSON.stringify(a)}`);
+    throw new Error(`argument refusé : ${JSON.stringify(a)}`); // i18n: tech
   });
 }
 

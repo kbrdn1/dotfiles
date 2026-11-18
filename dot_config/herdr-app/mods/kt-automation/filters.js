@@ -20,9 +20,13 @@
 // pill on (a single choice), its fill is an ink under the pills that glides to the next one picked
 // (left and width, 240 ms ease-in-out, ANIMATIONS.md); `reduced: true` (shared "kt.reducedMotion")
 // makes it jump. Several on in a group (a multiple choice): each pill its own fill, no ink.
+// A pill's count rolls to its new digits (roll.js, ANIMATIONS.md 7; net in reduced motion): roll.js
+// travels with filters.js, copied beside it in each mod. `scope` (optional) goes into the reels' ids:
+// a row whose counts are another context's (another repo) passes it, so they show net, not rolling.
 
 import { div, PathBuilder, Background } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
+import { roll } from "./roll.js";
 
 const GAP = 6;
 const FADE = 16;
@@ -131,7 +135,7 @@ const RECT = () => PathBuilder.fill().move_to("0%", "0%").line_to("100%", "0%").
 const gradient = (from, to) => globalThis.window.paint_path(RECT(), Background.linear_gradient(90, from, to)).absolute().top(0).left(0).size_full();
 
 /** The row. See the top of the file. */
-export function filterRow({ id, state, items, active = null, cursor = null, onPick, t, bg, reduced = false }) {
+export function filterRow({ id, state, items, active = null, cursor = null, onPick, t, bg, reduced = false, scope = "" }) {
   const on = activeSet(active);
   const a = alphas(isLight(t));
   const back = bg ?? t.background;
@@ -193,7 +197,7 @@ export function filterRow({ id, state, items, active = null, cursor = null, onPi
       })
       .when(Boolean(tint), (el) => el.child(div().size(6).flex_none().rounded_full().bg(tint)))
       .child(x.label)
-      .when(x.count != null, (el) => el.child(div().flex_none().font_family("Monaspace Krypton").text_size(10.5).text_color(isOn ? t.muted : t.dim).child(String(x.count))));
+      .when(x.count != null, (el) => el.child(roll({ reduced }, `${id}-n-${scope}-${x.key}`, String(x.count), 14).font_family("Monaspace Krypton").text_size(10.5).text_color(isOn ? t.muted : t.dim)));
   };
   // Direct children of the scroll area are what scroll_to_item counts: one per item. A group's
   // first item carries the rule before it, inside its own child.

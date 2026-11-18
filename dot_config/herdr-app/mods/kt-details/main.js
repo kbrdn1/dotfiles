@@ -8,6 +8,13 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, panes, run, shared, exec, home, layout, theme } from "herdr";
+import { bump, gitTopics, refreshOn } from "./bus.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+// kt-keys' roll.js (a byte-identical copy): the commits ahead roll to their new count.
+import { roll } from "./roll.js";
+
+const tr = makeT(strings);
 
 // The command that opens a folder in your editor, and its name on the card.
 const EDITOR = ["zed"];
@@ -96,12 +103,15 @@ export default class Details extends View {
         for (const [cmd, args] of steps) {
           const r = await exec(cmd, args, { cwd: root, on });
           if (r.code !== 0) {
-            this.note = (r.stderr || r.stdout || `${cmd} failed`).trim().split("\n").pop();
+            this.note = (r.stderr || r.stdout || tr("failed", { cmd })).trim().split("\n").pop();
             break;
           }
         }
         if (!this.note && label === "Commit") this.message = "";
       } catch (error) { this.note = String(error); }
+      // DATA-SYNC.md: what this changed, for every mod showing it (on a failure too: a hook may have
+      // staged); a push or a PR moves GitHub's side as well.
+      bump(...gitTopics(root), ...(steps.some(([cmd, args]) => cmd === "gh" || args[0] === "push") ? ["gh"] : []));
       this.busy = "";
       this.looking = false;
       this.refresh(cx);
@@ -127,7 +137,7 @@ export default class Details extends View {
     cx.spawn(async (cx) => {
       const r = await exec(EDITOR[0], [...EDITOR.slice(1), folder]).catch((error) => ({ code: 1, stderr: String(error) }));
       if (r.code === 0) return;
-      this.note = (r.stderr || `${EDITOR[0]} failed`).trim().split("\n").pop();
+      this.note = (r.stderr || tr("failed", { cmd: EDITOR[0] })).trim().split("\n").pop();
       cx.notify();
     });
   }
@@ -171,6 +181,9 @@ export default class Details extends View {
   render(cx) {
     if (shared("kt.details") !== true) return div();
     if (!this.git) this.refresh(cx);
+    // Another mod's action on this repo, or an agent of this space that stopped working: read again.
+    const sp = spaces().find((s) => s.active)?.id;
+    refreshOn(this, cx, "git", [...gitTopics(this.git?.root ?? null), ...(sp ? [`agent:${sp}`] : [])], async (cx) => this.refresh(cx));
     const t = theme();
     const g = this.git;
     const cwd = this.folder();
@@ -196,7 +209,7 @@ export default class Details extends View {
         cx.notify();
       })
       .child(this.row(t, "td-where", "folder", tilde(g?.root ?? cwd), null, null))
-      .when(!on && Boolean(g?.root ?? cwd), (el) => el.child(this.row(t, "td-open", "external-link", `Open in ${EDITOR_NAME}`, null, (_e, cx) => this.openEditor(cx, g?.root ?? cwd))))
+      .when(!on && Boolean(g?.root ?? cwd), (el) => el.child(this.row(t, "td-open", "external-link", tr("openIn", { app: EDITOR_NAME }), null, (_e, cx) => this.openEditor(cx, g?.root ?? cwd))))
       .when(Boolean(g?.root), (el) =>
         el
           .child(div().mx(4).my(4).h(1).bg(t.border))
@@ -206,7 +219,8 @@ export default class Details extends View {
               "td-branch",
               "git-branch",
               g.branch ?? "",
-              g.ahead > 0 ? div().font_family(MONO).text_size(11).text_color(t.dim).child(`↑${g.ahead}`) : null,
+              // Its id carries the repo: another repo's count shows at once, not rolling.
+              g.ahead > 0 ? roll({ reduced: Boolean(shared("kt.reducedMotion")) }, `td-ahead-${g.root}`, `↑${g.ahead}`, 15).font_family(MONO).text_size(11).text_color(t.dim) : null,
               null,
             ),
           )
@@ -215,7 +229,7 @@ export default class Details extends View {
               t,
               "td-changes",
               "file-diff",
-              changed ? `Changes · ${g.files} file${g.files === 1 ? "" : "s"}` : "No changes",
+              changed ? tr("changes", { n: g.files }) : tr("noChanges"),
               changed
                 ? h_flex()
                     .gap(6)
@@ -254,7 +268,7 @@ export default class Details extends View {
                 .child(
                   this.message
                     ? div().text_color(t.foreground).child(this.message + (this.typing ? "▏" : ""))
-                    : div().text_color(t.dim).child((this.typing ? "▏" : "") + "Commit message"),
+                    : div().text_color(t.dim).child((this.typing ? "▏" : "") + tr("message")),
                 ),
             ),
           )
@@ -266,7 +280,7 @@ export default class Details extends View {
               .gap(6)
               .child(this.small(t, "td-commit", "Commit", (_e, cx) => this.commit(cx), changed, true))
               .child(this.small(t, "td-push", "Push", (_e, cx) => this.act(cx, "Push", [["git", ["push", "-u", "origin", "HEAD"]]]), !changed && (g.ahead > 0 || !g.upstream)))
-              .child(this.small(t, "td-pr", "Pull request", (_e, cx) => this.act(cx, "Pull request", [["gh", ["pr", "create", "--fill", "--web"]]]), !changed)),
+              .child(this.small(t, "td-pr", "Pull request", (_e, cx) => this.act(cx, "Pull request", [["gh", ["pr", "create", "--fill", "--web"]]]), !changed)), // i18n: tech
           ),
       )
       .when(Boolean(this.note), (el) => el.child(div().px(8).pt(4).text_size(11).text_color(t.ansi1).child(this.note)));

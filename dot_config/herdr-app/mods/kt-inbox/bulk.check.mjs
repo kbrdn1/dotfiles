@@ -17,7 +17,7 @@ assert.deepEqual(c.calls, [
   ["issue", "close", "31", "-R", "o/tv"],
   ["pr", "close", "5", "-R", "o/nowhere"],
 ]);
-assert.deepEqual(c.refused.map((r) => [r.item.number, r.why]), [[12, "déjà mergée"], [7, "déjà fermée"]]);
+assert.deepEqual(c.refused.map((r) => [r.item.number, r.why]), [[12, "merged"], [7, "closed"]]);
 assert.deepEqual(planClose([]).calls, []);
 
 // gwm review: PRs with a local clone only, never --bootstrap (nor --allow-bootstrap).
@@ -25,7 +25,7 @@ const clones = { "o/tv": "/repos/tv" };
 const r = planReview(items, (repo) => clones[repo] ?? null);
 assert.deepEqual(r.calls, [{ cwd: "/repos/tv", args: ["review", "39"] }, { cwd: "/repos/tv", args: ["review", "12"] }]);
 assert.ok(r.calls.every((x) => !x.args.some((a) => a.includes("bootstrap"))));
-assert.deepEqual(r.refused.map((x) => [x.item.number, x.why]), [[31, "pas une PR"], [7, "pas une PR"], [5, "aucun clone local du dépôt"]]);
+assert.deepEqual(r.refused.map((x) => [x.item.number, x.why]), [[31, "notPr"], [7, "notPr"], [5, "noClone"]]);
 
 assert.equal(describe(items[0]), "PR #39 · Apple Music");
 assert.equal(describe(items[1]), "Issue #31 · Paramètres");

@@ -2,14 +2,19 @@
 // checkout or a new worktree, and the agent. Enter starts it as a tab with
 // the agent running in its terminal; you talk to it there.
 //
-// A new worktree follows gwm's convention (`gwm create <type> <issue> <desc>`:
-// branch `<type>/#<issue>-<desc>`, folder per the repo's .gwm.toml, bootstrap
-// included): type the thread as "#42 fix the login", pick the type, Enter.
-// The dialog stays open while gwm works, then opens a space in the new
-// worktree with the agent. gwm runs without a terminal: a repo whose
-// .gwm.toml isn't trusted yet (`gwm trust add`) is refused, and the error
-// shows here. ctrl+P project, ctrl+W checkout, ctrl+T type, ctrl+A agent
-// (in both modes, before vim's keys).
+// A new worktree goes through gwm (folder per the repo's .gwm.toml, bootstrap included). "#42"
+// (or "#42 fix the login") is `gwm create --issue 42`: type and description from the issue, and
+// a worktree that already carries the number is opened again (its space if one is open). A type
+// picked here is passed as `--type`; picked with a description, or for an issue the forge doesn't
+// know, it's the triple `gwm create <type> 42 <desc>` (branch `<type>/#42-<desc>`). Always
+// `--reuse-branch`: a local branch of that name without a worktree is taken back. Typing "#N" in a
+// git project picks « Nouveau worktree » until the person picks the checkout themselves. The
+// dialog stays open while gwm works, then opens the worktree with the agent, the thread as its
+// first message (`task`, for the agents that take one). gwm runs without a terminal, so a
+// .gwm.toml not yet trusted is refused: the dialog shows the file whole, and « Approuver » asks
+// kt-confirm (danger), whose `kt-new.trust` runs `gwm trust add` on the file as shown, then the
+// creation again. Never `--allow-bootstrap`. ctrl+P project, ctrl+W checkout, ctrl+T type, ctrl+A
+// agent (in both modes, before vim's keys).
 //
 // Keys (vim.js): it opens typing the thread (INSERT). There ctrl-n / ctrl-j / ↓
 // and ctrl-k / ↑ move the rows' cursor (Projet, Checkout, Type, Agent), tab /
@@ -21,22 +26,32 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, run, theme, props, closeOverlay, shared, setShared, exec, settings, openOverlay, nextCommand, checking } from "herdr";
+import { spaces, run, theme, props, closeOverlay, shared, setShared, exec, settings, openOverlay, nextCommand, checking, home, readTextFile } from "herdr";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
+import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
+import { issueOf, firstMessage, plan, retry, TRUST, where, explain } from "./gwm.js";
+import { ditherBand, TOP } from "./dither.js";
+import { bump, gitTopics } from "./bus.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
 
+const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
+const I = (name) => `mods/kt-threads/${name}.svg`;
+const tilde = (p) => (p && p.startsWith(home()) ? `~${p.slice(home().length)}` : p ?? "");
 // The dialog is the whole window (mod.json): the card keeps its 680 px.
 const CARD = 680;
 // A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const veil = () => (settings().dark ? alpha("#000000", "8c") : alpha("#0a0a0a", "59"));
-// Name on the chip, and the command. Edit to taste.
+// Name on the chip, the command, and whether it takes the thread as its first message (`task`:
+// Herdr appends it to the command, `claude "<text>"`). Edit to taste.
 const AGENTS = [
-  ["Claude", ["claude"]],
-  ["Codex", ["codex"]],
-  ["Pi", ["pi"]],
-  ["Grok", ["grok"]],
-  ["shell", null],
+  ["Claude", ["claude"], true],
+  ["Codex", ["codex"], true],
+  // Mistral Vibe: `vibe [PROMPT]` opens the interactive session on its first message, so it takes `task`.
+  ["Vibe", ["vibe"], true],
+  ["shell", null, false],
 ];
 // gwm's branch types (`gwm types`).
 const TYPES = ["feat", "fix", "hotfix", "docs", "test", "refactor", "chore", "perf", "ci", "build"];
@@ -46,12 +61,14 @@ const kebab = (s) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-// "#42 fix the login" (or "42 fix the login") -> { issue: "42", desc: "fix the login" }.
-const issueOf = (name) => {
-  const m = name.trim().match(/^#?(\d+)\s+(.*\S)/);
-  return m ? { issue: m[1], desc: m[2] } : null;
-};
 const lastLine = (s) => (s ?? "").trim().split("\n").filter(Boolean).pop() ?? "";
+
+// The project's color as kt-confirm reads it: its registry entry's (kt-projects: a theme name or
+// #hex, same machine, its folder or one under it), else its space's ("space.colors"), else none.
+function projectTint(s) {
+  const e = (shared("kt.projects") ?? []).find((x) => (x.machine ?? null) === (s.machine ?? null) && x.folder && (s.folder === x.folder || s.folder?.startsWith(`${x.folder}/`)));
+  return e?.color ?? (shared("space.colors") ?? {})[s.id] ?? null;
+}
 
 // Space colors, kept by space id in shared "space.colors" (the same code
 // in every mod that colors spaces, so they agree).
@@ -83,12 +100,19 @@ export default class NewThread extends View {
     this.type = Math.max(0, TYPES.indexOf(localStorage.getItem("type")));
     // props.worktree (ctrl-b shift-g, kt-head): a new worktree this time.
     this.worktree = props()?.worktree === true || localStorage.getItem("worktree") === "yes";
+    this.base = this.worktree; // the checkout before "#N" picks a worktree
+    this.chose = false; // the person picked the checkout: "#N" no longer changes it
+    this.typeChosen = false; // the person picked the type: passed to gwm
     this.nudge = null; // "name" | "issue"
-    this.busy = false;
-    this.error = "";
+    this.busy = false; // the gwm command running, shown
+    this.error = null; // { title, text, raw }: gwm's last refusal
+    this.trust = null; // { file, text, on, repo, changed? }: a .gwm.toml gwm won't run untrusted
+    this.scanned = false; // the spaces' repos are known
     this.repos = {}; // folder -> { key, name, main } | null
     this.handle = cx.focus_handle();
     this.handle.focus();
+    this.motion = motionState(); // ANIMATIONS.md: the veil fades and the card rises, in and out (motion.js sheet, leave)
+    this.done = null; // the projects when the thread was made: the dialog is leaving, nothing runs twice
     // Keys (vim.js): typing the thread first; `at` is the row the cursor is on.
     this.vim = new Vim({ field: true, insert: true });
     this.at = "project";
@@ -100,6 +124,11 @@ export default class NewThread extends View {
         if (c.startsWith("key:")) {
           this.handle.focus();
           for (const k of keysOf(c.slice(4))) this.press(k, cx);
+        }
+        // kt-confirm's answer to « Approuver » (askTrust).
+        if (c === "trust") {
+          this.handle.focus();
+          this.approve(cx);
         }
         cx.notify();
       }
@@ -115,13 +144,18 @@ export default class NewThread extends View {
           this.repos[JSON.stringify([s.machine ?? null, s.folder])] = { key: JSON.stringify([s.machine ?? null, key]), name: main.split("/").pop(), main: main === top.stdout.trim() };
         } catch {}
       }
+      this.scanned = true;
+      // "#N" typed before the scan knew the project was a repo.
+      this.guessCheckout();
       cx.notify();
     });
   }
 
   // One entry per project: its repo's main-checkout space (else the first),
-  // the shown space's project first.
+  // the shown space's project first. Once the thread is made, as they were then: its space is shown
+  // at once and would come first while the card leaves.
   projects() {
+    if (this.done) return this.done;
     const out = new Map();
     const list = spaces();
     const ordered = [...list.filter((s) => s.active), ...list.filter((s) => !s.active)];
@@ -135,8 +169,10 @@ export default class NewThread extends View {
     return [...out.values()];
   }
 
-  close() {
-    closeOverlay(props().overlay);
+  // Not `close()`: Herdr calls a View's close() when the mod reloads or the overlay goes.
+  // motion.js leave(): the veil fades out and the card sinks, then the dialog closes.
+  dismiss(cx) {
+    leave(this.motion, cx, "kn", () => closeOverlay(props().overlay));
   }
 
   // The rows the cursor walks, as shown: Checkout only in a git project, Type only for a worktree.
@@ -147,12 +183,37 @@ export default class NewThread extends View {
 
   // A row's next (d = 1) or previous pick, round; its group scrolls to it.
   cycle(field, d) {
-    if (field === "worktree") this.worktree = !this.worktree;
+    if (field === "worktree") this.choose("worktree", !this.worktree);
     else {
       const n = Math.max(1, { project: this.projects().length, type: TYPES.length, agent: AGENTS.length }[field]);
-      this[field] = (this[field] + d + n) % n;
+      this.choose(field, (this[field] + d + n) % n);
       this.scrolls[field]?.scroll_to_item(this[field]);
     }
+  }
+
+  // A row's pick, by key or click: the checkout and the type are the person's from then on; another
+  // project forgets the last refusal (it was about that repo).
+  choose(field, value) {
+    this[field] = value;
+    if (field === "worktree") this.chose = true;
+    if (field === "type") this.typeChosen = true;
+    if (field === "project") {
+      this.error = null;
+      this.trust = null;
+      this.guessCheckout();
+    }
+  }
+
+  // "#N" typed in a git project: a new worktree, back to the checkout before once it's gone; the
+  // person's own pick wins.
+  guessCheckout() {
+    if (this.chose) return;
+    this.worktree = (/^#\d/.test(this.name.trim()) && Boolean(this.projects()[this.project]?.git)) || this.base;
+  }
+
+  // gwm's arguments for an issue (gwm.js).
+  gwmArgs(spec) {
+    return plan(spec, TYPES[this.type], this.typeChosen);
   }
 
   key(e, cx) {
@@ -166,7 +227,7 @@ export default class NewThread extends View {
   press(e, cx) {
     const chord = { "ctrl-p": "project", "ctrl-w": "worktree", "ctrl-t": "type", "ctrl-a": "agent" }[keyOf(e).name];
     if (keyOf(e).name === "ctrl-e" && !this.busy) {
-      this.blank();
+      this.blank(cx);
       return true;
     }
     if (chord && !this.busy) {
@@ -179,15 +240,18 @@ export default class NewThread extends View {
   // One vim action; false: not one the dialog has. While gwm works, only closing.
   act(a, cx) {
     if (!a) return false;
-    if (a === "escape" || a === "quit") this.close();
+    if (a === "escape" || a === "quit") this.dismiss(cx);
     else if (a === "normal" || a === "filter" || a === "pending" || a === "count") {} // the mode changed, or a gg on its way
     else if (this.busy) return false;
     else if (a === "submit" || a === "open") this.start(cx);
     else if (a === "type") {
       if (this.name.length < MAX_NAME) this.name += this.vim.char;
       this.nudge = null;
-    } else if (a === "backspace") this.name = this.name.slice(0, -1);
-    else if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
+      this.guessCheckout();
+    } else if (a === "backspace") {
+      this.name = this.name.slice(0, -1);
+      this.guessCheckout();
+    } else if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
       const f = this.fields();
       this.at = f[step(a, Math.max(0, f.indexOf(this.at)), f.length, this.vim.count, 4)];
     } else if (a === "left" || a === "right" || a === "tab-next" || a === "tab-prev") this.cycle(this.at, a === "left" || a === "tab-prev" ? -1 : 1);
@@ -197,34 +261,43 @@ export default class NewThread extends View {
   }
 
   // An empty thread: a plain terminal in the chosen project's folder, no agent, no name, no worktree.
-  blank() {
-    if (this.busy) return;
+  blank(cx) {
+    if (this.busy || this.done) return;
     const p = this.projects()[this.project];
     if (!p) return;
+    this.done = this.projects();
     run("layout.select", { stack: "view", child: "thread" });
-    this.close();
     run("tab.new", { space: p.space.id, ...(p.space.folder ? { folder: p.space.folder } : {}) });
+    this.dismiss(cx);
   }
 
   start(cx) {
-    if (this.busy) return;
+    if (this.busy || this.done) return;
+    // A .gwm.toml waiting for approval: Enter (or Start) asks for it; unreadable here, Start tries
+    // again (approved from a terminal meanwhile).
+    if (this.trust?.text != null) return this.askTrust();
+    this.trust = null;
     const name = this.name.trim();
     // No name with the shell picked (and no worktree to make): that's an empty thread.
-    if (!name && AGENTS[this.agent]?.[1] === null && !this.worktree) return this.blank();
+    if (!name && AGENTS[this.agent]?.[1] === null && !this.worktree) return this.blank(cx);
     if (!name) {
       this.nudge = "name";
       return;
     }
     const p = this.projects()[this.project];
     if (!p) return;
-    const [label, argv] = AGENTS[this.agent];
+    const [label, argv, prompt] = AGENTS[this.agent];
     localStorage.setItem("agent", label);
-    localStorage.setItem("worktree", this.worktree ? "yes" : "no");
+    // Remembered only when the person picked it (a "#N" guess isn't a preference).
+    if (this.chose) localStorage.setItem("worktree", this.worktree ? "yes" : "no");
+    const task = prompt ? firstMessage(name) : undefined;
     // kbrdn-threads' main "view" stack: show the thread (⌘T may come from the Inbox page).
-    run("layout.select", { stack: "view", child: "thread" });
+    const show = () => run("layout.select", { stack: "view", child: "thread" });
     if (!(this.worktree && p.git)) {
-      this.close();
-      run("tab.new", { space: p.space.id, argv: argv ?? undefined, name });
+      this.done = this.projects();
+      show();
+      run("tab.new", { space: p.space.id, argv: argv ?? undefined, name, task });
+      this.dismiss(cx);
       return;
     }
     const spec = issueOf(name);
@@ -233,30 +306,106 @@ export default class NewThread extends View {
       return;
     }
     const type = TYPES[this.type];
-    localStorage.setItem("type", type);
-    this.busy = true;
-    this.error = "";
+    if (this.typeChosen) localStorage.setItem("type", type);
+    const { first, triple } = this.gwmArgs(spec);
+    this.error = null;
     const on = p.space.machine ?? undefined;
     const repo = p.space.folder || undefined;
     // Closing this dialog would cancel the task: it closes itself once the space is open.
     cx.spawn(async (cx) => {
       try {
-        const made = await exec("gwm", ["create", type, spec.issue, spec.desc], { cwd: repo, on, timeout: 600000 });
-        if (made.code !== 0) throw new Error(lastLine(made.stderr) || lastLine(made.stdout) || `gwm create exited ${made.code}`);
-        // gwm prints "✓ worktree created at <path>"; else ask it where.
-        let path = made.stdout.match(/worktree created at (.+)$/m)?.[1]?.trim();
-        if (!path) {
-          const where = await exec("gwm", ["path", `${type}-${spec.issue}`], { cwd: repo, on });
-          if (where.code === 0) path = where.stdout.trim();
+        // `--issue`, then what gwm's refusal calls for (gwm.js retry): `--type`, the triple, or nothing.
+        let made;
+        for (let args = first; args; args = made.code !== 0 ? retry(made.all, args, { first, triple }, type, this.typeChosen) : null) {
+          this.busy = `gwm ${args.join(" ")}`;
+          cx.notify();
+          const r = await exec("gwm", args, { cwd: repo, on, timeout: 600000 });
+          made = { ...r, all: `${r.stdout ?? ""}\n${r.stderr ?? ""}` };
         }
-        if (!path) throw new Error("gwm made the worktree but didn't say where; open it with gwm path");
-        run("space.new", { folder: path, tab: spec.desc, argv: argv ?? undefined, machine: p.space.machine ?? "" });
-        this.close();
+        // A worktree made, even if a hook or the bootstrap failed after it (DATA-SYNC.md). Only the
+        // last try can have made one: retry() stops once "worktree created at" is printed.
+        const madeAt = made.all.match(/^✓ worktree created at (.+)$/m)?.[1]?.trim();
+        if (madeAt) bump("gwm", ...gitTopics(madeAt));
+        const file = made.code !== 0 ? made.all.match(TRUST)?.[1] : null;
+        if (file) {
+          // Shown whole before any approval; unreadable: no approval (askTrust needs the text).
+          this.trust = { file, text: await readTextFile(file, { on }).catch(() => null), on, repo: p.name };
+          this.busy = false;
+          cx.notify();
+          return;
+        }
+        const path = where(made.all, made.code);
+        if (!path) throw made.code !== 0 ? lastLine(made.stderr) || lastLine(made.stdout) || tr("exitCode", { code: made.code }) : tr("noWhere");
+        const title = made.all.match(/^✓ fetched issue #\d+ (.+)$/m)?.[1]?.trim();
+        const tab = spec.desc ?? title ?? name;
+        const message = task && !spec.desc && title ? `${task} ${title}` : task;
+        this.done = this.projects();
+        show();
+        // The worktree already has a space (gwm reopened it): a new thread there, not a second space.
+        const open = spaces().find((s) => s.folder === path && (s.machine ?? null) === (p.space.machine ?? null));
+        if (open) run("tab.new", { space: open.id, argv: argv ?? undefined, name: tab, task: message });
+        else run("space.new", { folder: path, tab, argv: argv ?? undefined, task: message, machine: p.space.machine ?? "" });
+        this.dismiss(cx);
       } catch (error) {
+        const raw = String(error?.message ?? error);
+        const kind = explain(raw);
         this.busy = false;
-        this.error = String(error?.message ?? error);
+        this.error = { title: tr(`gwm.${kind}.title`), text: tr(`gwm.${kind}.text`, { issue: spec.issue }), raw };
         cx.notify();
       }
+    });
+  }
+
+  // « Approuver » the .gwm.toml shown: kt-confirm (danger: it's the repo's commands that will run),
+  // answering `kt-new.trust`. Nothing to approve while the file couldn't be read.
+  askTrust() {
+    const trust = this.trust;
+    if (!trust?.text || this.busy) return;
+    openOverlay({
+      mod: "kt-confirm",
+      kind: "dialog",
+      width: 1,
+      height: 1,
+      frame: "none",
+      props: {
+        title: tr("trust.title"),
+        tone: "danger",
+        danger: true,
+        subtitle: [trust.repo, ".gwm.toml", "gwm trust add"],
+        facts: [[tr("fact.repo"), trust.repo], [tr("fact.file"), tilde(trust.file)]],
+        detail: tr("trust.detail"),
+        warning: tr("trust.warning"),
+        consequence: tr("trust.consequence"),
+        label: tr("trust.label"),
+        command: { name: "kt-new.trust" },
+      },
+    });
+  }
+
+  // kt-confirm said yes: `gwm trust add` on the file as shown (changed since: shown again, not
+  // approved), then the creation again.
+  approve(cx) {
+    const trust = this.trust;
+    if (!trust?.text || this.busy) return;
+    this.busy = "gwm trust add";
+    cx.spawn(async (cx) => {
+      // ponytail: the file can still change between this read and gwm's own; gwm hashes what it reads.
+      const now = await readTextFile(trust.file, { on: trust.on }).catch(() => null);
+      if (now !== trust.text) {
+        this.trust = { ...trust, text: now, changed: true };
+        this.busy = false;
+        cx.notify();
+        return;
+      }
+      const r = await exec("gwm", ["trust", "add"], { cwd: trust.file.slice(0, trust.file.lastIndexOf("/")), on: trust.on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e?.message ?? e) }));
+      this.busy = false;
+      this.trust = null;
+      if (r.code !== 0) this.error = { title: tr("trust.refused.title"), text: tr("trust.refused.text"), raw: lastLine(r.stderr) || lastLine(r.stdout) };
+      else {
+        bump("gwm");
+        this.start(cx);
+      }
+      cx.notify();
     });
   }
 
@@ -301,6 +450,96 @@ export default class NewThread extends View {
       .children(chips);
   }
 
+  // ---------- the body's blocks (kt-confirm's) ----------
+
+  // An inner card (radius 12 inside the 16 one), on the terminals' background.
+  block(t) {
+    return v_flex().flex_none().rounded(12).border(1).border_color(t.border).bg(t.background).overflow_hidden();
+  }
+
+  // Key / value pairs, the keys in mono `dim`; `mono`: the value is a command or a path.
+  facts(t, rows) {
+    return this.block(t).child(v_flex().px(12).py(10).gap(7).children(rows.map(([k, v, mono, color]) =>
+      h_flex().gap(12).items_center()
+        .child(div().w(72).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(k))
+        .child(div().flex_1().min_w(0).truncate().text_color(color ?? t.foreground)
+          .when(Boolean(mono), (el) => el.font_family(MONO).text_size(11.5))
+          .when(!mono, (el) => el.text_size(12.5))
+          .child(v)))));
+  }
+
+  // A state, explained: its mark, the title (15 medium), what it means (13 muted, airy, held to a
+  // readable width), then its own blocks.
+  section(t, mark, title, text, more = []) {
+    return v_flex().flex_none().gap(8)
+      .child(h_flex().gap(8).items_center().child(h_flex().size(18).flex_none().items_center().justify_center().child(mark))
+        .child(div().text_size(15).font_medium().text_color(t.foreground).child(title)))
+      .when(Boolean(text), (el) => el.child(div().max_w(580).text_size(13).line_height("20px").text_color(t.muted).child(text)))
+      .children(more.filter(Boolean));
+  }
+
+  // Lines as they are, in mono, wrapped; past `max` px they scroll (never cut).
+  code(t, id, lines, max = 220) {
+    return this.block(t).child(v_flex().id(id).max_h(max).overflow_y_scroll().px(12).py(10).gap(1)
+      .font_family(MONO).text_size(11).line_height("17px").text_color(t.muted)
+      .children(lines.map((l) => div().child(l || " "))));
+  }
+
+  // The body under the rows, one state at a time: gwm working, a .gwm.toml to approve, gwm's
+  // refusal, no project, else what Enter will do.
+  state(t, p, git, tree, spec) {
+    const mark = (icon, color) => svg(I(icon)).size(15).text_color(color);
+    if (this.busy) {
+      const trusting = this.busy.startsWith("gwm trust");
+      return this.section(t, svg("mods/workspace-chrome/spinner.svg").size(14).text_color(t.working).spin(900),
+        trusting ? tr("busy.trust.title") : tr("busy.create.title"),
+        trusting ? tr("busy.trust.text") : tr("busy.create.text"),
+        [this.facts(t, [[tr("fact.command"), this.busy, true]])]);
+    }
+    if (this.trust) {
+      const trust = this.trust;
+      const text = trust.text == null
+        ? tr("trust.unread", { repo: trust.repo })
+        : [trust.changed ? tr("trust.changed") : null, tr("trust.text", { repo: trust.repo })].filter(Boolean).join(" ");
+      return this.section(t, mark("circle-alert", t.blocked), tr("trust.heading"), text, [
+        this.facts(t, [[tr("fact.file"), tilde(trust.file), true]]),
+        trust.text != null && this.code(t, "kt-n-toml", trust.text.replace(/\n$/, "").split("\n")),
+        trust.text != null && h_flex().child(
+          h_flex().id("kt-n-trust").h(30).px(14).gap(6).items_center().rounded_full().border(1)
+            .border_color(alpha(t.ansi1, "66")).bg(alpha(t.ansi1, "14")).text_color(t.ansi1)
+            .font_family(MONO).text_size(11).cursor_pointer().hover((s) => s.bg(alpha(t.ansi1, "24")))
+            .tooltip(tr("trust.tip"))
+            .on_click(() => this.askTrust())
+            .child(tr("trust.button"))),
+      ]);
+    }
+    if (this.error) return this.section(t, mark("circle-alert", t.ansi1), this.error.title, this.error.text, [this.error.raw && this.code(t, "kt-n-raw", [this.error.raw], 120)]);
+    if (!p) return this.section(t, mark("folder", t.dim), tr("noProject.title"), tr("noProject.text"));
+    const [, argv, prompt] = AGENTS[this.agent];
+    const name = this.name.trim();
+    const agent = argv ? `${argv.join(" ")}${prompt && name ? ` « ${firstMessage(name)} »` : ""}` : tr("agent.none");
+    if (!tree) {
+      return this.facts(t, [
+        [tr("fact.folder"), tilde(p.space.folder) || "—", true],
+        [tr("fact.branch"), git ? p.space.branch ?? "—" : this.scanned ? tr("branch.notRepo") : tr("branch.scanning"), true, git ? undefined : t.dim],
+        [tr("fact.agent"), agent, true],
+      ]);
+    }
+    const args = spec ? this.gwmArgs(spec) : null;
+    const triple = spec ? `${TYPES[this.type]}/#${spec.issue}-${kebab(spec.desc ?? "")}` : "";
+    const branch = !spec
+      ? tr("branch.hint")
+      : args.first === args.triple
+        ? triple
+        : tr("branch.issue", { issue: spec.issue, type: this.typeChosen ? TYPES[this.type] : tr("branch.byLabels"), fallback: args.triple ? tr("branch.fallback", { branch: triple }) : "" });
+    return this.facts(t, [
+      [tr("fact.branch"), branch, Boolean(spec), spec ? undefined : t.dim],
+      [tr("fact.folder"), tr("folder.worktree", { name: p.name })],
+      ["gwm", args ? `gwm ${args.first.join(" ")}` : "—", true, args ? undefined : t.dim],
+      [tr("fact.agent"), agent, true],
+    ]);
+  }
+
   render() {
     const t = theme();
     const ps = this.projects();
@@ -334,28 +573,62 @@ export default class NewThread extends View {
         .child(group);
     };
     const pick = (field, i) => (_e, cx) => {
-      this[field] = i;
+      this.choose(field, i);
       cx.notify();
     };
-    const placeholder = tree ? `#issue que construit-on${p ? ` dans ${p.name}` : ""} ?` : `Que construit-on${p ? ` dans ${p.name}` : ""} ?`;
-    const nudge = this.nudge === "issue" ? "Un nouveau worktree demande une issue : « #42 fix the login »" : null;
+    const placeholder = tree ? (p ? tr("ph.issueIn", { name: p.name }) : tr("ph.issue")) : p ? tr("ph.threadIn", { name: p.name }) : tr("ph.thread");
+    const nudge = this.nudge === "issue" ? tr("nudge") : null;
+    // The head's band: the project's color (kt-projects' registry, else its space's), else the accent.
+    const dark = settings().dark;
+    const tint = p ? projectTint(p.space) : null;
+    const band = tint ? (String(tint).startsWith("#") ? tint : t[tint] ?? t.accent) : t.accent;
+    const subtitle = [p?.name ?? tr("sub.noProject"), tree ? tr("sub.worktree") : git ? tr("sub.current") : tr("sub.folder"), AGENTS[this.agent][0].toLowerCase()].join(" · ");
     // The field looks live while typing (INSERT); in NORMAL it rests, without its caret.
     const focused = keyed && this.vim.insert;
     const dashed = () => div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border);
     const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
       .border_color(focused ? alpha(t.accent, "66") : t.border).bg(focused ? alpha(t.accent, "24") : t.background)
       .font_family(MONO).text_size(9).text_color(focused ? t.accent : t.muted).child(this.vim.label);
-    const shown = Boolean(this.size);
-    // The card (radius 20, 4 px around) and its inner card (16): frame "none" (mod.json), so it's ours.
-    const card = v_flex()
-      .id("kt-new")
-      // A press in the card never reaches the veil.
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .w(CARD)
-      .max_w_full()
+    // The modals' motion (ANIMATIONS.md, kt-confirm's): the veil fades in and the card rises 6 px,
+    // MS.open, once, on the first size report, and goes back out on dismiss (motion.js sheet);
+    // reduced motion: there at once.
+    const still = Boolean(shared("kt.reducedMotion"));
+    const shown = still || Boolean(this.size);
+    const s = sheet(frame(this.motion, still), "kn", shown);
+    // The head, Crosstalk's: a 60 px band over the pixel dither tinted by the project, the mark (the
+    // new thread's pen, accent, on a soft square), the title (14 semibold) and a mono subtitle.
+    const head = div()
+      .id("kt-n-head")
       .relative()
-      .top(shown ? 0 : 8)
-      .transition("top", { duration: 180, easing: "ease-out" })
+      .flex_none()
+      .h(60)
+      .overflow_hidden()
+      .rounded_t(15)
+      .on_size_change((size, cx) => {
+        if (Math.abs((this.headW ?? 0) - size.width) < 0.5) return;
+        this.headW = size.width;
+        cx.notify();
+      })
+      // Inside the inner card's 1 px border: its radius 16 less the border.
+      .when(this.headW > 30, (el) => el.child(ditherBand(this.headW, 60, 15, alpha(band, dark ? "6b" : "4d"), TOP)))
+      .child(h_flex().size_full().px(14).gap(12).items_center()
+        .child(h_flex().size(32).flex_none().rounded(10).items_center().justify_center().border(1).border_color(alpha(t.accent, "4d")).bg(alpha(t.surface, "e6"))
+          .child(svg(I("square-pen")).size(16).text_color(t.accent)))
+        .child(v_flex().flex_1().min_w(0).gap(2)
+          // motion.js sharpen: the title comes into focus as the dialog opens, once.
+          .child(sharpen(this.motion, "kn-title", () => div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(tr("title"))))
+          .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(subtitle)))
+        .child(kbd("esc")));
+    // The card (radius 20, 4 px around) and its inner card (16): frame "none" (mod.json), so it's ours.
+    const card = s.card(v_flex()
+      .id("kt-new")
+      // A press in the card never reaches the veil, and gives the dialog the keyboard back (after kt-confirm).
+      .on_mouse_down("left", (_e, cx) => {
+        cx.stop_propagation();
+        this.handle.focus();
+      })
+      .w(CARD)
+      .max_w_full())
       .p(4)
       .rounded(20)
       .bg(t.popover)
@@ -368,10 +641,12 @@ export default class NewThread extends View {
           .bg(t.surface)
           .border(1)
           .border_color(t.border)
+          .child(head)
+          .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(band, "4d")))
           .child(
             v_flex()
-              .p(12)
-              .gap(10)
+              .p(16)
+              .gap(12)
               // The field (radius 12) in its accent ring (3 px, radius 15) while it types (INSERT).
               .child(
                 div()
@@ -402,32 +677,29 @@ export default class NewThread extends View {
                           .when(Boolean(this.name), (el) => el.child(div().min_w(0).truncate().text_color(t.foreground).child(this.name)))
                           .when(focused, (el) => el.child(div().flex_none().w(2).h(20).rounded(1).bg(t.accent)))
                           .when(!this.name, (el) => el.child(div().pl(6).min_w(0).truncate().text_color(this.nudge === "name" ? t.blocked : t.dim).child(placeholder))),
-                      )
-                      // The worktree's branch to be, gwm's way.
-                      .when(Boolean(spec), (el) => el.child(div().flex_none().max_w(260).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`${TYPES[this.type]}/#${spec.issue}-${kebab(spec.desc)}`))),
+                      ),
                   ),
               )
               .child(
                 v_flex()
-                  .child(row("Projet", this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space))), this.scrolls.project), "project"))
+                  .child(row(tr("row.project"), this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space))), this.scrolls.project), "project"))
                   .when(git, (el) =>
                     el.child(
                       row(
-                        "Checkout",
+                        tr("row.checkout"),
                         this.segmented(t, "kt-n-co", [
-                          this.chip(t, "kt-n-cur", "Checkout actuel", !this.worktree, pick("worktree", false)),
-                          this.chip(t, "kt-n-wt", "Nouveau worktree", this.worktree, pick("worktree", true)),
+                          this.chip(t, "kt-n-cur", tr("chip.current"), !this.worktree, pick("worktree", false)),
+                          this.chip(t, "kt-n-wt", tr("chip.worktree"), this.worktree, pick("worktree", true)),
                         ]),
                         "worktree",
                       ),
                     ),
                   )
-                  .when(tree, (el) => el.child(row("Type", this.segmented(t, "kt-n-ts", TYPES.map((n, i) => this.chip(t, `kt-n-t${i}`, n, i === this.type, pick("type", i))), this.scrolls.type), "type")))
-                  .child(row("Agent", this.segmented(t, "kt-n-as", AGENTS.map(([n], i) => this.chip(t, `kt-n-a${i}`, n, i === this.agent, pick("agent", i)))), "agent")),
+                  .when(tree, (el) => el.child(row(tr("row.type"), this.segmented(t, "kt-n-ts", TYPES.map((n, i) => this.chip(t, `kt-n-t${i}`, n, i === this.type, pick("type", i))), this.scrolls.type), "type")))
+                  .child(row(tr("row.agent"), this.segmented(t, "kt-n-as", AGENTS.map(([n], i) => this.chip(t, `kt-n-a${i}`, n, i === this.agent, pick("agent", i)))), "agent")),
               )
-              .when(Boolean(nudge || this.error), (el) =>
-                el.child(div().px(4).text_size(12).text_color(this.error ? t.ansi1 : t.blocked).child(this.error || nudge)),
-              ),
+              .when(Boolean(nudge), (el) => el.child(div().px(4).text_size(12).text_color(t.blocked).child(nudge)))
+              .child(this.state(t, p, git, tree, spec)),
           )
           // The foot, under a dashed rule: the keys, the branch to be, Start.
           .child(dashed())
@@ -447,7 +719,7 @@ export default class NewThread extends View {
                     .font_family(MONO)
                     .text_color(t.working)
                     .child(svg("mods/workspace-chrome/spinner.svg").size(12).spin(900))
-                    .child("GWM CREATE…"),
+                    .child(`${String(this.busy).split(" ").slice(0, 2).join(" ").toUpperCase()}…`),
                 ),
               )
               .when(keyed, (el) => el.child(mode))
@@ -462,9 +734,9 @@ export default class NewThread extends View {
                   .when(!this.busy, (el) =>
                     el
                       // Three hints fit beside the buttons; ctrl+w / ctrl+t / ctrl+a stay in the keys help (ctrl-b ?).
-                      .child(hint("ctrl+p", "projet"))
-                      .child(hint("ctrl+e", "terminal"))
-                      .child(hint("esc", this.vim.insert ? "normal" : "annuler")),
+                      .child(hint("ctrl+p", tr("hint.project")))
+                      .child(hint("ctrl+e", tr("hint.terminal")))
+                      .child(hint("esc", this.vim.insert ? tr("hint.normal") : tr("hint.cancel"))),
                   ),
               )
               // An empty thread: just a terminal in the project (ctrl+e).
@@ -485,10 +757,10 @@ export default class NewThread extends View {
                     .text_size(11)
                     .cursor_pointer()
                     .hover((s) => s.bg(t.hover).text_color(t.foreground))
-                    .tooltip("Ouvrir un terminal vide dans le projet (ctrl+e)")
-                    .on_click(() => this.blank())
+                    .tooltip(tr("blank.tip"))
+                    .on_click((_e, cx) => this.blank(cx))
                     .child(svg("mods/workspace-chrome/terminal.svg").size(12))
-                    .child("TERMINAL VIDE"),
+                    .child(tr("blank")),
                 ),
               )
               // kbrdn.dev primary button: solid ink, round.
@@ -511,26 +783,24 @@ export default class NewThread extends View {
                     this.start(cx);
                     cx.notify();
                   })
-                  .child("START")
+                  .child(this.trust?.text != null ? tr("approve") : tr("start"))
                   .child(div().text_size(12).child("↵")),
               ),
           ),
       );
-    // The whole window: a veil (a click on it closes), the card in its middle. Fades in once.
-    return div()
+    // The whole window: a veil (a click on it closes), the card in its middle. Fades in once, out on dismiss.
+    return s.veil(div()
       .id("kt-new-veil")
       .size_full()
       .flex()
       .items_center()
       .justify_center()
-      .bg(veil())
-      .opacity(shown ? 1 : 0)
-      .transition("opacity", { duration: 160, easing: "ease-out" })
+      .bg(veil()))
       .on_size_change((size, cx) => {
         this.size = size;
         cx.notify();
       })
-      .on_click(() => this.close())
+      .on_click((_e, cx) => this.dismiss(cx))
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .child(card);

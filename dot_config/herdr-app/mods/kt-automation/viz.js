@@ -36,9 +36,11 @@
 //           V.gauge("Quota hebdo", 44, { unit: "%", id: "q-week" })
 //           V.donut([{ label: "Diff", value: 14 }, …], { label: "Heures", size: 184 })
 //           V.progress("Quota 5 h", 62, { detail: "reset dans 1 h 40", width: 320 })
+//           V.steps([{ label: "Issue", state: "done" }, { label: "Review", state: "current" }, …], { id: "kf-steps" })
 //           V.chart("bar" | "line" | "area", [{ label, values: [..], color }], { labels, width, height })
 //           V.heatmap(values /* rows of numbers */, { rows: ["Lun", …], columns: ["nov", …], width })
 //           V.stat("Coût du mois", "$412", { detail: "+12.4% vs oct.", trend: [..], better: "lower" })
+//           viz(theme(), m, { roll })   // roll.js handed in: the gauge's, progress' and stat's figures roll
 // Colors: Monocode's tokens (ink, muted, faint, accent, positive, negative, warning, series1..6),
 // any theme() name, or a #hex. `id`: stable per visual (not per value). gauge, progress, stat and
 // donut default it from their label; chart, trend and heatmap from their kind only: give two of a
@@ -54,7 +56,12 @@
 // (a render per mouse move): bars and lines get a native tooltip per category instead.
 
 import { div, PathBuilder, Background } from "gpui-kit";
-import { enter, MS } from "./motion.js";
+import { enter, pulse, MS } from "./motion.js";
+import { makeT } from "./i18n.js";
+import words from "./viz.strings.js";
+
+// Its own words (I18N.md), copied with it: « aucune donnée », the steps' states.
+const tr = makeT(words);
 
 export const CELL = 3;
 const MONO = "Monaspace Krypton";
@@ -395,6 +402,25 @@ export function progressGeometry(ratio, width, cell = CELL) {
   return { rects: [[0, 0, cols * cell, 3 * cell, "track"], ...runs(cols, 3, ink, cell)], head, cell };
 }
 
+/** A flow's steps: one segment per step, `gap` cells between them, 3 cells high. Each segment's track
+ * is one rectangle under the ink: done and failed solid, current half dithered (its paint breathes),
+ * skipped a light diagonal hatch, todo the track alone. `segs`: each segment's [x, w] in px. */
+export function stepsGeometry(states, width, cell = CELL, gap = 2) {
+  const cols = Math.floor(width / cell);
+  const n = Math.max(states.length, 1);
+  const cuts = states.map((_, i) => [Math.round((i * (cols + gap)) / n), Math.max(Math.round(((i + 1) * (cols + gap)) / n) - gap, Math.round((i * (cols + gap)) / n))]);
+  const of = new Int16Array(cols).fill(-1);
+  cuts.forEach(([a, b], i) => { for (let c = a; c < b && c < cols; c++) of[c] = i; });
+  const ink = (col, row) => {
+    const s = states[of[col]];
+    if (s === "done" || s === "failed") return s;
+    if (s === "current") return inked(col, row, 0.5) ? s : null;
+    if (s === "skipped") return (col + row) % 3 === 0 ? s : null;
+    return null;
+  };
+  return { rects: [...cuts.map(([a, b]) => [a * cell, 0, (b - a) * cell, 3 * cell, "track"]), ...runs(cols, 3, ink, cell)], segs: cuts.map(([a, b]) => [a * cell, (b - a) * cell]), cell };
+}
+
 // Bars and areas fade from their top edge toward the axis.
 const BAR_LEVEL = 0.75, BAR_FLOOR = 0.125, BAR_FADE = 0.7, MAX_BAR = 36;
 const AREA_LEVEL = 0.625, AREA_REST = 0.2;
@@ -547,7 +573,7 @@ function label(s, x, y, { align = "left", size = 10, color, mono = true, semibol
   const el = div().absolute().left(Math.round(align === "left" ? x : align === "center" ? x - w / 2 : x - w)).top(Math.round(y - h / 2))
     .w(w).h(h).flex().items_center().whitespace_nowrap().text_size(size).text_color(color);
   return (align === "center" ? el.justify_center() : align === "right" ? el.justify_end() : el)
-    .when(mono, (e) => e.font_family(MONO)).when(semibold, (e) => e.font_semibold()).child(String(s));
+    .when(mono, (e) => e.font_family(MONO)).when(semibold, (e) => e.font_semibold()).child(s && typeof s === "object" ? s : String(s));
 }
 
 /** A legend swatch: a translucent body under a solid cap, like a bar. */
@@ -560,7 +586,7 @@ export const marker = (x, y, side, c) => [
 ];
 
 /** The "nothing to show" box, said in words; `w` null: as wide as its container. */
-const empty = (t, w, h, what = "aucune donnée") => (w == null ? div().w_full() : div().w(w))
+const empty = (t, w, h, what = tr("empty")) => (w == null ? div().w_full() : div().w(w))
   .h(h).flex().items_center().justify_center().rounded(8).border(1).border_color(t.border).text_size(12).text_color(t.dim).child(what);
 
 /**
@@ -587,7 +613,10 @@ const fadeIn = (m, el, id) => (m ? enter(m, el, id, { dy: 0 }) : el.id(id));
 const FLUID_W = 320;
 
 /** The visuals, bound to a theme and a motion state (null: none). Like Monocode's `visual.*`. */
-export function viz(t, m = null) {
+// `roll`: roll.js' roll(), handed in rather than imported, so a copy without roll.js still loads. With
+// it, a figure that changes rolls to its new digits (the reels' ids: `${id}-n`, `-pct`, `-v`).
+export function viz(t, m = null, { roll } = {}) {
+  const R = roll ? (id, s, h, o) => roll(m ?? { reduced: false }, id, s, h, o) : null;
   const light = isLight(t);
   const content = (a) => faint(t.foreground, a);
   const axis = { size: 10, color: content(0.45) };
@@ -619,9 +648,10 @@ export function viz(t, m = null) {
     const tint = color(t, token);
     const fmt = (v) => (unit === "%" ? `${compact(v, 1)}%` : unit ? `${compact(v, 0.1)} ${unit}` : compact(v, 0.1));
     const ends = g.middle * Math.SQRT1_2;
+    const sz = Math.round(size * 0.15);
     return fadeIn(m, div().relative().w(size).h(g.height).flex_none().children([
       ...[...g.paths].map(([k, p]) => paint(p, k === "tint" ? tint : faint(tint, 0.14))),
-      label(fmt(value), g.c, g.c - 4, { align: "center", size: Math.round(size * 0.15), color: t.foreground, mono: false, semibold: true, w: size }),
+      label(R ? R(`${id}-n`, fmt(value), Math.ceil(sz * 1.3)) : fmt(value), g.c, g.c - 4, { align: "center", size: sz, color: t.foreground, mono: false, semibold: true, w: size }),
       label(name, g.c, g.c + size * 0.1 + 6, { align: "center", size: 12, color: content(0.6), mono: false, w: size }),
       label(compact(min, 1), g.c - ends, g.c + ends + g.thickness / 2 + 12, { align: "center", ...axis, w: 60 }),
       label(compact(max, 1), g.c + ends, g.c + ends + g.thickness / 2 + 12, { align: "center", ...axis, w: 60 }),
@@ -669,14 +699,60 @@ export function viz(t, m = null) {
       const cells = div().absolute().left(0).top(B).w(w).h(hpx).children([...g.paths].map(([k, p]) => paint(p, k === "tint" ? tint : faint(tint, 0.14))));
       return reveal(m, id, w, hpx + 2 * B, div().relative().w(w).h(hpx + 2 * B).children([...bloom, cells]));
     };
+    const pct = `${Math.round(ratio * 100)}%`;
+    // A rolling figure is a box, not a line of text: centered, as a baseline would not be found in it.
     return (width == null ? div().w_full() : div().w(width)).flex().flex_col().gap(8 - B).children([
-      div().flex().items_baseline().gap(8).children([
+      (R ? div().flex().items_center() : div().flex().items_baseline()).gap(8).children([
         div().flex_1().min_w_0().truncate().text_size(13).text_color(t.foreground).child(String(name)),
-        div().font_family(MONO).text_size(12).text_color(content(0.55)).child(`${Math.round(ratio * 100)}%`),
+        div().font_family(MONO).text_size(12).text_color(content(0.55)).child(R ? R(`${id}-pct`, pct, 16) : pct),
       ]),
       fluid(id, width, 3 * cell + 2 * B, bar),
       ...(detail ? [div().text_size(12).text_color(content(0.55)).child(String(detail))] : []),
     ]);
+  }
+
+  // A flow's progress by steps (`list`: [{ label, state: "done" | "current" | "todo" | "failed" |
+  // "skipped" }], an unknown state counts as todo): a dithered segment per step, done in the tint (the
+  // status line's ok purple), current half inked and breathing (motion.js pulse), failed red, skipped
+  // hatched, todo the track. Each step's label under its segment, mono and truncated, and its tooltip
+  // on the segment; segments narrower than STEP_MIN px: only the step in front and « n / total ».
+  // Drawn in from the left once (reveal), as progress.
+  const STEP_STATES = ["done", "current", "todo", "failed", "skipped"];
+  const STEP_MIN = 44;
+  // `words`: the tooltips' state names, by state, to say them otherwise (by default viz.strings.js'
+  // step.<state>, in the language shown).
+  // `colors`: { done, current, failed } as theme colours, so the bar matches the list it heads (kt-flow
+  // passes its own: done green, running accent, failed red); `color` alone tints done and current.
+  function steps(list, { width, color: token, colors, words, cell = CELL, id = "viz-steps" } = {}) {
+    if (!list?.length) return empty(t, width, 40);
+    const word = (s) => words?.[s] ?? tr(`step.${s}`);
+    const states = list.map((s) => (STEP_STATES.includes(s.state) ? s.state : "todo"));
+    const tint = token ? color(t, token) : (t.ansi13 ?? t.accent);
+    const done = colors?.done ?? tint;
+    const fill = { track: faint(done, 0.14), done, current: colors?.current ?? tint, failed: colors?.failed ?? t.ansi9 ?? t.ansi1, skipped: content(0.35) };
+    const tone = { current: t.foreground, failed: fill.failed, done: content(0.6), todo: content(0.4), skipped: content(0.4) };
+    const LH = 14;
+    const passed = states.filter((s) => s === "done" || s === "skipped").length;
+    // The step in front: the running one, else the one that failed, else the next to do, else the last.
+    const front = [states.indexOf("current"), states.indexOf("failed"), states.indexOf("todo"), states.length - 1].find((i) => i >= 0);
+    const text = (s) => div().h(LH).truncate().font_family(MONO).text_size(10).line_height(`${LH}px`).text_color(tone[s]);
+    const draw = (w) => {
+      const g = memo(`s|${states}|${w}|${cell}`, () => capped((c) => stepsGeometry(states, w, c), cell, w * 3 * cell));
+      const hpx = 3 * g.cell;
+      const bar = div().relative().w(w).h(hpx).children([...g.paths].map(([k, p]) => (k === "current" && m
+        ? pulse(m, div().absolute().inset_0().child(paint(p, fill[k])), true) : paint(p, fill[k]))));
+      const labels = g.segs.some(([, sw]) => sw < STEP_MIN)
+        ? div().flex().w(w).h(LH).gap(8).child(text(states[front]).flex_1().min_w(0).child(String(list[front].label ?? "")))
+          // With roll, « n / total » rolls to its new count (its reels: `${id}-n`).
+          .child(text("todo").flex_none().child(R ? R(`${id}-n`, `${passed} / ${states.length}`, LH) : `${passed} / ${states.length}`))
+        : div().relative().w(w).h(LH).children(g.segs.map(([x, sw], i) => text(states[i]).absolute().top(0).left(x).w(sw).child(String(list[i].label ?? ""))));
+      return div().relative().w(w).flex().flex_col().gap(4)
+        .child(reveal(m, id, w, hpx, bar))
+        .child(labels)
+        .children(g.segs.map(([x, sw], i) => div().id(`${id}-s${i}`).absolute().top(0).left(x).w(sw).h(hpx + 4 + LH)
+          .tooltip(`${list[i].label ?? ""} · ${word(states[i])}`)));
+    };
+    return fluid(id, width, 3 * cell + 4 + LH, draw);
   }
 
   function chart(kind, series, { labels = [], height = 220, width, cell = CELL, id = `viz-c-${kind}` } = {}) {
@@ -779,14 +855,15 @@ export function viz(t, m = null) {
     ]);
   }
 
-  function stat(name, value, { detail, delta, trend: series, better = "higher", color: token = "accent", width, id = `viz-s-${slug(name)}` } = {}) {
+  // `snap`: with roll, the value's last characters that change at once (a cost's cents: 2).
+  function stat(name, value, { detail, delta, trend: series, better = "higher", color: token = "accent", width, snap = 0, id = `viz-s-${slug(name)}` } = {}) {
     const split = delta == null ? splitDelta(detail) : [String(delta), detail ?? ""];
     const [change, rest] = split ?? [null, detail];
     const down = change != null && /^[-−]/.test(change);
     const tone = color(t, down !== (better === "lower") ? "negative" : "positive");
     return (width == null ? div().w_full().min_w(0) : div().w(width)).flex().flex_col().gap(4).children([
       div().text_size(12).text_color(content(0.6)).child(String(name)),
-      div().text_size(24).font_semibold().text_color(t.foreground).child(String(value)),
+      div().text_size(24).font_semibold().text_color(t.foreground).child(R ? R(`${id}-v`, String(value), Math.ceil(24 * 1.3), { snap }) : String(value)),
       ...(change != null || rest ? [div().flex().items_center().gap(8).children([
         ...(change != null ? [div().flex().items_center().gap(4).flex_none().text_size(12).font_family(MONO).text_color(tone).children([div().child(down ? "▼" : "▲"), div().child(change)])] : []),
         ...(rest ? [div().min_w_0().truncate().text_size(12).text_color(content(0.55)).child(String(rest))] : []),
@@ -795,5 +872,5 @@ export function viz(t, m = null) {
     ]);
   }
 
-  return { gauge, donut, progress, chart, trend, heatmap, stat, swatch, color: (name) => color(t, name) };
+  return { gauge, donut, progress, steps, chart, trend, heatmap, stat, swatch, color: (name) => color(t, name) };
 }

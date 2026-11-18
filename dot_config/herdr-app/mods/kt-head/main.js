@@ -11,10 +11,13 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, panes, run, theme, shared, props, layout, settings, window as win, setShared, exec, home, agents, focused, openOverlay, nextCommand, checking } from "herdr";
-import { motionState, frame, enter, fade } from "./motion.js";
+import { motionState, frame, enter, fade, sharpen } from "./motion.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
 // Copied byte for byte from mods/kt-threads/halo.js: the halo the brand part draws, kt-threads below.
 import { HALO, haloLayers } from "./halo.js";
 
+const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const SPIN = "mods/workspace-chrome/spinner.svg";
@@ -29,6 +32,8 @@ const PAGES = {
   gwm: ["Worktrees", "git-branch"],
   // kt-notes; the sidebar's own icon for it (kt-threads), so the crumb and the line match.
   notes: ["Notes", "file-text"],
+  // kt-automation, in the Agents group with kt-threads' icon for it; its name is words (page.automation).
+  automation: [null, "refresh-cw", "Agents"],
 };
 const alpha = (c, a) => (c ?? "#000000").slice(0, 7) + a;
 
@@ -159,11 +164,11 @@ function route(c) {
     openOverlay({ mod: "kt-new", kind: "dialog", width: 1, height: 1, frame: "none", props: { worktree: true } });
   } else if (name === "close-pane") {
     const p = panes().find((x) => x.pane === focused()?.pane);
-    if (p) confirm("Fermer ce pane ?", `${p.title || p.program?.name || "Terminal"} : son terminal s'arrête.`, "Fermer", { name: "pane.close", args: { pane: p.pane } });
+    if (p) confirm(tr("pane.title"), tr("pane.detail", { name: p.title || p.program?.name || "Terminal" }), tr("close"), { name: "pane.close", args: { pane: p.pane } });
   } else if (name === "close-tab") {
     const s = spaces().find((x) => x.active);
     const c = s?.tabs.find((x) => x.active);
-    if (c) confirm("Fermer ce thread ?", `${c.name} : ses terminaux s'arrêtent.${s.tabs.length === 1 ? " C'est le dernier : le projet se ferme." : ""}`, "Fermer", { name: "tab.close", args: { id: c.id } });
+    if (c) confirm(tr("tab.title"), tr(s.tabs.length === 1 ? "tab.detailLast" : "tab.detail", { name: c.name }), tr("close"), { name: "tab.close", args: { id: c.id } });
   }
 }
 
@@ -226,7 +231,7 @@ export default class Head extends View {
           .font_bold()
           .text_size(13)
           .child(div().text_color(t.foreground).child("@"))
-          .child(div().text_color(t.accent).child("kbrdn1")),
+          .child(div().text_color(t.accent).child("kbrdn1")), // i18n: tech
       );
   }
 
@@ -241,7 +246,7 @@ export default class Head extends View {
   // The agent's state, written: a spinner while it works, one pulse when it needs you.
   status(t, lead) {
     const s = lead?.status;
-    const look = { working: [t.working, "WORKING"], blocked: [t.blocked, "NEEDS YOU"], done: [t.done, "DONE"] }[s];
+    const look = { working: [t.working, "WORKING"], blocked: [t.blocked, "NEEDS YOU"], done: [t.done, "DONE"] }[s]; // i18n: tech
     if (!look) return null;
     const [color, text] = look;
     return enter(this.motion, h_flex().flex_none().h(22).px(8).gap(6).items_center().rounded_full(), `kt-h-st-${s}`, { dy: 0 })
@@ -256,7 +261,8 @@ export default class Head extends View {
     const p = spaces().find((x) => x.active);
     const c = p?.tabs.find((x) => x.active);
     const lead = drawer().lead;
-    const page = PAGES[find(layout(), "view")?.active];
+    const active = find(layout(), "view")?.active;
+    const page = PAGES[active];
     const pr = p ? this.project(t, p, cx) : null;
     const sep = () => svg(I("chevron-right")).size(12).flex_none().text_color(t.dim);
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
@@ -278,7 +284,9 @@ export default class Head extends View {
               .child(div().flex_none().text_size(13).font_medium().text_color(t.muted).child(page[2]))
               .child(sep()))
             .child(svg(I(page?.[1] ?? "layers")).size(14).flex_none().text_color(t.accent))
-            .child(div().flex_none().text_size(14).font_medium().text_color(t.foreground).child(page?.[0] ?? ""))
+            // motion.js sharpen: the page's title comes into focus at each change of view, once.
+            .child(((name) => sharpen(m, `kh-page:${name}`, () => div().text_size(14).font_medium().text_color(t.foreground).child(name)).flex_none())(
+              page ? page[0] ?? tr(`page.${active}`) : ""))
             // Back to the thread the page covers.
             .child(own(h_flex().id("kt-h-back").flex_none().h(24).px(9).gap(6).items_center().rounded_full()
               .border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted)
@@ -288,7 +296,7 @@ export default class Head extends View {
               .child(div().max_w(180).truncate().child(label(c, lead)))))
             .child(div().flex_1()))
           .when(!page, (el) => el
-            .child(div().flex_shrink(1).min_w(0).truncate().text_size(14).font_medium().text_color(t.foreground).child(label(c, lead)))
+            .child(sharpen(m, `kh-thread:${c?.id ?? ""}`, () => div().truncate().text_size(14).font_medium().text_color(t.foreground).child(label(c, lead))).flex_shrink(1).min_w(0))
             .when(Boolean(lead?.branch), (el) => el.child(h_flex().flex_none().h(22).px(8).gap(5).items_center().rounded_full()
               .border(1).border_color(t.border).font_family(MONO).text_size(10.5).text_color(t.muted)
               .child(svg(I("git-branch")).size(11).text_color(t.dim))
@@ -300,10 +308,10 @@ export default class Head extends View {
       .child(
         h_flex()
           .gap(2)
-          .child(button(m, t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true, false, "Détails du thread"))
-          .child(button(m, t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, "Terminal à droite"))
-          .child(button(m, t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open, false, "Terminal en bas"))
-          .child(button(m, t, "kt-h-panel", "panel-right", () => run("layout.toggle", { id: "panel" }), shown(layout(), "panel"), false, "Panneau latéral")),
+          .child(button(m, t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true, false, tr("details")))
+          .child(button(m, t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, tr("splitRight")))
+          .child(button(m, t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open, false, tr("drawer")))
+          .child(button(m, t, "kt-h-panel", "panel-right", () => run("layout.toggle", { id: "panel" }), shown(layout(), "panel"), false, tr("panel"))),
       )
       .when(Boolean(w.buttons), (el) =>
         el.child(

@@ -7,6 +7,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { settings } from "herdr";
 import { ditherBand, TOP } from "./dither.js";
+import { sharpen } from "./motion.js";
 
 const MONO = "Monaspace Krypton";
 // A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
@@ -28,16 +29,29 @@ export function iconBtn(t, id, icon, tip, fn, on = false) {
 }
 
 // The band's row: the 32 px mark (`mark`, else a tile with `icon` in `color`, a state dot `dot`), the
-// title, the subtitle (its parts joined by " · "), the buttons.
-export function bandRow(t, { color, icon, mark, dot, title, sub, buttons = [] }) {
+// title, the subtitle (its parts joined by " · "), the buttons. A part can be an element: roll.js'
+// rollText, a count that rolls (rollText(m, id, text, 14)); the subtitle is then a row on 14 px lines,
+// the elements whole, the text between them truncating.
+// `m`: the page's motion state (motion.js); given, the title comes into focus (sharpen) when it arrives
+// or changes, once.
+export function bandRow(t, { color, icon, mark, dot, title, sub, buttons = [], m }) {
   const tile = mark ?? div().size(32).flex_none().rounded(10).border(1).border_color(alpha(color, "4d")).bg(alpha(color, "24"))
     .flex().items_center().justify_center().child(svg(icon).size(16).text_color(color));
+  const parts = [sub].flat().filter(Boolean);
+  // Consecutive strings in one text, as before; " · " between every part.
+  const runs = parts.reduce((g, p) => (typeof p === "string" && typeof g.at(-1) === "string" ? g.splice(-1, 1, `${g.at(-1)} · ${p}`) : g.push(p), g), []);
+  const subLine = runs.every((p) => typeof p === "string")
+    ? div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(runs.join(" · "))
+    : h_flex().min_w(0).h(14).overflow_hidden().line_height("14px").font_family(MONO).text_size(10.5).text_color(t.muted)
+      .children(runs.flatMap((p, i) => (typeof p === "string" ? [div().min_w(0).truncate().child(`${i ? " · " : ""}${p}`)]
+        : [...(i ? [div().flex_none().whitespace_nowrap().child(" · ")] : []), p.flex_none()])));
   return h_flex().flex_none().h(60).px(10).gap(10).items_center()
     .child(div().relative().flex_none().child(tile)
       .when(Boolean(dot), (el) => el.child(div().absolute().right(-2).bottom(-2).size(10).rounded_full().border(2).border_color(t.background).bg(dot))))
     .child(v_flex().flex_1().min_w(0).gap(2)
-      .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(title))
-      .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child([sub].flat().filter(Boolean).join(" · "))))
+      .child(((ttl) => (m ? sharpen(m, `band-title:${title}`, ttl) : ttl()))(
+        () => div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(title)))
+      .child(subLine))
     .children(buttons.filter(Boolean));
 }
 

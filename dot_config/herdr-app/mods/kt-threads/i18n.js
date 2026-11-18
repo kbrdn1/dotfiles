@@ -14,9 +14,16 @@
 // The language: shared "kt.lang" = "fr" | "en" | null (auto: the system's, read once into shared
 // "kt.sysLang", French until it's known and during a check). A shared key: changing it redraws every mod.
 
-import { div } from "gpui-kit";
-import { h_flex } from "gpui-base";
-import { shared, setShared, exec, checking } from "herdr";
+import * as kit from "gpui-kit";
+import * as host from "herdr";
+
+// Namespace imports, read when called: a test's mock of herdr or gpui-kit that lacks one of these
+// (exec, checking, svg…) still loads this file. No checking(): taken as a check (nothing is run).
+const { div, svg } = kit;
+const shared = (k) => host.shared?.(k);
+const setShared = (k, v) => host.setShared?.(k, v);
+const checking = () => host.checking?.() ?? true;
+const exec = (...a) => (host.exec ? host.exec(...a) : Promise.reject(new Error("no exec")));
 
 const KEY = "kt.lang";
 const SYS = "kt.sysLang";
@@ -197,29 +204,38 @@ export function duration(ms) {
   return fr ? `${Math.floor(h / 24)} j ${h % 24} h` : `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
-// The language switch (Auto / FR / EN), kt-threads' theme switch's twin: one line in a mod,
-// `.child(langSwitch(theme()))`. Its own words, so the copies stay identical.
+// The language switch, kt-threads' theme switch's twin: one button showing the setting now (A, FR,
+// EN), a click steps to the next (Auto → FR → EN → Auto). One line in a mod,
+// `.child(langSwitch(theme(), fx))`. Its own words, so the copies stay identical.
 const own = makeT({
-  fr: { auto: "Langue du système ({name})", fr: "Français", en: "English" },
-  en: { auto: "System language ({name})", fr: "Français", en: "English" },
+  fr: { "tip.auto": "Langue : automatique ({name})", "tip.fr": "Langue : français", "tip.en": "Langue : anglais", "name.fr": "français", "name.en": "anglais" },
+  en: { "tip.auto": "Language: automatic ({name})", "tip.fr": "Language: French", "tip.en": "Language: English", "name.fr": "French", "name.en": "English" },
 });
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 
-/** The segment, `t` = theme(). A click sets shared "kt.lang" (Auto: back to the system's). */
-export function langSwitch(t) {
+/** A 24 px button that shows a state and steps to the next on a click: the language and the theme
+ *  of kt-threads' footer (same box, ring, hover). `face`: a short text (mono 9.5), or `icon` (an svg
+ *  path). `fx(el, key)`: the caller's fade on a state change (motion.js' enter, keyed by `key`), or
+ *  nothing (this file can't import motion.js: not every mod has it). `onClick(cx)` then redraws. */
+export function cycleButton(t, { id, key, face, icon, tip, onClick, fx }) {
+  const inner = div().flex().items_center().justify_center()
+    .child(icon ? svg(icon).size(13) : div().font_family("Monaspace Krypton").text_size(9.5).child(face)); // i18n: tech
+  return div().id(id).size(24).flex_none().flex().items_center().justify_center().rounded_full().border(1)
+    .border_color(alpha(t.accent, "66")).bg(alpha(t.accent, "24")).text_color(t.accent)
+    .cursor_pointer().hover((s) => s.bg(alpha(t.accent, "33")).text_color(t.foreground))
+    .tooltip(tip)
+    .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); cx.notify(); })
+    .child(fx ? fx(inner, `${id}-${key}`) : inner);
+}
+
+const NEXT = { auto: "fr", fr: "en", en: "auto" };
+const FACE = { auto: "A", fr: "FR", en: "EN" };
+
+/** The language button, `t` = theme(); `fx`: see cycleButton. A click sets shared "kt.lang" (Auto:
+ *  back to the system's, read again). */
+export function langSwitch(t, fx) {
   const now = langSetting();
   const sys = LANGS.includes(shared(SYS)) ? shared(SYS) : "fr";
-  return h_flex().flex_none().p(2).gap(1).items_center().rounded_full().border(1).border_color(t.border).bg(t.background)
-    .children([["auto", "A"], ["fr", "FR"], ["en", "EN"]].map(([v, label]) => {
-      const on = now === v;
-      return div().id(`kt-lang-${v}`).h(24).min_w(24).px(5).flex().items_center().justify_center().rounded_full().border(1)
-        .border_color(alpha(t.accent, on ? "66" : "00"))
-        .when(on, (el) => el.bg(alpha(t.accent, "24")))
-        .font_family("Monaspace Krypton").text_size(9.5).text_color(on ? t.accent : t.muted)
-        .cursor_pointer()
-        .when(!on, (el) => el.hover((s) => s.text_color(t.foreground)))
-        .tooltip(v === "auto" ? own("auto", { name: own(sys) }) : own(v))
-        .on_click((_e, cx) => { setLang(v); cx.notify(); })
-        .child(label);
-    }));
+  const tip = now === "auto" ? own("tip.auto", { name: own(`name.${sys}`) }) : own(`tip.${now}`);
+  return cycleButton(t, { id: "kt-lang", key: now, face: FACE[now], tip, onClick: () => setLang(NEXT[now]), fx });
 }

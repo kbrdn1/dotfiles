@@ -51,10 +51,15 @@ import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { AddMenu, AddForm, menuSize } from "./form.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
-import { motionState, frame, enter, pulse } from "./motion.js";
+import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
+// kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
+import { rollText } from "./roll.js";
 import { refreshOn } from "./bus.js";
 import { METHODS } from "./add.js";
+import { makeT, relative } from "./i18n.js";
+import strings from "./strings.js";
 
+const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const OWN = (name) => `mods/kt-mcp/${name}.svg`;
@@ -62,27 +67,33 @@ const OWN = (name) => `mods/kt-mcp/${name}.svg`;
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 // `tint`: the fallback icon (icons/<key>.svg) is a one-color glyph. `pale`: its filter's tint (FILTERS.md).
 const PROVIDERS = [
-  { key: "claude", label: "Claude Code", tint: false, pale: "accent" },
-  { key: "codex", label: "Codex", tint: false, pale: "ansi6" },
-  { key: "cursor", label: "Cursor", tint: true, pale: "ansi4" },
-  { key: "opencode", label: "OpenCode", tint: true, pale: "ansi2" },
+  { key: "claude", label: "Claude Code", tint: false, pale: "accent" }, // i18n: tech
+  { key: "codex", label: "Codex", tint: false, pale: "ansi6" }, // i18n: tech
+  { key: "cursor", label: "Cursor", tint: true, pale: "ansi4" }, // i18n: tech
+  { key: "opencode", label: "OpenCode", tint: true, pale: "ansi2" }, // i18n: tech
 ];
 const LABEL = Object.fromEntries(PROVIDERS.map((p) => [p.key, p.label]));
-const SEGS = [["all", "Tous"], ...PROVIDERS.map((p) => [p.key, p.label])];
+// [key]: « Tous » (strings.js' seg.all), then the providers by their names.
+const SEGS = [["all"], ...PROVIDERS.map((p) => [p.key])];
+const segLabel = (k) => (k === "all" ? tr("seg.all") : LABEL[k]);
 const SCOPES = ["local", "project", "user", "plugin"];
-// state -> label, theme color name; every state is a pill, the unchecked ones dim.
+// state -> label, theme color name; every state is a pill, the unchecked ones dim. Claude Code's own
+// words stay; ours are strings.js' state.<key> (stateLabel).
 const STATE = {
-  connected: ["Connected", "done"], failed: ["Failed", "ansi1"], auth: ["Needs authentication", "ansi3"],
-  unknown: ["absent de claude mcp list", "dim"], unchecked: ["non vérifié", "dim"],
-  config: ["config seulement", "dim"], disabled: ["désactivé", "dim"],
+  connected: ["Connected", "done"], failed: ["Failed", "ansi1"], auth: ["Needs authentication", "ansi3"], // i18n: tech
+  unknown: [null, "dim"], unchecked: [null, "dim"], config: [null, "dim"], disabled: [null, "dim"],
 };
-// The health strip: Claude Code's states as filters (unknown counts as unchecked), FILTERS.md's tints.
-const BUCKETS = [["connected", "connectés", "done"], ["failed", "en échec", "ansi1"], ["auth", "à authentifier", "blocked"], ["unchecked", "non vérifiés", "dim"]];
+const stateLabel = (st) => STATE[st][0] ?? tr(`state.${st}`);
+// The health strip: Claude Code's states as filters (unknown counts as unchecked), FILTERS.md's tints;
+// words: strings.js' bucket.<key>.
+const BUCKETS = [["connected", "done"], ["failed", "ansi1"], ["auth", "blocked"], ["unchecked", "dim"]];
 const bucket = (st) => (st === "unknown" ? "unchecked" : st);
 // ~/.claude.json -> only what a row shows: env/header names, never their values.
-const JQ = `def s: (. // {}) | with_entries(.value |= {type, command, args, url, env: ((.env // {}) | keys), headers: ((.headers // {}) | keys)});
+// i18n: tech
+const JQ =`def s: (. // {}) | with_entries(.value |= {type, command, args, url, env: ((.env // {}) | keys), headers: ((.headers // {}) | keys)});
 {user: (.mcpServers | s), local: ((.projects[$cwd].mcpServers // .projects[$root].mcpServers) | s)}`;
 // ~/.codex/config.toml -> the same shape; env = env's keys + env_vars + bearer_token_env_var.
+// i18n: tech
 const PY = `import json, sys, tomllib
 try: d = tomllib.load(open(sys.argv[1], "rb")).get("mcp_servers", {})
 except FileNotFoundError: d = {}
@@ -104,14 +115,7 @@ const tilde = (p) => (p && (p === home() || p.startsWith(home() + "/")) ? `~${p.
 const cause = (r) => `${r.stderr}\n${r.stdout}`.split("\n").map((s) => s.trim())
   .filter((s) => /claude|mcp|server|error|auth|login/i.test(s) && !/gitstatus|zle|setopt|zshrc/i.test(s)).pop();
 
-function ago(at) {
-  const s = Math.max(0, (Date.now() - at) / 1000);
-  if (s < 60) return "à l'instant";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  return h < 24 ? `il y a ${h} h` : `il y a ${Math.floor(h / 24)} j`;
-}
+const ago = (at) => relative(at);
 
 // Shown: kbrdn-threads' main "view" stack is on this page, or this copy is a dialog.
 function find(node, id) {
@@ -171,7 +175,7 @@ export default class Mcp extends View {
     this.detailScroll = ScrollHandle.new();
     this.segRow = filterState(); // the filter rows (filters.js)
     this.healthRow = filterState();
-    this.motion = motionState(); // motion.js: the detail and the bulk bar fade in
+    this.motion = motionState(); // motion.js: the detail and the bulk bar fade in, the rows open and close
     this.headW = 0; // the head card's width (its dither)
     this.more = false; // the head's ⋯ menu
     this.readAt = 0;
@@ -246,7 +250,7 @@ export default class Mcp extends View {
   async claude(h, proj) {
     const file = `${h}/.claude.json`;
     const r = await exec("jq", ["-c", "--arg", "cwd", proj?.cwd ?? "", "--arg", "root", proj?.root ?? "", JQ, file]);
-    if (r.code) throw new Error(r.stderr.trim() || `jq a échoué (code ${r.code})`);
+    if (r.code) throw new Error(r.stderr.trim() || tr("failedCode", { cmd: "jq", code: r.code }));
     const d = JSON.parse(r.stdout);
     const out = [];
     const add = (scope, servers, from, listName = (n) => n) => {
@@ -283,7 +287,7 @@ export default class Mcp extends View {
   async codex(h) {
     const file = `${h}/.codex/config.toml`;
     const r = await exec("python3", ["-c", PY, file]);
-    if (r.code) throw new Error(r.stderr.trim().split("\n").pop() || `python3 a échoué (code ${r.code})`);
+    if (r.code) throw new Error(r.stderr.trim().split("\n").pop() || tr("failedCode", { cmd: "python3", code: r.code }));
     return Object.entries(JSON.parse(r.stdout)).map(([n, v]) => server("codex", "user", n, v, file));
   }
 
@@ -346,10 +350,10 @@ export default class Mcp extends View {
           // Shared by the page and its dialogs (names and states only); a day's worth is kept.
           const all = Object.fromEntries(Object.entries(shared(HEALTH) ?? {}).filter(([, h]) => Date.now() - h.at < 86400e3));
           setShared(HEALTH, { ...all, [cwd]: { at: Date.now(), map } });
-        } else this.verifyError = maskText(cause(r) || `claude mcp list n'a listé aucun serveur (code ${r.code})`);
+        } else this.verifyError = maskText(cause(r) || tr("listNone", { code: r.code }));
       } catch (e) {
         const m = String(e?.message ?? e);
-        this.verifyError = /time|délai/i.test(m) ? "Délai dépassé : claude mcp list n'a pas fini en 60 s." : maskText(m);
+        this.verifyError = /time|délai/i.test(m) ? tr("timeout", { cmd: "claude mcp list" }) : maskText(m);
       } finally {
         this.verifying = false;
         cx.notify();
@@ -371,10 +375,10 @@ export default class Mcp extends View {
       const r = await exec("sh", ["-c", GET, "sh", x.name], { cwd, timeout: 60e3 });
       const ok = r.code === 0 && /Status:/.test(r.stdout);
       out = { state: ok ? parseGet(r.stdout) : "unknown", failed: !ok,
-        text: ok ? maskGet(r.stdout.trim()) : maskText(cause(r) || `claude mcp get a échoué (code ${r.code})`) };
+        text: ok ? maskGet(r.stdout.trim()) : maskText(cause(r) || tr("failedCode", { cmd: "claude mcp get", code: r.code })) };
     } catch (e) {
       const m = String(e?.message ?? e);
-      out = { state: "unknown", failed: true, text: /time|délai/i.test(m) ? "Délai dépassé : claude mcp get n'a pas fini en 60 s." : maskText(m) };
+      out = { state: "unknown", failed: true, text: /time|délai/i.test(m) ? tr("timeout", { cmd: "claude mcp get" }) : maskText(m) };
     }
     this.gets[x.key] = { at: Date.now(), cwd, ...out };
   }
@@ -386,7 +390,7 @@ export default class Mcp extends View {
     const todo = list.filter((x) => this.canGet(x));
     const skipped = list.length - todo.length;
     if (!todo.length) {
-      notify({ title: "Rien à vérifier", body: "claude mcp get ne connaît que les serveurs Claude Code (user, local, projet) : « Vérifier » en haut couvre ceux des plugins.", level: "info", timeout: 6000 });
+      notify({ title: tr("nothingToCheck"), body: tr("nothingToCheckBody"), level: "info", timeout: 6000 });
       return;
     }
     this.getting = { i: 0, n: todo.length, name: todo[0].name, key: todo[0].key };
@@ -400,8 +404,8 @@ export default class Mcp extends View {
       if (todo.length > 1 || skipped) {
         const n = (s) => todo.filter((x) => this.gets[x.key]?.state === s).length;
         const failed = n("failed") + todo.filter((x) => this.gets[x.key]?.failed).length;
-        notify({ title: `${todo.length} serveur${todo.length > 1 ? "s" : ""} vérifié${todo.length > 1 ? "s" : ""}`,
-          body: `${n("connected")} connectés · ${n("failed")} en échec · ${n("auth")} à authentifier${skipped ? ` · ${skipped} ignoré${skipped > 1 ? "s" : ""} (plugin ou autre fournisseur)` : ""}`,
+        notify({ title: tr("checked", { n: todo.length }),
+          body: tr("checkedBody", { connected: n("connected"), failed: n("failed"), auth: n("auth"), skipped: skipped ? tr("skipped", { n: skipped }) : "" }),
           level: failed ? "warning" : "success", timeout: 6000 });
       }
       cx.notify();
@@ -452,7 +456,7 @@ export default class Mcp extends View {
     for (const f of new Set(files)) exec("open", [`zed://file${f}`]).catch(() => {});
   }
 
-  copy(text, cx, title = "Copié") {
+  copy(text, cx, title = tr("copied")) {
     cx.write_to_clipboard(text);
     notify({ title, body: text, level: "success", timeout: 2000 });
   }
@@ -522,7 +526,7 @@ export default class Mcp extends View {
 
   // The state: a colored pill (the unchecked ones in dim).
   stateView(t, st) {
-    const [label, name] = STATE[st];
+    const [label, name] = [stateLabel(st), STATE[st][1]];
     const c = t[name];
     return h_flex().flex_none().h(18).px(7).gap(5).items_center().rounded_full().border(1).border_color(alpha(c, "4d")).bg(alpha(c, "1a"))
       .text_color(c).font_family(MONO).text_size(10).child(div().size(6).rounded_full().bg(c)).child(label.toUpperCase());
@@ -548,7 +552,7 @@ export default class Mcp extends View {
     return h_flex().absolute().bottom(12).left(0).right(0).px(8).justify_center()
       .child(enter(this.m, div().max_w_full(), "ktm-bulk-in").child(h_flex().id("ktm-bulk").max_w_full().flex_wrap().p(4).gap(2).items_center().rounded(12).border(1).border_color(t.border).bg(t.popover).shadow_lg()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(`${n} sélectionné${n > 1 ? "s" : ""}`))
+        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(rollText(this.m, "ktm-sel-n", tr("selected", { n }), 15)))
         .child(div().w(1).h(18).flex_none().bg(t.border))
         .when(Boolean(progress), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
           .child(svg(I("refresh-cw")).size(13).spin(900)).child(progress ?? "")))
@@ -557,7 +561,7 @@ export default class Mcp extends View {
           .on_click((_e, cx) => { onClick(cx); cx.notify(); })
           .child(svg(icon).size(13)).child(label))))
         .child(h_flex().id("ktm-bulk-clear").size(28).flex_none().items_center().justify_center().rounded(8).text_color(t.muted)
-          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Vider la sélection (esc)")
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("clearSelection"))
           .on_click((_e, cx) => { this.multi.clear(); cx.notify(); })
           .child(svg(I("x")).size(13)))));
   }
@@ -569,9 +573,9 @@ export default class Mcp extends View {
     if (!picked.length) return null;
     const g = this.getting;
     this.bulkActions = [
-      ["verify", "Vérifier", I("circle-check"), (cx) => this.getMany(picked, cx)],
-      ["copy", "Copier les noms", OWN("copy"), (cx) => this.copy(picked.map((x) => x.name).join("\n"), cx, `${picked.length} nom${picked.length > 1 ? "s" : ""} copié${picked.length > 1 ? "s" : ""}`)],
-      ["zed", "Ouvrir les configs", I("external-link"), () => this.zed(picked.map((x) => x.file))],
+      ["verify", tr("verify"), I("circle-check"), (cx) => this.getMany(picked, cx)],
+      ["copy", tr("copyNames"), OWN("copy"), (cx) => this.copy(picked.map((x) => x.name).join("\n"), cx, tr("namesCopied", { n: picked.length }))],
+      ["zed", tr("openConfigs"), I("external-link"), () => this.zed(picked.map((x) => x.file))],
     ];
     return this.bulkBar(t, picked.length, this.bulkActions, g && `claude mcp get ${g.i + 1}/${g.n} · ${g.name}…`);
   }
@@ -658,12 +662,12 @@ export default class Mcp extends View {
     const cwd = this.verifyCwd();
     const h = this.healthFor();
     let text, color = t.dim;
-    if (this.verifying) text = `claude mcp list dans ${tilde(cwd)} : chaque serveur démarre pour être testé (60 s max)…`;
+    if (this.verifying) text = tr("verifying", { path: tilde(cwd) });
     else if (this.verifyError) { text = this.verifyError; color = t.ansi1; }
     else if (h) {
       const elsewhere = h.cwd !== cwd && claude.some((x) => x.scope === "local" || x.scope === "project");
-      text = `vérifié ${ago(h.at)} dans ${tilde(h.cwd)}${elsewhere ? " · local et projet non vérifiés ici" : ""}`;
-    } else text = "« Vérifier » lance claude mcp list, qui démarre chaque serveur. Les autres fournisseurs : config seulement.";
+      text = tr("verified", { ago: ago(h.at), path: tilde(h.cwd), elsewhere: elsewhere ? tr("elsewhere") : "" });
+    } else text = tr("verifyHint");
     return div().min_w(0).font_family(MONO).text_size(11).line_height("16px").text_color(color).child(text);
   }
 
@@ -673,7 +677,7 @@ export default class Mcp extends View {
     for (const x of claude) if (!x.disabled) n[bucket(this.state(x))] = (n[bucket(this.state(x))] ?? 0) + 1;
     return v_flex().gap(6)
       .child(filterRow({ id: "ktm-health", t, state: this.healthRow, active: this.stateF, reduced: Boolean(shared("kt.reducedMotion")),
-        items: BUCKETS.map(([key, label, tint]) => ({ key, label, tint, count: n[key] })),
+        items: BUCKETS.map(([key, tint]) => ({ key, label: tr(`bucket.${key}`), tint, count: n[key] })),
         onPick: (k) => { this.stateF = this.stateF === k ? null : k; this.cur = null; } }))
       .child(this.verifyLine(t, claude));
   }
@@ -682,34 +686,36 @@ export default class Mcp extends View {
     const typing = this.keyed && this.vim.insert;
     const proj = this.proj();
     const filtered = this.query.trim() || this.seg !== "all" || this.stateF;
-    const count = !this.read ? "…" : filtered ? `${shown} / ${this.items.length}` : `${this.items.length} serveurs`;
+    const count = !this.read ? "…" : filtered ? `${shown} / ${this.items.length}` : tr("servers", { n: this.items.length });
     const seg = filterRow({ id: "ktm-seg", t, state: this.segRow, active: this.seg, reduced: Boolean(shared("kt.reducedMotion")),
-      items: SEGS.map(([key, label]) => ({ key, label, tint: PROVIDERS.find((p) => p.key === key)?.pale,
+      items: SEGS.map(([key]) => ({ key, label: segLabel(key), tint: PROVIDERS.find((p) => p.key === key)?.pale,
         count: key === "all" ? q.length : q.filter((x) => x.provider === key).length })),
       onPick: (k) => { this.seg = k; this.cur = null; } });
     // The scope: the shown project's folder, else Global; the Global pill switches a project to the global view.
     const where = h_flex().flex_none().h(32).px(12).gap(7).items_center().rounded_full().border(1).border_color(t.border)
       .child(svg(I(proj ? "folder" : "layers")).size(13).text_color(t.dim))
       .child(div().max_w(220).truncate().text_size(12.5).text_color(proj ? t.foreground : t.muted)
-        .child(proj ? (proj.root === home() ? "~" : proj.root.split("/").pop()) : "Global"));
+        .child(proj ? (proj.root === home() ? "~" : proj.root.split("/").pop()) : "Global")); // i18n: tech
     const globalPill = h_flex().id("ktm-global").flex_none().h(32).px(12).items_center().rounded_full().border(1)
       .border_color(this.global ? alpha(t.accent, "66") : t.border)
       .when(this.global, (el) => el.bg(alpha(t.accent, "24")))
       .when(!this.global, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
       .text_size(12).text_color(this.global ? t.foreground : t.muted).cursor_pointer()
       .on_click((_e, cx) => { this.global = !this.global; if (!checking()) this.reload(cx); cx.notify(); })
-      .child("Global");
+      .child("Global"); // i18n: tech
     // DESIGN-REFERENCE.md's head: the band on the page's dither (MCP: accent), the rest under it.
     return this.card(t).id("ktm-head").relative().flex_none().px(4).pb(12).gap(10)
       .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
       .children([dither(this.headW, 60, 16, t.accent)].filter(Boolean))
-      .child(bandRow(t, { color: t.accent, icon: I("plug"), title: "MCP",
-        sub: [count, proj ? tilde(proj.root) : "Global", "Claude Code, Codex, Cursor, OpenCode"],
+      .child(bandRow(t, { m: this.m, color: t.accent, icon: I("plug"), title: "MCP",
+        // The count rolls; its id carries the project (another one's shows at once) and the filtering
+        // (« shown / total » and « N serveurs » don't roll into each other).
+        sub: [rollText(this.m, `ktm-head-n-${proj?.root ?? "global"}-${filtered ? "f" : "a"}`, count, 14), proj ? tilde(proj.root) : "Global", "Claude Code, Codex, Cursor, OpenCode"], // i18n: tech
         buttons: [
-          iconBtn(t, "ktm-b-add", I("plus"), "Ajouter (a)", () => this.openAdd()),
-          pulse(this.m, iconBtn(t, "ktm-b-verify", I("circle-check"), this.verifying ? "Vérification…" : "Vérifier : claude mcp list", (cx) => this.verify(cx), this.verifying), this.verifying),
-          iconBtn(t, "ktm-b-refresh", I("refresh-cw"), this.busy ? "Lecture…" : "Rafraîchir (r)", (cx) => { if (!checking()) this.reload(cx); }),
-          iconBtn(t, "ktm-b-more", "mods/kt-crosstalk/ellipsis.svg", "Plus", () => { this.more = !this.more; }, this.more)] }))
+          iconBtn(t, "ktm-b-add", I("plus"), tr("addTip"), () => this.openAdd()),
+          pulse(this.m, iconBtn(t, "ktm-b-verify", I("circle-check"), this.verifying ? tr("verifyingTip") : tr("verifyTip"), (cx) => this.verify(cx), this.verifying), this.verifying),
+          iconBtn(t, "ktm-b-refresh", I("refresh-cw"), this.busy ? tr("readingTip") : tr("refreshTip"), (cx) => { if (!checking()) this.reload(cx); }),
+          iconBtn(t, "ktm-b-more", "mods/kt-crosstalk/ellipsis.svg", tr("moreTip"), () => { this.more = !this.more; }, this.more)] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.accent, "4d")))
       .child(h_flex().px(10).flex_wrap().gap(8).items_center()
         .child(where)
@@ -722,7 +728,7 @@ export default class Mcp extends View {
           .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
           .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
-            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : "Filtrer"))
+            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : tr("filter")))
           .when(Boolean(this.query), (el) => el.child(div().id("ktm-clear").flex_none().text_color(t.dim).cursor_pointer()
             .hover((s) => s.text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.cur = null; cx.notify(); })
@@ -735,11 +741,11 @@ export default class Mcp extends View {
   // The head's ⋯: the rest of the page's actions.
   moreItems() {
     return [
-      ["ktm-mi-add", I("plus"), "Ajouter un serveur… (a)", () => this.openAdd()],
-      ["ktm-mi-verify", I("circle-check"), "Vérifier tout : claude mcp list", (cx) => this.verify(cx)],
-      this.scope && ["ktm-mi-global", I("layers"), this.global ? "Revenir au projet" : "Vue globale", (cx) => { this.global = !this.global; if (!checking()) this.reload(cx); }],
-      ["ktm-mi-zed", I("external-link"), "Ouvrir ~/.claude.json dans Zed", () => this.zed([`${home()}/.claude.json`])],
-      ["ktm-mi-keys", I("keyboard"), "Les touches (?)", () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })],
+      ["ktm-mi-add", I("plus"), tr("mi.add"), () => this.openAdd()],
+      ["ktm-mi-verify", I("circle-check"), tr("mi.verify"), (cx) => this.verify(cx)],
+      this.scope && ["ktm-mi-global", I("layers"), this.global ? tr("mi.back") : tr("mi.global"), (cx) => { this.global = !this.global; if (!checking()) this.reload(cx); }],
+      ["ktm-mi-zed", I("external-link"), tr("mi.zed"), () => this.zed([`${home()}/.claude.json`])],
+      ["ktm-mi-keys", I("keyboard"), tr("mi.keys"), () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })],
     ];
   }
 
@@ -755,9 +761,10 @@ export default class Mcp extends View {
 
   // One dense line: the box, the name, its state, then scope · transport. `cursor`: "ring" (NORMAL:
   // a 1 px accent ring with the ink), "mark" (INSERT: ctrl-n/p's row) or null. The detail's row
-  // carries the ink with a 66 border, a selected one a lighter ink and its box checked.
-  row(t, x, cursor) {
-    const hot = x.key === this.hot;
+  // carries the ink with a 66 border, a selected one a lighter ink and its box checked. `gone`: closing
+  // (rows() gave it -1), drawn as it was but no longer a target: no click, hover or box.
+  row(t, x, cursor, gone = false) {
+    const hot = !gone && x.key === this.hot;
     const on = x.key === this.open;
     const picked = this.multi.has(x.key);
     const st = this.state(x);
@@ -765,46 +772,55 @@ export default class Mcp extends View {
     return h_flex().id(`ktm-row-${x.key}`).flex_none().h(38).pl(10).pr(6).gap(10).items_center().rounded(12).border(1)
       .border_color(cursor === "ring" ? alpha(t.accent, "99") : on ? alpha(t.accent, "66") : alpha(t.border, "00"))
       .bg(on || cursor === "ring" ? alpha(t.accent, "24") : picked ? alpha(t.accent, "14") : cursor === "mark" ? t.hover : t.background)
-      .when(!cursor && !on && !picked, (el) => el.hover((s) => s.bg(t.hover)))
-      .cursor_pointer()
-      .on_click((e, cx) => {
-        this.cur = x.key;
-        if (!this.multi.click(e.modifiers, x.key, this.listed().map((y) => y.key))) this.show(x);
-        cx.notify();
-      })
-      .on_hover((h, cx) => {
-        const next = h ? x.key : this.hot === x.key ? null : this.hot;
-        if (next !== this.hot) { this.hot = next; cx.notify(); }
-      })
-      .child(this.check(t, `ktm-check-${x.key}`, picked, picked || hot || this.multi.size > 0, () => this.multi.toggle(x.key)))
+      .when(!gone && !cursor && !on && !picked, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(!gone, (el) => el.cursor_pointer()
+        .on_click((e, cx) => {
+          this.cur = x.key;
+          if (!this.multi.click(e.modifiers, x.key, this.listed().map((y) => y.key))) this.show(x);
+          cx.notify();
+        })
+        .on_hover((h, cx) => {
+          const next = h ? x.key : this.hot === x.key ? null : this.hot;
+          if (next !== this.hot) { this.hot = next; cx.notify(); }
+        }))
+      .child(this.check(t, `ktm-check-${x.key}`, picked, !gone && (picked || hot || this.multi.size > 0), () => this.multi.toggle(x.key)))
       .child(div().min_w(0).truncate().font_family(MONO).text_size(13).font_medium().text_color(x.disabled ? t.muted : t.foreground).child(x.name))
       .child(this.stateView(t, st))
       .when(getting, (el) => el.child(svg(I("refresh-cw")).size(12).flex_none().text_color(t.dim).spin(900)))
       .child(div().flex_1())
       .when(hot, (el) => el.child(h_flex().flex_none().gap(2)
-        .child(this.icon(t, `ktm-copy-${x.key}`, OWN("copy"), "Copier le nom", (cx) => this.copy(x.name, cx)))
-        .child(this.icon(t, `ktm-zed-${x.key}`, I("external-link"), "Ouvrir la config dans Zed", () => this.zed([x.file])))))
+        .child(this.icon(t, `ktm-copy-${x.key}`, OWN("copy"), tr("copyName"), (cx) => this.copy(x.name, cx)))
+        .child(this.icon(t, `ktm-zed-${x.key}`, I("external-link"), tr("openConfigZed"), () => this.zed([x.file])))))
       .child(div().flex_none().pr(6).font_family(MONO).text_size(11).text_color(t.dim).child(`${x.scope} · ${x.transport}`));
   }
 
-  list(t, shown) {
+  list(t, shown, cx) {
     const card = this.card(t).flex_1().min_w(0).h_full();
-    const errors = Object.entries(this.errors).map(([k, e]) => this.empty(t, `${LABEL[k]} : ${e}`, t.ansi1).py(6));
+    const errors = Object.entries(this.errors).map(([k, e]) => this.empty(t, tr("line", { name: LABEL[k], why: e }), t.ansi1).py(6));
     const rows = [...errors];
-    if (!shown.length) rows.push(this.empty(t, !this.read || this.busy ? "Lecture des configs…" : this.items.length ? "Aucun serveur ne correspond au filtre." : "Aucun serveur MCP configuré."));
-    const per = {};
-    for (const x of shown) per[x.provider] = (per[x.provider] ?? 0) + 1;
+    if (!shown.length) rows.push(this.empty(t, !this.read || this.busy ? tr("readingConfigs") : this.items.length ? tr("noMatch") : tr("noServer")));
     // The keys' cursor, while the page has the keyboard: its row, brought into view once after it moved.
     const typing = this.keyed && this.vim.insert;
     const cur = this.keyed ? this.at(shown)?.key : null;
-    shown.forEach((x, i) => {
-      if (i === 0 || shown[i - 1].provider !== x.provider) rows.push(this.groupRow(t, x.provider, per[x.provider], i === 0));
-      if (this.reveal && x.key === cur) {
-        this.listScroll.scroll_to_item(rows.length);
-        this.reveal = false;
-      }
-      rows.push(this.row(t, x, x.key === cur ? (typing ? "mark" : "ring") : null));
-    });
+    // One rows() per provider (motion.js): a filter or a reload closes and opens its rows on their
+    // height, in order; a provider gone whole (header too) goes at once. `at` counts the rows as rows()
+    // builds them, the closing ones included: they are the list's direct children, which
+    // scroll_to_item reveals.
+    let first = true;
+    for (const p of [...new Set(shown.map((x) => x.provider))]) {
+      const xs = shown.filter((x) => x.provider === p);
+      rows.push(this.groupRow(t, p, xs.length, first));
+      first = false;
+      let at = rows.length;
+      rows.push(...rowsOf(this.m, cx, `ktm-rows-${p}`, xs, (x) => x.key, (x, i) => {
+        if (i >= 0 && this.reveal && x.key === cur) {
+          this.listScroll.scroll_to_item(at);
+          this.reveal = false;
+        }
+        at++;
+        return this.row(t, x, i >= 0 && x.key === cur ? (typing ? "mark" : "ring") : null, i < 0);
+      }));
+    }
     const bar = this.bulk(t);
     // The bulk bar floats over the rows' foot: room under the last row so it never hides it.
     return card
@@ -816,7 +832,7 @@ export default class Mcp extends View {
       .child(h_flex().flex_none().px(14).py(8).gap(8).items_center()
         .child(svg(I("circle-alert")).size(12).flex_none().text_color(t.dim))
         .child(div().flex_1().min_w(0).text_size(11.5).text_color(t.dim)
-          .child("Modifications via claude mcp uniquement : « Ajouter » passe par claude mcp add, après confirmation. Suppression et connexion (Sign in) : claude mcp remove, /mcp.")));
+          .child(tr("footNote"))));
   }
 
   // ---------- detail ----------
@@ -836,40 +852,40 @@ export default class Mcp extends View {
     const pair = (label, v, mono = true) => h_flex().gap(10).items_start()
       .child(this.eyebrow(t, label, t.dim).w(96).flex_none().pt(1))
       .child(div().flex_1().min_w(0).when(mono, (el) => el.font_family(MONO)).text_size(12).text_color(v ? t.foreground : t.dim).child(v || "—"));
-    const when = k ? `${k.via} ${ago(k.at)} dans ${tilde(k.cwd)}` : x.provider === "claude" ? "jamais vérifié ici" : "config seulement : seul Claude Code est vérifiable";
+    const when = k ? tr("when", { via: k.via, ago: ago(k.at), path: tilde(k.cwd) }) : x.provider === "claude" ? tr("neverChecked") : tr("configOnly");
     // The card (16): DESIGN-REFERENCE.md's band on the page's dither (its width is known: w), the
     // provider's tile as the mark with the state's dot; it fades in and rises when a server opens.
     const dot = { connected: t.done, failed: t.ansi1, auth: t.ansi3 }[st] ?? null;
     const card = this.card(t).w(w).flex_none().h_full().relative().px(4).pb(4).overflow_hidden()
       .children([dither(w, 60, 16, t.accent)].filter(Boolean))
-      .child(bandRow(t, { mark: this.tile(t, x.provider, 32), dot, title: x.name, sub: [LABEL[x.provider], x.scope, x.transport],
+      .child(bandRow(t, { m: this.m, mark: this.tile(t, x.provider, 32), dot, title: x.name, sub: [LABEL[x.provider], x.scope, x.transport],
         buttons: [
-          iconBtn(t, "ktm-d-copy", OWN("copy"), "Copier le nom (y)", (cx) => this.copy(x.name, cx)),
-          iconBtn(t, "ktm-d-zed", I("external-link"), "Ouvrir la config dans Zed (O)", () => this.zed([x.file])),
-          this.canGet(x) && pulse(this.m, iconBtn(t, "ktm-d-get", I("circle-check"), running ? "claude mcp get…" : "Tester : claude mcp get",
+          iconBtn(t, "ktm-d-copy", OWN("copy"), tr("copyNameY"), (cx) => this.copy(x.name, cx)),
+          iconBtn(t, "ktm-d-zed", I("external-link"), tr("openConfigZedO"), () => this.zed([x.file])),
+          this.canGet(x) && pulse(this.m, iconBtn(t, "ktm-d-get", I("circle-check"), running ? "claude mcp get…" : tr("testTip"),
             (cx) => { if (!this.getting) this.getMany([x], cx); }, running), running),
-          iconBtn(t, "ktm-close", I("x"), "Fermer", () => { this.open = null; })] }))
+          iconBtn(t, "ktm-close", I("x"), tr("close"), () => { this.open = null; })] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.accent, "4d")))
       .child(v_flex().id("ktm-detail").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.detailScroll).px(10).pt(10).pb(16).gap(14)
         .child(h_flex().gap(8).items_center().child(this.stateView(t, st))
           .child(div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(when)))
         .child(this.dashed(t))
         .child(v_flex().gap(6)
-          .child(pair("Transport", x.transport))
-          .child(pair("Portée", x.scope))
-          .child(pair("Fichier", tilde(x.file)))
-          .when(x.listName !== x.name, (el) => el.child(pair("Dans la liste", x.listName)))
-          .child(pair("Cible", x.target))
-          .child(pair("Env", x.env.join(", ")))
-          .child(pair("Headers", x.headers.join(", "))))
+          .child(pair("Transport", x.transport)) // i18n: tech
+          .child(pair(tr("pair.scope"), x.scope))
+          .child(pair(tr("pair.file"), tilde(x.file)))
+          .when(x.listName !== x.name, (el) => el.child(pair(tr("pair.listName"), x.listName)))
+          .child(pair(tr("pair.target"), x.target))
+          .child(pair("Env", x.env.join(", "))) // i18n: tech
+          .child(pair("Headers", x.headers.join(", ")))) // i18n: tech
         .child(v_flex().gap(6)
-          .child(this.eyebrow(t, "Config · secrets masqués"))
+          .child(this.eyebrow(t, tr("configMasked")))
           .child(this.block(t, JSON.stringify(x.config, null, 2))))
         .when(x.provider === "claude", (el) => el.child(v_flex().gap(6)
-          .child(this.eyebrow(t, g ? `claude mcp get · ${ago(g.at)} dans ${tilde(g.cwd)}` : "claude mcp get"))
-          .child(running ? this.block(t, "Le serveur démarre pour être testé (60 s max)…", t.dim)
+          .child(this.eyebrow(t, g ? tr("getAt", { ago: ago(g.at), path: tilde(g.cwd) }) : "claude mcp get"))
+          .child(running ? this.block(t, tr("starting"), t.dim)
             : g ? this.block(t, g.text, g.failed ? t.ansi1 : t.foreground)
-            : this.block(t, this.canGet(x) ? "Pas encore lancé : le bouton de test, en haut, démarre le serveur pour le tester." : "claude mcp get ne connaît pas les serveurs de plugin : « Vérifier » en haut les couvre.", t.dim)))));
+            : this.block(t, this.canGet(x) ? tr("notRun") : tr("pluginNoGet"), t.dim)))));
     return enter(this.m, card, `ktm-detail-${x.key}`);
   }
 
@@ -914,7 +930,7 @@ export default class Mcp extends View {
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t, q, shown.length))
       .child(h_flex().flex_1().min_h(0).gap(4)
-        .child(this.list(t, shown))
+        .child(this.list(t, shown, cx))
         .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.42)))))
       // The head's ⋯, last so that it draws over the list.
       .when(this.more, (el) => el.relative().child(moreMenu(t, "ktm-more", props()?.overlay ? 60 : 56, this.moreItems(), () => { this.more = false; })));

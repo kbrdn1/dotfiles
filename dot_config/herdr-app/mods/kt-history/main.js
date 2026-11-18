@@ -21,12 +21,17 @@ import { v_flex, h_flex, v_virtual_list, Scrollbar, ScrollHandle, VirtualListScr
 import { exec, focused, panes, spaces, theme, layout, settings, readTextFile, appHome, nextCommand, checking, run, notify, openOverlay, shared, watchFolder } from "herdr";
 import { parsePatch } from "./diff.js";
 import { ICON_MAP } from "./icons.js";
-import { fileList, palette, alpha, action, MONO, IMAGE, loadPreview, cleanPreviews, viewImages, colorize, cleanTokens } from "./diffview.js";
+import { fileItems, palette, alpha, action, MONO, IMAGE, loadPreview, cleanPreviews, viewImages, colorize, cleanTokens } from "./diffview.js";
 import { Vim, keysOf, step } from "./vim.js";
-import { motionState, frame, enter, collapse } from "./motion.js";
+import { motionState, frame, enter } from "./motion.js";
 import { gitTopics, refreshOn } from "./bus.js";
+import { makeT, date } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 // The header's pixel band (kt-keys' dither.js, a byte-identical copy).
 import { ditherBand, TOP } from "./dither.js";
+import { shouldRead } from "./reread.js";
 
 const ME = "history"; // this block's id in the layout's "panel-body" stack
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -38,7 +43,6 @@ const ROW = 44; // a commit row
 const LANE = 14; // one lane's width
 const DOT_Y = 14; // the dot sits on the title line
 const MAX_LANES = 12;
-const MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
 // The panel's tabs in order, and each one's mod: [ / ] show the next one and give it the keyboard.
 const TABS = ["files", "diff", "history", "flow", "crosstalk", "gwm-panel"];
 const TAB_MODS = { files: "kt-files", diff: "kt-diff", history: "kt-history", flow: "kt-flow", crosstalk: "kt-crosstalk", "gwm-panel": "kt-gwm" };
@@ -133,10 +137,8 @@ export function graph(commits) {
   });
 }
 
-function day(at) {
-  const d = new Date(at * 1000), now = new Date();
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}${d.getFullYear() === now.getFullYear() ? "" : ` ${d.getFullYear()}`}`;
-}
+// A commit's day (git's seconds): « 18 nov. », the year when it isn't this one.
+const day = (at) => date(at * 1000);
 
 export default class History extends View {
   init(_props, cx) {
@@ -236,7 +238,7 @@ export default class History extends View {
     cx.notify();
   }
 
-  // The open commit's files in fileList's order (by path).
+  // The open commit's files in fileItems' order (by path).
   files() {
     return [...(this.detail?.files ?? [])].sort((a, b) => a.path.localeCompare(b.path));
   }
@@ -288,7 +290,7 @@ export default class History extends View {
       const text = inFiles ? (f && this.root ? (this.on ? f.path : `${this.root}/${f.path}`) : null) : c?.hash;
       if (text) {
         cx.write_to_clipboard(text);
-        notify({ title: "Copié", body: text, level: "success", timeout: 2000 });
+        notify({ title: tr("copied"), body: text, level: "success", timeout: 2000 });
       }
     } else if (a === "refresh") this.refresh(cx, true);
     else if (a === "escape") run("pane.go", { direction: "left" });
@@ -299,7 +301,9 @@ export default class History extends View {
   }
 
   refresh(cx, force) {
-    if (!visible() || this.loading) return;
+    // A read already running (maybe for the previous place): run once more when it ends.
+    if (this.loading) { this.again = true; return; }
+    if (!visible()) return;
     const { cwd, on } = where();
     if (!cwd) return;
     this.loading = true;
@@ -308,7 +312,9 @@ export default class History extends View {
       try {
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
         if (top.code !== 0) {
-          if (this.root !== null) { this.root = null; this.commits = []; this.rows = []; this.sel = null; this.detail = null; cx.notify(); }
+          // Not a repo (a thread on ~): forget the key and the branch too, as kt-diff does, or coming back
+          // to the same repo would find the same key and keep « pas de dépôt git ici ».
+          if (this.root !== null) { this.root = null; this.key = null; this.branch = null; this.commits = []; this.rows = []; this.sel = null; this.detail = null; cx.notify(); }
           return;
         }
         const root = top.stdout.trim();
@@ -323,7 +329,7 @@ export default class History extends View {
         this.key = key;
         this.root = root;
         this.on = on;
-        this.branch = br.stdout.trim() || "HEAD détachée";
+        this.branch = br.stdout.trim(); // "": a detached HEAD, said at render
         this.error = log.code ? log.stderr.trim() : null;
         this.commits = log.stdout.split("\n").filter(Boolean).map((l) => {
           const [hash, parents, author, at, d, subject] = l.split("\0");
@@ -332,7 +338,10 @@ export default class History extends View {
         this.rows = graph(this.commits);
         cx.notify();
       } catch (e) { this.error = String(e); cx.notify(); }
-      finally { this.loading = false; }
+      finally {
+        this.loading = false;
+        if (this.again) { this.again = false; this.refresh(cx, true); }
+      }
     });
   }
 
@@ -350,7 +359,7 @@ export default class History extends View {
       const r = await exec("git", [...READ, "diff", ...PATCH, c.parents[0] ?? EMPTY_TREE, hash], { cwd: root, on, timeout: 60e3 })
         .catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
       if (this.sel !== hash) return;
-      this.detail = { hash, files: r.code ? [] : parsePatch(r.stdout), error: r.code ? r.stderr.trim() || "git diff a échoué" : null, loading: false };
+      this.detail = { hash, files: r.code ? [] : parsePatch(r.stdout), error: r.code ? r.stderr.trim() || tr("diffFailed") : null, loading: false };
       cx.notify();
     });
   }
@@ -448,7 +457,7 @@ export default class History extends View {
           .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(c.hash.slice(0, 7)))));
   }
 
-  details(t) {
+  details(t, cx) {
     const d = this.detail, c = this.commits.find((x) => x.hash === d.hash);
     const dark = settings().dark !== false;
     const o = {
@@ -466,16 +475,16 @@ export default class History extends View {
     };
     const p = palette(t, dark);
     const add = d.files.reduce((n, f) => n + f.add, 0), del = d.files.reduce((n, f) => n + f.del, 0);
-    // fileList's rows one file at a time, so the cursor's can take the ring (diffview stays
-    // byte-identical: it goes on top, in the row's radius) and be scrolled to once after it moved.
+    // diffview's fileItems (Changes and Inbox's Code draw theirs the same): the rows by path, opening and
+    // closing on their height (the commit is in the id: another commit's list replaces this one at once
+    // and opens), the cursor's ring, each diff after its row, unfolding and folding on its height. The
+    // cursor's row is scrolled to once after it moved.
+    const cursor = (f) => this.keyed && this.zone === "files" && f.path === this.fcur;
     const items = [];
-    if (!d.loading) for (const f of this.files()) {
-      const [row, body] = fileList(t, [f], o);
-      const cursor = this.keyed && this.zone === "files" && f.path === this.fcur;
-      if (cursor && this.reveal) { this.filesScroll.scroll_to_item(items.length); this.reveal = false; }
-      items.push(cursor ? v_flex().relative().child(row)
-        .child(div().absolute().inset_0().rounded(8).border(1).border_color(alpha(t.accent, "99")).bg(alpha(t.accent, "24"))) : row);
-      if (body) items.push(collapse(this.motion, `hi-open:${f.path}`, true, body));
+    for (const { el, f } of fileItems(t, this.motion, cx, `hi-rows-${d.hash}`, d.loading ? [] : this.files(), o,
+      { ring: cursor, fold: (f) => `hi-open:${f.path}` })) {
+      if (f && cursor(f) && this.reveal) { this.filesScroll.scroll_to_item(items.length); this.reveal = false; }
+      items.push(el);
     }
     return enter(this.motion, v_flex().flex_1().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background), `hi-detail-${d.hash}`, { dy: 0 })
       .child(v_flex().flex_none().px(14).pt(12).pb(10).gap(4)
@@ -487,29 +496,28 @@ export default class History extends View {
           .child(div().flex_none().child(d.hash.slice(0, 10)))
           .child(div().min_w(0).truncate().child(`${c?.author ?? ""} · ${c ? day(c.at) : ""}`))
           .child(div().flex_1())
-          .when(!d.loading, (el) => el.child(div().flex_none().child(`${d.files.length} fichier${d.files.length > 1 ? "s" : ""}`))
+          .when(!d.loading, (el) => el.child(div().flex_none().child(tr("files", { n: d.files.length })))
             .child(div().flex_none().text_color(p.ok).child(`+${add}`)).child(div().flex_none().text_color(p.err).child(`−${del}`)))))
       .child(div().mx(14).flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
       // overflow_y_scroll + a Scrollbar of the same id: scroll_to_item does nothing on overflow_y_scrollbar.
       .child(div().relative().flex_1().min_h(0)
         .child(v_flex().id("hi-files").size_full().overflow_y_scroll().track_scroll(this.filesScroll).p(4).gap(2)
-          .when(d.loading, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child("Chargement…")))
+          .when(d.loading, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child(tr("loading"))))
           .when(Boolean(d.error), (el) => el.child(div().p(12).font_family(MONO).text_size(11.5).text_color(p.err).child(d.error)))
-          .when(!d.loading && !d.error && !d.files.length, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child("Aucun fichier modifié.")))
+          .when(!d.loading && !d.error && !d.files.length, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child(tr("noFiles"))))
           .children(items))
         .child(Scrollbar.vertical("hi-files").absolute().inset_0()));
   }
 
   render(cx) {
     const vis = visible();
-    // Another space or folder shown: look now, not at the next tick.
+    // Another thread, space or worktree: read now, shown or back from hidden; back on the tab at the same
+    // place, only past 10 s (reread.js). this.loc moves only while shown: a hidden copy doesn't render.
     const loc = JSON.stringify(where());
-    if (vis && this.shown && loc !== this.loc && !checking()) this.refresh(cx);
-    this.loc = loc;
-    if (vis && !this.shown && !checking() && Date.now() - (this.readAt ?? 0) > 10e3) {
-      this.refresh(cx);
-      cx.spawn(async () => { await cleanPreviews(); await cleanTokens("kt-history"); });
-    }
+    const read = !checking() && shouldRead({ vis, shown: this.shown, loc, lastLoc: this.loc, readAt: this.readAt, now: Date.now() });
+    if (vis) this.loc = loc;
+    if (read) this.refresh(cx);
+    if (read && !this.shown) cx.spawn(async () => { await cleanPreviews(); await cleanTokens("kt-history"); });
     if (vis && !this.shown) this.showGen++;
     this.shown = vis;
     // DATA-SYNC.md: another mod's action on this repo, or an agent of this space that stopped working.
@@ -542,12 +550,12 @@ export default class History extends View {
       .when(Boolean(band), (el) => el.child(band))
       .child(h_flex().h(40).px(14).gap(8).items_center()
         .child(svg(I("git-branch")).size(14).flex_none().text_color(t.muted))
-        .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(this.branch ?? "…"))
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(this.branch === "" ? tr("detached") : this.branch ?? "…"))
         .child(div().flex_1())
         .when(this.keyed, (el) => el.child(modePill(t, this.vim)))
-        .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(n ? `${n}${n >= COUNT ? "+" : ""} commits` : ""))
+        .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(n ? `${n}${n >= COUNT ? "+" : ""} commits` : "")) // i18n: tech
         .child(action(t, "hi-refresh", I("refresh-cw"), "Actualiser", (cx) => this.refresh(cx, true))));
-    const empty = this.root === null ? "Pas de dépôt git ici." : this.error ?? (this.root === undefined ? "…" : "Aucun commit.");
+    const empty = this.root === null ? tr("noRepo") : this.error ?? (this.root === undefined ? "…" : tr("noCommits"));
     const list = v_flex().flex_1().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background).p(4)
       .when(!n, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child(empty)))
       .when(n > 0, (el) => el.child(div().flex_1().min_h(0).relative()
@@ -568,6 +576,6 @@ export default class History extends View {
       .child(enter(m, v_flex().size_full().gap(4), `hi-in-${this.showGen}`, { dy: 0 })
         .child(head)
         .child(list)
-        .when(Boolean(this.detail), (el) => el.child(this.details(t))));
+        .when(Boolean(this.detail), (el) => el.child(this.details(t, cx))));
   }
 }

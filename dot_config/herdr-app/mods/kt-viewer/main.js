@@ -15,9 +15,13 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { props, closeOverlay, theme, openOverlay, nextCommand, checking } from "herdr";
+import { props, closeOverlay, theme, openOverlay, nextCommand, checking, exec, appHome, shared } from "herdr";
 import { Vim, keyOf, keysOf } from "./vim.js";
+import { motionState, frame, sheet, leave } from "./motion.js";
+import { makeT, num } from "./i18n.js";
+import strings from "./strings.js";
 
+const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
 const MIN = 0.1, MAX = 8;
 const RESERVE = 72; // the bottom bar (40) and its 16 px above and below
@@ -25,7 +29,7 @@ const PAN = 80; // px an h j k l press scrolls the zoomed image
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const clamp = (z) => Math.min(MAX, Math.max(MIN, z));
-const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} Mo` : n >= 1024 ? `${(n / 1024).toFixed(1)} Ko` : `${n} o`);
+const kb = (n) => (n >= 1048576 ? tr("size.mb", { n: num(n / 1048576, 1) }) : n >= 1024 ? tr("size.kb", { n: num(n / 1024, 1) }) : tr("size.b", { n }));
 
 export default class Viewer extends View {
   init(_p, cx) {
@@ -39,12 +43,23 @@ export default class Viewer extends View {
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.vim = new Vim({ counts: false });
+    this.motion = motionState(); // ANIMATIONS.md: the veil fades and the bar rises, in and out (motion.js sheet, leave)
+    // Is each file there? The previews are copies (data/…) that a cleanup can take: a missing one is
+    // said, not drawn as an empty stage. path -> true | false, absent while it's being looked for.
+    this.exists = {};
+    if (!checking()) cx.spawn(async (cx) => {
+      for (const path of new Set(this.images().map((x) => x.path).filter(Boolean))) {
+        const r = await exec("test", ["-f", path.startsWith("/") ? path : `${appHome()}/${path}`]).catch(() => null);
+        this.exists[path] = r?.code === 0;
+      }
+      cx.notify();
+    });
     if (!checking()) cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
         if (c.startsWith("key:")) {
           this.handle.focus();
-          for (const k of keysOf(c.slice(4))) this.press(k);
+          for (const k of keysOf(c.slice(4))) this.press(k, cx);
         }
         cx.notify();
       }
@@ -53,6 +68,14 @@ export default class Viewer extends View {
 
   images() {
     return props()?.images ?? [];
+  }
+
+  // An image's state: "ok", "loading" (looking for its file), "missing", "none" (no path at all).
+  // A check (`herdr-app check`) looks for nothing: drawn as there.
+  status(x) {
+    if (!x?.path) return "none";
+    const e = this.exists[x.path];
+    return e === undefined ? (checking() ? "ok" : "loading") : e ? "ok" : "missing";
   }
 
   img() {
@@ -104,32 +127,34 @@ export default class Viewer extends View {
     this.reset();
   }
 
-  close() {
-    closeOverlay(props()?.overlay);
+  // Not `close()`: Herdr calls a View's close() when the mod reloads or its overlay goes.
+  // motion.js leave(): the veil fades out and the bar sinks, then the viewer closes.
+  dismiss(cx) {
+    leave(this.motion, cx, "kv", () => closeOverlay(props()?.overlay));
   }
 
   key(e, cx) {
-    if (!this.press(e)) return; // not ours: ctrl-b, cmd-* go on
+    if (!this.press(e, cx)) return; // not ours: ctrl-b, cmd-* go on
     cx.stop_propagation();
     cx.notify();
   }
 
   // One key, from the keyboard or `key:` (a name): its own keys first (as before), then vim's.
-  press(e) {
+  press(e, cx) {
     const k = keyOf(e).name;
-    if (k === "escape") this.close();
+    if (k === "escape") this.dismiss(cx);
     else if (k === "+" || k === "=") this.zoomTo(this.scale() * 1.25);
     else if (k === "-" || k === "_") this.zoomTo(this.scale() / 1.25);
     else if (k === "0") this.reset();
     else if (k === "1") this.reset(1);
     else if (k === "left") this.go(-1);
     else if (k === "right") this.go(1);
-    else return this.act(this.vim.handle(e));
+    else return this.act(this.vim.handle(e), cx);
     return true;
   }
 
   // One vim action; false: not one the viewer has.
-  act(a) {
+  act(a, cx) {
     if (!a) return false;
     if (a === "pending") return true;
     // Fits whole (fitted, or 100 % of a small one): h / l change image, j / k have nothing to scroll.
@@ -139,7 +164,7 @@ export default class Viewer extends View {
     else if (["left", "right", "up", "down"].includes(a) && !whole) {
       const d = a === "left" || a === "up" ? PAN : -PAN;
       this.off = a === "left" || a === "right" ? { ...this.off, x: this.off.x + d } : { ...this.off, y: this.off.y + d };
-    } else if (a === "quit") this.close();
+    } else if (a === "quit") this.dismiss(cx);
     else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "modals" } });
     else return false;
     return true;
@@ -155,27 +180,60 @@ export default class Viewer extends View {
       .child(label);
   }
 
-  // The floating pill at the bottom: vim's mode (with the keyboard), ←, label, size, zoom, − + 100 %
-  // Ajuster, Comparer, →.
-  bar(t) {
+  // The floating pill at the bottom, in groups between thin rules: vim's mode (with the keyboard), ←,
+  // what it shows (its label as a tag, its name, n / total, size), the zoom (− readout +, 100 %,
+  // Ajuster), Comparer, →. It rises 6 px with the opening and sinks back on dismiss (`s`: motion.js sheet).
+  bar(t, s) {
     const raw = this.images()[this.index] ?? {}, n = this.images().length;
     const z = this.scale();
-    return h_flex().absolute().bottom(16).left(0).right(0).justify_center().child(h_flex().h(RESERVE - 32).gap(6).p(4).items_center()
+    const ok = this.status(raw) === "ok";
+    const rule = () => div().flex_none().w(1).h(18).mx(2).bg(t.border);
+    const round = (id, icon, onClick) => h_flex().id(id).flex_none().size(24).items_center().justify_center().rounded_full().text_color(t.muted)
+      .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { onClick(); cx.notify(); })
+      .child(svg(`mods/kt-threads/${icon}.svg`).size(12));
+    const label = raw.label ?? (raw.name ? null : tr("image"));
+    return h_flex().absolute().bottom(16).left(0).right(0).justify_center().child(s.card(h_flex())
+      .h(RESERVE - 32).max_w_full().gap(6).p(4).items_center()
       .rounded_full().bg(alpha(t.popover, "e6")).border(1).border_color(t.border)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .when(this.handle.is_focused(), (el) => el.child(div().flex_none().h(16).ml(6).px(6).flex().items_center().rounded(5).border(1)
         .border_color(t.border).bg(t.background).font_family(MONO).text_size(9).text_color(t.muted).child(this.vim.label)))
       .when(n === 2 && !this.compare, (el) => el.child(this.arrow(t, "kv-prev", "left", -1)))
-      .child(this.pill(t, "kv-label", `${String(raw.label ?? raw.name ?? "image").toUpperCase()}${raw.name && raw.label ? ` · ${raw.name}` : ""}`))
-      .when(Boolean(raw.w && raw.h), (el) => el.child(this.pill(t, "kv-dims", `${raw.w}×${raw.h}${raw.size ? ` · ${kb(raw.size)}` : ""}`)))
-      .when(!this.compare, (el) => el
-        .child(this.pill(t, "kv-zoom", `${Math.round(z * 100)} %`))
-        .child(this.pill(t, "kv-out", "−", () => this.zoomTo(z / 1.25)))
-        .child(this.pill(t, "kv-in", "+", () => this.zoomTo(z * 1.25)))
-        .child(this.pill(t, "kv-100", "100 %", () => this.reset(1), this.zoom === 1))
-        .child(this.pill(t, "kv-fit", "Ajuster", () => this.reset(), this.zoom === null)))
-      .when(n === 2, (el) => el.child(this.pill(t, "kv-compare", "Comparer", () => { this.compare = !this.compare; this.reset(); }, this.compare)))
+      .child(h_flex().id("kv-label").min_w(0).h(30).px(8).gap(8).items_center()
+        .when(Boolean(label), (el) => el.child(div().flex_none().h(18).px(6).flex().items_center().rounded(5).border(1).border_color(alpha(t.accent, "4d")).bg(alpha(t.accent, "14"))
+          .font_family(MONO).text_size(9.5).text_color(t.accent).child(String(label).toUpperCase())))
+        .when(Boolean(raw.name), (el) => el.child(div().min_w(0).max_w(240).truncate().text_size(12.5).text_color(t.foreground).child(raw.name)))
+        .when(n > 1, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(`${this.index + 1}/${n}`))))
+      .when(Boolean(raw.w && raw.h) || Boolean(raw.size), (el) => el.child(div().id("kv-dims").flex_none().pr(4).font_family(MONO).text_size(10.5).text_color(t.muted)
+        .child([raw.w && raw.h ? `${raw.w}×${raw.h}` : null, raw.size ? kb(raw.size) : null].filter(Boolean).join(" · "))))
+      .when(!this.compare && ok, (el) => el
+        .child(rule())
+        .child(h_flex().flex_none().h(30).p(2).gap(2).items_center().rounded_full().border(1).border_color(t.border).bg(t.background)
+          .child(round("kv-out", "minus", () => this.zoomTo(z / 1.25)))
+          .child(div().id("kv-zoom").w(52).flex_none().text_center().font_family(MONO).text_size(11).text_color(t.foreground).child(tr("percent", { n: Math.round(z * 100) })))
+          .child(round("kv-in", "plus", () => this.zoomTo(z * 1.25))))
+        .child(this.pill(t, "kv-100", tr("percent", { n: 100 }), () => this.reset(1), this.zoom === 1))
+        .child(this.pill(t, "kv-fit", tr("fit"), () => this.reset(), this.zoom === null)))
+      .when(n === 2, (el) => el.child(rule()).child(this.pill(t, "kv-compare", tr("compare"), () => { this.compare = !this.compare; this.reset(); }, this.compare)))
       .when(n === 2 && !this.compare, (el) => el.child(this.arrow(t, "kv-next", "right", 1))));
+  }
+
+  // An image that can't be drawn, said plainly in a card: looking for its file, the file gone, or
+  // nothing given at all. `compact`: inside a compare half `k` (its id carries it: both halves can be
+  // in the same state at once).
+  notice(t, x, kind, compact = false, k = 0) {
+    const [icon, color] = { loading: ["spinner", t.working], missing: ["circle-alert", t.blocked], none: ["file", t.dim] }[kind];
+    const [title, text] = [tr(`${kind}.title`), tr(`${kind}.text`)];
+    return v_flex().id(`kv-notice-${kind}-${k}`).max_w(compact ? 300 : 380).gap(6).p(compact ? 14 : 18).rounded(16).border(1).border_color(t.border).bg(alpha(t.popover, "e6"))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .child(h_flex().gap(10).items_center()
+        .child(h_flex().size(32).flex_none().rounded(10).items_center().justify_center().border(1).border_color(alpha(color, "4d")).bg(t.surface)
+          .child(icon === "spinner" ? svg("mods/workspace-chrome/spinner.svg").size(16).spin(900).text_color(color) : svg(`mods/kt-threads/${icon}.svg`).size(16).text_color(color)))
+        .child(div().min_w(0).truncate().text_size(15).font_medium().text_color(t.foreground).child(title)))
+      .child(div().text_size(13).line_height("20px").text_color(t.muted).child(text))
+      .when(Boolean(x?.path), (el) => el.child(div().font_family(MONO).text_size(10.5).line_height("16px").text_color(t.dim).child(x.path)));
   }
 
   arrow(t, id, side, d) {
@@ -192,15 +250,18 @@ export default class Viewer extends View {
       .border(1).border_color(t.border).bg(alpha(t.popover, "e6")).text_color(t.muted)
       .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_click(() => this.close())
+      .on_click((_e, cx) => this.dismiss(cx))
       .child(svg("mods/kt-threads/x.svg").size(14));
   }
 
   // One image fitted in half the stage, with its label (compare mode).
   half(t, i, k) {
+    const st = this.status(i);
     return v_flex().flex_1().min_w(0).h_full().gap(8).p(12)
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(String(i.label ?? i.name ?? "").toUpperCase()))
-      .child(div().flex_1().min_h(0).rounded(12).border(1).border_color(t.border).bg(t.background).p(8).child(image(i.path).size_full()))
+      .child(div().flex_1().min_h(0).rounded(12).border(1).border_color(t.border).bg(t.background).p(8)
+        .when(st === "ok", (el) => el.child(image(i.path).size_full()))
+        .when(st !== "ok", (el) => el.flex().items_center().justify_center().child(this.notice(t, i, st, true, k))))
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(`${i.w && i.h ? `${i.w}×${i.h} · ` : ""}${i.size ? kb(i.size) : ""}`));
   }
 
@@ -208,6 +269,7 @@ export default class Viewer extends View {
     const t = theme();
     const list = this.images();
     const i = this.img();
+    const st = this.status(this.images()[this.index]);
     const z = this.scale(), o = this.origin(z);
     const stage = div().id("kv-stage").relative().size_full().overflow_hidden()
       .on_size_change((size, cx) => { this.stage = size; cx.notify(); })
@@ -235,17 +297,30 @@ export default class Viewer extends View {
       .on_mouse_up("left", (_e, cx) => {
         const d = this.drag;
         this.drag = null;
-        if (d && !d.inside && !d.moved) this.close(); // a click on the veil
+        if (d && !d.inside && !d.moved) this.dismiss(cx); // a click on the veil
         cx.notify();
       })
-      .when(Boolean(i.path), (el) => el.child(image(i.path).absolute().left(o.x).top(o.y).w(i.w * z).h(i.h * z)
-        .when(Boolean(this.drag?.inside), (e) => e.cursor_grabbing()).when(!this.drag?.inside, (e) => e.cursor_grab())));
-    return div().id("kv-root").size_full().relative().bg(alpha(t.canvas, "eb")).text_color(t.foreground)
+      .when(st === "ok", (el) => el.child(image(i.path).absolute().left(o.x).top(o.y).w(i.w * z).h(i.h * z)
+        .when(Boolean(this.drag?.inside), (e) => e.cursor_grabbing()).when(!this.drag?.inside, (e) => e.cursor_grab())))
+      // Not drawable: the reason, in the middle of the stage above the bar.
+      .when(st !== "ok", (el) => el.child(div().absolute().top(0).left(0).right(0).bottom(RESERVE).px(16).flex().items_center().justify_center()
+        .child(this.notice(t, this.images()[this.index], st))));
+    // The modals' motion (ANIMATIONS.md, kt-confirm's motif): the veil fades in and the bar rises
+    // 6 px, 180 ms, once, on the root's first size report (the stage isn't drawn in compare), and
+    // both go back out on dismiss (motion.js sheet); reduced motion: there at once.
+    const still = Boolean(shared("kt.reducedMotion"));
+    const shown = still || Boolean(this.size);
+    const s = sheet(frame(this.motion, still), "kv", shown);
+    return s.veil(div().id("kv-root").size_full().relative().bg(alpha(t.canvas, "eb")).text_color(t.foreground))
+      .on_size_change((size, cx) => {
+        this.size = size;
+        cx.notify();
+      })
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .when(!this.compare, (el) => el.child(stage))
       .when(this.compare && list.length === 2, (el) => el.child(h_flex().size_full().pt(48).pb(RESERVE - 12).gap(8).children(list.map((x, k) => this.half(t, x, k)))))
-      .child(this.bar(t))
+      .child(this.bar(t, s))
       .child(this.closeButton(t));
   }
 }

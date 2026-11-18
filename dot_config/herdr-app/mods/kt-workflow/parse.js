@@ -70,7 +70,7 @@ export function stripMd(s) {
  *  check: "shell" (check_command), "agents" (a `check` run by agents), "par projet" (a check_command
  *  each project writes), or null. */
 export function loopDef(md) {
-  const body = section(md, "Définition");
+  const body = section(md, "Définition"); // i18n: tech (the loop file's heading)
   if (body == null) return null;
   const d = {};
   for (const l of body.split("\n")) {
@@ -78,7 +78,7 @@ export function loopDef(md) {
     if (m && !(m[1] in d)) d[m[1]] = m[2].trim();
   }
   const cc = d.check_command, ck = d.check;
-  const check = cc != null ? (/par projet/i.test(cc) ? "par projet" : "shell") : ck != null ? (/agent/i.test(ck) ? "agents" : "shell") : null;
+  const check = cc != null ? (/par projet/i.test(cc) ? "par projet" : "shell") : ck != null ? (/agent/i.test(ck) ? "agents" : "shell") : null; // i18n: tech (a code, said by main.js)
   return { goal: stripMd(d.goal), max: d.max_iterations ? stripMd(d.max_iterations) : null, exit: stripMd(d.exit_when), check };
 }
 
@@ -115,15 +115,4 @@ export const updatedOn = (md) => /Derni[eè]re mise à jour\s*:\s*\**([0-9]{4}-[
 export function isCale(text, skill) {
   const t = String(text ?? "");
   return t.includes(skill) && !/invoque[rz]? la skill|invoke the `?[\w:.-]+`? skill/i.test(t);
-}
-
-/** "il y a 3 min", "il y a 2 h", "il y a 4 j", else the date. */
-export function ago(ms, now = Date.now()) {
-  const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 60) return "à l'instant";
-  if (s < 3600) return `il y a ${Math.floor(s / 60)} min`;
-  if (s < 86400) return `il y a ${Math.floor(s / 3600)} h`;
-  if (s < 30 * 86400) return `il y a ${Math.floor(s / 86400)} j`;
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

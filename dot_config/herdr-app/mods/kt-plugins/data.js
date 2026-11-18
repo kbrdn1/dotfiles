@@ -8,6 +8,10 @@
 import { exec, readTextFile, home } from "herdr";
 import * as fs from "fs/promises";
 import { cli, components, offered, updateState, origin, webOf, under, jsonOut, why, split } from "./plugins.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 export const read = (p) => readTextFile(p).catch(() => null);
 export const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
@@ -89,7 +93,7 @@ export async function installed() {
     fs.readdir(`${h}/.claude/plugins/data`).catch(() => []),
   ]);
   const list = jsonOut(r.stdout);
-  if (!Array.isArray(list)) throw new Error(why(r.stderr || r.stdout) || `claude plugin list --json a échoué (code ${r.code})`);
+  if (!Array.isArray(list)) throw new Error(why(r.stderr || r.stdout) || tr("listFailed", { code: r.code }));
   const names = [...new Set(list.map((p) => split(p.id).market))];
   const cats = Object.fromEntries(await Promise.all(names.map(async (n) => [n, await catalog(markets[n])])));
   const base = list.map((p) => {

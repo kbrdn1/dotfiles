@@ -175,14 +175,75 @@ assert.deepEqual(o.map(keyOf), ["a", "b", "c"], "13 to 3: gone at once");
 assert.equal(timers.length, 0);
 o = draw(many.slice(0, 3));
 assert.deepEqual(o.map((w) => [w.props.h, w.props.opacity[0]]), Array(3).fill([undefined, 1]), "no replay");
+notified = 0;
 measure(o);
+assert.equal(notified, 0, "at rest: measured quietly, no render");
 o = draw([...many.slice(0, 3), "n"]);
-assert.deepEqual(o.map((w) => w.props.h[0]), [26, 26, 26, 0], "only the new row opens");
+assert.deepEqual(o.map((w) => w.props.h?.[0]), [undefined, undefined, undefined, 0], "only the new row opens, the others rest");
+
+// At rest: once its opening is over, a row lets go of its height (auto) and follows its content with
+// no render; leaving, it is pinned at its measured height (no height transition), then folds on the
+// next render (one more timer for the wave), then goes.
+timers.length = 0;
+const RS = M.motionState();
+const rdraw = (keys) => M.rows(M.frame(RS, false), rcx, "rs", keys, (k) => k, () => el());
+let ro = rdraw(["p", "q"]);
+for (const w of ro) w.kids[0].on.on_size_change({ width: 200, height: 40 }, rcx);
+ro = rdraw(["p", "q"]);
+assert.deepEqual(ro.map((w) => [w.props.h?.[0], w.tr.includes("height")]), [[40, true], [40, true]], "opening: its height");
+for (const k of ["p", "q"]) RS.st.get("rs").rest.set(k, Date.now() - 1);
+ro = rdraw(["p", "q"]);
+assert.deepEqual(ro.map((w) => [w.props.h, w.tr.includes("height"), w.props.opacity[0]]), [[undefined, false, 1], [undefined, false, 1]], "at rest: auto");
+notified = 0;
+ro[0].kids[0].on.on_size_change({ width: 200, height: 90 }, rcx);
+assert.deepEqual([notified, RS.h.get("rs:p")], [0, 90], "an inner unfold: followed, measured, no render");
+ro = rdraw(["q"]);
+const pinned = ro[0];
+assert.deepEqual([pinned.props.h, pinned.props.opacity, pinned.tr], [[90], [0], ["opacity"]], "leaving at rest: pinned at its height, fading");
+assert.deepEqual(timers.map((x) => x.ms), [20, M.MS.open + 40 + 20], "a fold timer and a drop timer for the wave");
+notified = 0;
+timers.shift().fn(rcx);
+assert.equal(notified, 1);
+ro = rdraw(["q"]);
+assert.deepEqual([ro[0].props.h, ro[0].tr.includes("height")], [[0], true], "then it folds from there");
+timers.shift().fn(rcx);
+assert.deepEqual(rdraw(["q"]).length, 1, "then it goes");
+ro = rdraw(["q", "p"]);
+assert.deepEqual(ro[1].props.h, [0], "back later: a new row, opening");
+timers.length = 0;
+for (const w of ro) w.kids[0].on.on_size_change({ width: 200, height: 50 }, rcx);
+rdraw(["q", "p"]);
+for (const k of ["p", "q"]) RS.st.get("rs").rest.set(k, Date.now() - 1);
+rdraw(["q", "p"]);
+rdraw(["q"]);
+ro = rdraw(["q", "p"]);
+assert.deepEqual([ro.map((w) => w.props.id[0]), ro[1].props.h, ro[1].props.opacity, ro[1].tr.includes("height")], [["rs:q", "rs:p"], [50], [1], true],
+  "pinned, then back: its height again, under the same id");
+for (const x of timers.splice(0)) x.fn(rcx);
+assert.equal(rdraw(["q", "p"]).length, 2, "its wave's timers drop nothing");
 
 // Reduced motion: plain rows, a removed row is gone at once, no timer.
 o = draw(["a", "b"], true);
 assert.deepEqual(o.map((w) => w.props.key[0]), ["a", "b"]);
 assert.equal(timers.length, 0);
+
+// rows() builds each row in the order of the children it returns, closing ones included, on its three
+// paths (animated with rows closing, plain over 12, reduced): adopters count the index in the row
+// callback for scroll_to_item (rows-adopt's invariant).
+const order = (m, items, reduced = false) => {
+  const built = [];
+  const out = M.rows(M.frame(m, reduced), rcx, "OR", items, (x) => x, (x, i) => { built.push([x, i]); return el(); });
+  return { built, ids: out.map((w) => w.props.id?.[0]?.split(":")[1]) };
+};
+const OM = M.motionState();
+order(OM, ["a", "b", "c", "d"]);
+let ord = order(OM, ["a", "d", "e"]);
+assert.deepEqual(ord.built.map(([x]) => x), ord.ids, "animated: built in the children's order");
+assert.deepEqual(ord.built, [["a", 0], ["b", -1], ["c", -1], ["d", 1], ["e", 2]]);
+timers.length = 0;
+const big = Array.from({ length: 14 }, (_, i) => `k${i}`);
+assert.deepEqual(order(OM, big).built.map(([, i]) => i), big.map((_, i) => i), "plain: in order");
+assert.deepEqual(order(M.motionState(), ["x", "y"], true).built, [["x", 0], ["y", 1]], "reduced: in order");
 
 // sharpen(): the sharp text at 0 and four copies 1 px off at 0.22, then sharp; the copies leave
 // at the first render after the fade. Reduced: the text alone.
@@ -203,5 +264,60 @@ assert.equal(M.sharpen(M.frame(S, false), "ttl", () => el()).kids.length, 1, "co
 assert.deepEqual(M.sharpen(M.frame(S, false), "pg", () => el(), { dy: M.DY.page }).props.top, [12]);
 const sr = M.sharpen(M.frame(M.motionState(), true), "ttl", () => el());
 assert.deepEqual([sr.kids.length, sr.tr, sr.on], [1, [], {}]);
+
+// leave(): the overlay is marked leaving and redrawn, ONE timer closes it after MS.leave, a second call
+// does nothing; sheet() gives its veil and card their in and out states. Reduced: closed at once.
+const O = M.motionState();
+const ocx = { n: 0, timers: [], notify() { this.n++; }, timer: { after: (ms, fn) => ocx.timers.push({ ms, fn }) } };
+let closed = 0;
+const close = (c) => { assert.ok(c, "close gets a cx"); closed++; };
+let sh = M.sheet(M.frame(O, false), "ov", false);
+assert.deepEqual([sh.veil(el()).props.opacity, sh.card(el()).props.top], [[0], [6]], "before its first layout: out");
+sh = M.sheet(M.frame(O, false), "ov", true);
+let v = sh.veil(el());
+assert.deepEqual([v.props.opacity, sh.card(el()).props.top, v.trp.opacity], [[1], [0], { duration: M.MS.open, delay: 0, easing: "ease-out" }], "shown: in");
+M.leave(O, ocx, "ov", close);
+assert.deepEqual([M.leaving(O, "ov"), ocx.n, ocx.timers.map((x) => x.ms), closed], [true, 1, [M.MS.leave], 0]);
+M.leave(O, ocx, "ov", close);
+assert.deepEqual([ocx.n, ocx.timers.length], [1, 1], "a second leave does nothing");
+sh = M.sheet(M.frame(O, false), "ov", true);
+v = sh.veil(el());
+assert.deepEqual([v.props.opacity, sh.card(el()).props.top, v.trp.opacity], [[0], [6], { duration: 140, delay: 0, easing: "ease-in" }], "leaving: out, ease-in");
+ocx.timers.shift().fn(ocx);
+assert.equal(closed, 1, "closed once, by the timer");
+const R = M.frame(M.motionState(), true);
+M.leave(R, ocx, "ov", close);
+assert.deepEqual([closed, ocx.timers.length, ocx.n], [2, 0, 1], "reduced: closed at once, no timer, no redraw");
+const rsh = M.sheet(R, "ov", false);
+assert.deepEqual([rsh.veil(el()).props, rsh.card(el()).props], [{}, {}], "reduced: veil and card as they are");
+
+// collapse() closing: a builder folds to 0 (built once more), ONE timer when cx is given, then null;
+// an element (or null) still shuts at once; reopened while closing, it opens again.
+const F = M.motionState();
+let builds = 0;
+const build = () => { builds++; return el(); };
+let fo = M.collapse(M.frame(F, false), "fold", true, build);
+assert.equal(builds, 1);
+fo.kids[0].on.on_size_change({ width: 10, height: 120 }, ocx);
+fo = M.collapse(M.frame(F, false), "fold", true, build);
+assert.deepEqual(fo.props.h, [120]);
+ocx.timers.length = 0;
+fo = M.collapse(M.frame(F, false), "fold", false, build, { cx: ocx });
+assert.deepEqual([fo.props.h, fo.props.opacity, fo.trp.height.easing, builds], [[0], [0], "ease-in-out", 3], "closing: to 0, the body built again");
+assert.deepEqual(ocx.timers.map((x) => x.ms), [M.MS.open + 40]);
+fo = M.collapse(M.frame(F, false), "fold", false, build, { cx: ocx });
+assert.equal(ocx.timers.length, 1, "one timer for the fold");
+assert.deepEqual(fo.props.h, [0]);
+F.st.set("fold~shut", Date.now() - 1000);
+assert.equal(M.collapse(M.frame(F, false), "fold", false, build, { cx: ocx }), null, "past ms: gone");
+assert.equal(F.h.has("fold"), false);
+fo = M.collapse(M.frame(F, false), "fold", true, build);
+fo.kids[0].on.on_size_change({ width: 10, height: 80 }, ocx);
+M.collapse(M.frame(F, false), "fold", true, build);
+M.collapse(M.frame(F, false), "fold", false, build);
+assert.deepEqual(M.collapse(M.frame(F, false), "fold", true, build).props.h, [80], "reopened while closing: its height again");
+assert.equal(M.collapse(M.frame(F, false), "fold", false, el()), null, "an element: shut at once");
+assert.equal(M.collapse(M.frame(F, false), "fold2", false, build), null, "never measured: nothing to fold");
+assert.equal(M.collapse(M.frame(M.motionState(), true), "fold", false, build), null, "reduced: shut at once");
 
 console.log("motion.js: ok");

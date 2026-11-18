@@ -8,7 +8,13 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec, shared } from "herdr";
+// Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
+import { motionState, frame, sheet, leave, leaving } from "./motion.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 function place(s) {
@@ -41,42 +47,42 @@ function items(p, git) {
       return [
         ...(inTab
           ? [
-              ["Split right", "pane.split", { direction: "right", pane: tg.pane }],
-              ["Split down", "pane.split", { direction: "down", pane: tg.pane }],
-              ["Zoom", "pane.zoom", { pane: tg.pane }],
+              [tr("splitRight"), "pane.split", { direction: "right", pane: tg.pane }],
+              [tr("splitDown"), "pane.split", { direction: "down", pane: tg.pane }],
+              [tr("zoom"), "pane.zoom", { pane: tg.pane }],
             ]
           : []),
         ...(term
           ? [
               toProgram
-                ? ["Use Herdr right-click menu", "terminal.right_click", { terminal: term.address, to: "menu" }]
-                : ["Send right-clicks to pane", "terminal.right_click", { terminal: term.address, to: "program" }],
+                ? [tr("rightClickMenu"), "terminal.right_click", { terminal: term.address, to: "menu" }]
+                : [tr("rightClickProgram"), "terminal.right_click", { terminal: term.address, to: "program" }],
             ]
           : []),
-        ...(parent ? [[`Send back to ${parent.name || parent.address}`, "terminal.park", { terminal: term.address }]] : []),
-        ...(inTab ? [["Close pane", "pane.close", { pane: tg.pane }]] : []),
+        ...(parent ? [[tr("sendBack", { name: parent.name || parent.address }), "terminal.park", { terminal: term.address }]] : []),
+        ...(inTab ? [[tr("closePane"), "pane.close", { pane: tg.pane }]] : []),
       ];
     }
     case "tab":
       return [
-        ["Rename", "tab.rename", { id: tg.id }],
-        ["New tab", "tab.new", { space: tg.space }],
-        ["Close", "tab.close", { id: tg.id }],
+        [tr("rename"), "tab.rename", { id: tg.id }],
+        [tr("newThread"), "tab.new", { space: tg.space }],
+        [tr("close"), "tab.close", { id: tg.id }],
       ];
     case "space":
       return [
-        ["Rename", "space.rename", { id: tg.id }],
-        ...(git ? [["New worktree", "worktree", { space: tg.id, action: "new" }], ["Open worktree", "worktree", { space: tg.id, action: "open" }]] : []),
-        ["Close", "space.close", { id: tg.id }],
+        [tr("rename"), "space.rename", { id: tg.id }],
+        ...(git ? [[tr("newWorktree"), "worktree", { space: tg.id, action: "new" }], [tr("openWorktree"), "worktree", { space: tg.id, action: "open" }]] : []),
+        [tr("close"), "space.close", { id: tg.id }],
       ];
     default:
       return [
-        ["New space", "space.new", {}],
-        ["Keybinds", "app.help", {}],
-        ["Theme: graphite", "app.theme", { name: "graphite" }],
-        ["Theme: ink", "app.theme", { name: "ink" }],
-        ["Theme: moss", "app.theme", { name: "moss" }],
-        ["Theme: atom one dark", "app.theme", { name: "atom-one-dark" }],
+        [tr("newProject"), "space.new", {}],
+        [tr("keys"), "app.help", {}],
+        [tr("theme", { name: "graphite" }), "app.theme", { name: "graphite" }],
+        [tr("theme", { name: "ink" }), "app.theme", { name: "ink" }],
+        [tr("theme", { name: "moss" }), "app.theme", { name: "moss" }],
+        [tr("theme", { name: "atom one dark" }), "app.theme", { name: "atom-one-dark" }], // i18n: tech
       ];
   }
 }
@@ -100,6 +106,7 @@ export default class Menu extends View {
     this.git = null;
     this.handle = cx.focus_handle();
     this.handle.focus();
+    this.motion = motionState(); // ANIMATIONS.md: the menu rises in on its first layout, fades and sinks 6 px out
     const p = props();
     const space = p?.tab === "space" && spaces().find((s) => s.id === p.target?.id);
     const folder = space && place(space);
@@ -110,10 +117,21 @@ export default class Menu extends View {
       });
   }
 
+  // motion.js leave(): the menu fades and sinks 6 px, then the popup closes.
+  dismiss(cx) {
+    leave(this.motion, cx, "km", () => closeOverlay(props()?.overlay));
+  }
+
   choose(i, cx) {
+    if (leaving(this.motion, "km")) return; // leaving: a second Enter or click would run it twice
     const it = items(props(), this.git)[i];
     if (!it) return;
-    closeOverlay(props()?.overlay);
+    // An item opening another dialog (kt-new, kt-confirm, Herdr's rename prompt, the keys) closes the menu
+    // first, at once, as before: that dialog comes in on its own and takes the keyboard last. The rest
+    // runs, then the menu leaves.
+    const opens = (it[1] === "worktree" && it[2].action === "new") || ["tab.close", "pane.close", "space.close"].includes(it[1])
+      || it[1].endsWith(".rename") || it[1] === "app.help";
+    if (opens) closeOverlay(props()?.overlay);
     const full = { kind: "dialog", width: 1, height: 1, frame: "none" };
     if (it[1] === "worktree") {
       if (it[2].action === "new") {
@@ -124,13 +142,16 @@ export default class Menu extends View {
     else if (it[1] === "pane.close") openOverlay({ mod: "kt-confirm", ...full, props: { pane: it[2].pane } });
     else if (it[1] === "space.close") openOverlay({ mod: "kt-confirm", ...full, props: { space: it[2].id } });
     else run(it[1], it[2]);
+    if (!opens) this.dismiss(cx);
   }
 
   render(cx) {
     const t = theme();
     const list = items(props(), this.git);
-    return v_flex()
-      .id("menu")
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    const s = sheet(m, "km", this.shown); // no veil in a popup: the menu itself fades and moves 6 px
+    return s.card(s.veil(v_flex().id("menu")))
+      .on_size_change((_size, cx) => { if (this.shown) return; this.shown = true; cx.notify(); })
       .track_focus(this.handle)
       .w_full()
       .min_h(0)
@@ -141,8 +162,9 @@ export default class Menu extends View {
         if (e.key === "down") this.at = (this.at + 1) % list.length;
         else if (e.key === "up") this.at = (this.at + list.length - 1) % list.length;
         else if (e.key === "enter") this.choose(this.at, cx);
-        else if (e.key === "escape") closeOverlay(props().overlay);
+        else if (e.key === "escape") this.dismiss(cx);
         else return;
+        cx.stop_propagation(); // Herdr's own Esc would close the popup at once, cutting the exit short
         cx.notify();
       })
       .children(

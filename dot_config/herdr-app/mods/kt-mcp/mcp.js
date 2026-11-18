@@ -146,7 +146,7 @@ export function splitArgs(s) {
 }
 
 /** One argument as a shell reads it back: bare when it can be, else '…'. */
-export const shq = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, "'\\''")}'`);
+export const shq = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, "'\\''")}'`); // i18n: tech
 
 /** A pasted server config with every secret masked, for the confirmation: env and header values,
  *  secret args, URL queries, token-shaped strings anywhere else. */

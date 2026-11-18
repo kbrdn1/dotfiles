@@ -1,11 +1,14 @@
-// kbrdn Threads' diffs drawn after DIFF-SPEC (/me:report's look): the file list
-// grouped by folder (chevron, 32 px status box, Catppuccin icon, basename, mini
-// bar, +N −N, actions shown on hover or open) and each file's unified diff (one
-// gutter with a 4 px bar, full-line fills, word spans, "N lignes inchangées"
-// bands instead of @@, a 576 px box, the 1500-line cap). theme() colors, but the
-// code's: Zed's theme, by ~/.claude/scripts/zed-tokens.ts (colorize, on unfold).
-// Source of truth: mods/kt-diff/diffview.js; kt-history and kt-inbox hold
-// byte-identical copies (a mod can't import from another mod's folder).
+// kbrdn Threads' diffs drawn after DIFF-SPEC (/me:report's look), as Changes,
+// History and Inbox's Code show them: a section's header (sectionHead), its
+// files in compact rows (Catppuccin icon, basename, folder, mini bar, status,
+// +N −N, actions shown on hover or open) that open and close on their height,
+// each unfolding into its unified diff (fileItems: one gutter with a 4 px bar,
+// full-line fills, word spans, "N lignes inchangées" bands instead of @@, a
+// 576 px box, the 1500-line cap), an image into its before / after. theme()
+// colors, but the code's: Zed's theme, by ~/.claude/scripts/zed-tokens.ts
+// (colorize, on unfold). Source of truth: mods/kt-diff/diffview.js; kt-history
+// and kt-inbox hold byte-identical copies (a mod can't import from another
+// mod's folder), with motion.js beside them.
 
 import { div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
@@ -13,6 +16,12 @@ import { exec, settings, appHome, home, readTextFile, openOverlay } from "herdr"
 import * as fs from "fs/promises";
 import { plan, words, barWidth, pieces, zedLabel } from "./diff.js";
 import { catIcon } from "./icons.js";
+import { rows, collapse } from "./motion.js";
+import { makeT, num } from "./i18n.js";
+import dvStrings from "./diffview.strings.js";
+
+// Its own words (I18N.md), copied with it; `words` is diff.js' (the word spans).
+const tr = makeT(dvStrings);
 
 export const CODE = "Monaspace Neon";
 export const MONO = "Monaspace Krypton";
@@ -55,80 +64,56 @@ export function firstLine(f) {
   return 1;
 }
 
-/**
- * Rows for `files` (one section): folder headers then file rows, and the diff of each open one.
- * o: { id, map, dark, isOpen(f), isHot(f), toggle(f, cx), hover(f, on, cx), letter(f)?, actions(f)?, root? }
- */
-export function fileList(t, files, o) {
-  const p = palette(t, o.dark);
-  // Compact (Changes, Monocode's density): one 28 px row a file, its folder after its name, no headers.
-  if (o.compact) {
-    return [...files].sort((a, b) => a.path.localeCompare(b.path)).flatMap((f) => (o.isOpen(f)
-      ? [compactRow(t, p, f, o), div().pt(2).pr(4).pb(6).pl(30).child(diffBody(t, p, f, o))]
-      : [compactRow(t, p, f, o)]));
-  }
-  const groups = new Map();
-  for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
-    const d = dirOf(f.path);
-    if (!groups.has(d)) groups.set(d, []);
-    groups.get(d).push(f);
-  }
-  // Headers after the common prefix (all of it when there's one folder).
-  const dirs = [...groups.keys()];
-  let common = "";
-  if (dirs.length > 1) {
-    const segs = dirs.map((d) => (d ? d.split("/") : []));
-    let i = 0;
-    while (segs.every((s) => i < s.length && s[i] === segs[0][i])) i++;
-    common = segs[0].slice(0, i).join("/");
-  }
-  const out = [];
-  for (const [d, list] of groups) {
-    const label = common ? d.slice(common.length).replace(/^\//, "") : d;
-    if (label || (common && d === common)) {
-      const name = base(label || d);
-      out.push(h_flex().h(28).mt(out.length ? 6 : 0).px(10).gap(8).items_center().font_family(MONO).text_size(11.5).text_color(t.muted)
-        .child(image(catIcon(o.map, name, { folder: true, dark: o.dark })).size(14).flex_none())
-        .child(div().min_w(0).truncate().child(`${label || d}/`)));
-    }
-    for (const f of list) {
-      out.push(fileRow(t, p, f, o));
-      if (o.isOpen(f)) out.push(div().pt(0).pr(6).pb(6).pl(48).child(diffBody(t, p, f, o)));
-    }
-  }
-  return out;
+/** A section's header (Changes' Staged and Changes, Inbox's Code): chevron, eyebrow, count, actions; the keys' ring when `ring`.
+ *  `roll`, `m`: roll.js' roll() and the motion state, handed in (as viz.js) so a copy without roll.js still
+ *  loads; with them, the count rolls to its new digits. `scope` goes into its reels' id: another repo's
+ *  count shows at once, not rolling. */
+export function sectionHead(t, { id, label, count, folded, ring, gap, toggle, actions, roll, m, scope = "" }) {
+  return h_flex().id(id).flex_none().when(Boolean(gap), (el) => el.mt(5)).h(28).px(8).gap(8).items_center().rounded(8).cursor_pointer()
+    .border(1).border_color(ring ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+    .when(Boolean(ring), (el) => el.bg(alpha(t.accent, "24")))
+    .when(!ring, (el) => el.hover((s) => s.bg(t.hover)))
+    .on_click((_e, cx) => toggle(cx))
+    .child(svg(I(folded ? "chevron-right" : "chevron-down")).size(12).flex_none().text_color(t.muted))
+    .child(div().font_family(MONO).text_size(11).text_color(t.muted).child(String(label).toUpperCase()))
+    .child(h_flex().h(16).min_w(16).px(4).items_center().justify_center().rounded_full().bg(t.accent)
+      .font_family(MONO).text_size(10).font_weight(600).text_color(t.accent_foreground)
+      .child(roll ? roll(m ?? { reduced: false }, `${id}-n-${scope}`, String(count), 13) : String(count)))
+    .child(div().flex_1())
+    .child(h_flex().gap(0).children(actions ?? []));
 }
 
-function fileRow(t, p, f, o) {
-  const open = o.isOpen(f), hot = o.isHot(f);
-  const letter = o.letter?.(f) ?? f.status;
-  const color = statusColor(p, letter);
-  const total = f.add + f.del;
-  const w = Math.round((52 * barWidth(f.add, f.del)) / 100);
-  const wa = total ? Math.round((w * f.add) / total) : 0;
-  const acts = o.actions?.(f) ?? [];
-  const id = `${o.id}:${f.path}`;
-  return h_flex().id(`${id}:row`).gap(11).pt(6).pr(6).pb(6).pl(8).items_center().rounded(12).cursor_pointer()
-    .when(open || hot, (el) => el.bg(t.hover))
-    .on_hover((on, cx) => o.hover(f, on, cx))
-    .on_click((_e, cx) => o.toggle(f, cx))
-    .child(svg(I(open ? "chevron-down" : "chevron-right")).size(16).flex_none().text_color(open ? t.accent : t.muted))
-    .child(h_flex().size(32).flex_none().items_center().justify_center().rounded(10).border(1).border_color(t.input)
-      .font_family(MONO).font_weight(600).text_size(11).text_color(color).child(letter))
-    .child(image(catIcon(o.map, base(f.path), { dark: o.dark })).size(16).flex_none())
-    .child(h_flex().flex_1().min_w(0).font_family(MONO).text_size(13)
-      .when(Boolean(f.old), (el) => el.child(div().flex_none().max_w(160).truncate().text_color(t.muted).child(`${base(f.old ?? "")} → `)))
-      .child(div().min_w(0).truncate().text_color(t.foreground).child(base(f.path))))
-    .when(!f.binary && f.loaded !== false, (el) => el.child(h_flex().w(52).h(10).flex_none().bg(t.input)
-      .child(div().w(wa).h_full().bg(p.ok)).child(div().w(w - wa).h_full().bg(p.err))))
-    .child(h_flex().flex_none().gap(6).font_family(MONO).text_size(11)
-      .when(f.binary || f.loaded === false, (el) => el.child(div().text_color(t.muted).child("–")))
-      .when(!f.binary && f.loaded !== false, (el) => el
-        .child(div().text_color(p.ok).child(`+${f.add}`))
-        .child(div().text_color(p.err).child(`−${f.del}`))))
-    // Actions only on hover or open, over the row's right end (nothing reserved: the name keeps its room).
-    .when(acts.length > 0 && (open || hot), (el) => el.relative().child(h_flex().absolute().right(6).top(11).h(30).px(4).gap(2)
-      .items_center().rounded_full().border(1).border_color(t.border).bg(t.popover).children(acts)));
+/**
+ * A section's files as direct children of a scrolling list, by path: each one's compact row (one
+ * 28 px row, its folder after its name), then its diff as a sibling. The rows open and close on
+ * their height, in order (motion.js rows(), keyed by path; `id` names the list: another id is
+ * another list, which replaces it at once and opens). A diff unfolds and folds on its height
+ * (collapse, its body a builder), never inside rows() (one height level each). `ring(f)`: the keys'
+ * cursor, an accent ring on the ink over the row, in its radius. A closing row gets a neutral `o`:
+ * no diff, no hover, no actions, its click does nothing. m: motion.js' state; cx: render's.
+ * o: { id, map, dark, isOpen(f), isHot(f), toggle(f, cx), hover(f, on, cx), letter(f)?, actions(f)?,
+ * root?, preview(f)?, tokens(f)? }; fold(f): the id of f's diff.
+ * Returns [{ el, f }] in order: f is the file of a live row, null for a closing row or a diff.
+ */
+export function fileItems(t, m, cx, id, files, o, { ring = () => false, fold = (f) => `${id}:open:${f.path}` } = {}) {
+  const p = palette(t, o.dark);
+  const gone = { ...o, isOpen: () => false, isHot: () => false, toggle: () => {}, hover: () => {}, actions: () => [] };
+  // rows() builds the rows in the order it returns them: `built` says what each child is.
+  const built = [];
+  const kids = rows(m, cx, id, [...files].sort((a, b) => a.path.localeCompare(b.path)), (f) => f.path, (f, i) => {
+    const row = compactRow(t, p, f, i < 0 ? gone : o);
+    built.push({ f, live: i >= 0 });
+    return i >= 0 && ring(f) ? v_flex().relative().child(row)
+      .child(div().absolute().inset_0().rounded(8).border(1).border_color(alpha(t.accent, "99")).bg(alpha(t.accent, "24"))) : row;
+  });
+  const out = [];
+  kids.forEach((el, j) => {
+    const { f, live } = built[j];
+    out.push({ el, f: live ? f : null });
+    const body = collapse(m, fold(f), live && o.isOpen(f), () => div().pt(2).pr(4).pb(6).pl(30).child(diffBody(t, p, f, live ? o : gone)), { cx });
+    if (body) out.push({ el: body, f: null });
+  });
+  return out;
 }
 
 function compactRow(t, p, f, o) {
@@ -180,18 +165,25 @@ async function blobId(root, rev, path) {
 }
 
 // One side into the cache, named by its blob hash: rev "worktree" copies the file, rev "" is the index,
-// else the blob at rev (cat-file: raw bytes, no textconv; the shell redirect keeps them binary).
+// else the blob at rev (cat-file: raw bytes, no textconv; the shell redirect keeps them binary); or
+// rev { id, write(abs) } (a PR's blob: its hash, and what writes its bytes, resolving true when done).
+// Written aside, then moved: a failed write leaves nothing a later look would take for the image.
 async function previewSide(root, rev, path) {
   const ext = path.split(".").pop().toLowerCase();
-  const hash = await blobId(root, rev, path);
+  const hash = typeof rev === "object" ? rev.id : await blobId(root, rev, path);
   if (!hash) return null;
   const rel = `${PREVIEWS}/${hash}.${ext}`, abs = `${appHome()}/${rel}`;
   if (!(await fs.exists(abs).catch(() => false))) {
     await fs.mkdir(`${appHome()}/${PREVIEWS}`, { recursive: true }).catch(() => {});
-    const r = rev === "worktree"
-      ? await exec("cp", ["--", `${root}/${path}`, abs])
-      : await exec("sh", ["-c", `git cat-file blob ${q(`${rev}:${path}`)} > ${q(abs)}`], { cwd: root });
-    if (r.code !== 0) return null;
+    const part = `${abs}.part`;
+    const ok = typeof rev === "object" ? await rev.write(part).catch(() => false)
+      : (rev === "worktree"
+        ? await exec("cp", ["--", `${root}/${path}`, part])
+        : await exec("sh", ["-c", `git cat-file blob ${q(`${rev}:${path}`)} > ${q(part)}`], { cwd: root })).code === 0;
+    if (!ok || (await exec("mv", ["-f", "--", part, abs]).catch(() => ({ code: 1 }))).code !== 0) {
+      await fs.unlink(part).catch(() => {});
+      return null;
+    }
   }
   const m = await exec("sh", ["-c", 'stat -f %z "$1"; sips -g pixelWidth -g pixelHeight "$1" 2>/dev/null', "sh", abs]);
   let w = +(m.stdout.match(/pixelWidth: (\d+)/)?.[1] ?? 0), h = +(m.stdout.match(/pixelHeight: (\d+)/)?.[1] ?? 0);
@@ -204,28 +196,28 @@ async function previewSide(root, rev, path) {
   return { src: rel, size: parseInt(m.stdout, 10) || 0, w, h };
 }
 
-/** Before (rev, or null) and after (rev, "worktree", or null) of an image file: { before, after }. */
+/** Before (rev, or null) and after (rev, "worktree", or null) of an image file: { before, after }. A side may be { id, write } (previewSide). */
 export async function loadPreview(root, f, before, after) {
   const [b, a] = await Promise.all([
     before !== null ? previewSide(root, before, f.old ?? f.path).catch(() => null) : null,
     after !== null ? previewSide(root, after, f.path).catch(() => null) : null,
   ]);
-  return b || a ? { before: b, after: a } : { error: "aperçu indisponible" };
+  return b || a ? { before: b, after: a } : { error: "unavailable" }; // i18n: tech (pv.<error>, said at render)
 }
 
-const kb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} Mo` : n >= 1024 ? `${(n / 1024).toFixed(1)} Ko` : `${n} o`);
+const kb = (n) => (n >= 1048576 ? tr("size.mb", { n: num(n / 1048576, 1) }) : n >= 1024 ? tr("size.kb", { n: num(n / 1024, 1) }) : tr("size.b", { n }));
 const CHECK = () => PathBuilder.fill().move_to("0%", "0%").line_to("100%", "0%").line_to("100%", "100%").line_to("0%", "100%").close().build();
 
 /** Opens kt-viewer (full window, zoom) on a file's before/after, `index` first. */
 export function viewImages(f, pv, index, compare = false) {
   const name = base(f.path);
-  const images = [["Avant", pv.before], ["Après", pv.after]].filter(([, s]) => s)
+  const images = [[tr("before"), pv.before], [tr("after"), pv.after]].filter(([, s]) => s)
     .map(([label, s]) => ({ path: s.src, label, name, w: s.w, h: s.h, size: s.size }));
   if (images.length) openOverlay({ mod: "kt-viewer", kind: "dialog", frame: "none", width: 1, height: 1, props: { images, index: Math.min(index, images.length - 1), compare } });
 }
 
 function previewBody(t, p, f, pv) {
-  const sides = [["Avant", pv.before], ["Après", pv.after]].filter(([, s]) => s);
+  const sides = [[tr("before"), pv.before], [tr("after"), pv.after]].filter(([, s]) => s);
   const H = Math.min(220, Math.max(60, ...sides.map(([, s]) => (s.h || 220) + 16)));
   const meta = (s) => `${s.w && s.h ? `${s.w}×${s.h} · ` : ""}${kb(s.size)}`;
   const b = pv.before, a = pv.after;
@@ -234,7 +226,7 @@ function previewBody(t, p, f, pv) {
     .child(h_flex().gap(8).children(sides.map(([label, s], k) => v_flex().flex_1().min_w(0).gap(6)
       .child(div().font_family(MONO).text_size(11).text_color(t.muted).child(label.toUpperCase()))
       .child(div().id(`pv:${f.path}:${k}`).relative().h(H).rounded(12).border(1).border_color(t.border).bg(t.background).overflow_hidden()
-        .cursor_pointer().hover((st) => st.border_color(alpha(t.accent, "66"))).tooltip("Ouvrir en grand")
+        .cursor_pointer().hover((st) => st.border_color(alpha(t.accent, "66"))).tooltip(tr("zoom"))
         .on_click((_e, cx) => { cx.stop_propagation(); viewImages(f, pv, k); })
         .child(window.paint_path(CHECK(), Background.checkerboard(t.raised, 8)).absolute().top(0).left(0).size_full())
         .child(div().absolute().inset_0().p(8).child(image(s.src).size_full())))
@@ -331,7 +323,7 @@ export function diffBody(t, p, f, o) {
     const pv = o.preview(f);
     const note = (text) => div().px(12).py(10).rounded(12).border(1).border_color(t.border).bg(t.background)
       .font_family(MONO).text_size(11.5).text_color(t.muted).child(text);
-    const view = !pv ? note("Aperçu…") : pv.error ? note(pv.error) : previewBody(t, p, f, pv);
+    const view = !pv ? note(tr("previewing")) : pv.error ? note(tr(`pv.${pv.error}`)) : previewBody(t, p, f, pv);
     if (f.binary || !f.hunks.length) return view;
     return v_flex().gap(8).child(view).child(textDiff(t, p, f, o));
   }
@@ -342,9 +334,9 @@ export function diffBody(t, p, f, o) {
 function textDiff(t, p, f, o) {
   const note = (text, color) => div().px(12).py(10).rounded(12).border(1).border_color(t.border).bg(t.background)
     .font_family(MONO).text_size(11.5).text_color(color ?? t.muted).child(text);
-  if (f.loaded === false) return note("Chargement…");
-  if (f.binary) return note("binaire, pas de diff");
-  if (!f.hunks.length) return note(f.status === "R" ? "renommé, pas de diff" : "pas de diff");
+  if (f.loaded === false) return note(tr("loading"));
+  if (f.binary) return note(tr("binary"));
+  if (!f.hunks.length) return note(f.status === "R" ? tr("renamed") : tr("noDiff"));
   words(f);
   const { rows, hidden } = plan(f);
   // o.tokens(f): colorize's answer for the appearance shown, or nothing (the text stays the theme's).
@@ -357,7 +349,7 @@ function textDiff(t, p, f, o) {
   const els = rows.map((r, i) => {
     if (r.gap) {
       return h_flex().flex_none().h(32).mt(i ? 8 : 0).mb(i < rows.length - 1 ? 8 : 0).px(CH * 2).items_center().rounded(6).bg(t.raised)
-        .text_color(t.muted).child(`${r.gap} ${r.gap > 1 ? "lignes inchangées" : "ligne inchangée"}`);
+        .text_color(t.muted).child(tr("unchanged", { n: r.gap }));
     }
     const l = r.line, k = l.k;
     const fill = k === "+" ? p.addLine : k === "-" ? p.delLine : null;
@@ -386,5 +378,5 @@ function textDiff(t, p, f, o) {
     .children(els)
     .when(hidden > 0, (el) => el.child(div().id(`${id}:more`).flex_none().mt(8).px(12).py(6).font_family(MONO).text_size(11.5).text_color(p.warn)
       .when(Boolean(abs), (el) => el.cursor_pointer().on_click(() => zed(abs, 1)))
-      .child(`${hidden} hunk${hidden > 1 ? "s" : ""} de plus non affiché${hidden > 1 ? "s" : ""} : ouvrir le fichier`)));
+      .child(tr("moreHunks", { n: hidden }))));
 }

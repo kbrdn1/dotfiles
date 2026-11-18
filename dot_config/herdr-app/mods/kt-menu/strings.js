@@ -1,0 +1,38 @@
+// kt-menu's words (I18N.md). Herdr's menu was English; in French it now speaks the layout's words
+// (a tab is a thread, a space a project).
+export default {
+  fr: {
+    splitRight: "Scinder à droite",
+    splitDown: "Scinder en bas",
+    zoom: "Zoomer",
+    rightClickMenu: "Clic droit : le menu de Herdr",
+    rightClickProgram: "Clic droit : au programme",
+    sendBack: "Renvoyer sous {name}",
+    closePane: "Fermer le pane",
+    rename: "Renommer",
+    newThread: "Nouveau thread",
+    close: "Fermer",
+    newWorktree: "Nouveau worktree",
+    openWorktree: "Ouvrir un worktree",
+    newProject: "Nouveau projet",
+    keys: "Touches",
+    theme: "Thème : {name}",
+  },
+  en: {
+    splitRight: "Split right",
+    splitDown: "Split down",
+    zoom: "Zoom",
+    rightClickMenu: "Use Herdr's right-click menu",
+    rightClickProgram: "Send right-clicks to the program",
+    sendBack: "Send back to {name}",
+    closePane: "Close pane",
+    rename: "Rename",
+    newThread: "New thread",
+    close: "Close",
+    newWorktree: "New worktree",
+    openWorktree: "Open worktree",
+    newProject: "New project",
+    keys: "Keys",
+    theme: "Theme: {name}",
+  },
+};

@@ -19,13 +19,18 @@
 import { div } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { agents, hc, home, readTextFile, run, theme, writeTextFile } from "herdr";
+import { makeT } from "./i18n.js";
+import words from "./decide.strings.js";
 
+// Its own words (I18N.md), copied with it.
+const tr = makeT(words);
 const MONO = "Monaspace Krypton";
 // The held-message dialog as Claude Code 2.1.327 draws it: its title, then its two lines, Deny first.
+// i18n: tech (read on the screen)
 const HELD = "Held message from another session";
-const SENT = "Another Claude session sent a message:";
-const DENY = "Deny — drop it and tell the sender it was declined";
-const DELIVER = "Deliver this message to Claude";
+const SENT = "Another Claude session sent a message:"; // i18n: tech
+const DENY = "Deny — drop it and tell the sender it was declined"; // i18n: tech
+const DELIVER = "Deliver this message to Claude"; // i18n: tech
 // Deliver / Refuse on a held message are not offered yet: answering it by keys was never seen to work
 // on a live dialog (the hold would not happen again to test it). Until then a held message only gets
 // Ouvrir. To offer them, put back:
@@ -75,7 +80,7 @@ const look = async (terminal) => heldOf((await hc(["read", terminal])).stdout);
 // is no longer the dialog Kylian saw.
 async function sendHeld(terminal, pending, target) {
   let held = await look(terminal);
-  if (held?.id !== pending.id) return { ok: false, reason: "L'écran a changé : rien envoyé." };
+  if (held?.id !== pending.id) return { ok: false, reason: tr("changed") };
   const start = held.cursor;
   const key = target > start ? "down" : "up";
   for (let i = Math.abs(target - start); i > 0; i--) await hc(["keys", terminal, key]);
@@ -83,29 +88,29 @@ async function sendHeld(terminal, pending, target) {
   if (held?.id !== pending.id || held.cursor !== target) {
     // Never leave the cursor on Deliver for an Enter typed later: put it back where it was.
     if (held?.id === pending.id && held.cursor !== start) await hc(["keys", terminal, held.cursor > start ? "up" : "down"]);
-    return { ok: false, reason: "Curseur introuvable sur ce choix : rien validé." };
+    return { ok: false, reason: tr("noCursor") };
   }
   answered.add(pending.id);
   await hc(["keys", terminal, "enter"]);
   for (let i = 0; i < 10 && held?.id === pending.id; i++) held = await look(terminal);
-  return held?.id === pending.id ? { ok: false, reason: "Envoyé, mais le dialogue est toujours là." } : { ok: true };
+  return held?.id === pending.id ? { ok: false, reason: tr("stillThere") } : { ok: true };
 }
 
 async function answer(terminal, pending, choice) {
-  if (!pending?.options?.some((o) => o.key === choice)) return { ok: false, reason: "Rien à répondre ici." };
-  if (answered.has(pending.id) || busy.has(pending.id)) return { ok: false, reason: "Déjà répondu." };
+  if (!pending?.options?.some((o) => o.key === choice)) return { ok: false, reason: tr("nothing") };
+  if (answered.has(pending.id) || busy.has(pending.id)) return { ok: false, reason: tr("already") };
   busy.add(pending.id);
   try {
     if (pending.kind === "held") return await sendHeld(terminal, pending, choice === "accept" ? 1 : 0);
     // The plugin answers only the id it still waits on: check it is still that one before writing.
     const live = await readJson(`${cache(terminal)}.json`);
-    if (live?.pending?.id !== pending.id) return { ok: false, reason: "La demande n'est plus en attente." };
+    if (live?.pending?.id !== pending.id) return { ok: false, reason: tr("gone") };
     const path = `${cache(terminal)}.decision.json`;
     await writeTextFile(path, JSON.stringify({ id: pending.id, choice }), await readTextFile(path));
     answered.add(pending.id);
     return { ok: true };
   } catch (e) {
-    return { ok: false, reason: `Échec : ${e?.message ?? e}` };
+    return { ok: false, reason: tr("failed", { why: e?.message ?? e }) };
   } finally {
     busy.delete(pending.id);
   }
@@ -118,8 +123,8 @@ export async function decide(terminal) {
   const blocked = agents().find((a) => a.address === terminal)?.status === "blocked";
   if (blocked && pending?.kind !== "permission" && pending?.kind !== "question") {
     const held = await look(terminal).catch(() => null);
-    if (held) pending = { id: held.id, kind: "held", title: `Message de ${held.sender}`, detail: held.body, options: HELD_OPTIONS };
-    else pending ??= { id: `input:${terminal}`, kind: "input", title: "Attend ta réponse", options: [] };
+    if (held) pending = { id: held.id, kind: "held", title: tr("from", { sender: held.sender }), detail: held.body, options: HELD_OPTIONS };
+    else pending ??= { id: `input:${terminal}`, kind: "input", title: tr("waiting"), options: [] };
   }
   // Answered once from here: the same dialog gets no buttons again.
   if (pending && answered.has(pending.id)) pending = { ...pending, options: [] };
@@ -160,6 +165,9 @@ export function decisionButtons(d, { onDone, cursor = null } = {}) {
         cx.spawn(async (cx) => onDone?.(await press(d, key), cx));
       })
       .child(label.toUpperCase());
-  if (!p.options?.length) return h_flex().flex_none().child(pill("open", "Ouvrir", null));
-  return h_flex().flex_none().gap(4).children(p.options.map((o) => pill(o.key, o.label, o.tone === "positive" ? t.done : t.ansi1)));
+  if (!p.options?.length) return h_flex().flex_none().child(pill("open", tr("open"), null));
+  // accept / refuse said in the language shown (herdr-bridge publishes its labels in French); any
+  // other option keeps its own label.
+  const said = (o) => (o.key === "accept" || o.key === "refuse" ? tr(o.key) : o.label);
+  return h_flex().flex_none().gap(4).children(p.options.map((o) => pill(o.key, said(o), o.tone === "positive" ? t.done : t.ansi1)));
 }

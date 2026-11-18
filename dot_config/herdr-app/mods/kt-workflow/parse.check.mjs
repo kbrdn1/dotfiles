@@ -1,5 +1,5 @@
 // bun mods/kt-workflow/parse.check.mjs: parse.js on fixtures, then on the real files when they're here.
-import { section, cells, table, stripMd, loopDef, mask, updatedOn, isCale, ago } from "./parse.js";
+import { section, cells, table, stripMd, loopDef, mask, updatedOn, isCale } from "./parse.js";
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { homedir } from "os";
 
@@ -33,7 +33,6 @@ eq(mask("$GITHUB_TOKEN"), "$GITHUB_TOKEN", "a reference is not a value");
 eq(updatedOn("> Dernière mise à jour : 2026-11-18."), "2026-11-18", "updatedOn");
 eq(isCale("Lis `~/.claude/skills/me/goal/SKILL.md` avec Read", "skills/me/goal/SKILL.md"), true, "a cale");
 eq(isCale("Invoke the `spec-git-flow-worktree` skill", "skills/me/x/SKILL.md"), false, "not a cale");
-eq(ago(1000, 1000 + 5 * 60e3), "il y a 5 min", "ago");
 
 // The real files, when this machine has them.
 const C = `${homedir()}/.claude`;

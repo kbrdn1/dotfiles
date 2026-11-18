@@ -35,6 +35,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { ring, ctxTokens } from "./ring.js";
+import { costLevel, levelColor } from "./levels.js";
 import { companion } from "./companion-logo.js";
 import { longLived, pickPr } from "./pr-pick.js";
 import { filterOf, filtering, passes, groupOf, GROUPS, byNeed, byProject, openFirst, moveInGroup } from "./thread-filter.js";
@@ -43,12 +44,16 @@ import { Vim, keysOf, step } from "./vim.js";
 // there, then copy.
 import { decide, decisionButtons, pillKeys, press } from "./decide.js";
 // Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
-import { motionState, frame, enter, collapse, ink, fade } from "./motion.js";
+import { motionState, frame, enter, collapse, ink, fade, rows as motionRows } from "./motion.js";
+// kt-keys' roll.js (a byte-identical copy): the nav's counts, the group heads', the focus card's figures,
+// and (12 threads or fewer listed) the cards' ages and durations roll to their new digits.
+import { roll, rollText } from "./roll.js";
 // Copied byte for byte from mods/kt-keys/bus.js (data/orchestrator/DATA-SYNC.md).
 import { bump, refreshOn } from "./bus.js";
 // Written here, copied byte for byte into mods/kt-head: the halo both draw.
 import { HALO, haloLayers } from "./halo.js";
-import { langSwitch } from "./i18n.js";
+import { langSwitch, cycleButton, makeT, num as fnum } from "./i18n.js";
+import strings from "./strings.js";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder } from "herdr";
 import * as fs from "fs/promises";
@@ -73,12 +78,15 @@ const GONE = 5 * 60e3;
 const startOf = (a) => a.startedAt ?? a.at ?? 0;
 const endOf = (a) => a.endedAt ?? startOf(a);
 const isAlive = (a) => a.state === "running" || a.state === "background";
+const tr = makeT(strings);
 // The pages under the navigation's Agents group, in order, as the view stack names them: [icon, label].
 // One the layout's stack doesn't have yet (Workflow, kt-workflow) is left out rather than open a blank.
+// The names are the pages' own, in every language; automation's is words (strings.js' automation).
 const AGENT_PAGES = ["workflow", "skills", "mcp", "plugins", "automation"];
 // automation: refresh-cw until kt-automation gives its own icon.
 const AGENT_PAGE = { workflow: ["workflow", "Workflow"], skills: ["sparkles", "Skills"], mcp: ["plug", "MCP"], plugins: ["puzzle", "Plugins"],
-  automation: ["refresh-cw", "Automatisation"] };
+  automation: ["refresh-cw", null] };
+const pageName = (p) => AGENT_PAGE[p][1] ?? tr(p);
 
 // One branch of a tree (kbrdn.dev's Parcours), the sub-agents' and the navigation's Agents group's: the
 // column drawn before a row's content, 2x wide. Its piece of trunk runs over the row's whole height `h`
@@ -202,7 +210,7 @@ const toks = (n) => (n < 1000 ? String(n) : n < 1e6 ? `${Math.floor(n / 1000)}k`
 function cacheLeft(s) {
   if (!s?.cache_at || !s.cache_ttl) return "";
   const m = Math.ceil((s.cache_at + s.cache_ttl * 1000 - Date.now()) / 60e3);
-  return m <= 0 ? "no cached" : m >= 60 ? "ttl≈1h" : `ttl≈${m}m`;
+  return m <= 0 ? tr("cacheGone") : m >= 60 ? "ttl≈1h" : `ttl≈${m}m`; // i18n: tech
 }
 // A live 5h / 7d window (statusline's rate_limits, top level), or null once it has reset.
 function windowOf(q, name) {
@@ -224,7 +232,9 @@ function logoOf(e) {
 // The theme switch at the bottom (shared "kt.themeMode"), kbrdn.dev's ThemeToggle: light, dark,
 // or blur: frosted glass, a `-glass` copy of the shown layout with `window_blur` and these
 // translucent colors (forces dark). The shown layout's own file is never written.
-const THEME_MODES = [["light", "sun", "Clair"], ["dark", "moon", "Sombre"], ["blur", "blend", "Verre (blur)"]];
+// One button: its icon by mode, and the next mode on a click (light → dark → glass → light).
+const THEME_ICON = { light: "sun", dark: "moon", blur: "blend" };
+const THEME_NEXT = { light: "dark", dark: "blur", blur: "light" };
 const GLASS = { canvas: "#00000000", chrome: "#0f0f0fb3", surface: "#191919cc", background: "#191919d9", popover: "#242424e6" };
 const GLASS_SUFFIX = "-glass";
 
@@ -367,7 +377,7 @@ export default class Threads extends View {
           // folder (no prompt), so ask for a local folder; here, as this list outlives the popup.
           else if (c === "new-project") {
             show("thread");
-            const folder = await pickFolder({ prompt: "Ouvrir" }).catch(() => null);
+            const folder = await pickFolder({ prompt: tr("open") }).catch(() => null);
             if (folder) {
               run("space.new", { folder, machine: "" });
               this.syncProjects(cx); // into the registry now, not at the next tick
@@ -528,7 +538,7 @@ export default class Threads extends View {
         }
         setShared("kt.themeMode", mode);
       } catch (err) {
-        notify({ title: "Thème", body: String(err?.message ?? err), level: "error" });
+        notify({ title: tr("themeError"), body: String(err?.message ?? err), level: "error" });
       }
       cx.notify();
     });
@@ -568,7 +578,7 @@ export default class Threads extends View {
 
   // The thread's todos (herdr-bridge's `todos.items`): done checked, the current one in working,
   // the rest a ring. Six at most, from the last done one, then "+N" for the rest.
-  todoList(t, todos) {
+  todoList(t, todos, id) {
     const items = todos?.items ?? [];
     if (!items.length) return null;
     const open = items.findIndex((x) => x.status !== "completed");
@@ -583,9 +593,9 @@ export default class Threads extends View {
       .gap(1)
       .child(
         h_flex().h(16).gap(6).items_center().font_family(MONO).text_size(10.5)
-          .child(div().flex_none().text_color(t.muted).child("TODOS"))
+          .child(div().flex_none().text_color(t.muted).child("TODOS")) // i18n: tech
           .child(div().flex_1())
-          .child(div().flex_none().text_color(t.dim).child(`${todos.done ?? 0}/${todos.total ?? items.length}`)),
+          .child(rollText(this.m, `kt-todo-n-${id}`, `${todos.done ?? 0}/${todos.total ?? items.length}`, 14).flex_none().text_color(t.dim)),
       )
       .children(shown.map((x) =>
         h_flex().h(18).gap(7).items_center()
@@ -593,7 +603,7 @@ export default class Threads extends View {
           .child(div().flex_1().min_w(0).truncate().text_size(11.5)
             .text_color(x.status === "in_progress" ? t.foreground : x.status === "completed" ? t.dim : t.muted)
             .child(x.status === "in_progress" ? x.activeForm || x.content : x.content))))
-      .when(more > 0, (el) => el.child(div().pl(18).h(16).font_family(MONO).text_size(10.5).text_color(t.dim).child(`+${more}`)));
+      .when(more > 0, (el) => el.child(div().pl(18).h(16).font_family(MONO).text_size(10.5).text_color(t.dim).child(rollText(this.m, `kt-todo-more-${id}`, `+${more}`, 14))));
   }
 
   readLive(cx) {
@@ -711,7 +721,7 @@ export default class Threads extends View {
 
   // A pill pressed (a click, or enter on it): the cursor back on its thread, a toast when nothing went.
   decided(res, tab, cx) {
-    if (!res?.ok) notify({ title: "Réponse depuis Herdr", body: res?.reason ?? "Rien envoyé.", level: "warning", timeout: 4000 });
+    if (!res?.ok) notify({ title: tr("reply.title"), body: res?.reason ?? tr("reply.none"), level: "warning", timeout: 4000 });
     if (this.cur?.startsWith("dec:")) this.cur = tab;
     this.readDecisions(cx);
     cx.notify();
@@ -728,7 +738,7 @@ export default class Threads extends View {
     const ci = r?.ci;
     if (!ci?.total) return null;
     const [color, mark] = ci.fail > 0 ? [t.ansi1, "✗"] : ci.pending > 0 ? [t.ansi3, "…"] : [t.done, "✓"];
-    return div().flex_none().font_family(MONO).text_size(10.5).text_color(color).child(`CI ${mark}`);
+    return div().flex_none().font_family(MONO).text_size(10.5).text_color(color).child(`CI ${mark}`); // i18n: tech
   }
 
   // claude-flow's current step: its dot (pulsing while the thread works) and its label.
@@ -748,7 +758,7 @@ export default class Threads extends View {
       return h_flex().h(22).px(10).gap(6).items_center().rounded_full().bg(t.blocked + "26").border(1).border_color(t.blocked + "4d")
         // The detailed card's one pulse (each one redraws the window): its top right shows no NEEDS YOU.
         .child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))
-        .child(div().truncate().text_size(12).font_medium().text_color(t.blocked).child("a besoin de toi"));
+        .child(div().truncate().text_size(12).font_medium().text_color(t.blocked).child(tr("needsYou")));
     }
     const text = c.status === "working" ? l?.action?.what : c.status === "done" ? l?.answer : null;
     return text ? div().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(`↳ ${text}`) : null;
@@ -789,10 +799,12 @@ export default class Threads extends View {
     // piece of trunk leading to it; the trunk going on below keeps the resting line. A new branch fades
     // in, bend and all (enter: once, when it first draws).
     const rest = treeLine(t);
-    const line = (key, last, faded, color, ...body) => enter(this.m, h_flex().h(BRANCH_H).px(6).gap(8).items_center()
+    const face = (last, faded, color, body) => h_flex().h(BRANCH_H).px(6).gap(8).items_center()
       .child(twig(t, { h: BRANCH_H, x, last, color, rest }))
-      .child(h_flex().flex_1().min_w(0).gap(8).items_center().when(faded, (el) => el.opacity(0.45)).children(body)),
-      `kt-br-${id}-${key}`, { dy: 0 });
+      .child(h_flex().flex_1().min_w(0).gap(8).items_center().when(faded, (el) => el.opacity(0.45)).children(body));
+    const line = (key, last, faded, color, ...body) => enter(this.m, face(last, faded, color, body), `kt-br-${id}-${key}`, { dy: 0 });
+    // Under rows() (detailed cards, below): the same branch without enter, rows() fades it in.
+    const plain = (key, last, faded, color, ...body) => face(last, faded, color, body).id(`kt-br-${id}-${key}`);
     // An ending seen within 5 s sparkles (the memo dates it); an older one, seen on a reload, does not.
     const icon = (a) => companion({
       program: agent?.program, id: `kt-sa-${id}-${a.id}`, cx, size: 20, height: 16,
@@ -800,34 +812,46 @@ export default class Threads extends View {
       since: isAlive(a) ? startOf(a) : Date.now() - endOf(a) < 5000 ? undefined : endOf(a),
       memo: (this.memos[`${agent?.terminal ?? id}:${a.id}`] ??= {}),
     });
-    const branch = (a, i, last) => {
+    const branch = (a, i, last, make = line) => {
       const ended = !isAlive(a);
       // A live sub-agent's branch in its state's color, a failed one in a muted red, the others at rest.
       const color = !ended ? alpha(t.working, "99") : a.state === "error" ? alpha(t.ansi1, "80") : rest;
-      return line(a.id ?? i, last, ended && Date.now() - endOf(a) > FADE, color,
+      return make(a.id ?? i, last, ended && Date.now() - endOf(a) > FADE, color,
         icon(a),
-        div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ended ? t.muted : t.foreground).child(a.what || a.name || "agent"),
+        div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ended ? t.muted : t.foreground).child(a.what || a.name || "agent"), // i18n: tech
         div().flex_none().text_size(12).text_color(t.dim).child(age(ended ? endOf(a) : startOf(a))));
     };
-    if (more <= 0) return v_flex().children(list.map((a, i) => branch(a, i, i === list.length - 1)));
     // "+N" / "Replier": the last branch, a click (or the keys' cursor on it) folds or unfolds the rest.
-    const toggle = (label, chevron) => line(open ? "fold" : "more", true, false, rest,
-      div().font_family(MONO).text_size(10.5).text_color(cursor ? t.foreground : t.dim).child(label),
+    // `gone`: closing under rows(), no longer a target.
+    const toggle = (label, chevron, make = line, gone = false) => make(open ? "fold" : "more", true, false, rest,
+      div().font_family(MONO).text_size(10.5).text_color(cursor && !gone ? t.foreground : t.dim).child(label),
       svg(I(chevron)).size(11).flex_none().text_color(t.dim))
-      .rounded(8).when(cursor, (el) => el.bg(alpha(t.accent, "24")))
-      .cursor_pointer().hover((s) => s.bg(t.hover))
-      .on_click((_e, cx) => {
-        cx.stop_propagation();
-        if (open) this.twigsOpen.delete(key);
-        else this.twigsOpen.add(key);
-        cx.notify();
-      });
-    const rest4 = collapse(this.m, `kt-twigs-all-${id}`, open, open
-      ? v_flex().children([...list.slice(4).map((a, i) => branch(a, i + 4, false)), toggle("Replier", "chevron-up")]) : null);
+      .rounded(8).when(cursor && !gone, (el) => el.bg(alpha(t.accent, "24")))
+      .when(!gone, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover))
+        .on_click((_e, cx) => {
+          cx.stop_propagation();
+          if (open) this.twigsOpen.delete(key);
+          else this.twigsOpen.add(key);
+          cx.notify();
+        }));
+    // A detailed card (nothing folds around it): the branches open and close on their height, in order
+    // (motion.js rows(), keyed by sub-agent), the toggle last as one more: 4, then the rest as it
+    // unfolds, back to 4 as it folds. A compact card's are inside its fold (collapse(), one height
+    // level): they fade in as before. The card's last sub-agent leaving takes the block at once.
+    if (!this.compact) {
+      const items = [...(open || more <= 0 ? list : shown).map((a, i) => ({ a, i })), ...(more > 0 ? [{ toggle: true }] : [])];
+      return v_flex().children(motionRows(this.m, cx, `kt-twigs-${id}`, items, (e) => (e.toggle ? "toggle" : String(e.a.id ?? e.i)), (e, j) =>
+        e.toggle ? toggle(open ? "Replier" : more > 0 ? (this.fewRows ? rollText(this.m, `kt-twigs-n-${id}`, `+${more}`, 14) : `+${more}`) : "", open ? "chevron-up" : "chevron-down", plain, j < 0)
+          : branch(e.a, e.i, more <= 0 && e.i === list.length - 1, plain)));
+    }
+    if (more <= 0) return v_flex().children(list.map((a, i) => branch(a, i, i === list.length - 1)));
+    // A builder: the rest folds on its height too (motion.js collapse), not only unfolds.
+    const rest4 = collapse(this.m, `kt-twigs-all-${id}`, open,
+      () => v_flex().children([...list.slice(4).map((a, i) => branch(a, i + 4, false)), toggle("Replier", "chevron-up")]), { cx });
     return v_flex()
       .children(shown.map((a, i) => branch(a, i, false)))
       .when(Boolean(rest4), (el) => el.child(rest4))
-      .when(!open, (el) => el.child(toggle(`+${more}`, "chevron-down")));
+      .when(!open, (el) => el.child(toggle(this.fewRows ? rollText(this.m, `kt-twigs-n-${id}`, `+${more}`, 14) : `+${more}`, "chevron-down")));
   }
 
   // The "+N" / "Replier" line of a thread whose sub-agents run past 4: a stop for the keys' cursor too.
@@ -846,39 +870,52 @@ export default class Threads extends View {
   focusCard(t, { sl, todos, lead, agent, working, report, c }) {
     const s = sl ?? {};
     const five = sl ? windowOf(this.quota, "five_hour") : null;
+    // The weekly limit when there is no 5 h window (none on Kylian's plan): the 5 h one wins if it is back.
+    const week = sl && !five ? windowOf(this.quota, "seven_day") : null;
+    const weekLeft = week ? (week.resets_at * 1000 - Date.now()) / 3600e3 : 0;
+    const weekReset = weekLeft >= 24 ? tr("reset.d", { n: Math.ceil(weekLeft / 24) }) : tr("reset.h", { n: Math.max(1, Math.ceil(weekLeft)) });
     const eyebrow = (text) => div().font_family(MONO).text_size(10).text_color(t.muted).child(text);
     const beside = (text) => div().min_w(0).truncate().font_family(MONO).text_size(10).text_color(t.dim).child(text);
     // A 32 px ring, its value in the middle, its label and detail beside it.
-    const cell = (id, label, pct, sub) => h_flex().flex_1().min_w(0).gap(8).items_center()
-      .child(ring(t, id, pct, 32)).child(v_flex().min_w(0).gap(1).child(eyebrow(label)).when(Boolean(sub), (el) => el.child(beside(sub))));
+    // ring.js colours it like the Claude Code status line: context by context rot, quotas by level.
+    const cell = (id, label, pct, sub, kind = "quota") => h_flex().flex_1().min_w(0).gap(8).items_center()
+      .child(ring(t, id, pct, 32, { kind, window: s.window, roll, m: this.m })).child(v_flex().min_w(0).gap(1).child(eyebrow(label)).when(Boolean(sub), (el) => el.child(beside(sub))));
     const rings = [
-      s.ctx_pct != null && cell(`kt-ring-cx-${c.id}`, "CONTEXTE", s.ctx_pct, s.window && ctxTokens(s) > 0 ? `${toks(ctxTokens(s))} / ${toks(s.window)}` : null),
+      s.ctx_pct != null && cell(`kt-ring-cx-${c.id}`, tr("context"), s.ctx_pct, s.window && ctxTokens(s) > 0 ? `${toks(ctxTokens(s))} / ${toks(s.window)}` : null, "ctx"),
       five && cell(`kt-ring-5h-${c.id}`, "5H", five.used_percentage, `reset ${clock(five.resets_at)}`),
+      week && cell(`kt-ring-7j-${c.id}`, tr("week"), week.used_percentage, weekReset).id(`kt-7j-${c.id}`).tooltip(weekReset),
     ].filter(Boolean);
     const ttl = s.cache_at && s.cache_ttl ? s.cache_at / 1000 + s.cache_ttl - Date.now() / 1000 : null;
     const mono = (color, text) => div().flex_none().font_family(MONO).text_size(11).text_color(color).child(text);
+    // The same, its numbers rolling (rollText); the ids carry the thread: another one's figures show at once.
+    const rmono = (color, key, text) => rollText(this.m, `kt-fc-${key}-${c.id}`, text, 15).flex_none().font_family(MONO).text_size(11).text_color(color);
+    // The session's duration: its seconds (the first minute) don't roll.
+    const dur = s.duration_ms > 0 ? duration(Date.now() - s.duration_ms) : "";
     const numbers = [
-      s.cost_usd != null && mono(t.muted, `$${s.cost_usd.toFixed(2)}`),
-      s.duration_ms > 0 && mono(t.muted, duration(Date.now() - s.duration_ms)),
-      (s.lines_added > 0 || s.lines_removed > 0) && h_flex().gap(4).child(mono(t.ansi2, `+${s.lines_added ?? 0}`)).child(mono(t.ansi1, `−${s.lines_removed ?? 0}`)),
-      ttl != null && (ttl > 0 ? mono(t.dim, `TTL ${ttl >= 3600 ? `${Math.floor(ttl / 3600)}h${String(Math.floor((ttl % 3600) / 60)).padStart(2, "0")}` : `${Math.ceil(ttl / 60)}m`}`) : mono(t.ansi1, "TTL expiré")),
+      // The dollars roll, the cents don't: they change at every reading.
+      s.cost_usd != null && roll(this.m, `kt-fc-cost-${c.id}`, `$${fnum(s.cost_usd, 2)}`, 15, { snap: 2 }).font_family(MONO).text_size(11)
+        .text_color(levelColor(t, costLevel(s.cost_usd, s.model), { okGreen: true })),
+      s.duration_ms > 0 && (/s$/.test(dur) ? mono(t.muted, dur) : rmono(t.muted, "dur", dur)),
+      (s.lines_added > 0 || s.lines_removed > 0) && h_flex().gap(4).child(rmono(t.ansi2, "add", `+${s.lines_added ?? 0}`)).child(rmono(t.ansi1, "del", `−${s.lines_removed ?? 0}`)),
+      ttl != null && (ttl > 0 ? rmono(t.dim, "ttl", `TTL ${ttl >= 3600 ? `${Math.floor(ttl / 3600)}h${String(Math.floor((ttl % 3600) / 60)).padStart(2, "0")}` : `${Math.ceil(ttl / 60)}m`}`) : mono(t.ansi1, tr("ttlGone"))),
       // The cache hit only when it's worth a look: under 85 %.
-      s.hit_pct != null && s.hit_pct < 85 && mono(s.hit_pct < 60 ? t.ansi1 : t.blocked, `cache ${Math.round(s.hit_pct)}%`),
+      s.hit_pct != null && s.hit_pct < 85 && rmono(s.hit_pct < 60 ? t.ansi1 : t.blocked, "hit", `cache ${Math.round(s.hit_pct)}%`),
     ].filter(Boolean);
     // The report's CI and review only (its PR is already on line 2): "✓ CI 3/3 · R2 · 0 bloquant".
     const ci = report?.ci?.total ? report.ci : null;
     const rv = report?.review ?? null;
     const reportLine = [
-      ci && mono(ci.fail > 0 ? t.ansi1 : ci.pending > 0 ? t.ansi3 : t.done, `${ci.fail > 0 ? "✗" : ci.pending > 0 ? "…" : "✓"} CI ${ci.fail > 0 ? ci.fail : ci.ok}/${ci.total}`),
-      rv && mono(rv.blockers === null ? t.dim : rv.blockers > 0 ? t.blocked : t.done,
-        `R${rv.pass} · ${rv.blockers === null ? "non exécuté" : `${rv.blockers} bloquant${rv.blockers > 1 ? "s" : ""}`}`),
+      // Failing counts the failures, else the passes: in the id, so 3 passed never rolls into 1 failed.
+      ci && rmono(ci.fail > 0 ? t.ansi1 : ci.pending > 0 ? t.ansi3 : t.done, `ci-${ci.fail > 0 ? "f" : "o"}`, `${ci.fail > 0 ? "✗" : ci.pending > 0 ? "…" : "✓"} CI ${ci.fail > 0 ? ci.fail : ci.ok}/${ci.total}`),
+      rv && rmono(rv.blockers === null ? t.dim : rv.blockers > 0 ? t.blocked : t.done, "rv",
+        `R${rv.pass} · ${rv.blockers === null ? tr("notRun") : tr("blockers", { n: rv.blockers })}`),
     ].filter(Boolean);
     const rows = [
       rings.length > 0 && h_flex().gap(8).items_center().children(rings),
       numbers.length > 0 && h_flex().min_h(16).gap_x(8).gap_y(4).items_center().flex_wrap()
         .children(numbers.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
       this.flowStep(t, lead, working),
-      this.todoList(t, todos),
+      this.todoList(t, todos, c.id),
       reportLine.length > 0 && h_flex().h(16).gap(8).items_center()
         .children(reportLine.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
     ].filter(Boolean);
@@ -1019,7 +1056,7 @@ export default class Threads extends View {
       }),
       ...loose.map((g) => ({ key: g.s.id, on: [g.s, ...g.kids].some((x) => x.active), el: live(g, null) })),
       ...closedReg.map((e, i) => ({ key: `closed-${e.id}`, on: false,
-        el: square(`closed-${i}`, `${e.name} (fermé)`, paint(t, e.color) ?? t.dim, logoOf(e), false, true,
+        el: square(`closed-${i}`, tr("closed", { name: e.name }), paint(t, e.color) ?? t.dim, logoOf(e), false, true,
           () => run("space.new", { folder: e.folder, name: e.name, machine: e.machine ?? "" }), null, e.id, e.id) })),
     ];
     const n = groups.length;
@@ -1173,7 +1210,7 @@ export default class Threads extends View {
     run("tab.settle", { id: c.id });
     const last = w.tabs.every((x) => x.id === c.id || x.settled);
     if (last && !w.machine && w.folder && this.repos[JSON.stringify([null, w.folder])]?.linked)
-      notify({ title: "Retirer le worktree ?", body: `${w.name} n'a plus de thread ouvert. Worktrees vérifie avant de retirer.`,
+      notify({ title: tr("wt.title"), body: tr("wt.body", { name: w.name }),
         level: "info", timeout: 8000, action: { name: `kt-threads.wt-remove:${w.folder}`, args: {} } });
   }
 
@@ -1291,11 +1328,14 @@ export default class Threads extends View {
   // A thread's status tag; a new status fades in where the last one was (its id carries the status).
   status(t, c) {
     const mono = (color) => h_flex().flex_none().gap(5).items_center().font_family(MONO).text_size(10.5).text_color(color);
+    // Its minutes roll in a short list (12 threads or fewer); its seconds, the first minute, don't.
+    const working = `WORKING${c.working_since ? ` ${duration(c.working_since).toUpperCase()}` : ""}`; // i18n: tech
+    // Monocode's states: the same words in every language (I18N.md).
     const tag = c.status === "blocked"
-      ? mono(t.blocked).child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 })).child("NEEDS YOU")
-      : c.status === "done" ? mono(t.done).child("DONE")
+      ? mono(t.blocked).child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 })).child("NEEDS YOU") // i18n: tech
+      : c.status === "done" ? mono(t.done).child("DONE") // i18n: tech
         : c.status === "working"
-          ? mono(t.working).child(svg(SPIN).size(11).spin(900)).child(`WORKING${c.working_since ? ` ${duration(c.working_since).toUpperCase()}` : ""}`)
+          ? mono(t.working).child(svg(SPIN).size(11).spin(900)).child(this.fewRows && !/S$/.test(working) ? rollText(this.m, `kt-st-n-${c.id}`, working, 14) : working)
           : null;
     return tag && enter(this.m, tag, `kt-st-${c.id}-${c.status}`, { dy: 0 });
   }
@@ -1381,11 +1421,11 @@ export default class Threads extends View {
       })
       .child(div().size(14).flex_none().flex().items_center().justify_center().child(mark))
       .child(div().min_w(0).truncate().font_family(MONO).text_size(10).text_color(cursor ? t.foreground : t.muted).child(name.toUpperCase()))
-      .child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(String(g.rows.length)))
+      .child(roll(this.m, `kt-g-n-${g.key}`, String(g.rows.length), 13).font_family(MONO).text_size(10).text_color(t.dim))
       .child(div().flex_1())
       .when(g.need > 0, (el) => el.child(h_flex().flex_none().h(16).px(6).items_center().rounded_full().border(1)
         .border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a")).font_family(MONO).text_size(9.5).text_color(t.blocked)
-        .child(`${g.need} te demande${g.need > 1 ? "nt" : ""}`)))
+        .child(tr("asks", { n: g.need }))))
       .when(folded, (el) => el.child(svg(I("chevron-right")).size(11).flex_none().text_color(t.dim)));
   }
 
@@ -1502,13 +1542,13 @@ export default class Threads extends View {
       }
     } else if (a === "delete") {
       if (r) openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
-        title: "Fermer ce thread ?", detail: `${label(r.c, this.leads(r.c).agent)} : ses terminaux s'arrêtent.`,
-        label: "Fermer", danger: true, command: { name: "tab.close", args: { id: r.c.id } } } });
+        title: tr("close.title"), detail: tr("close.detail", { name: label(r.c, this.leads(r.c).agent) }),
+        label: tr("close"), danger: true, command: { name: "tab.close", args: { id: r.c.id } } } });
     } else if (a === "yank") {
       const at = r ? this.leads(r.c).lead?.cwd ?? r.w.folder : null;
       if (at) {
         cx.write_to_clipboard(at);
-        notify({ title: "Copié", body: at, level: "success", timeout: 2000 });
+        notify({ title: tr("copied"), body: at, level: "success", timeout: 2000 });
       }
     } else if (a === "refresh") {
       this.asked = {};
@@ -1540,7 +1580,9 @@ export default class Threads extends View {
     this.barAt = dir > 0 ? Math.max(0, to - shown + 1) : to;
   }
 
-  row(t, r, all, cx) {
+  // `gone`: closing (rows() gave it -1), drawn as it was but no longer a target: no hover, click, menu
+  // or cursor.
+  row(t, r, all, cx, gone = false) {
     const { w, c } = r;
     const mine = all.filter((p) => p.tab === c.id && p.terminal);
     const lead = mine.find((p) => p.focused) ?? mine.find((p) => p.program?.agent) ?? mine[0];
@@ -1551,9 +1593,9 @@ export default class Threads extends View {
     const pr = reported ?? this.pr(lead?.cwd, lead?.branch, w.machine);
     // The shown thread, unless a page (Inbox, Skills, MCP, Worktrees) covers it.
     const here = w.active && c.active && !this.paged;
-    const hovered = this.hover === c.id;
+    const hovered = !gone && this.hover === c.id;
     // The keys' cursor, while the list has the keyboard: an accent border.
-    const cursor = this.keyed && this.cur === c.id;
+    const cursor = !gone && this.keyed && this.cur === c.id;
     const pinned = this.pins().includes(c.id);
     const asleep = this.asleep(c);
     const pj = this.project(w, c, all);
@@ -1563,6 +1605,8 @@ export default class Threads extends View {
     // Compact: the row under the pointer or the keys' cursor opens as a detailed card (expanded()).
     const compact = this.compact && !this.expanded(c.id);
     const ago = age(c.settled ? c.settled_at : c.changed_at).toUpperCase();
+    // The age, and a snoozed card's time left, roll once a minute in a short list (12 threads or fewer).
+    const clockEl = (color, key, text) => (this.fewRows ? rollText(this.m, `kt-${key}-${c.id}`, text, 15).flex_none().font_family(MONO).text_size(11).text_color(color) : mono(color, text));
     const right = hovered
       ? c.settled
         ? this.button(`kt-un-${c.id}`, "Restaurer", "archive-restore", () => run("tab.unsettle", { id: c.id }))
@@ -1577,16 +1621,16 @@ export default class Threads extends View {
               )
               .child(this.button(`kt-pin-${c.id}`, pinned ? "Unpin" : "", "pin", () => this.togglePin(c.id)))
               // Archive: tab.settle, the thread keeps running; Herdr brings it back when its agent needs you.
-              .child(this.button(`kt-settle-${c.id}`, "", "archive", () => this.settle(w, c)).tooltip("Archiver"))
+              .child(this.button(`kt-settle-${c.id}`, "", "archive", () => this.settle(w, c)).tooltip(tr("archive")))
       : asleep
-        ? mono(t.working, until(this.snoozed()[c.id].until).toUpperCase())
+        ? clockEl(t.working, "until", until(this.snoozed()[c.id].until).toUpperCase())
         // A detailed blocked card says it once, in its line 3 pill: up here only the ring.
         : c.status === "blocked" && !compact && !c.settled
           ? null
           // Compact: the status and how long since it changed (a working one's status says how long).
           : compact && st
-            ? h_flex().flex_none().gap(8).items_center().child(st).when(c.status !== "working" && Boolean(ago), (el) => el.child(mono(t.dim, ago)))
-            : (st ?? mono(t.dim, ago));
+            ? h_flex().flex_none().gap(8).items_center().child(st).when(c.status !== "working" && Boolean(ago), (el) => el.child(clockEl(t.dim, "age", ago)))
+            : (st ?? clockEl(t.dim, "age", ago));
     const short = c.settled || asleep;
     const title = label(c, agent);
     // Line 2: model · effort (statusline) · branch, else the project; its eyebrow only across projects.
@@ -1626,7 +1670,8 @@ export default class Threads extends View {
     const subs = !short && !compact ? this.shownAgents(agent?.terminal) : [];
     // Lines 2 to 4 (and, below the card's content, the branches): a compact card opening (the pointer,
     // the keys' cursor) unfolds them on their height; detailed cards just have them.
-    const unfold = (key, open, build) => (this.compact ? collapse(this.m, `${key}-${c.id}`, open, open ? build() : null) : open ? build() : null);
+    // Compact: given the builder, the lines fold back on their height when the card closes too.
+    const unfold = (key, open, build) => (this.compact ? collapse(this.m, `${key}-${c.id}`, open, build, { cx }) : open ? build() : null);
     const more = unfold("kt-more", !short && !compact, () =>
       v_flex()
         .gap(4)
@@ -1706,25 +1751,25 @@ export default class Threads extends View {
       // The keys' cursor: a 1 px accent ring on the card, with the ink.
       .border_color(cursor ? alpha(t.accent, "99") : here ? t.accent + "66" : t.accent + "00")
       .when(here || cursor, (el) => el.bg(alpha(t.accent, "24")))
-      .when(!here && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
-      .cursor_pointer()
-      .on_hover((h, cx) => {
-        if (h) this.hover = c.id;
-        else if (this.hover === c.id) {
-          this.hover = null;
-          this.linger(c.id, cx);
-        }
-        if (!h && this.snoozing === c.id) this.snoozing = null;
-        cx.notify();
-      })
-      .on_click(() => {
-        show("thread");
-        run("tab.select", { id: c.id });
-      })
-      .on_mouse_down("right", () =>
-        // kt-menu: the shipped menu's clone whose closings go through kt-confirm, worktrees through gwm.
-        openOverlay({ mod: "kt-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: w.id, settled: c.settled } } }),
-      )
+      .when(!gone && !here && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(!gone, (el) => el.cursor_pointer()
+        .on_hover((h, cx) => {
+          if (h) this.hover = c.id;
+          else if (this.hover === c.id) {
+            this.hover = null;
+            this.linger(c.id, cx);
+          }
+          if (!h && this.snoozing === c.id) this.snoozing = null;
+          cx.notify();
+        })
+        .on_click(() => {
+          show("thread");
+          run("tab.select", { id: c.id });
+        })
+        .on_mouse_down("right", () =>
+          // kt-menu: the shipped menu's clone whose closings go through kt-confirm, worktrees through gwm.
+          openOverlay({ mod: "kt-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: w.id, settled: c.settled } } }),
+        ))
       .child(content)
       .when(Boolean(twigs), (el) => el.child(twigs))
       .when(Boolean(focus), (el) => el.child(focus));
@@ -1763,6 +1808,7 @@ export default class Threads extends View {
     // Motion (ANIMATIONS.md): a compact card unfolding, sub-agents entering their branch, a status
     // coming in, the navigation's ink gliding. Nothing loops but an active state's.
     const m = (this.m = frame(this.motion, Boolean(shared("kt.reducedMotion"))));
+    const fx = (el, key) => enter(m, el, key, { dy: 0 }); // the footer buttons' face, faded in on a change
     this.ticks = 0;
     this.shownClocks = this.clocks();
     const all = panes();
@@ -1808,6 +1854,8 @@ export default class Threads extends View {
       r.prog = all.find((p) => p.tab === r.c.id && p.program?.agent)?.program?.key ?? null;
     }
     const kept = rows.filter((r) => passes(filter, { status: r.c.status, activity: r.act, program: r.prog }, now));
+    // A short list (ANIMATIONS.md: not past 12 rows): its cards' ages, durations and +N roll; longer, they stay still.
+    this.fewRows = kept.length <= 12;
     const pins = this.pins();
     const awake = (r) => !r.c.settled && !this.asleep(r.c);
     const pinned = filter.archived ? [] : pins.map((id) => kept.find((r) => r.c.id === id && awake(r))).filter(Boolean);
@@ -1816,7 +1864,7 @@ export default class Threads extends View {
     // Archived (tab.settle): dated by when they were put away.
     const archived = filter.archived ? kept.filter((r) => r.c.settled).map((r) => ({ ...r, act: r.c.settled_at ?? r.act })) : [];
     // Monocode's date groups, newest thread first inside each (a group never reshuffles on activity).
-    const dated = (list) => GROUPS.map((name, i) => [name, list.filter((r) => groupOf(r.act, now) === i).sort((a, b) => num(b.c.id) - num(a.c.id))])
+    const dated = (list) => GROUPS.map((id, i) => [tr(`date.${id}`), list.filter((r) => groupOf(r.act, now) === i).sort((a, b) => num(b.c.id) - num(a.c.id))])
       .filter(([, l]) => l.length > 0);
     // Grouped by project (the default; "Grouper par" in the filter menu, shared "kt.threadFilter"
     // group): one group per project (Home its own), the pinned on top of theirs, then what needs you,
@@ -1877,27 +1925,41 @@ export default class Threads extends View {
     if (filter.archived) items.push(h_flex().id("kt-archived").mx(18).mt(2).mb(2).gap(8).items_center()
       .font_family(MONO).text_size(10.5).text_color(t.muted)
       .child(svg(I("archive")).size(12).flex_none())
-      .child(div().flex_1().child(`ARCHIVÉS · ${archived.length}`))
+      .child(div().flex_1().child(tr("archived", { n: archived.length })))
       .child(div().id("kt-archived-back").px(6).rounded(6).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click((_e, cx) => { setShared("kt.threadFilter", { ...filter, archived: false }); cx.notify(); })
-        .child("ACTIFS")));
-    for (const r of shelf) put(r.c.id, this.row(t, r, all, cx));
+        .child(tr("active"))));
+    // A group's threads open and close on their height, in order (motion.js rows(), keyed by tab; a
+    // group past 12 at once; folded or closed: none, so they close). A card at rest follows its content
+    // (its compact unfold, its sub-agents). rows() builds the cards in the order it returns them:
+    // `built` says each child's thread for put()'s reveal (a closing card: none). A group gone whole
+    // (its header too) goes at once.
+    const group = (gid, rs) => {
+      const built = [];
+      const kids = motionRows(this.m, cx, `kt-th-${gid}`, rs, (r) => r.c.id, (r, i) => {
+        built.push(i < 0 ? null : r.c.id);
+        return this.row(t, r, all, cx, i < 0);
+      });
+      kids.forEach((el, j) => (built[j] ? put(built[j], el) : items.push(el)));
+    };
+    group("shelf", shelf);
     if (shelf.length > 0) items.push(div().mx(18).my(6).h(1).bg(t.border));
     for (const [name, list] of listed) {
       items.push(div().mx(18).mt(8).mb(2).text_size(12).text_color(t.dim).child(name));
-      for (const r of list) put(r.c.id, this.row(t, r, all, cx));
+      group(`d-${name}`, list);
     }
     projects.forEach((g, i) => {
       if (heads) put(`grp:${g.key}`, this.groupHead(t, g, i));
-      if (!this.folded.has(g.key)) for (const r of g.rows) put(r.c.id, this.row(t, r, all, cx));
+      group(`p-${g.key}`, this.folded.has(g.key) ? [] : g.rows);
     });
     if (!pinned.length && !listed.length && !projects.length && !snoozed.length) items.push(div().mx(18).mt(10).text_size(12.5).text_color(t.dim)
-      .child(filter.archived ? "Aucun thread archivé." : filtering(filter) ? "Aucun thread pour ces filtres." : "Aucun thread."));
+      .child(filter.archived ? tr("noArchived") : filtering(filter) ? tr("noFilter") : tr("none")));
+    // i18n: tech (Snoozed: Monocode's word)
     if (snoozed.length > 0) put("snoozed", this.section("kt-snoozed", `Snoozed (${snoozed.length})`, this.showSnoozed, (_e, cx) => {
       this.showSnoozed = !this.showSnoozed;
       cx.notify();
     }, this.keyed && this.cur === "snoozed"));
-    if (this.showSnoozed) for (const r of snoozed) put(r.c.id, this.row(t, r, all, cx));
+    if (snoozed.length > 0) group("snoozed", this.showSnoozed ? snoozed : []);
     items.push(div().h(12));
 
     // Monocode's 32 px navigation lines; `on`: the page shown, under the kbrdn.dev ink, one layer gliding
@@ -1956,8 +2018,8 @@ export default class Threads extends View {
     // unfold on their height (collapse), each on its branch, left of its box.
     const branchOf = (p) => ({ branch: twig(t, { h: 32, x: NAV_X, last: p === agentPages.at(-1),
       color: navPage === p ? alpha(t.accent, "99") : navRest, rest: navRest }) });
-    const agentsFold = collapse(m, "kt-agents-fold", agentsOpen, agentsOpen ? v_flex().children(agentPages.map((p) =>
-      tool(`kt-${p}`, AGENT_PAGE[p][0], AGENT_PAGE[p][1], () => show(p), null, navPage === p, branchOf(p)))) : null);
+    const agentsFold = collapse(m, "kt-agents-fold", agentsOpen, () => v_flex().children(agentPages.map((p) =>
+      tool(`kt-${p}`, AGENT_PAGE[p][0], pageName(p), () => show(p), null, navPage === p, branchOf(p)))), { cx });
     const bar = this.projectBar(t, ps);
     // The halo (halo.js), in the shown project's color, softer than the headers' (a large surface),
     // published for kt-head's brand block above, which draws its top: here it starts that block's height
@@ -2004,10 +2066,14 @@ export default class Threads extends View {
           .on_click(() => this.openProjects())
           .child(((logo) => shown && this.isHome(shown)
             ? svg(I("house")).size(14).flex_none().text_color(t.accent)
-            // The project's registry logo when it has one, as in the bar below; else its color.
+            // The project's registry logo when it has one, as in the bar below; else its letter tile (the
+            // group headers' mark: the project's colour, its initial in chrome).
             : logo ? image(logo).size(16).flex_none()
-            : div().size(10).rounded(3).flex_none().bg(shown ? spaceColor(t, shown) : t.dim))(shown && !this.isHome(shown) ? logoOf(this.entryOf(shown, registry())) : null))
-          .child(div().min_w(0).truncate().text_size(14).font_medium().child(shown ? (this.isHome(shown) ? this.homeLabel(shown) : shown.name) : "Aucun projet"))
+            : shown ? div().size(16).rounded(4).flex_none().bg(paint(t, this.entryOf(shown, registry())?.color) ?? spaceColor(t, shown))
+              .flex().items_center().justify_center()
+              .child(div().text_size(9.5).font_semibold().text_color(t.chrome).child([...shown.name][0]?.toUpperCase() ?? "?"))
+            : div().size(10).rounded(3).flex_none().bg(t.dim))(shown && !this.isHome(shown) ? logoOf(this.entryOf(shown, registry())) : null))
+          .child(div().min_w(0).truncate().text_size(14).font_medium().child(shown ? (this.isHome(shown) ? this.homeLabel(shown) : shown.name) : tr("noProject")))
           .child(svg(I("chevron-down")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1())
           .when(Boolean(shown?.branch), (el) => el.child(div().flex_none().max_w(110).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(shown.branch))),
@@ -2015,7 +2081,7 @@ export default class Threads extends View {
       .child(v_flex().relative()
         .child(navInk)
         .child(
-          tool("kt-new", "square-pen", "Nouveau thread", () => {
+          tool("kt-new", "square-pen", tr("newThread"), () => {
             show("thread");
             run("mod.open", { name: "kt-new" });
           }, div().font_family(MONO).text_size(10.5).text_color(t.dim).child("⌘T")),
@@ -2026,10 +2092,10 @@ export default class Threads extends View {
         .when(Boolean(agentsFold), (el) => el.child(agentsFold))
         .child(tool("kt-gwm", "git-branch", "Worktrees", () => show("gwm"), worktrees == null ? null
           : div().flex_none().h(18).px(7).flex().items_center().rounded_full().border(1).border_color(t.border)
-            .font_family(MONO).text_size(10.5).text_color(navPage === "gwm" ? t.foreground : t.muted).child(String(worktrees)), navPage === "gwm"))
+            .font_family(MONO).text_size(10.5).text_color(navPage === "gwm" ? t.foreground : t.muted).child(roll(m, "kt-nav-gwm-n", String(worktrees), 14)), navPage === "gwm"))
         // file-text until kt-notes gives its own icon.
         .when(this.hasNotes, (el) => el.child(tool("kt-notes", "file-text", "Notes", () => show("notes"), null, navPage === "notes")))
-        .child(tool("kt-search", "search", "Search", () => run("mod.open", { name: "kt-picker" }))))
+        .child(tool("kt-search", "search", tr("search"), () => run("mod.open", { name: "kt-picker" }))))
       // kbrdn.dev `.eyebrow` over the list, and the filter as a `.segment` pill.
       .child(
         h_flex()
@@ -2038,7 +2104,7 @@ export default class Threads extends View {
           .gap(8)
           .items_center()
           // vim's mode beside it while the list has the keyboard (ctrl-b h).
-          .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child("THREADS"))
+          .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child("THREADS")) // i18n: tech
           .when(this.keyed, (el) => el.child(div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
             .border_color(t.border).bg(t.background).font_family(MONO).text_size(9).text_color(t.muted).child(this.vim.label)))
           // The cards' density: the icon shows the current one.
@@ -2051,7 +2117,7 @@ export default class Threads extends View {
               .text_color(t.dim)
               .cursor_pointer()
               .hover((s) => s.bg(t.hover).text_color(t.foreground))
-              .tooltip(compact ? "Cartes compactes" : "Cartes détaillées")
+              .tooltip(compact ? tr("compact") : tr("detailed"))
               .on_click((_e, cx) => {
                 this.toggleDensity();
                 cx.notify();
@@ -2072,7 +2138,7 @@ export default class Threads extends View {
               .text_color(everyProject ? t.accent_foreground : t.muted)
               .cursor_pointer()
               .when(!everyProject, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
-              .tooltip(everyProject ? "Tous les projets" : "Projet actif")
+              .tooltip(everyProject ? tr("everyProject") : tr("activeProject"))
               .on_click((_e, cx) => {
                 setShared("kt.project", everyProject ? null : "*");
                 cx.notify();
@@ -2092,7 +2158,7 @@ export default class Threads extends View {
               .text_color(filtering(filter) ? t.accent_foreground : t.muted)
               .cursor_pointer()
               .when(!filtering(filter), (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
-              .tooltip("Filtres")
+              .tooltip(tr("filters"))
               .on_click((_e, cx) => {
                 const programs = new Set(all.filter((p) => p.program?.agent).map((p) => p.program.key)).size;
                 openOverlay({ mod: "kt-thread-filter", kind: "popup", at: "pointer", frame: "none", width: 240,
@@ -2128,43 +2194,15 @@ export default class Threads extends View {
           .child(this.button("kt-keys", "", "keyboard", () => run("app.help")))
           .child(this.button("kt-layout", "", "layers", () => run("layout.switch")))
           // kt-usage's console (its own icon: button() takes its icons from this folder, so as the label).
-          .child(this.button("kt-usage", svg("mods/kt-usage/gauge.svg").size(13), "", () => run("mod.open", { name: "kt-usage" })).tooltip("Abonnements IA"))
+          .child(this.button("kt-usage", svg("mods/kt-usage/gauge.svg").size(13), "", () => run("mod.open", { name: "kt-usage" })).tooltip(tr("usage")))
           // kt-mods' console: blocks shown or hidden, root mods, kbrdn options, shared copies.
-          .child(this.button("kt-mods", svg("mods/kt-mods/blocks.svg").size(13), "", () => run("mod.open", { name: "kt-mods" })).tooltip("Mods"))
+          .child(this.button("kt-mods", svg("mods/kt-mods/blocks.svg").size(13), "", () => run("mod.open", { name: "kt-mods" })).tooltip("Mods")) // i18n: tech
           .child(div().flex_1())
-          // Language (i18n.js): Auto / FR / EN, the theme switch's twin.
-          .child(langSwitch(t))
-          // kbrdn.dev `.segmented` theme switch: the ink on the position now.
-          .child(
-            h_flex()
-              .flex_none()
-              .p(2)
-              .gap(1)
-              .items_center()
-              .rounded_full()
-              .border(1)
-              .border_color(t.border)
-              .bg(t.background)
-              .children(THEME_MODES.map(([mode, icon, label]) => {
-                const on = this.themeMode() === mode;
-                return div()
-                  .id(`kt-theme-${mode}`)
-                  .size(24)
-                  .flex()
-                  .items_center()
-                  .justify_center()
-                  .rounded_full()
-                  .border(1)
-                  .border_color(on ? t.accent + "66" : t.accent + "00")
-                  .when(on, (el) => el.bg(t.accent + "24"))
-                  .text_color(on ? t.accent : t.muted)
-                  .cursor_pointer()
-                  .when(!on, (el) => el.hover((s) => s.text_color(t.foreground)))
-                  .tooltip(label)
-                  .on_click((_e, cx) => this.setTheme(mode, cx))
-                  .child(svg(I(icon)).size(13));
-              })),
-          ),
+          // Language and theme (i18n.js' cycleButton): one button each, the state now, a click to the
+          // next; the face fades in on a change (enter, keyed by the state).
+          .child(langSwitch(t, fx))
+          .child(((mode) => cycleButton(t, { id: "kt-theme", key: mode, icon: I(THEME_ICON[mode]), tip: tr(`theme.${mode}`), fx,
+            onClick: (cx) => this.setTheme(THEME_NEXT[mode], cx) }))(this.themeMode())),
       );
   }
 }

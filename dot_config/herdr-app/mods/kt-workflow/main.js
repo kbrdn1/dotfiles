@@ -28,13 +28,17 @@ import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
 import { exec, hc, readTextFile, theme, spaces, panes, run, layout, home, notify, checking, nextCommand, openOverlay, shared, settings, watchFolder } from "herdr";
 import { session, showSession, dedicated, intention } from "./session.js";
 import { frontmatter } from "./frontmatter.js";
-import { section, table, stripMd, loopDef, mask, updatedOn, isCale, ago } from "./parse.js";
+import { section, table, stripMd, loopDef, mask, updatedOn, isCale } from "./parse.js";
+import { makeT, relative } from "./i18n.js";
+import strings from "./strings.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse } from "./motion.js";
 import { refreshOn } from "./bus.js";
 
+const tr = makeT(strings);
+const ago = (ms) => relative(ms);
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
@@ -47,8 +51,7 @@ const clip = (s, n = 210) => (s.length <= n ? s : `${s.slice(0, s.lastIndexOf(" 
 const NAME = "Workflow"; // the session's tab (and new space)
 
 // The page's sections, as the filter row names them (FILTERS.md tints; « Tout » neutral).
-const SECS = [["all", "Tout"], ["cycle", "Cycle", "ansi3"], ["workflows", "Workflows", "ansi4"], ["loops", "Loops", "ansi5"],
-  ["tools", "Outils", "ansi2"], ["guards", "Garde-fous", "accent"], ["notes", "Notes", "ansi6"]];
+const SECS = [["all"], ["cycle", "ansi3"], ["workflows", "ansi4"], ["loops", "ansi5"], ["tools", "ansi2"], ["guards", "accent"], ["notes", "ansi6"]];
 
 // What a step or a workflow stands on, under ~/.claude. `select`: its name in kt-skills. `skill`: its
 // SKILL.md; `command`: its slash command's file; `cale`: that command must be a cale reading the skill
@@ -66,34 +69,37 @@ const REFS = {
 };
 const refOf = (id) => REFS[id] ?? (id?.startsWith("loop:") ? LOOP(id.slice(5)) : null);
 
-// The cycle, in order (WORKFLOW.md, « Workflow — Worktree »), and its side branches.
+// The cycle, in order (WORKFLOW.md, « Workflow — Worktree »), and its side branches. `title`: the
+// French one the intentions quote (they go to Claude); shown, a step reads strings.js' step.<id>.
+// `cmd` null: its line is words (cmd.<id>), not a command.
 const STEPS = [
-  { id: "issue", icon: "circle-dashed", title: "Issue", cmd: "/me:issue-worktree-pr", ref: "issue-worktree-pr" },
-  { id: "worktree", icon: "git-branch", title: "Worktree gwm", cmd: "gwm create · attach", ref: "gwm" },
-  { id: "impl", icon: "git-commit", title: "Implémentation", cmd: "commits atomiques", ref: null },
-  { id: "report", icon: "file-text", title: "Rapport", cmd: "/me:report", ref: "report" },
-  { id: "review", icon: "file-diff", title: "Review", cmd: "/me:loop:claude-review-pr", ref: "loop:claude-review-pr",
-    alt: { cmd: "+ /me:loop:codex-review-pr si sensible", ref: "loop:codex-review-pr" } },
-  { id: "ci", icon: "circle-check", title: "CI verte", cmd: "/me:loop:ci-until-green", ref: "loop:ci-until-green" },
-  { id: "merge", icon: "git-merge", title: "Merge", cmd: "/me:merge", ref: "merge" },
-  { id: "vault", icon: "archive", title: "Note vault", cmd: "écrite par /me:merge", ref: null },
+  { id: "issue", icon: "circle-dashed", title: "Issue", cmd: "/me:issue-worktree-pr", ref: "issue-worktree-pr" }, // i18n: agent
+  { id: "worktree", icon: "git-branch", title: "Worktree gwm", cmd: "gwm create · attach", ref: "gwm" }, // i18n: agent
+  { id: "impl", icon: "git-commit", title: "Implémentation", cmd: null, ref: null }, // i18n: agent
+  { id: "report", icon: "file-text", title: "Rapport", cmd: "/me:report", ref: "report" }, // i18n: agent
+  { id: "review", icon: "file-diff", title: "Review", cmd: "/me:loop:claude-review-pr", ref: "loop:claude-review-pr", // i18n: agent
+    alt: { cmd: "/me:loop:codex-review-pr", ref: "loop:codex-review-pr" } },
+  { id: "ci", icon: "circle-check", title: "CI verte", cmd: "/me:loop:ci-until-green", ref: "loop:ci-until-green" }, // i18n: agent
+  { id: "merge", icon: "git-merge", title: "Merge", cmd: "/me:merge", ref: "merge" }, // i18n: agent
+  { id: "vault", icon: "archive", title: "Note vault", cmd: null, ref: null }, // i18n: agent
 ];
+const cmdText = (x) => x.cmd ?? tr(`cmd.${x.id}`);
 const BRANCHES = [
-  { id: "goal", icon: "layout-list", title: "Sprint", cmd: "/me:goal", ref: "goal", note: "issues et dépendances, merge progressif dans dev" },
-  { id: "dispatch", icon: "bot", title: "Orchestration", cmd: "/me:dispatch", ref: "dispatch", note: "hc : un lead, un worker par issue dans son worktree" },
-  { id: "release", icon: "git-pull-request", title: "Release", cmd: "/me:release", ref: "release", note: "dev vers main, tag après le merge" },
+  { id: "goal", icon: "layout-list", title: "Sprint", cmd: "/me:goal", ref: "goal" }, // i18n: agent
+  { id: "dispatch", icon: "bot", title: "Orchestration", cmd: "/me:dispatch", ref: "dispatch" }, // i18n: agent
+  { id: "release", icon: "git-pull-request", title: "Release", cmd: "/me:release", ref: "release" }, // i18n: agent
 ];
 const WORKFLOWS = ["issue-worktree-pr", "issue-branch-pr", "spec-issue-worktree-pr", "spec-issue-branch-pr", "goal", "dispatch", "release", "merge", "report", "check-reviews"];
 
 // The session's first message, as written, then the intention when there is one.
 const TASK = [
-  "Session dédiée à la configuration de mon workflow Claude Code et Herdr. Lis d'abord ~/.claude/WORKFLOW.md, ~/.claude/RULES.md et ~/.claude/CLAUDE.md, puis demande-moi ce que je veux changer (ne change rien avant).",
-  "Règles :",
-  "- ~/.claude est géré par chezmoi : éditer le home puis `chezmoi add <chemins explicites>`, jamais de `chezmoi apply` sans chemin, et ~/.claude doit rester en 0700 ;",
-  "- une skill sous ~/.claude/skills/me/<x> n'est chargée que par sa commande-cale ~/.claude/commands/me/<x>.md, qui lit le SKILL.md avec Read et ne dit jamais « invoque la skill » ;",
-  "- settings.json se modifie par la skill update-config ;",
-  "- un changement de workflow met à jour WORKFLOW.md (section concernée et « Fait récemment ») ;",
-  "- commit et push du dépôt dotfiles seulement quand je le demande, messages Gitmoji + Conventional, sans tiret cadratin.",
+  "Session dédiée à la configuration de mon workflow Claude Code et Herdr. Lis d'abord ~/.claude/WORKFLOW.md, ~/.claude/RULES.md et ~/.claude/CLAUDE.md, puis demande-moi ce que je veux changer (ne change rien avant).", // i18n: agent
+  "Règles :", // i18n: agent
+  "- ~/.claude est géré par chezmoi : éditer le home puis `chezmoi add <chemins explicites>`, jamais de `chezmoi apply` sans chemin, et ~/.claude doit rester en 0700 ;", // i18n: agent
+  "- une skill sous ~/.claude/skills/me/<x> n'est chargée que par sa commande-cale ~/.claude/commands/me/<x>.md, qui lit le SKILL.md avec Read et ne dit jamais « invoque la skill » ;", // i18n: agent
+  "- settings.json se modifie par la skill update-config ;", // i18n: agent
+  "- un changement de workflow met à jour WORKFLOW.md (section concernée et « Fait récemment ») ;", // i18n: agent
+  "- commit et push du dépôt dotfiles seulement quand je le demande, messages Gitmoji + Conventional, sans tiret cadratin.", // i18n: agent
 ].join("\n");
 
 // One stat for every file the page reads (macOS stat: PATH's may be GNU's); a missing one is absent.
@@ -229,9 +235,10 @@ export default class Workflow extends View {
       md,
       updated: updatedOn(md),
       mdTime: files.get("WORKFLOW.md")?.mtime ?? null,
+      // i18n: tech (WORKFLOW.md's own headings)
       tools: table(section(md, "Outils & priorités")),
-      conventions: section(md, "Conventions"),
-      ideas: section(md, "Idées"),
+      conventions: section(md, "Conventions"), // i18n: tech
+      ideas: section(md, "Idées"), // i18n: tech
       loops,
       settings: s,
       settingsRaw: files.has("settings.json"),
@@ -248,13 +255,14 @@ export default class Workflow extends View {
     const f = this.d?.files;
     if (!r || !f) return null;
     const miss = [];
-    if (r.skill && !f.has(r.skill)) miss.push(`skill introuvable : ~/.claude/${r.skill}`);
-    if (r.command && !f.has(r.command)) miss.push(`${r.cale ? "commande-cale" : "commande"} introuvable : ~/.claude/${r.command}`);
+    const noCommand = Boolean(r.command && !f.has(r.command));
+    if (r.skill && !f.has(r.skill)) miss.push(tr("missSkill", { path: r.skill }));
+    if (noCommand) miss.push(tr(r.cale ? "missCale" : "missCommand", { path: r.command }));
     const copy = Boolean(r.cale && f.has(r.command) && !isCale(f.get(r.command).text, r.skill));
     const main = r.skill && f.has(r.skill) ? r.skill : r.command && f.has(r.command) ? r.command : null;
     const desc = [r.skill, r.command].map((p) => p && f.get(p)?.text).filter(Boolean)
       .map((x) => String(frontmatter(x).meta.description ?? "").trim()).find(Boolean) ?? "";
-    return { r, miss, copy, desc, path: main ? `${home()}/.claude/${main}` : null, mtime: main ? f.get(main).mtime : null };
+    return { r, miss, noCommand, copy, desc, path: main ? `${home()}/.claude/${main}` : null, mtime: main ? f.get(main).mtime : null };
   }
 
   // ---------- actions ----------
@@ -271,7 +279,7 @@ export default class Workflow extends View {
 
   copy(text, cx) {
     cx.write_to_clipboard(text);
-    notify({ title: "Copié", body: text, level: "success", timeout: 2000 });
+    notify({ title: tr("copied"), body: text, level: "success", timeout: 2000 });
   }
 
   // « Configurer avec Claude » (intent null) and « Modifier avec Claude » (intent: "le loop …"): the one
@@ -282,7 +290,7 @@ export default class Workflow extends View {
     cx.spawn(async (cx) => {
       const r = await dedicated({ name: NAME, folder: `${home()}/.claude`, task: TASK, intent });
       this.notice = r.why ? { intent, why: r.why } : null;
-      if (r.done === "sent") notify({ title: "Intention envoyée à la session Workflow", body: intent, level: "success", timeout: 2500 });
+      if (r.done === "sent") notify({ title: tr("sent"), body: intent, level: "success", timeout: 2500 });
       cx.notify();
     });
   }
@@ -389,7 +397,7 @@ export default class Workflow extends View {
       .child(this.eyebrow(t, n == null ? label : `${label} · ${n}`).flex_none())
       .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border))
       .when(Boolean(extra), (el) => el.child(extra))
-      .when(Boolean(intent), (el) => el.child(this.icon(t, `ktw-edit-${id}`, I("square-pen"), `Modifier avec Claude : ${intent}`, (cx) => this.configure(intent, cx))));
+      .when(Boolean(intent), (el) => el.child(this.icon(t, `ktw-edit-${id}`, I("square-pen"), tr("editWith", { intent }), (cx) => this.configure(intent, cx))));
   }
 
   // The cursor's look: a 1 px accent ring with the ink, while the page has the keyboard.
@@ -406,7 +414,7 @@ export default class Workflow extends View {
   tip(st, fallback) {
     if (!st) return fallback;
     if (st.miss.length) return st.miss.join("\n");
-    if (st.copy) return `${fallback}\nLa commande ne lit pas ${st.r.skill} : une copie, pas une cale.`;
+    if (st.copy) return tr("copyTip", { fallback, skill: st.r.skill });
     return fallback;
   }
 
@@ -415,40 +423,40 @@ export default class Workflow extends View {
   header(t) {
     const d = this.d;
     const chez = d?.chez;
-    const chezText = !d ? "…" : chez.error ? `erreur : ${chez.error}` : chez.n ? `${chez.n} fichier${chez.n > 1 ? "s" : ""} en dérive` : "à jour";
+    const chezText = !d ? "…" : chez.error ? tr("chezError", { error: chez.error }) : chez.n ? tr("drift", { n: chez.n }) : tr("upToDate");
     const chezColor = !d ? t.dim : chez.error ? t.ansi1 : chez.n ? t.ansi3 : t.done;
     const fact = (id, label, value, color, tip) => v_flex().id(id).flex_1().min_w(0).gap(2).px(10).py(6)
       .when(Boolean(tip), (el) => el.tooltip(tip))
       .child(this.eyebrow(t, label, t.dim))
       .child(div().truncate().font_family(MONO).text_size(11.5).text_color(color ?? t.foreground).child(value));
-    const items = SECS.map(([key, label, tint]) => ({ key, label, tint, count: this.count(key) }));
+    const items = SECS.map(([key, tint]) => ({ key, label: tr(`sec.${key}`), tint, count: this.count(key) }));
     const seg = filterRow({ id: "ktw-seg", t, state: this.filt, active: this.sec, items, reduced: Boolean(shared("kt.reducedMotion")),
       onPick: (k) => { this.sec = k; this.cur = null; } });
     const configure = h_flex().id("ktw-configure").flex_none().h(30).px(13).gap(6).items_center().rounded_full()
       .bg(t.solid).text_color(t.solid_foreground).text_size(12.5).font_medium().cursor_pointer()
-      .hover((s) => s.bg(alpha(t.solid, "d9"))).tooltip("Une session Claude dédiée, dans ~/.claude (C)")
+      .hover((s) => s.bg(alpha(t.solid, "d9"))).tooltip(tr("configureTip"))
       .on_click((_e, cx) => { this.configure(null, cx); cx.notify(); })
-      .child(svg(I("bot")).size(13)).child("Configurer avec Claude");
+      .child(svg(I("bot")).size(13)).child(tr("configure"));
     const live = session(NAME);
     return this.card(t).id("ktw-head").relative().flex_none().px(4).pb(4).gap(4)
       .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
       .children([dither(this.headW, 60, 16, t.ansi3)].filter(Boolean))
-      .child(bandRow(t, { color: t.ansi3, icon: I("workflow"), title: "Workflow",
+      .child(bandRow(t, { m: this.m, color: t.ansi3, icon: I("workflow"), title: "Workflow", // i18n: tech
         dot: live?.agent ? ({ working: t.working, blocked: t.blocked }[live.agent.status] ?? t.done) : null,
-        sub: ["Claude Code et Herdr", "lecture seule", this.scannedAt ? `lu à ${clock(this.scannedAt)}` : null, live ? `session ${NAME} ouverte` : null],
+        sub: [tr("sub"), tr("readOnly"), this.scannedAt ? tr("readAt", { time: clock(this.scannedAt) }) : null, live ? tr("sessionOpen", { name: NAME }) : null],
         buttons: [
-          iconBtn(t, "ktw-b-zed", I("external-link"), "WORKFLOW.md dans Zed", () => this.zed(`${home()}/.claude/WORKFLOW.md`)),
-          iconBtn(t, "ktw-b-refresh", I("refresh-cw"), this.busy ? "Analyse…" : "Rafraîchir (r)", (cx) => this.scan(cx, "bouton")),
+          iconBtn(t, "ktw-b-zed", I("external-link"), tr("zedTip"), () => this.zed(`${home()}/.claude/WORKFLOW.md`)),
+          iconBtn(t, "ktw-b-refresh", I("refresh-cw"), this.busy ? tr("scanningTip") : tr("refreshTip"), (cx) => this.scan(cx, "bouton")), // i18n: tech
           div().w(4).flex_none(),
           configure] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi3, "4d")))
       .child(h_flex().flex_none().gap(4).items_center()
-        .child(fact("ktw-f-md", "WORKFLOW.md", !d ? "…" : d.md == null ? "introuvable"
-          : [d.updated ? `màj ${d.updated}` : null, d.mdTime ? `modifié ${ago(d.mdTime * 1000)}` : null].filter(Boolean).join(" · "),
+        .child(fact("ktw-f-md", "WORKFLOW.md", !d ? "…" : d.md == null ? tr("notFound")
+          : [d.updated ? tr("updated", { date: d.updated }) : null, d.mdTime ? tr("modified", { ago: ago(d.mdTime * 1000) }) : null].filter(Boolean).join(" · "),
           d && d.md == null ? t.ansi1 : null))
-        .child(fact("ktw-f-chez", "chezmoi · ~/.claude", chezText, chezColor, chez?.lines?.length ? chez.lines.join("\n") : null))
-        .child(fact("ktw-f-git", "dotfiles", !d ? "…" : d.commit ?? "dépôt source illisible", d && !d.commit ? t.dim : null, d?.commit))
-        .when(this.busy, (el) => el.child(pulse(this.m, div().px(8).font_family(MONO).text_size(11).text_color(t.dim).child("analyse…"), true))))
+        .child(fact("ktw-f-chez", "chezmoi · ~/.claude", chezText, chezColor, chez?.lines?.length ? chez.lines.join("\n") : null)) // i18n: tech
+        .child(fact("ktw-f-git", "dotfiles", !d ? "…" : d.commit ?? tr("noSource"), d && !d.commit ? t.dim : null, d?.commit))
+        .when(this.busy, (el) => el.child(pulse(this.m, div().px(8).font_family(MONO).text_size(11).text_color(t.dim).child(tr("scanning")), true))))
       .when(Boolean(this.notice), (el) => el.child(this.noticeRow(t)))
       .child(div().px(4).pb(2).child(seg));
   }
@@ -464,9 +472,9 @@ export default class Workflow extends View {
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().text_size(12.5).text_color(t.foreground).child(n.why))
         .child(div().truncate().font_family(MONO).text_size(11).text_color(t.muted).child(intention(n.intent))))
-      .child(btn("ktw-n-retry", "Réessayer", (cx) => this.configure(n.intent, cx)))
-      .child(btn("ktw-n-show", "Voir la session", () => { const s = session(NAME); if (s) showSession(s); }))
-      .child(this.icon(t, "ktw-n-x", I("x"), "Ignorer", () => { this.notice = null; }));
+      .child(btn("ktw-n-retry", tr("retry"), (cx) => this.configure(n.intent, cx)))
+      .child(btn("ktw-n-show", tr("seeSession"), () => { const s = session(NAME); if (s) showSession(s); }))
+      .child(this.icon(t, "ktw-n-x", I("x"), tr("dismiss"), () => { this.notice = null; }));
   }
 
   count(key) {
@@ -487,27 +495,28 @@ export default class Workflow extends View {
       const st = this.state(x.ref);
       const alt = x.alt ? this.state(x.alt.ref) : null;
       const on = this.keyed && this.cur === `step:${x.id}`;
-      this.item(kids, { id: `step:${x.id}`, select: st?.r.select, path: st?.path, cmd: x.cmd.startsWith("/") ? x.cmd : null,
-        intent: `l'étape « ${x.title} » du cycle${x.ref ? ` (${x.cmd})` : ""}` });
+      this.item(kids, { id: `step:${x.id}`, select: st?.r.select, path: st?.path, cmd: x.cmd?.startsWith("/") ? x.cmd : null,
+        intent: `l'étape « ${x.title} » du cycle${x.ref ? ` (${x.cmd})` : ""}` }); // i18n: agent
       const bad = (st?.miss.length ?? 0) + (alt?.miss.length ?? 0) > 0;
       return this.ring(v_flex().id(`ktw-step-${x.id}`).w(148).h(96).flex_none().p(10).gap(3).rounded(12).border(1), t, on)
         .when(bad && !on, (el) => el.border_color(alpha(t.ansi1, "80")))
         .when(Boolean(st), (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { this.cur = `step:${x.id}`; this.openSkill(st.r.select); cx.notify(); }))
-        .tooltip(this.tip(st, x.ref ? `Ouvrir ${st?.r.select ?? x.ref} (enter)` : "Pas de skill propre à cette étape"))
+        .tooltip(this.tip(st, x.ref ? tr("openEnter", { what: st?.r.select ?? x.ref }) : tr("noSkill")))
         .child(h_flex().gap(6).items_center()
           .child(svg(I(x.icon)).size(13).flex_none().text_color(t.ansi3))
           .child(div().flex_1().font_family(MONO).text_size(10).text_color(t.dim).child(String(i + 1).padStart(2, "0")))
           .when(bad, (el) => el.child(svg(I("circle-alert")).size(12).text_color(t.ansi1)))
           .children([this.dot(t, st)].filter(Boolean)))
-        .child(div().truncate().text_size(13).font_semibold().text_color(t.foreground).child(x.title))
-        .child(div().truncate().font_family(MONO).text_size(10.5).text_color(st || !x.ref ? t.muted : t.dim).child(x.cmd))
+        .child(div().truncate().text_size(13).font_semibold().text_color(t.foreground).child(tr(`step.${x.id}`)))
+        .child(div().truncate().font_family(MONO).text_size(10.5).text_color(st || !x.ref ? t.muted : t.dim).child(cmdText(x)))
         .when(Boolean(x.alt), (el) => el.child(div().id(`ktw-alt-${x.id}`).truncate().font_family(MONO).text_size(10).text_color(alt?.miss.length ? t.ansi1 : t.dim)
-          .cursor_pointer().hover((s) => s.text_color(t.foreground)).tooltip(this.tip(alt, `Ouvrir ${alt?.r.select ?? ""}`))
+          .cursor_pointer().hover((s) => s.text_color(t.foreground)).tooltip(this.tip(alt, tr("open", { what: alt?.r.select ?? "" })))
           .on_click((_e, cx) => { cx.stop_propagation(); this.openSkill(alt?.r.select); cx.notify(); })
-          .child(x.alt.cmd)));
+          .child(tr("altReview", { cmd: x.alt.cmd }))));
     };
     const arrow = () => svg(I("chevron-right")).size(14).flex_none().text_color(t.dim);
-    kids.push(this.head(t, "cycle", "Cycle", STEPS.length, "le cycle (issue → note vault) et ses branches", kids.length === 0));
+    // i18n: agent (the intention, below)
+    kids.push(this.head(t, "cycle", tr("sec.cycle"), STEPS.length, "le cycle (issue → note vault) et ses branches", kids.length === 0));
     kids.push(h_flex().px(8).flex_wrap().gap(6).items_center()
       .children(STEPS.flatMap((x, i) => (i ? [arrow(), card(x, i)] : [card(x, i)]))));
     // The side branches, on kbrdn.dev's Parcours (kt-threads' twig).
@@ -515,36 +524,37 @@ export default class Workflow extends View {
     BRANCHES.forEach((x, i) => {
       const st = this.state(x.ref);
       const on = this.keyed && this.cur === `branch:${x.id}`;
-      this.item(kids, { id: `branch:${x.id}`, select: st?.r.select, path: st?.path, cmd: x.cmd, intent: `la branche « ${x.title} » (${x.cmd})` });
+      this.item(kids, { id: `branch:${x.id}`, select: st?.r.select, path: st?.path, cmd: x.cmd, intent: `la branche « ${x.title} » (${x.cmd})` }); // i18n: agent
       const bad = st?.miss.length > 0;
       kids.push(h_flex().id(`ktw-branch-${x.id}`).h(H).px(8).gap(8).items_center().rounded(12)
         .when(i === 0, (el) => el.mt(10))
         .bg(on ? alpha(t.accent, "24") : alpha(t.background, "00")).cursor_pointer().hover((s) => s.bg(t.hover))
-        .tooltip(this.tip(st, `Ouvrir ${st?.r.select ?? x.ref} (enter)`))
+        .tooltip(this.tip(st, tr("openEnter", { what: st?.r.select ?? x.ref })))
         .on_click((_e, cx) => { this.cur = `branch:${x.id}`; this.openSkill(st?.r.select); cx.notify(); })
         .child(twig(t, { h: H, x: X, last: i === BRANCHES.length - 1, color: alpha(t.ansi3, "99"), rest }))
         .child(div().size(26).flex_none().rounded(8).border(1).border_color(on ? alpha(t.accent, "99") : alpha(t.ansi3, "4d")).bg(alpha(t.ansi3, "1a"))
           .flex().items_center().justify_center().child(svg(I(x.icon)).size(13).text_color(t.ansi3)))
-        .child(div().w(110).flex_none().text_size(13).font_semibold().text_color(t.foreground).child(x.title))
+        .child(div().w(110).flex_none().text_size(13).font_semibold().text_color(t.foreground).child(tr(`branch.${x.id}`)))
         .child(div().w(130).flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(x.cmd))
-        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(x.note))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(tr(`note.${x.id}`)))
         .when(bad, (el) => el.child(svg(I("circle-alert")).size(12).text_color(t.ansi1)))
         .children([this.dot(t, st)].filter(Boolean)));
     });
   }
 
   workflows(t, kids) {
-    kids.push(this.head(t, "workflows", "Workflows", WORKFLOWS.length, "les points d'entrée du workflow (/me:*)", kids.length === 0));
+    // i18n: agent (the intention)
+    kids.push(this.head(t, "workflows", tr("sec.workflows"), WORKFLOWS.length, "les points d'entrée du workflow (/me:*)", kids.length === 0));
     const cols = this.width >= 1180 ? 3 : this.width >= 760 ? 2 : 1;
     const card = (id) => {
       const st = this.state(id);
       const r = st.r;
       const cmd = `/me:${id}`;
       const on = this.keyed && this.cur === `wf:${id}`;
-      const intent = `le workflow ${cmd}`;
+      const intent = `le workflow ${cmd}`; // i18n: agent
       this.item(kids, { id: `wf:${id}`, select: r.select, path: st.path, cmd, intent });
-      const cale = !r.command ? null : st.miss.some((m) => m.includes("commande")) ? [t.ansi1, r.cale ? "cale absente" : "commande absente"]
-        : st.copy ? [t.ansi3, "copie, pas une cale"] : [t.done, r.cale ? "cale" : "commande"];
+      const cale = !r.command ? null : st.noCommand ? [t.ansi1, r.cale ? tr("caleMissing") : tr("commandMissing")]
+        : st.copy ? [t.ansi3, tr("copyNotCale")] : [t.done, r.cale ? tr("cale") : tr("command")];
       return this.ring(v_flex().id(`ktw-wf-${id}`).flex_1().min_w(0).p(12).gap(6).rounded(12).border(1), t, on)
         .when(st.miss.length > 0 && !on, (el) => el.border_color(alpha(t.ansi1, "80")))
         .cursor_pointer().when(!on, (el) => el.hover((s) => s.bg(t.hover)))
@@ -552,16 +562,16 @@ export default class Workflow extends View {
         .child(h_flex().gap(8).items_center()
           .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(13).font_medium().text_color(t.foreground).child(cmd))
           .when(Boolean(cale), (el) => el.child(this.tag(t, cale[0], cale[1]))))
-        .child(div().text_size(12.5).line_height("18px").text_color(st.desc ? t.muted : t.dim).child(clip(st.desc) || "Pas de description."))
+        .child(div().text_size(12.5).line_height("18px").text_color(st.desc ? t.muted : t.dim).child(clip(st.desc) || tr("noDescription")))
         .child(div().flex_1())
         .child(h_flex().gap(8).items_center()
           .child(v_flex().flex_1().min_w(0).gap(1)
             .child(div().truncate().font_family(MONO).text_size(10.5).text_color(st.miss.length ? t.ansi1 : t.dim)
               .child(st.miss.length ? st.miss[0] : tilde(st.path ?? "")))
-            .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(st.mtime ? `modifié ${ago(st.mtime * 1000)}` : "—")))
-          .child(this.icon(t, `ktw-wf-open-${id}`, "mods/kt-skills/eye.svg", "Ouvrir dans Skills (enter)", () => this.openSkill(r.select)))
-          .child(this.icon(t, `ktw-wf-zed-${id}`, I("external-link"), "Ouvrir dans Zed (O)", () => this.zed(st.path)))
-          .child(this.icon(t, `ktw-wf-edit-${id}`, I("square-pen"), "Modifier avec Claude (e)", (cx) => this.configure(intent, cx))));
+            .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(st.mtime ? tr("modified", { ago: ago(st.mtime * 1000) }) : "—")))
+          .child(this.icon(t, `ktw-wf-open-${id}`, "mods/kt-skills/eye.svg", tr("openSkills"), () => this.openSkill(r.select)))
+          .child(this.icon(t, `ktw-wf-zed-${id}`, I("external-link"), tr("openZed"), () => this.zed(st.path)))
+          .child(this.icon(t, `ktw-wf-edit-${id}`, I("square-pen"), tr("editE"), (cx) => this.configure(intent, cx))));
     };
     for (let i = 0; i < WORKFLOWS.length; i += cols) {
       const row = WORKFLOWS.slice(i, i + cols).map(card);
@@ -574,22 +584,23 @@ export default class Workflow extends View {
     const loops = this.d.loops;
     // kt-automation's page, pre-filtered on its loops (its command reaches the shown copy: after the select).
     const auto = find(layout(), "view")?.children?.some((c) => c.id === "automation")
-      ? this.icon(t, "ktw-loops-auto", I("refresh-cw"), "Gérer les loops : page Automatisation", () => {
+      ? this.icon(t, "ktw-loops-auto", I("refresh-cw"), tr("manageLoops"), () => {
         run("layout.select", { stack: "view", child: "automation" });
         run("kt-automation.filter:loops");
       }) : null;
-    kids.push(this.head(t, "loops", "Loops", loops.length, "les loops me:loop:*", kids.length === 0, auto));
-    const COLS = [["Nom", 200], ["Goal", null], ["Max", 44], ["Sortie", null], ["Check", 92]];
+    // i18n: agent (the intention)
+    kids.push(this.head(t, "loops", tr("sec.loops"), loops.length, "les loops me:loop:*", kids.length === 0, auto));
+    const COLS = [["name", 200], ["goal", null], ["max", 44], ["exit", null], ["check", 92]];
     const row = (cells, extra) => h_flex().px(12).py(8).gap(12).items_start().children(cells.map((c, i) => {
       const w = COLS[i][1];
       return (w ? div().w(w).flex_none() : div().flex_1().min_w(0)).child(c);
     })).when(Boolean(extra), extra);
-    kids.push(row(COLS.map(([h]) => this.eyebrow(t, h, t.dim))));
-    if (!loops.length) kids.push(div().px(12).py(8).text_size(12.5).text_color(t.dim).child("Aucun loop sous ~/.claude/skills/me/loop."));
+    kids.push(row(COLS.map(([h]) => this.eyebrow(t, tr(`col.${h}`), t.dim))));
+    if (!loops.length) kids.push(div().px(12).py(8).text_size(12.5).text_color(t.dim).child(tr("noLoop")));
     for (const x of loops) {
       const st = this.state(x.id);
       const on = this.keyed && this.cur === x.id;
-      this.item(kids, { id: x.id, select: x.name, path: st?.path, cmd: `/${x.name}`, intent: `le loop ${x.name}` });
+      this.item(kids, { id: x.id, select: x.name, path: st?.path, cmd: `/${x.name}`, intent: `le loop ${x.name}` }); // i18n: agent
       const color = { shell: t.ansi2, agents: t.ansi5 }[x.check] ?? t.dim;
       kids.push(row([
         h_flex().gap(6).items_center().min_w(0)
@@ -598,19 +609,20 @@ export default class Workflow extends View {
         div().text_size(12).line_height("17px").text_color(t.muted).child(x.goal || "—"),
         div().font_family(MONO).text_size(12).text_color(t.foreground).child(x.max ?? "—"),
         div().text_size(12).line_height("17px").text_color(t.muted).child(x.exit || "—"),
-        x.check ? h_flex().child(this.tag(t, color, x.check)) : div().text_size(12).text_color(t.dim).child("—"),
+        x.check ? h_flex().child(this.tag(t, color, x.check === "par projet" ? tr("perProject") : x.check)) : div().text_size(12).text_color(t.dim).child("—"), // i18n: tech
       ], (el) => el.id(`ktw-loop-${x.id}`).mx(4).rounded(12).border(1)
         .border_color(on ? alpha(t.accent, "99") : alpha(t.border, "00")).bg(on ? alpha(t.accent, "24") : alpha(t.background, "00"))
         .cursor_pointer().when(!on, (e) => e.hover((s) => s.bg(t.hover)))
-        .tooltip(this.tip(st, `Ouvrir ${x.name} (enter) · e : Modifier avec Claude`))
+        .tooltip(this.tip(st, tr("openLoop", { name: x.name })))
         .on_click((_e, cx) => { this.cur = x.id; this.openSkill(x.name); cx.notify(); })));
     }
   }
 
   tools(t, kids) {
     const tb = this.d.tools;
-    kids.push(this.head(t, "tools", "Outils & priorités", tb?.rows.length ?? 0, "les outils et priorités (WORKFLOW.md, « Outils & priorités »)", kids.length === 0));
-    if (!tb) return void kids.push(div().px(12).py(8).text_size(12.5).text_color(t.dim).child("Pas de tableau sous « Outils & priorités » dans WORKFLOW.md."));
+    // i18n: agent (the intention)
+    kids.push(this.head(t, "tools", tr("tools"), tb?.rows.length ?? 0, "les outils et priorités (WORKFLOW.md, « Outils & priorités »)", kids.length === 0));
+    if (!tb) return void kids.push(div().px(12).py(8).text_size(12.5).text_color(t.dim).child(tr("noTable")));
     const n = tb.head.length;
     const row = (cells, head, i) => h_flex().px(12).py(head ? 6 : 8).gap(12).items_start()
       .when(!head && i > 0, (el) => el.border_t(1).border_color(alpha(t.border, "99")))
@@ -626,11 +638,11 @@ export default class Workflow extends View {
 
   guards(t, kids) {
     const s = this.d.settings;
-    kids.push(this.head(t, "guards", "Garde-fous", null, null, kids.length === 0));
+    kids.push(this.head(t, "guards", tr("sec.guards"), null, null, kids.length === 0));
     const box = (id, title, intent, ...body) => v_flex().mx(4).mb(4).p(12).gap(8).rounded(12).border(1).border_color(t.border)
       .child(h_flex().gap(8).items_center()
         .child(div().flex_1().text_size(13).font_semibold().text_color(t.foreground).child(title))
-        .child(this.icon(t, `ktw-g-edit-${id}`, I("square-pen"), `Modifier avec Claude : ${intent}`, (cx) => this.configure(intent, cx))))
+        .child(this.icon(t, `ktw-g-edit-${id}`, I("square-pen"), tr("editWith", { intent }), (cx) => this.configure(intent, cx))))
       .children(body);
     // A settings key as written (camelCase), not an eyebrow.
     const key = (k, color) => div().w(170).flex_none().pt(1).font_family(MONO).text_size(11).text_color(color ?? t.dim).child(k);
@@ -641,45 +653,50 @@ export default class Workflow extends View {
       .font_family(MONO).text_size(11).text_color(t.foreground).child(mask(text));
     if (!s) {
       kids.push(div().px(12).py(8).text_size(12.5).text_color(this.d.settingsRaw ? t.ansi1 : t.dim)
-        .child(this.d.settingsRaw ? "~/.claude/settings.json ne se lit pas (JSON invalide)." : "~/.claude/settings.json introuvable."));
+        .child(this.d.settingsRaw ? tr("badSettings") : tr("noSettings")));
     } else {
       const p = s.permissions ?? {};
       const mode = String(p.defaultMode ?? "default");
+      // i18n: agent (the intention)
       kids.push(box("perms", "Permissions", "les permissions (settings.json, permissions)",
         kv("defaultMode", mode, mode === "bypassPermissions" ? t.ansi3 : null),
-        kv("règles", `${(p.allow ?? []).length} allow · ${(p.ask ?? []).length} ask · ${(p.deny ?? []).length} deny`),
-        this.eyebrow(t, "deny", t.dim),
+        kv(tr("rules"), `${(p.allow ?? []).length} allow · ${(p.ask ?? []).length} ask · ${(p.deny ?? []).length} deny`), // i18n: tech
+        this.eyebrow(t, "deny", t.dim), // i18n: tech
         (p.deny ?? []).length ? h_flex().flex_wrap().gap(4).children((p.deny ?? []).map((x) => chip(String(x), t.ansi1)))
-          : div().text_size(12).text_color(t.dim).child("Aucune règle deny.")));
-      kids.push(box("model", "Modèle et sessions", "le modèle, l'effort et crossSessionInbound (settings.json)",
+          : div().text_size(12).text_color(t.dim).child(tr("noDeny"))));
+      // i18n: agent (the intention)
+      kids.push(box("model", tr("model"), "le modèle, l'effort et crossSessionInbound (settings.json)",
         kv("model", s.model),
         kv("effortLevel", s.effortLevel ?? s.effort),
         kv("crossSessionInbound", s.crossSessionInbound)));
       const hooks = Object.entries(s.hooks ?? {});
-      kids.push(box("hooks", `Hooks · ${hooks.length} événement${hooks.length > 1 ? "s" : ""}`, "les hooks (settings.json)",
+      // i18n: agent (the intention)
+      kids.push(box("hooks", tr("hooks", { n: hooks.length }), "les hooks (settings.json)",
         ...(hooks.length ? hooks.map(([ev, arr]) => h_flex().gap(10).items_start()
           .child(key(ev, /^Worktree/.test(ev) ? t.ansi2 : null))
           .child(v_flex().flex_1().min_w(0).gap(2).children((Array.isArray(arr) ? arr : []).flatMap((m) => (m?.hooks ?? []).map((h) =>
             div().font_family(MONO).text_size(11.5).line_height("17px").text_color(t.foreground)
               .child(`${m.matcher ? `[${mask(m.matcher)}] ` : ""}${mask(h.command ?? h.prompt ?? h.type ?? "").split(`${home()}/`).join("~/")}`))))))
-          : [div().text_size(12).text_color(t.dim).child("Aucun hook.")])));
+          : [div().text_size(12).text_color(t.dim).child(tr("noHook"))])));
     }
     const tpl = this.d.templates;
+    // i18n: agent (the intention; « Templates hc » is hc's name)
     kids.push(box("templates", `Templates hc${tpl?.length ? ` · ${tpl.length}` : ""}`, "les templates hc (~/.config/herdr-core/templates)",
-      tpl == null ? div().text_size(12).text_color(t.ansi1).child("`hc templates` n'a pas répondu.")
+      tpl == null ? div().text_size(12).text_color(t.ansi1).child(tr("noTemplates"))
         : tpl.length ? h_flex().flex_wrap().gap(4).children(tpl.map((x) => chip(x, t.ansi5)))
-          : div().text_size(12).text_color(t.dim).child("Aucun template : ~/.config/herdr-core/templates est vide ou absent.")));
+          : div().text_size(12).text_color(t.dim).child(tr("emptyTemplates"))));
   }
 
   notes(t, kids) {
-    const md = (id, label, text, intent) => {
-      kids.push(this.head(t, id, label, null, intent, kids.length === 0));
+    // `section`: WORKFLOW.md's heading, as the file writes it.
+    const md = (id, section, text, intent) => {
+      kids.push(this.head(t, id, tr(id), null, intent, kids.length === 0));
       kids.push(div().px(12).pb(8).max_w(820).text_size(13).line_height("21px").text_color(t.foreground)
         .child(text ? TextView.markdown(`ktw-md-${id}`, text).selectable(true)
-          : div().text_color(t.dim).child(`Pas de section « ${label} » dans WORKFLOW.md.`)));
+          : div().text_color(t.dim).child(tr("noSection", { section }))));
     };
-    md("conventions", "Conventions", this.d.conventions, "les conventions transverses (WORKFLOW.md)");
-    md("ideas", "Idées / à faire", this.d.ideas, "les idées et le à faire (WORKFLOW.md)");
+    md("conventions", "Conventions", this.d.conventions, "les conventions transverses (WORKFLOW.md)"); // i18n: agent
+    md("ideas", "Idées", this.d.ideas, "les idées et le à faire (WORKFLOW.md)"); // i18n: agent
   }
 
   // The cursor's items, each built just before the scroll child that holds it is pushed: that child's
@@ -692,11 +709,11 @@ export default class Workflow extends View {
     const kids = [];
     this.items = [];
     if (!this.d) {
-      kids.push(div().p(16).text_size(13).text_color(this.error ? t.ansi1 : t.dim).child(this.error ?? "Analyse du workflow…"));
+      kids.push(div().p(16).text_size(13).text_color(this.error ? t.ansi1 : t.dim).child(this.error ?? tr("scanningWorkflow")));
     } else {
       for (const [k, fn] of [["cycle", this.cycle], ["workflows", this.workflows], ["loops", this.loops], ["tools", this.tools], ["guards", this.guards], ["notes", this.notes]])
         if (this.sec === "all" || this.sec === k) fn.call(this, t, kids);
-      if (this.error) kids.push(div().px(12).py(8).text_size(12).text_color(t.ansi1).child(`Dernière analyse en échec : ${this.error}`));
+      if (this.error) kids.push(div().px(12).py(8).text_size(12).text_color(t.ansi1).child(tr("lastFailed", { error: this.error })));
     }
     const to = this.reveal && this.items.find((x) => x.id === this.reveal);
     if (to) {

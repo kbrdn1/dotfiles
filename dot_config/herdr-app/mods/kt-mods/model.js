@@ -11,7 +11,7 @@ export const OPT_KEY = /^[A-Za-z0-9_-]+$/;
 // Written by Herdr in every mod folder (about 820 KB each): not the mod's own weight.
 export const GENERATED = new Set(["gpui-kit.d.ts", "jsconfig.json"]);
 // The shared modules, and the mod that holds the reference copy (copies must match it byte for byte).
-export const SHARED = { "vim.js": "kt-keys", "motion.js": "kt-keys", "bus.js": "kt-keys", "dither.js": "kt-keys", "filters.js": "kt-keys", "viz.js": "kt-keys", "i18n.js": "kt-keys", "fuzzy.js": "kt-picker" };
+export const SHARED = { "vim.js": "kt-keys", "motion.js": "kt-keys", "bus.js": "kt-keys", "dither.js": "kt-keys", "filters.js": "kt-keys", "viz.js": "kt-keys", "i18n.js": "kt-keys", "roll.js": "kt-keys", "fuzzy.js": "kt-picker" };
 // A layout's root keys, and the shipped mod each one falls back to when unset.
 export const ROOTS = { toast: "toast", terminal_menu: "menu" };
 
@@ -159,18 +159,4 @@ export function deletePlan(dir, files, dirs) {
   const depth = (p) => p.split("/").length;
   const deep = (a, b) => depth(b) - depth(a) || a.localeCompare(b);
   return { files: [...files].sort(deep), dirs: [...dirs].sort(deep).concat(dir) };
-}
-
-export function size(bytes) {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Kio`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} Mio`;
-}
-
-export function ago(sec, now) {
-  const d = Math.max(0, now - sec);
-  if (d < 60) return "à l'instant";
-  if (d < 3600) return `il y a ${Math.floor(d / 60)} min`;
-  if (d < 86400) return `il y a ${Math.floor(d / 3600)} h`;
-  return `il y a ${Math.floor(d / 86400)} j`;
 }

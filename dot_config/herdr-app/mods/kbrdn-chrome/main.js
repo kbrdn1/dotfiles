@@ -1,6 +1,10 @@
 import { View, div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
 import { theme, run, props, window, shared, setShared, updates, layout, settings, agents } from "herdr";
+
+const tr = makeT(strings);
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -131,9 +135,9 @@ export default class WorkspaceChrome extends View {
       const ready = div().size(6).rounded_full().bg(t.accent);
       const rows = v_flex().flex_1().border_t(1).border_color(t.border).px(8).pt(4).pb(8)
         .when(collapsed, el => el.px(0).items_center())
-        .child(row("settings", "settings", "Settings", false, () => run("app.settings"))
+        .child(row("settings", "settings", tr("settings"), false, () => run("app.settings"))
           .when(Boolean(updates().app.ready), el => el.child(collapsed ? ready.absolute().top(5).right(6) : ready)))
-        .child(row("machine", "plus", "Add machine", true, () => run("mod.open", { name: "machine-add" })));
+        .child(row("machine", "plus", tr("addMachine"), true, () => run("mod.open", { name: "machine-add" })));
       return v_flex().id("footer").size_full().bg(t.chrome).text_size(13)
         .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
         .on_hover((hovered, cx) => { this.hovered = hovered; cx.notify(); })
@@ -146,7 +150,7 @@ export default class WorkspaceChrome extends View {
       .when(!collapsed, el => el.child(h_flex().id("brand").flex_1().gap(8).items_center()
         .on_hover((hovered, cx) => { if (hovered) this.playLogo(cx); })
         .child(this.logo(t))
-        .child(h_flex().font_family("Monaspace Krypton").font_bold().text_size(13).child(div().text_color(t.foreground).child("@")).child(div().text_color(t.accent).child("kbrdn1")))))
+        .child(h_flex().font_family("Monaspace Krypton").font_bold().text_size(13).child(div().text_color(t.foreground).child("@")).child(div().text_color(t.accent).child("kbrdn1"))))) // i18n: tech
       .when(!collapsed, el => el.child(this.button("search", svg("mods/kbrdn-chrome/search.svg").size(15), () => run("mod.open", { name: "picker" }))))
       // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
       .when(!(collapsed && window()?.platform === "macos"), el => el.child(this.button("sidebar-toggle", svg("mods/kbrdn-chrome/sidebar.svg").size(15), toggleSidebar)));

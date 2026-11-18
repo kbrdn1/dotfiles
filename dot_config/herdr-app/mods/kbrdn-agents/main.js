@@ -2,11 +2,17 @@
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, home, readTextFile, checking } from "herdr";
+import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, home, readTextFile, checking, settings } from "herdr";
 // kt-threads' context ring and program tile (copies of its ring.js and companion-logo.js), so both
 // lists read the same.
 import { ring } from "./ring.js";
+// Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
+import { motionState, frame, enter, collapse, rows as rowsOf } from "./motion.js";
 import { companion } from "./companion-logo.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -60,23 +66,38 @@ const kidStatus = (k, listed) => {
   const s = listed.get(k.address) ?? k.status;
   return s === "error" ? "blocked" : s === "done" ? "idle" : s;
 };
+// Words: strings.js' sort.<id> and section.<rank>.
 const SORTS = [
-  { id: "priority", label: "Priority", icon: "clock" },
-  { id: "grouped", label: "Grouped by space", icon: "layers" },
+  { id: "priority", icon: "clock" },
+  { id: "grouped", icon: "layers" },
 ];
 const sortOf = () => SORTS.find((s) => s.id === shared("agents.sort")) ?? SORTS[0];
-const SECTION = { 4: "Needs you", 3: "Done", 2: "Working", 1: "Idle" };
+const sortName = (s) => tr(`sort.${s.id}`);
 const SECTION_STATUS = { 4: "blocked", 3: "done", 2: "working" };
 
 function duration(ms) {
   const m = Math.floor(ms / 60000);
-  if (m < 1) return "<1m";
-  if (m < 60) return `${m}m`;
+  if (m < 1) return tr("dur.lt1");
+  if (m < 60) return tr("dur.m", { n: m });
   const h = Math.floor(m / 60);
-  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
+  return h < 24 ? tr("dur.h", { n: h }) : tr("dur.d", { n: Math.floor(h / 24) });
 }
 
 // The agent's icon from the app's program table: a one-color glyph or a picture.
+// The tree's lines, as kt-threads' (Parcours' --control-border): the foreground made translucent.
+const treeLine = (t) => `${String(t.foreground).slice(0, 7)}${settings().dark ? "38" : "4d"}`;
+
+// kbrdn.dev's Parcours branching, one column per level of a 28 px sub-agent line ("│" going on, "├"
+// a branch, "└" the last, "" nothing): each level's piece of trunk over the line's whole height (the
+// first reaching 4 px up into the line above), a ╰ bending off 8 px above the middle (14), and the
+// trunk ending at the bend of the last.
+const elbows = (lines, color) => lines.map((l) => div().w(9).h_full().mr(4).flex_none().relative()
+  .when(l === "│", (el) => el.child(div().absolute().top(0).bottom(0).left(0).border_l(1).border_color(color)))
+  .when(l === "└" || l === "├", (el) => el
+    .child(div().absolute().top(-4).left(0).h(10).border_l(1).border_color(color))
+    .when(l === "├", (el) => el.child(div().absolute().top(10).bottom(0).left(0).border_l(1).border_color(color)))
+    .child(div().absolute().top(6).left(0).w(9).h(9).border_l(1).border_b(1).rounded_bl(8).border_color(color))));
+
 function icon(p, size, color) {
   if (!p?.icon) return null;
   return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
@@ -84,8 +105,10 @@ function icon(p, size, color) {
 
 export default class Agents extends View {
   init(_props, cx) {
+    this.motion = motionState();
     if (props()?.sortMenu) return;
     this.folded = new Set();
+    this.subsOpen = new Set(); // agents whose sub-agents show all, not 4 then "+N" (this copy only)
     // Each agent's last state and when it changed (ms), kept across restarts.
     try { this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}"); } catch { this.changed = {}; }
     if (!this.changed || typeof this.changed !== "object" || Array.isArray(this.changed)) this.changed = {};
@@ -123,7 +146,7 @@ export default class Agents extends View {
     const l = this.live?.[a.address];
     const b = l?.bridge;
     const model = l?.line?.model ? `${l.line.model}${l.line.effort && l.line.effort !== "high" ? ` · ${l.line.effort}` : ""}` : null;
-    if (a.status === "blocked") return { text: "a besoin de toi", tone: "blocked", model };
+    if (a.status === "blocked") return { text: tr("needsYou"), tone: "blocked", model };
     if (a.status === "working" && b?.action?.what) {
       const todo = b.todos?.total ? ` · ${b.todos.done}/${b.todos.total}` : "";
       return { text: `${b.action.what}${todo}`, tone: "muted", model };
@@ -184,7 +207,7 @@ export default class Agents extends View {
       .p(5)
       .bg(t.popover)
       .text_size(12.8)
-      .child(div().px(8).pt(4).pb(6).text_size(11).text_color(t.dim).child("Sort agents"))
+      .child(div().px(8).pt(4).pb(6).text_size(11).text_color(t.dim).child(tr("sortTitle")))
       .children(SORTS.map((s) => h_flex()
         .id(`sort-${s.id}`)
         .h(31)
@@ -199,7 +222,7 @@ export default class Agents extends View {
           closeOverlay(props().overlay);
         })
         .child(svg(`mods/workspace-chrome/${s.icon}.svg`).size(14).flex_none().text_color(t.muted))
-        .child(div().flex_1().child(s.label))
+        .child(div().flex_1().child(sortName(s)))
         .when(s.id === on, (el) => el.child(svg("mods/workspace-chrome/check.svg").size(14).flex_none().text_color(t.foreground)))));
   }
 
@@ -219,30 +242,51 @@ export default class Agents extends View {
     });
   }
 
-  subRow(t, s, shown, compact) {
+  // `gone`: its agent's block is closing (rows()): drawn as it was, no longer a target.
+  subRow(t, s, shown, compact, cx, gone = false) {
     const k = s.t;
     const st = kidStatus(k, this.listed);
-    const pic = icon(k.program, 14, t.foreground);
+    // Its program's companion (companion-logo.js) at 20×16, the smallest size it draws cleanly: a bob
+    // while working, "!" blocked, sparkles once done; one memo per address, so one-shots never replay.
+    const pic = k.program ? companion({ program: k.program, state: st, id: `sub-c-${k.address}`, cx, size: 20, height: 16,
+      memo: (this.memos[k.address] ??= {}) }) : null;
     const on = k.address === shown;
-    return h_flex()
-      .id(`sub-${k.address}`)
+    const tree = treeLine(t);
+    // A new sub-agent fades in on its branch (enter: once, when it first draws).
+    return enter(this.m, h_flex()
       .pl(39)
       .pr(8)
       .rounded(8)
-      .h(26)
+      .h(28) // kt-threads' sub-agent branches: room for the 20×16 companion and its badge
       .flex_none()
       .gap(0)
       .items_center()
       .text_size(12.5)
-      .when(on, (el) => el.bg(t.raised))
-      .hover((s) => s.bg(t.hover))
-      .on_click(() => (this.listed.has(k.address) ? run("pane.focus", { terminal: k.address }) : this.peek(k.address)))
-      .children(s.lines.map(l => div().self_start().mt(-4).w(9).h(17).mr(4).flex_none()
-        .when(Boolean(l), el => el.border_l(1.5).border_color(t.input))
-        .when(l === "└" || l === "├", el => el.border_b(1.5).rounded_bl(6))))
+      .when(on, (el) => el.bg(t.raised)), `sub-${k.address}`, { dy: 0 })
+      .when(!gone, (el) => el.hover((s) => s.bg(t.hover))
+        .on_click(() => (this.listed.has(k.address) ? run("pane.focus", { terminal: k.address }) : this.peek(k.address))))
+      .children(elbows(s.lines, tree))
       .when(Boolean(pic), el => el.child(div().mr(8).child(pic)))
       .child(div().flex_1().truncate().text_color(on ? t.foreground : t.muted).child(k.name || k.template || k.program?.name || k.address))
       .child(this.status(t, { status: st }, compact));
+  }
+
+  // "+N" under an agent's first 4 sub-agents, "Replier" once they all show: the tree's last bend, a click
+  // folds or unfolds them, as kt-threads' sub-agent branches.
+  subsToggle(t, addr, open, n, gone = false) {
+    return enter(this.m, h_flex().pl(39).pr(8).rounded(8).h(28).flex_none().gap(0).items_center()
+      .children(elbows(["└"], treeLine(t)))
+      .child(div().font_family("Monaspace Krypton").text_size(10.5).text_color(t.dim).child(open ? tr("fold") : `+${n}`))
+      .child(svg(`mods/kt-threads/chevron-${open ? "up" : "down"}.svg`).size(11).ml(6).flex_none().text_color(t.dim)),
+      `sub-more-${addr}`, { dy: 0 })
+      .when(!gone, (el) => el.cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .on_click((_e, cx) => {
+          cx.stop_propagation();
+          if (open) this.subsOpen.delete(addr);
+          else this.subsOpen.add(addr);
+          cx.notify();
+        }));
   }
 
   // compact: a ! for blocked where a header already says "Needs you".
@@ -252,7 +296,7 @@ export default class Agents extends View {
     if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
     // kbrdn.dev `.tag`: mono uppercase pill, border 30% / fill 10%.
     if (a.status === "blocked") return div().flex_none().px(7).h(18).rounded_full().border(1).border_color(t.blocked + "4d").bg(t.blocked + "1a")
-      .font_family("Monaspace Krypton").text_size(9.5).text_color(t.blocked).flex().items_center().child("NEEDS YOU");
+      .font_family("Monaspace Krypton").text_size(9.5).text_color(t.blocked).flex().items_center().child(tr("blocked"));
     // Idle: a ring; done: a dot.
     if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
@@ -260,6 +304,7 @@ export default class Agents extends View {
 
   render(cx) {
     const t = theme();
+    this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     if (props()?.sortMenu) return this.sortMenu(t);
     const collapsed = narrow();
     const sort = sortOf();
@@ -285,15 +330,32 @@ export default class Agents extends View {
     list = [...pinned, ...rest];
     setAgentOrder(list.map((a) => a.address));
 
+    // An agent and its sub-agents: one block of rows() below. `i` is its rank, -1 while it closes.
     const withKids = (a, i) => {
+      const gone = i < 0;
       const subs = collapsed ? [] : this.tree(all, a.address);
-      const r = row(a, i, subs);
+      const r = row(a, i, subs, gone);
       if (this.folded.has(a.address)) return [r];
-      return [r, ...subs.map((s) => this.subRow(t, s, shown, byPriority))];
+      const sub = (s) => this.subRow(t, s, shown, byPriority, cx, gone);
+      if (subs.length <= 4) return [r, ...subs.map(sub)];
+      // Past 4: the first 4, then "+N" (a click shows them all, "Replier" last). The rest unfolds and
+      // folds on its height (collapse(), given a builder): allowed inside rows(), whose block at rest
+      // follows its content (motion.js rows() let go of its height). The line before the toggle goes on
+      // to it: its last bend ("└") becomes a branch ("├").
+      const open = this.subsOpen.has(a.address);
+      const goOn = (s) => (s.lines.at(-1) === "└" ? { ...s, lines: [...s.lines.slice(0, -1), "├"] } : s);
+      const head = subs.slice(0, 4).map((s, j) => sub(j === 3 && !open ? goOn(s) : s));
+      const tail = collapse(this.m, `sub-all-${a.address}`, open,
+        () => v_flex().children(subs.slice(4).map((s, j) => sub(j === subs.length - 5 ? goOn(s) : s))), { cx });
+      return [r, ...head, ...(tail ? [tail] : []), this.subsToggle(t, a.address, open, subs.length - 4, gone)];
+    };
+    const block = (a, i) => {
+      const kids = withKids(a, i);
+      return kids.length === 1 ? kids[0] : v_flex().children(kids);
     };
 
     // The fold chevron; folded, the count too, colored by the most urgent one.
-    const fold = (a, subs) => {
+    const fold = (a, subs, gone) => {
       const sts = subs.map((s) => kidStatus(s.t, this.listed));
       const top = sts.reduce((m, s) => ((RANK[s] ?? 0) > (RANK[m] ?? 0) ? s : m), null);
       const open = !this.folded.has(a.address);
@@ -307,13 +369,13 @@ export default class Agents extends View {
         .rounded(4)
         .text_size(11)
         .text_color(open ? t.dim : (t[top] ?? t.dim))
-        .cursor_pointer()
-        .hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .on_click((_e, cx) => {
-          cx.stop_propagation();
-          open ? this.folded.add(a.address) : this.folded.delete(a.address);
-          cx.notify();
-        })
+        .when(!gone, (el) => el.cursor_pointer()
+          .hover((s) => s.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => {
+            cx.stop_propagation();
+            open ? this.folded.add(a.address) : this.folded.delete(a.address);
+            cx.notify();
+          }))
         .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(11).flex_none())
         .when(!open, (el) => el.child(String(subs.length)));
     };
@@ -337,7 +399,8 @@ export default class Agents extends View {
       if (detail.get(a.address) == null && seen[`${a.space_name}\u0000`] > 1) detail.set(a.address, label(a));
     }
 
-    const row = (a, i, subs = []) => {
+    // `gone`: closing (rows()), drawn as it was but no longer a target: no click, hover, pin or fold.
+    const row = (a, i, subs = [], gone = false) => {
       const pic = icon(a.program, 16, t.foreground);
       const more = detail.get(a.address);
       // An agent on another machine (`vps/t7`) says which.
@@ -350,9 +413,8 @@ export default class Agents extends View {
           .flex_none()
           .items_center()
           .gap(4)
-          .hover((s) => s.bg(t.hover))
-          .on_click(() => run("pane.focus", { pane: a.pane }))
-          .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(String(i + 1)))
+          .when(!gone, (el) => el.hover((s) => s.bg(t.hover)).on_click(() => run("pane.focus", { pane: a.pane })))
+          .child(div().flex_1().min_w(0).whitespace_nowrap().text_right().text_color(t.muted).child(gone ? "" : String(i + 1)))
           .child(h_flex().w(14).flex_none().items_center().justify_center().child(this.status(t, a, true)));
       }
       const when = this.since(a);
@@ -366,7 +428,7 @@ export default class Agents extends View {
         .text_color(t.dim)
         .cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .tooltip(isPinned ? "Unpin" : "Pin to the top")
+        .tooltip(isPinned ? tr("unpin") : tr("pin"))
         .on_click((_e, cx) => {
           cx.stop_propagation();
           run("terminal.pin", { terminal: a.address, pinned: !isPinned });
@@ -397,16 +459,16 @@ export default class Agents extends View {
         // kbrdn.dev SegmentInk on the focused agent (transparent border elsewhere: no shift).
         .border(1).border_color(a.focused ? t.accent + "66" : t.accent + "00")
         .when(a.focused, (el) => el.bg(t.accent + "24"))
-        .cursor_pointer()
-        .hover((s) => s.bg(t.hover))
-        .on_hover((on, cx) => {
-          if (on) this.hovered = a.address;
-          else if (this.hovered === a.address) this.hovered = null;
-          cx.notify();
-        })
-        .on_click(() => run("pane.focus", { pane: a.pane }))
+        .when(!gone, (el) => el.cursor_pointer()
+          .hover((s) => s.bg(t.hover))
+          .on_hover((on, cx) => {
+            if (on) this.hovered = a.address;
+            else if (this.hovered === a.address) this.hovered = null;
+            cx.notify();
+          })
+          .on_click(() => run("pane.focus", { pane: a.pane })))
         .when(Boolean(pic) || claude, el => el.child(div().id(`agent-fold-${a.address}`)
-          .when(subs.length > 0, el => el.on_click((_e, cx) => {
+          .when(!gone && subs.length > 0, el => el.on_click((_e, cx) => {
             cx.stop_propagation();
             this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
             cx.notify();
@@ -424,9 +486,9 @@ export default class Agents extends View {
             .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
           .when(Boolean(second), el => el.child(second)))
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
-        .when(subs.length > 0, el => el.child(fold(a, subs)))
-        .when(this.hovered === a.address, el => el.child(pin))
-        .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
+        .when(subs.length > 0, el => el.child(fold(a, subs, gone)))
+        .when(!gone && this.hovered === a.address, el => el.child(pin))
+        .when((gone || this.hovered !== a.address) && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
         .child(this.status(t, a, byPriority && !isPinned))
         // The context, as on kt-threads' cards: a ring at the right end (16 px compact, 18 detailed).
         .when(this.live?.[a.address]?.line?.ctx_pct != null, el => el.child(ring(t, `ag-ring-${a.address}`, this.live[a.address].line.ctx_pct, second ? 18 : 16)));
@@ -434,12 +496,12 @@ export default class Agents extends View {
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a
     // space are next to each other in agents(), so neighbours make a group.
-    const groups = pinned.length ? [{ id: "pinned", label: "Pinned", status: null, members: pinned }] : [];
+    const groups = pinned.length ? [{ id: "pinned", label: tr("pinned"), status: null, members: pinned }] : [];
     for (const a of rest) {
       const r = rankOf(a) || RANK.idle;
       const id = byPriority ? `sec-${r}` : `sp-${a.space}`;
       if (groups.at(-1)?.id === id) groups.at(-1).members.push(a);
-      else groups.push({ id, label: byPriority ? SECTION[r] : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
+      else groups.push({ id, label: byPriority ? tr(`section.${r}`) : a.space_name || "", status: byPriority ? SECTION_STATUS[r] : null, members: [a] });
     }
 
     // A group's header; it folds the group. Folded, it says how many and the most urgent state.
@@ -470,9 +532,12 @@ export default class Agents extends View {
           .when(!byPriority && top && top !== "idle", (el) => el.child(this.status(t, { status: top }, true)))
           .child(svg("mods/workspace-chrome/chevron-right.svg").size(11).flex_none().text_color(t.dim)));
     };
+    // The agents open and close on their height, in order (motion.js rows(), keyed by address), each
+    // with its sub-agents: one rows() per group (folded: none, so they close), one for the rail. A group
+    // gone whole (header too) goes at once; an agent changing group closes there and opens here.
     const rows = collapsed
-      ? list.flatMap(withKids)
-      : groups.flatMap((g) => [header(g), ...(this.folded.has(g.id) ? [] : g.members.flatMap(withKids))]);
+      ? rowsOf(this.m, cx, "ag-rail", list, (a) => a.address, block)
+      : groups.flatMap((g) => [header(g), ...rowsOf(this.m, cx, `ag-rows-${g.id}`, this.folded.has(g.id) ? [] : g.members, (a) => a.address, block)]);
 
     return v_flex()
       .size_full()
@@ -491,7 +556,7 @@ export default class Agents extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().font_family("Monaspace Krypton").text_size(11).text_color(t.muted).child("AGENTS"))
+            .child(div().font_family("Monaspace Krypton").text_size(11).text_color(t.muted).child(tr("title")))
             .child(
               div()
                 .id("ag-sort")
@@ -499,13 +564,13 @@ export default class Agents extends View {
                 .text_color(t.dim)
                 .hover((s) => s.text_color(t.foreground))
                 .on_click(() => openOverlay({ mod: "kbrdn-agents", kind: "popup", width: 200, height: 140, props: { sortMenu: true } }))
-                .tooltip(`Sort agents: ${sort.label}`)
+                .tooltip(tr("sortTip", { name: sortName(sort) }))
                 .child(svg(`mods/workspace-chrome/${sort.icon}.svg`).size(14)),
             ),
         ),
       )
       .when(list.length === 0 && !collapsed, (el) =>
-        el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
+        el.child(div().px(12).text_size(12).text_color(t.dim).child(tr("empty"))),
       )
       .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows))
       .when(collapsed, (el) =>

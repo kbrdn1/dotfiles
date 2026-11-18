@@ -6,7 +6,8 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, props, run, theme, home, layout } from "herdr";
+import { panes, props, run, theme, home, layout, shared } from "herdr";
+import { motionState, frame, enter } from "./motion.js";
 
 // Match the first visible tab frame, including the active child of a stack.
 function paneFrame(node) {
@@ -36,7 +37,10 @@ function folder(cwd) {
 }
 
 export default class Pane extends View {
-  init() { this.hovered = false; }
+  init() {
+    this.hovered = false;
+    this.motion = motionState(); // ANIMATIONS.md: the state tag and the hover buttons fade in
+  }
 
   me() {
     return panes().find((p) => p.pane === props()?.pane);
@@ -58,7 +62,7 @@ export default class Pane extends View {
 
   // kbrdn.dev `.tag`: mono uppercase pill, border 30% / fill 10% of its own color.
   tag(color, text, lead) {
-    return h_flex().flex_none().h(20).px(8).gap(5).items_center().rounded_full()
+    return enter(this.motion, h_flex().flex_none().h(20).px(8).gap(5).items_center().rounded_full(), `pane-tag-${this.me()?.pane}-${text}`, { dy: 0 })
       .border(1).border_color(color + "4d").bg(color + "1a").text_color(color)
       .font_family("Monaspace Krypton").text_size(10.5)
       .when(Boolean(lead), (el) => el.child(lead)).child(text);
@@ -73,6 +77,7 @@ export default class Pane extends View {
     const st = p.status;
     const pane = p.pane;
     const bottom = paneFrame(layout())?.header?.position === "bottom";
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
@@ -91,13 +96,15 @@ export default class Pane extends View {
       // kbrdn.dev `.eyebrow`: mono 11px uppercase, label color.
       .child(div().flex_1().min_w(0).truncate().font_family("Monaspace Krypton").text_size(11).text_color(t.muted)
         .child(`${folder(p.cwd)}${p.branch ? `  ·  ${p.branch}` : ""}`.toUpperCase()))
+      // i18n: tech (the agent states, the same in every language: I18N.md)
       .when(st === "working", el => el.child(this.tag(t.working, "WORKING", svg("mods/workspace-chrome/spinner.svg").size(10).text_color(t.working).spin(900))))
-      .when(st === "blocked", el => el.child(this.tag(t.blocked, "NEEDS YOU", div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))))
-      .when(st === "done", el => el.child(this.tag(t.done, "DONE")))
-      .when(this.hovered, el => el
+      .when(st === "blocked", el => el.child(this.tag(t.blocked, "NEEDS YOU", div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 })))) // i18n: tech
+      .when(st === "done", el => el.child(this.tag(t.done, "DONE"))) // i18n: tech
+      // The buttons fade in on hover (120 ms); they go at once, a removed element can't fade out.
+      .when(this.hovered, el => el.child(enter(m, h_flex().flex_none().gap(8).items_center(), `ph-btns-${pane}`, { dy: 0, ms: 120 })
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))
         .child(this.button(t, `ph-d-${pane}`, "split-down", "pane.split", { direction: "down", pane }))
         .child(this.button(t, `ph-z-${pane}`, p.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
-        .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })));
+        .child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane }))));
   }
 }

@@ -74,6 +74,8 @@
   },
   "layout:kbrdn-threads": {
     "ctrl-b h": "pane.go:left",
+    "ctrl-h": "pane.go:left",
+    "ctrl-l": "pane.go:right",
     "ctrl-b j": "pane.go:down",
     "ctrl-b k": "pane.go:up",
     "ctrl-b l": "pane.go:right",
@@ -132,6 +134,8 @@
   },
   "layout:kbrdn-threads-glass": {
     "ctrl-b h": "pane.go:left",
+    "ctrl-h": "pane.go:left",
+    "ctrl-l": "pane.go:right",
     "ctrl-b j": "pane.go:down",
     "ctrl-b k": "pane.go:up",
     "ctrl-b l": "pane.go:right",

@@ -7,7 +7,11 @@
 import { home } from "herdr";
 import { session, dedicated, intention } from "./session.js";
 import { TASK, intents, tilde } from "./auto.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
 
+// A method's words are getters (I18N.md): form.js reads them when it draws, in the language then.
+const tr = makeT(strings);
 export const NAME = "Automatisation"; // the session's tab (and new space)
 const OWN = (name) => `mods/kt-automation/${name}.svg`;
 const T = (name) => `mods/kt-threads/${name}.svg`;
@@ -17,48 +21,52 @@ const clean = (s) => String(s ?? "").trim().replace(/\s+/g, " ");
 function plan(intent, folder) {
   const live = session(NAME);
   const shown = live
-    ? `# la session ${NAME} vit (${live.space.name}) : l'intention y est tapée entre deux tours\n${intention(intent)}`
-    : `claude\n# sa première tâche :\n${TASK}\n${intention(intent)}`;
+    ? `${tr("add.live", { name: NAME, space: live.space.name })}\n${intention(intent)}`
+    : `claude\n${tr("add.firstTask")}\n${TASK}\n${intention(intent)}`;
   return {
-    shown, cwd: live ? null : folder, label: live ? "Envoyer" : "Ouvrir la session",
-    note: live ? "Si la session travaille ou attend une réponse, rien n'est tapé : la page le dit." : `Une session Claude dans ${tilde(folder, home())}. Elle demande avant d'écrire quoi que ce soit.`,
+    shown, cwd: live ? null : folder, label: live ? tr("send") : tr("openSession"),
+    note: live ? tr("add.noteLive") : tr("add.noteNew", { path: tilde(folder, home()) }),
     run: async () => {
       const r = await dedicated({ name: NAME, folder, task: TASK, intent });
-      if (r.why) return { level: "warning", title: "Intention non envoyée", body: r.why };
-      return { level: "success", title: r.done === "sent" ? `Intention envoyée à la session ${NAME}` : `Session ${NAME} ouverte`, body: intent };
+      if (r.why) return { level: "warning", title: tr("notSent"), body: r.why };
+      return { level: "success", title: r.done === "sent" ? tr("sent", { name: NAME }) : tr("opened", { name: NAME }), body: intent };
     },
   };
 }
 
 export const METHODS = [
   {
-    id: "loop", label: "Créer un loop", hint: "/me:create-loop dans la session Automatisation", icon: OWN("repeat"),
-    title: "Créer un loop avec Claude",
-    intro: "La session Automatisation lance /me:create-loop avec ta description : elle demande la portée et les dimensions (mode, déclenchement, exécution), puis écrit la skill me:loop:<nom> et sa cale.",
+    id: "loop", icon: OWN("repeat"),
+    get label() { return tr("createLoop"); },
+    get hint() { return tr("loop.hint"); },
+    get title() { return tr("loop.title"); },
+    get intro() { return tr("loop.intro"); },
     fields: (ctx) => [
-      { id: "desc", label: "Le loop", kind: "text", placeholder: "son but, et la commande qui dit qu'il a fini" },
-      { id: "scope", label: "Portée", kind: "choice", value: "global",
-        choices: ctx.root ? [["global", "globale · ~/.claude"], ["project", `projet · ${ctx.root.split("/").pop()}`]] : [["global", "globale · ~/.claude"]],
-        help: ctx.root ? "un loop de projet vit dans <repo>/.claude et part par une PR" : "pas de projet affiché : globale seulement" }],
+      { id: "desc", label: tr("loop.field"), kind: "text", placeholder: tr("loop.placeholder") },
+      { id: "scope", label: tr("scope"), kind: "choice", value: "global",
+        choices: ctx.root ? [["global", tr("scope.global")], ["project", tr("scope.project", { name: ctx.root.split("/").pop() })]] : [["global", tr("scope.global")]],
+        help: ctx.root ? tr("loop.scopeHelp") : tr("loop.globalOnly") }],
     async plan(v, ctx) {
       const desc = clean(v.desc);
-      if (!desc) return { error: "Décris le loop à créer : son but et ce qui dit qu'il a fini." };
+      if (!desc) return { error: tr("loop.describe") };
       const repo = v.scope === "project" && ctx.root ? ctx.root : null;
       return plan(intents.createLoop(desc, repo ? tilde(repo, home()) : null), repo ?? `${home()}/.claude`);
     },
   },
   {
-    id: "automation", label: "Créer une automatisation", hint: "skill herdr-automations dans la session Automatisation", icon: T("clock"),
-    title: "Créer une automatisation Herdr",
-    intro: "La session Automatisation écrit le script Luau avec la skill herdr-automations, lance sheprd-automate check et te montre le plan. L'approbation reste la tienne, dans le dialogue de Sheprd.",
+    id: "automation", icon: T("clock"),
+    get label() { return tr("createAutomation"); },
+    get hint() { return tr("auto.hint"); },
+    get title() { return tr("auto.title"); },
+    get intro() { return tr("auto.intro"); },
     fields: (ctx) => [
-      { id: "desc", label: "L'automatisation", kind: "text", placeholder: "quand elle tourne, et ce qu'elle fait" },
-      { id: "scope", label: "Portée", kind: "choice", value: ctx.root ? "project" : "personal",
-        choices: [...(ctx.root ? [["project", `projet · ${ctx.root.split("/").pop()}`]] : []), ["personal", "personnelle · sh et notify seulement"]],
-        help: "un script de projet vit dans <repo>/.herdr/automations" }],
+      { id: "desc", label: tr("auto.field"), kind: "text", placeholder: tr("auto.placeholder") },
+      { id: "scope", label: tr("scope"), kind: "choice", value: ctx.root ? "project" : "personal",
+        choices: [...(ctx.root ? [["project", tr("scope.project", { name: ctx.root.split("/").pop() })]] : []), ["personal", tr("scope.personal")]],
+        help: tr("auto.scopeHelp") }],
     async plan(v, ctx) {
       const desc = clean(v.desc);
-      if (!desc) return { error: "Décris l'automatisation : quand elle tourne, et ce qu'elle fait." };
+      if (!desc) return { error: tr("auto.describe") };
       const repo = v.scope === "project" && ctx.root ? ctx.root : null;
       return plan(intents.createAutomation(desc, repo ? tilde(repo, home()) : null), repo ?? `${home()}/.claude`);
     },

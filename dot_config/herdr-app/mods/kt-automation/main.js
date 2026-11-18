@@ -32,15 +32,19 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, hc, readTextFile, theme, spaces, panes, agents, terminals, run, layout, props, home, notify, checking, nextCommand, openOverlay, closeOverlay, shared, watchFolder } from "herdr";
-import { classify, loopDef, isCale, running, iteration, targets, launch, luau, when, PR_LOOPS, TASK, intents, tilde, trimSlash } from "./auto.js";
+import { classify, loopDef, isCale, running, iteration, targets, launch, luau, PR_LOOPS, TASK, intents, tilde, trimSlash } from "./auto.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
 import { session, showSession, dedicated } from "./session.js";
 import { METHODS, NAME } from "./add.js";
 import { AddForm } from "./form.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
-import { motionState, frame, enter, pulse } from "./motion.js";
+import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
 import { viz } from "./viz.js";
+// kt-keys' roll.js (a byte-identical copy): viz's figures, the head's and the sections' counts roll.
+import { roll, rollText } from "./roll.js";
 import { refreshOn } from "./bus.js";
 
 const MONO = "Monaspace Krypton";
@@ -53,9 +57,13 @@ const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; 
 const firstLine = (s) => String(s ?? "").trim().split("\n")[0] ?? "";
 const sh = (cmd, args, o = {}) => exec(cmd, args, { timeout: 30e3, ...o }).catch((e) => ({ code: -1, stdout: "", stderr: String(e?.message ?? e) }));
 
-// The filter row (FILTERS.md: pale tints; « Tout » neutral).
-const SECS = [["all", "Tout"], ["loops", "Loops Claude", "ansi5"], ["herdr", "Automatisations Herdr", "ansi6"], ["schedule", "Planifications", "ansi4"]];
-const STATUS = { working: "travaille", blocked: "attend", done: "fini", idle: "au repos" };
+const tr = makeT(strings);
+// The filter row (FILTERS.md: pale tints; « Tout » neutral): [id, tint], its words strings.js' sec.<id>.
+const SECS = [["all"], ["loops", "ansi5"], ["herdr", "ansi6"], ["schedule", "ansi4"]];
+// An agent's state in words (strings.js' status.<state>); an unknown one as it comes.
+const statusText = (s) => (["working", "blocked", "done", "idle"].includes(s) ? tr(`status.${s}`) : s ?? "—");
+// A Luau trigger as people read it: « à 03:00 », « toutes les 6h », « cron … », « à la main ».
+const when = (x) => (["at", "every", "cron"].includes(x.kind) ? tr(`when.${x.kind}`, { spec: x.spec ?? "?" }) : tr("when.manual"));
 
 // The whole scan in one process: the loop, cale and script files (mtime, path; macOS stat, PATH's may
 // be GNU's), the folders worth watching, sheprd-automate and sheprd. $1 home, $2 the shown project
@@ -314,7 +322,7 @@ export default class Automation extends View {
 
   copy(text, cx) {
     cx.write_to_clipboard(text);
-    notify({ title: "Copié", body: text, level: "success", timeout: 2000 });
+    notify({ title: tr("copied"), body: text, level: "success", timeout: 2000 });
   }
 
   // q / esc, a launch: back to the thread (a dialog closes).
@@ -362,7 +370,7 @@ export default class Automation extends View {
     cx.spawn(async (cx) => {
       const r = await dedicated({ name: NAME, folder: at, task: TASK, intent });
       this.notice = r.why ? { intent, why: r.why, folder: at } : null;
-      if (r.done === "sent") notify({ title: `Intention envoyée à la session ${NAME}`, body: intent, level: "success", timeout: 2500 });
+      if (r.done === "sent") notify({ title: tr("sent", { name: NAME }), body: intent, level: "success", timeout: 2500 });
       cx.notify();
     });
   }
@@ -390,8 +398,7 @@ export default class Automation extends View {
       }));
       if (this.launching?.loop !== l) return;
       this.launching.wts = lists.flat();
-      if (!this.launching.wts.length) this.launching.error = l.repo ? `Aucun worktree gwm dans ${tilde(l.repo, home())} : crée-en un (ctrl-b shift-g), le loop n'ira pas dans le checkout principal.`
-        : "Aucun worktree gwm dans les projets du registre : crée-en un (ctrl-b shift-g), un loop ne tourne jamais dans le checkout principal.";
+      if (!this.launching.wts.length) this.launching.error = l.repo ? tr("noWorktreeIn", { path: tilde(l.repo, home()) }) : tr("noWorktree");
       cx.notify();
     });
   }
@@ -414,18 +421,18 @@ export default class Automation extends View {
       if (this.launching !== st) return;
       st.checking = null;
       const p = launch({ name, wt, pr: pr?.number ?? null, spaces: spaces(), panes: panes(), live: this.live() });
-      if (p.error) st.error = p.error;
-      else if (p.show) { this.launching = null; this.showRunning(p.show); notify({ title: `me:loop:${name} tourne déjà ici`, body: wt.name, level: "info", timeout: 3000 }); }
+      if (p.error) st.error = tr(`launch.${p.error}`, p);
+      else if (p.show) { this.launching = null; this.showRunning(p.show); notify({ title: tr("alreadyHere", { name }), body: wt.name, level: "info", timeout: 3000 }); }
       else {
         this.pending = { kind: "loop", command: p.command, name, wt };
         openOverlay({ mod: "kt-confirm", kind: "dialog", frame: "none", props: {
-          title: `Lancer me:loop:${name} ?`, tone: "warning", icon: "bot", label: "Lancer",
-          detail: `Une session Claude itère dans ce worktree jusqu'à la condition de sortie du loop : elle dépense des tokens à chaque itération.`,
-          facts: [["projet", wt.project], ["worktree", tilde(wt.path, home())], ["branche", wt.branch ?? "—"],
-            ["PR", pr ? `#${pr.number} ${pr.title ?? ""}`.trim() : PR_LOOPS.has(name) ? "—" : "pas requise"],
-            ["thread", `loop:${name} · ${p.space ? `dans le projet ${p.space.name}` : "dans un nouveau projet"}`], ["tâche", p.task],
-            ["plafond", st.loop.def.max ? `${st.loop.def.max} itérations` : "—"]],
-          consequence: `claude démarre dans ${tilde(wt.path, home())} sur ${p.task}.`,
+          title: tr("run.title", { name }), tone: "warning", icon: "bot", label: tr("launch"),
+          detail: tr("run.detail"),
+          facts: [[tr("fact.project"), wt.project], [tr("fact.worktree"), tilde(wt.path, home())], [tr("fact.branch"), wt.branch ?? "—"],
+            [tr("fact.pr"), pr ? `#${pr.number} ${pr.title ?? ""}`.trim() : PR_LOOPS.has(name) ? "—" : tr("notRequired")],
+            [tr("fact.thread"), p.space ? tr("inProject", { name, project: p.space.name }) : tr("inNewProject", { name })], [tr("fact.task"), p.task],
+            [tr("fact.cap"), st.loop.def.max ? tr("iterations", { n: st.loop.def.max }) : "—"]],
+          consequence: tr("run.consequence", { path: tilde(wt.path, home()), task: p.task }),
           command: { name: "kt-automation.confirmed" } } });
       }
       cx.notify();
@@ -440,7 +447,7 @@ export default class Automation extends View {
       run(p.command.name, p.command.args);
       this.launching = null;
       this.leavePage();
-    } else if (p.kind === "run-now") this.automate(`Lancer maintenant · ${p.script.name}`, ["run-now", p.script.path], cx);
+    } else if (p.kind === "run-now") this.automate(tr("runNowTitle", { name: p.script.name }), ["run-now", p.script.path], cx);
   }
 
   // sheprd-automate <args>, its output in the panel (read-only: check, status, runs).
@@ -452,7 +459,7 @@ export default class Automation extends View {
     cx.spawn(async (cx) => {
       const r = await sh(bin, args, { timeout: 120e3 });
       if (this.out?.title !== title) return;
-      this.out = { title, text: [r.stdout.trim(), r.stderr.trim()].filter(Boolean).join("\n\n") || `(rien, code ${r.code})`, busy: false, ok: r.code === 0 };
+      this.out = { title, text: [r.stdout.trim(), r.stderr.trim()].filter(Boolean).join("\n\n") || tr("nothing", { code: r.code }), busy: false, ok: r.code === 0 };
       cx.notify();
     });
   }
@@ -462,8 +469,8 @@ export default class Automation extends View {
     const bin = this.d?.sheprd;
     if (!bin || checking()) return;
     exec(bin, ["automation", "approve", s.path]).then((r) => {
-      if (r.code !== 0) notify({ title: "Approbation : Sheprd n'a pas ouvert son dialogue", body: firstLine(r.stderr || r.stdout), level: "warning", timeout: 8000 });
-    }).catch((e) => notify({ title: "Approbation impossible", body: String(e?.message ?? e), level: "warning", timeout: 8000 }));
+      if (r.code !== 0) notify({ title: tr("approveFailed"), body: firstLine(r.stderr || r.stdout), level: "warning", timeout: 8000 });
+    }).catch((e) => notify({ title: tr("approveImpossible"), body: String(e?.message ?? e), level: "warning", timeout: 8000 }));
   }
 
   runNow(s) {
@@ -471,10 +478,10 @@ export default class Automation extends View {
     this.pending = { kind: "run-now", script: s };
     const agent = s.sum.agent;
     openOverlay({ mod: "kt-confirm", kind: "dialog", frame: "none", props: {
-      title: `Lancer ${s.name} maintenant ?`, danger: agent, tone: agent ? "danger" : "warning", label: "Lancer",
-      detail: agent ? "Ce script a une étape agent : il démarre des agents Claude dans de nouveaux worktrees, qui dépensent des tokens." : "Le script tourne une fois, hors de son planning.",
-      facts: [["script", tilde(s.path, home())], ["déclencheurs", s.sum.triggers.map(when).join(" · ") || "—"], ["étapes", s.sum.steps.join(", ") || "—"], ["plafonds", s.sum.caps ?? "—"]],
-      consequence: `sheprd-automate run-now ${tilde(s.path, home())}`,
+      title: tr("now.title", { name: s.name }), danger: agent, tone: agent ? "danger" : "warning", label: tr("launch"),
+      detail: tr(agent ? "now.agent" : "now.once"),
+      facts: [[tr("fact.script"), tilde(s.path, home())], [tr("fact.triggers"), s.sum.triggers.map(when).join(" · ") || "—"], [tr("fact.steps"), s.sum.steps.join(", ") || "—"], [tr("fact.caps"), s.sum.caps ?? "—"]],
+      consequence: `sheprd-automate run-now ${tilde(s.path, home())}`, // i18n: tech
       command: { name: "kt-automation.confirmed" } } });
   }
 
@@ -553,7 +560,9 @@ export default class Automation extends View {
   // A section's head: its name and count on a dashed rule, then its buttons.
   head(t, id, label, n, buttons, first) {
     return h_flex().px(8).pt(first ? 6 : 18).pb(6).gap(10).items_center()
-      .child(this.eyebrow(t, n == null ? label : `${label} · ${n}`).flex_none())
+      // The count rolls (roll.js), in the eyebrow's mono 11 and capitals.
+      .child(n == null ? this.eyebrow(t, label).flex_none()
+        : rollText(this.m, `kta-h-${id}-n`, `${String(label).toUpperCase()} · ${n}`, 15).flex_none().font_family(MONO).text_size(11).text_color(t.muted))
       .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border))
       .children(buttons ?? []);
   }
@@ -603,29 +612,29 @@ export default class Automation extends View {
     const s = session(NAME);
     const count = { loops: d?.loops.length ?? null, herdr: d?.scripts.length ?? null };
     const seg = filterRow({ id: "kta-seg", t, state: this.filt, active: this.sec, reduced: Boolean(shared("kt.reducedMotion")),
-      items: SECS.map(([key, label, tint]) => ({ key, label, tint, count: count[key] ?? null })),
+      items: SECS.map(([key, tint]) => ({ key, label: tr(`sec.${key}`), tint, count: count[key] ?? null })),
       onPick: (k) => { this.sec = k; this.cur = null; } });
     const sessionBtn = h_flex().id("kta-session").flex_none().h(30).px(13).gap(6).items_center().rounded_full()
       .bg(t.solid).text_color(t.solid_foreground).text_size(12.5).font_medium().cursor_pointer()
-      .hover((x) => x.opacity(0.9)).tooltip(s ? `La session ${NAME} vit : la montrer (C)` : `Une session Claude dédiée, dans ~/.claude (C)`)
+      .hover((x) => x.opacity(0.9)).tooltip(s ? tr("sessionLive", { name: NAME }) : tr("sessionNew"))
       .on_click((_e, cx) => { this.openSession(null, cx); cx.notify(); })
-      .child(svg(I("bot")).size(13)).child(s ? `Session ${NAME}` : "Ouvrir la session");
+      .child(svg(I("bot")).size(13)).child(s ? tr("sessionBtn", { name: NAME }) : tr("openSession"));
     return this.card(t).id("kta-head").relative().flex_none().px(4).pb(4).gap(4)
       .on_size_change((x, cx) => { if (x.width !== this.headW) { this.headW = x.width; cx.notify(); } })
       .children([dither(this.headW, 60, 16, t.ansi5)].filter(Boolean))
-      .child(bandRow(t, { color: t.ansi5, icon: OWN("repeat"), title: "Automatisation",
+      .child(bandRow(t, { m: this.m, color: t.ansi5, icon: OWN("repeat"), title: tr("title"),
         dot: live.some((r) => r.status === "working") ? t.working : live.length ? t.done : null,
-        sub: [!d ? "…" : `${d.loops.length} loop${d.loops.length > 1 ? "s" : ""} · ${d.scripts.length} automatisation${d.scripts.length > 1 ? "s" : ""}`,
-          live.length ? `${live.length} en cours` : null, "lecture seule · 0 token", s ? `session ${NAME} ouverte` : null],
+        sub: [!d ? "…" : rollText(this.m, "kta-head-n", `${tr("loops", { n: d.loops.length })} · ${tr("automations", { n: d.scripts.length })}`, 14),
+          live.length ? rollText(this.m, "kta-head-run", tr("running", { n: live.length }), 14) : null, tr("readOnly"), s ? tr("sessionOpen", { name: NAME }) : null],
         buttons: [
-          iconBtn(t, "kta-b-loop", I("plus"), "Créer un loop (a)", () => this.create("loop")),
-          iconBtn(t, "kta-b-refresh", I("refresh-cw"), this.busy ? "Analyse…" : "Rafraîchir (r)", (cx) => this.scan(cx, "bouton")),
+          iconBtn(t, "kta-b-loop", I("plus"), tr("createLoopTip"), () => this.create("loop")),
+          iconBtn(t, "kta-b-refresh", I("refresh-cw"), this.busy ? tr("scanningTip") : tr("refreshTip"), (cx) => this.scan(cx, "bouton")), // i18n: tech
           div().w(4).flex_none(),
           sessionBtn] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi5, "4d")))
       .when(this.busy || Boolean(this.error), (el) => el.child(h_flex().px(10).gap(8).items_center()
-        .when(this.busy, (e2) => e2.child(pulse(this.m, div().font_family(MONO).text_size(11).text_color(t.dim).child("analyse…"), true)))
-        .when(Boolean(this.error), (e2) => e2.child(div().min_w(0).truncate().text_size(12).text_color(t.ansi1).child(`Lecture : ${this.error}`)))))
+        .when(this.busy, (e2) => e2.child(pulse(this.m, div().font_family(MONO).text_size(11).text_color(t.dim).child(tr("scanning")), true)))
+        .when(Boolean(this.error), (e2) => e2.child(div().min_w(0).truncate().text_size(12).text_color(t.ansi1).child(tr("readError", { error: this.error }))))))
       .when(Boolean(this.notice), (el) => el.child(this.noticeRow(t)))
       .child(div().px(4).pb(2).child(seg));
   }
@@ -640,33 +649,39 @@ export default class Automation extends View {
       .child(svg(I("circle-alert")).size(14).flex_none().text_color(t.ansi3))
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().text_size(12.5).text_color(t.foreground).child(n.why))
-        .child(div().truncate().font_family(MONO).text_size(11).text_color(t.muted).child(`Intention : ${n.intent}`)))
-      .child(btn("kta-n-retry", "Réessayer", (cx) => this.openSession(n.intent, cx, n.folder)))
-      .child(btn("kta-n-show", "Voir la session", () => { const s = session(NAME); if (s) showSession(s); }))
-      .child(this.icon(t, "kta-n-x", I("x"), "Ignorer", () => { this.notice = null; }));
+        .child(div().truncate().font_family(MONO).text_size(11).text_color(t.muted).child(`Intention : ${n.intent}`))) // i18n: agent (what goes to the session)
+      .child(btn("kta-n-retry", tr("retry"), (cx) => this.openSession(n.intent, cx, n.folder)))
+      .child(btn("kta-n-show", tr("seeSession"), () => { const s = session(NAME); if (s) showSession(s); }))
+      .child(this.icon(t, "kta-n-x", I("x"), tr("dismiss"), () => { this.notice = null; }));
   }
 
   // ---------- A. Claude loops ----------
 
-  loops(t, kids, live) {
+  loops(t, kids, live, cx) {
     const d = this.d;
-    kids.push(this.head(t, "loops", "Loops Claude", d.loops.length,
-      [this.action(t, "kta-new-loop", "Créer un loop", I("plus"), t.ansi5, () => this.create("loop"))], kids.length === 0));
+    kids.push(this.head(t, "loops", tr("sec.loops"), d.loops.length,
+      [this.action(t, "kta-new-loop", tr("createLoop"), I("plus"), t.ansi5, () => this.create("loop"))], kids.length === 0));
     if (this.launching) this.put(kids, this.launchCard(t, live), "launch");
-    if (live.length) {
-      kids.push(this.sub(t, `En cours · ${live.length}`));
-      for (const r of live) this.put(kids, this.runningRow(t, r));
-    }
-    if (!d.loops.length) kids.push(div().px(12).py(8).text_size(12.5).text_color(t.dim).child("Aucun loop sous ~/.claude/skills/me/loop."));
+    // The running loops open and close on their height, in order (motion.js rows(), keyed by address),
+    // under their heading while one is drawn: the last one to end closes too. A closing one adds no
+    // item; `at` puts each one's items at its index as rows() builds it (the heading comes first).
+    let at = kids.length + 1;
+    const running = rowsOf(this.m, cx, "kta-live", live, (r) => r.address, (r, i) => {
+      const el = this.runningRow(t, r, i < 0);
+      this.claim(at++);
+      return el;
+    });
+    if (running.length) kids.push(this.sub(t, tr("runningNow", { n: live.length })), ...running);
+    if (!d.loops.length) kids.push(div().px(12).py(8).text_size(12.5).text_color(t.dim).child(tr("noLoop")));
     let group = null;
     for (const l of d.loops) {
-      const g = l.scope === "global" ? "Globaux · ~/.claude" : `Projet · ${l.repo.split("/").pop()}`;
+      const g = l.scope === "global" ? tr("global") : tr("projectGroup", { name: l.repo.split("/").pop() });
       if (g !== group) { kids.push(this.sub(t, g)); group = g; }
       this.put(kids, this.loopRow(t, l, live));
     }
-    if (!d.project) kids.push(div().px(12).pt(6).text_size(12).text_color(t.dim).child("Loops de projet : affiche un projet (son <repo>/.claude/skills/me/loop est lu)."));
-    else if (!d.loops.some((l) => l.scope === "projet")) kids.push(div().px(12).pt(6).text_size(12).text_color(t.dim)
-      .child(`Aucun loop de projet dans ${tilde(d.project, home())}/.claude/skills/me/loop.`));
+    if (!d.project) kids.push(div().px(12).pt(6).text_size(12).text_color(t.dim).child(tr("showProject")));
+    else if (!d.loops.some((l) => l.scope === "projet")) kids.push(div().px(12).pt(6).text_size(12).text_color(t.dim) // i18n: tech
+      .child(tr("noProjectLoop", { path: tilde(d.project, home()) })));
   }
 
   loopRow(t, l, live) {
@@ -675,9 +690,9 @@ export default class Automation extends View {
     const def = l.def;
     const mine = live.filter((r) => r.name === l.name);
     const caleRel = `commands/me/loop/${l.name}.md`;
-    const alert = !l.cale ? [t.ansi1, `cale absente : ${caleRel} (ni dans ${l.repo ? "le repo ni " : ""}~/.claude). Sans elle, /me:loop:${l.name} n'est pas joignable en Claude Code 2.1.327.`]
-      : l.copy ? [t.ansi3, `${tilde(l.cale, home())} ne lit pas skills/me/loop/${l.name}/SKILL.md : une copie, pas une cale.`]
-        : !def.defined ? [t.ansi3, "pas de section « ## Définition » : goal, max_iterations, check_command et exit_when introuvables."] : null;
+    const alert = !l.cale ? [t.ansi1, tr(l.repo ? "alert.noCaleRepo" : "alert.noCale", { path: caleRel, name: l.name })]
+      : l.copy ? [t.ansi3, tr("alert.copy", { path: tilde(l.cale, home()), name: l.name })]
+        : !def.defined ? [t.ansi3, tr("alert.noDef")] : null;
     this.items.push({ id, family: "loops", path: l.path, yank: `/me:loop:${l.name}`,
       primary: () => this.openSkill(`me:loop:${l.name}`), launch: (cx) => { if (l.cale) this.openLaunch(l, cx); }, edit: (cx) => this.editLoop(l, cx) });
     const dims = [def.mode, def.trigger, def.exec].filter(Boolean);
@@ -693,39 +708,41 @@ export default class Automation extends View {
             .child(div().min_w(0).truncate().text_color(t.foreground).child(l.name)))
           .children(dims.map((x) => this.tag(t, t.ansi5, x)))
           .when(PR_LOOPS.has(l.name), (el) => el.child(this.tag(t, t.ansi2, "PR")))
-          .when(mine.length > 0, (el) => el.child(this.tag(t, t.working, `${mine.length} en cours`)))
+          .when(mine.length > 0, (el) => el.child(this.tag(t, t.working, tr("running", { n: mine.length }))))
           .child(div().flex_1())
           .child(h_flex().flex_none().gap(2)
-            .child(this.icon(t, `kta-l-run-${l.key}`, OWN("play"), "Lancer dans un worktree (s)", (cx) => this.openLaunch(l, cx), !l.cale ? "sa cale manque" : null))
-            .child(this.icon(t, `kta-l-see-${l.key}`, "mods/kt-skills/eye.svg", "Voir dans Skills (enter)", () => this.openSkill(`me:loop:${l.name}`)))
-            .child(this.icon(t, `kta-l-zed-${l.key}`, I("external-link"), "Ouvrir dans Zed (O)", () => this.zed(l.path)))
-            .child(this.icon(t, `kta-l-edit-${l.key}`, I("square-pen"), "Modifier avec Claude (e)", (cx) => this.editLoop(l, cx)))))
-        .child(div().text_size(12.5).line_height("18px").text_color(def.goal ? t.muted : t.dim).child(l.unreadable ? "SKILL.md illisible." : def.goal ?? def.description ?? "Pas de goal."))
+            .child(this.icon(t, `kta-l-run-${l.key}`, OWN("play"), tr("launchTip"), (cx) => this.openLaunch(l, cx), !l.cale ? tr("noCale") : null))
+            .child(this.icon(t, `kta-l-see-${l.key}`, "mods/kt-skills/eye.svg", tr("seeSkills"), () => this.openSkill(`me:loop:${l.name}`)))
+            .child(this.icon(t, `kta-l-zed-${l.key}`, I("external-link"), tr("openZed"), () => this.zed(l.path)))
+            .child(this.icon(t, `kta-l-edit-${l.key}`, I("square-pen"), tr("editE"), (cx) => this.editLoop(l, cx)))))
+        .child(div().text_size(12.5).line_height("18px").text_color(def.goal ? t.muted : t.dim).child(l.unreadable ? tr("unreadableSkill") : def.goal ?? def.description ?? tr("noGoal")))
         .child(h_flex().gap(10).items_center().font_family(MONO).text_size(11).text_color(t.dim)
-          .child(div().flex_none().child(`max ${def.max ?? "—"}`))
-          .child(div().flex_1().min_w(0).truncate().child(`sortie : ${def.exit ?? "—"}`)))
-        .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`check : ${def.check ?? "—"}`))
+          .child(div().flex_none().child(tr("max", { n: def.max ?? "—" })))
+          .child(div().flex_1().min_w(0).truncate().child(tr("exit", { exit: def.exit ?? "—" }))))
+        .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim)
+          .child(tr("check", { check: def.check ? def.check + (def.script ? tr("script", def.script) : "") : "—" })))
         .when(Boolean(alert), (el) => el.child(h_flex().gap(6).items_start()
           .child(svg(I("circle-alert")).size(12).flex_none().mt(2).text_color(alert[0]))
           .child(div().flex_1().min_w(0).text_size(12).line_height("17px").text_color(alert[0]).child(alert[1])))));
   }
 
-  runningRow(t, r) {
+  // `gone`: closing (rows() gave it -1), drawn as it was but no longer a target nor a keys' item.
+  runningRow(t, r, gone = false) {
     const id = `run:${r.address}`;
-    const on = this.keyed && this.cur === id;
+    const on = !gone && this.keyed && this.cur === id;
     const sp = spaces().find((s) => s.id === r.space);
     const it = this.iter[r.address];
-    this.items.push({ id, family: "loops", yank: r.address, primary: () => this.showRunning(r) });
-    return this.row(t, `kta-run-${r.address}`, on).items_center().cursor_pointer()
-      .tooltip(`${r.address} · ${r.via === "thread" ? `thread loop:${r.name}` : `label loop=${r.name}`} · enter : le montrer`)
-      .on_click((_e, cx) => { this.cur = id; this.showRunning(r); cx.notify(); })
+    if (!gone) this.items.push({ id, family: "loops", yank: r.address, primary: () => this.showRunning(r) });
+    return this.row(t, `kta-run-${r.address}`, on).items_center()
+      .tooltip(tr(r.via === "thread" ? "runTip.thread" : "runTip.label", { address: r.address, name: r.name }))
+      .when(!gone, (el) => el.cursor_pointer().on_click((_e, cx) => { this.cur = id; this.showRunning(r); cx.notify(); }))
       .child(this.statusDot(t, r.status))
       .child(div().w(190).flex_none().truncate().font_family(MONO).text_size(12.5).font_medium().text_color(t.foreground).child(r.name))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child([sp?.name, r.cwd ? tilde(r.cwd, home()) : null].filter(Boolean).join(" · ") || r.address))
-      .child(div().flex_none().font_family(MONO).text_size(11).text_color(t[r.status] ?? t.dim).child(STATUS[r.status] ?? r.status ?? "—"))
+      .child(div().flex_none().font_family(MONO).text_size(11).text_color(t[r.status] ?? t.dim).child(statusText(r.status)))
       // « Itération N/M » as read on its screen (viz.js' dithered bar); nothing read yet: said.
-      .child(it ? div().w(180).flex_none().child(this.V.progress(`itération ${it.n}/${it.m}`, it.n, { max: it.m, width: 180, color: "working", id: `kta-it-${r.address}` }))
-        : div().w(180).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child("itération —"));
+      .child(it ? div().w(180).flex_none().child(this.V.progress(tr("iteration", { n: it.n, m: it.m }), it.n, { max: it.m, width: 180, color: "working", id: `kta-it-${r.address}` }))
+        : div().w(180).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(tr("noIteration")));
   }
 
   // Where to launch: the worktrees, by project; the PR as gwm last saw it (gh checks it on the pick).
@@ -747,18 +764,17 @@ export default class Automation extends View {
         .child(svg(I("git-branch")).size(13).flex_none().text_color(t.ansi2))
         .child(div().w(240).flex_none().truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(w.name ?? w.path.split("/").pop()))
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(w.branch ?? ""))
-        .when(Boolean(twin), (el) => el.child(this.tag(t, t.working, "tourne déjà")))
-        .child(w.pr ? this.tag(t, t.ansi2, `PR #${w.pr}`) : div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(pr ? "pas de PR connue" : ""))
+        .when(Boolean(twin), (el) => el.child(this.tag(t, t.working, tr("alreadyRuns"))))
+        .child(w.pr ? this.tag(t, t.ansi2, `PR #${w.pr}`) : div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(pr ? tr("noPr") : "")) // i18n: tech
         .when(busy, (el) => el.child(pulse(this.m, div().font_family(MONO).text_size(11).text_color(t.dim).child(pr ? "gh pr view…" : "…"), true))));
     }
     return enter(this.m, v_flex().mx(4).mb(8).p(4).gap(2).rounded(14).border(1).border_color(alpha(t.ansi5, "80")).bg(alpha(t.ansi5, "0f")), `kta-launch-${l.key}`, { dy: 0 })
       .child(h_flex().px(8).py(6).gap(8).items_center()
         .child(svg(OWN("play")).size(14).flex_none().text_color(t.ansi5))
         .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().text_size(13).font_semibold().text_color(t.foreground).child(`Où lancer /me:loop:${l.name} ?`))
-          .child(div().text_size(12).text_color(t.muted).child(pr ? "Un loop de PR tourne dans le worktree de sa PR (vérifiée par gh pr view), jamais dans le checkout principal."
-            : "Dans un worktree gwm, jamais dans le checkout principal.")))
-        .child(this.icon(t, "kta-launch-x", I("x"), "Fermer (esc)", () => { this.launching = null; })))
+          .child(div().text_size(13).font_semibold().text_color(t.foreground).child(tr("where", { name: l.name })))
+          .child(div().text_size(12).text_color(t.muted).child(tr(pr ? "where.pr" : "where.any"))))
+        .child(this.icon(t, "kta-launch-x", I("x"), tr("closeEsc"), () => { this.launching = null; })))
       // The refusal under the title, where it's seen (the list can be long).
       .when(Boolean(st.error), (el) => el.child(h_flex().mx(8).mb(4).px(10).py(6).gap(6).items_start().rounded(10).border(1)
         .border_color(alpha(t.ansi1, "66")).bg(alpha(t.ansi1, "14"))
@@ -772,32 +788,27 @@ export default class Automation extends View {
 
   herdr(t, kids) {
     const d = this.d;
-    kids.push(this.head(t, "herdr", "Automatisations Herdr", d.scripts.length,
-      [this.action(t, "kta-new-auto", "Créer une automatisation", I("plus"), t.ansi6, () => this.create("automation"))], kids.length === 0));
-    const off = d.bin ? null : "sheprd-automate est introuvable";
+    kids.push(this.head(t, "herdr", tr("sec.herdr"), d.scripts.length,
+      [this.action(t, "kta-new-auto", tr("createAutomation"), I("plus"), t.ansi6, () => this.create("automation"))], kids.length === 0));
+    const off = d.bin ? null : tr("noBin");
     if (!d.bin) {
-      kids.push(this.explain(t, t.ansi3, I("circle-alert"), "sheprd-automate n'est pas installé", [
-        "Le démon des automatisations Herdr vient de Sheprd (cask Homebrew penso/tap/herdr-gpui), pas de Herdr 2. Introuvable ici : ni dans /Applications/Herdr.app/Contents/MacOS, ni dans ~/Applications, ni dans le PATH.",
-        "Les deux apps s'installent sous le même nom, /Applications/Herdr.app : installer l'une remplace l'autre. Un `brew reinstall --cask penso/tap/herdr-gpui` écraserait Herdr 2.",
-        "Pour l'avoir à côté : installer le cask dans un autre dossier d'apps, `brew reinstall --cask --appdir=~/Applications penso/tap/herdr-gpui` (non testé). La page le trouvera là ; la skill herdr-automations, elle, cite /Applications/Herdr.app.",
-        "En attendant, les scripts restent listés ici. Voir le plan, Approuver, Lancer maintenant et Runs attendent le binaire.",
-      ]));
+      kids.push(this.explain(t, t.ansi3, I("circle-alert"), tr("bin.title"), [tr("bin.1"), tr("bin.2"), tr("bin.3"), tr("bin.4")]));
     } else {
       kids.push(v_flex().mx(4).mb(4).gap(6)
         .child(h_flex().px(8).gap(8).items_center()
-          .child(this.eyebrow(t, "sheprd-automate status", d.status?.ok ? t.dim : t.ansi1).flex_1())
+          .child(this.eyebrow(t, "sheprd-automate status", d.status?.ok ? t.dim : t.ansi1).flex_1()) // i18n: tech
           .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(tilde(d.bin, home())))
-          .child(this.icon(t, "kta-runs", I("list"), "Les runs récents (sheprd-automate runs)", (cx) => this.automate("Runs · sheprd-automate runs", ["runs"], cx))))
+          .child(this.icon(t, "kta-runs", I("list"), tr("runsTip"), (cx) => this.automate("Runs · sheprd-automate runs", ["runs"], cx)))) // i18n: tech
         .child(div().id("kta-status").overflow_x_scrollbar().child(this.block(t, d.status?.text ?? "…", d.status?.ok ? t.foreground : t.ansi1))));
     }
     if (this.out) this.put(kids, this.outPanel(t), "out");
     if (!d.scripts.length) {
       kids.push(div().px(12).py(8).text_size(12.5).line_height("19px").text_color(t.dim)
-        .child(`Aucun script : ni <repo>/.herdr/automations/*.luau dans les ${d.repos} dépôts du registre, ni ~/.config/herdr-automate/automations/*.luau.`));
+        .child(tr("noScript", { n: d.repos })));
     }
     for (const s of d.scripts) this.put(kids, this.scriptRow(t, s, off));
     kids.push(div().px(12).pt(8).text_size(12).line_height("18px").text_color(t.dim)
-      .child("À savoir : les étapes agent et worktree font un git worktree add -b sous ~/.herdr/worktrees/<repo>/<branche>, hors gwm, toujours sur une branche neuve ; .herdr/worktree.toml ne porte que les scripts setup et run."));
+      .child(tr("knowThis")));
   }
 
   scriptRow(t, s, off) {
@@ -813,20 +824,20 @@ export default class Automation extends View {
       .child(v_flex().flex_1().min_w(0).gap(3)
         .child(h_flex().h(20).gap(8).items_center()
           .child(div().min_w(0).truncate().font_family(MONO).text_size(13).font_medium().text_color(t.foreground).child(s.name))
-          .child(this.tag(t, t.muted, s.repo ? s.repo.split("/").pop() : "personnel"))
-          .when(sum.agent, (el) => el.child(this.tag(t, t.ansi1, "agent · tokens")))
-          .when(sum.worktree, (el) => el.child(this.tag(t, t.ansi3, "worktree")))
+          .child(this.tag(t, t.muted, s.repo ? s.repo.split("/").pop() : tr("personal")))
+          .when(sum.agent, (el) => el.child(this.tag(t, t.ansi1, tr("agentTokens"))))
+          .when(sum.worktree, (el) => el.child(this.tag(t, t.ansi3, "worktree"))) // i18n: tech
           .child(div().flex_1())
           .child(h_flex().flex_none().gap(2)
-            .child(this.icon(t, `kta-s-plan-${s.key}`, I("file-text"), "Voir le plan : sheprd-automate check (enter)", plan, off))
-            .child(this.icon(t, `kta-s-ok-${s.key}`, I("circle-check"), "Approuver : le dialogue de Sheprd, c'est toi qui approuves", () => this.approve(s), this.d.sheprd ? null : "sheprd est introuvable"))
-            .child(this.icon(t, `kta-s-run-${s.key}`, OWN("play"), "Lancer maintenant (s, confirmé)", () => this.runNow(s), off))
-            .child(this.icon(t, `kta-s-runs-${s.key}`, I("list"), "Runs", runs, off))
-            .child(this.icon(t, `kta-s-zed-${s.key}`, I("external-link"), "Ouvrir dans Zed (O)", () => this.zed(s.path)))
-            .child(this.icon(t, `kta-s-edit-${s.key}`, I("square-pen"), "Modifier avec Claude (e)", (cx) => this.editScript(s, cx)))))
+            .child(this.icon(t, `kta-s-plan-${s.key}`, I("file-text"), tr("planTip"), plan, off))
+            .child(this.icon(t, `kta-s-ok-${s.key}`, I("circle-check"), tr("approveTip"), () => this.approve(s), this.d.sheprd ? null : tr("noSheprd")))
+            .child(this.icon(t, `kta-s-run-${s.key}`, OWN("play"), tr("runNowTip"), () => this.runNow(s), off))
+            .child(this.icon(t, `kta-s-runs-${s.key}`, I("list"), "Runs", runs, off)) // i18n: tech
+            .child(this.icon(t, `kta-s-zed-${s.key}`, I("external-link"), tr("openZed"), () => this.zed(s.path)))
+            .child(this.icon(t, `kta-s-edit-${s.key}`, I("square-pen"), tr("editE"), (cx) => this.editScript(s, cx)))))
         .child(div().truncate().text_size(12.5).text_color(sum.triggers.length ? t.muted : t.dim)
-          .child(s.unreadable ? "Fichier illisible." : sum.triggers.map((x) => (x.name ? `${x.name} : ${when(x)}` : when(x))).join(" · ") || "Aucun déclencheur lu."))
-        .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`${sum.steps.join(", ") || "aucune étape lue"}${sum.caps ? ` · caps ${sum.caps}` : " · sans herdr.caps"}`))
+          .child(s.unreadable ? tr("unreadable") : sum.triggers.map((x) => (x.name ? `${x.name} : ${when(x)}` : when(x))).join(" · ") || tr("noTrigger")))
+        .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`${sum.steps.join(", ") || tr("noStep")}${sum.caps ? tr("caps", { caps: sum.caps }) : tr("noCaps")}`))
         .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(tilde(s.path, home()))));
   }
 
@@ -835,20 +846,16 @@ export default class Automation extends View {
     return enter(this.m, v_flex().mx(4).mb(6).p(4).gap(4).rounded(14).border(1).border_color(alpha(o.ok ? t.ansi6 : t.ansi1, "80")), `kta-out-${o.title}`, { dy: 0 })
       .child(h_flex().px(8).py(4).gap(8).items_center()
         .child(this.eyebrow(t, o.title, o.ok ? t.muted : t.ansi1).flex_1().min_w(0).truncate())
-        .when(o.busy, (el) => el.child(pulse(this.m, div().font_family(MONO).text_size(11).text_color(t.dim).child("en cours…"), true)))
-        .child(this.icon(t, "kta-out-x", I("x"), "Fermer (esc)", () => { this.out = null; })))
+        .when(o.busy, (el) => el.child(pulse(this.m, div().font_family(MONO).text_size(11).text_color(t.dim).child(tr("inProgress")), true)))
+        .child(this.icon(t, "kta-out-x", I("x"), tr("closeEsc"), () => { this.out = null; })))
       .child(div().id("kta-out-text").max_h(360).overflow_y_scrollbar().child(div().id("kta-out-x-scroll").overflow_x_scrollbar().child(this.block(t, o.busy ? "…" : o.text, o.ok ? t.foreground : t.ansi1))));
   }
 
   // ---------- C. Claude Code schedules ----------
 
   schedule(t, kids) {
-    kids.push(this.head(t, "schedule", "Planifications Claude Code", null, null, kids.length === 0));
-    kids.push(this.explain(t, t.ansi4, I("clock"), "Rien à lire en local", [
-      "Les routines de /schedule sont des agents planifiés dans le cloud d'Anthropic : elles se listent et se gèrent depuis une session Claude (/schedule) ou sur claude.ai, pas depuis un fichier de cette machine.",
-      "Les crons de session (/loop, CronCreate) vivent dans la session qui les a posés et s'arrêtent avec elle : aucun registre à lire sur le disque.",
-      "Les loops me:loop:* ne sont pas des planifications : ils itèrent jusqu'à leur condition de sortie, dans une session, une fois lancés. Les automatisations Herdr, elles, ont un planning (herdr.at, every, cron).",
-    ]));
+    kids.push(this.head(t, "schedule", tr("schedules"), null, null, kids.length === 0));
+    kids.push(this.explain(t, t.ansi4, I("clock"), tr("sched.title"), [tr("sched.1"), tr("sched.2"), tr("sched.3")]));
   }
 
   // ---------- page ----------
@@ -858,20 +865,25 @@ export default class Automation extends View {
   put(kids, el, key) {
     if (key) this.idx[key] = kids.length;
     kids.push(el);
-    for (const x of this.items.slice(this.mark)) this.idx[x.id] = kids.length - 1;
+    this.claim(kids.length - 1);
+  }
+
+  // Records the items built since the last claim as at scroll child `i`.
+  claim(i) {
+    for (const x of this.items.slice(this.mark)) this.idx[x.id] = i;
     this.mark = this.items.length;
   }
 
-  body(t, live) {
+  body(t, live, cx) {
     const kids = [];
     this.items = [];
     this.idx = {}; // item id (or "launch", "out") -> its scroll child's index
     this.mark = 0;
     if (!this.d) {
-      kids.push(div().p(16).text_size(13).text_color(this.error ? t.ansi1 : t.dim).child(this.error ?? "Analyse des automatisations…"));
+      kids.push(div().p(16).text_size(13).text_color(this.error ? t.ansi1 : t.dim).child(this.error ?? tr("scanningAll")));
     } else {
       const want = (k) => this.sec === "all" || this.sec === k;
-      if (want("loops")) this.loops(t, kids, live);
+      if (want("loops")) this.loops(t, kids, live, cx);
       if (want("herdr")) this.herdr(t, kids);
       if (want("schedule")) this.schedule(t, kids);
     }
@@ -906,7 +918,7 @@ export default class Automation extends View {
     this.shown = vis;
     this.keyed = this.handle.is_focused();
     const t = theme();
-    this.V = viz(t, this.m);
+    this.V = viz(t, this.m, { roll });
     // No frame of its own as a page: the layout's center column (chrome, radius 20, padding 4) holds it.
     // As a frameless dialog it draws that same frame.
     return v_flex().id("kta-root").size_full().gap(4).text_color(t.foreground)
@@ -915,6 +927,6 @@ export default class Automation extends View {
       .on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t, live))
-      .child(this.card(t).flex_1().min_h(0).overflow_hidden().child(this.body(t, live)));
+      .child(this.card(t).flex_1().min_h(0).overflow_hidden().child(this.body(t, live, cx)));
   }
 }

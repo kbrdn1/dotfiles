@@ -1,5 +1,5 @@
 // bun mods/kt-usage/data.check.mjs: the rules of data.js on the shapes really on this machine.
-import { windowLabel, claudeWindows, codexReading, codexWindows, dayCost, resetLabel, ago, toUnix, tierLabel, frDate, resetAdvice } from "./data.js";
+import { windowLabel, claudeWindows, codexReading, codexWindows, dayCost, resetLabel, ago, toUnix, tierLabel, frDate, resetAdvice, parseOauthUsage, moneyLabel } from "./data.js";
 
 let failed = 0;
 const ok = (cond, what) => { if (!cond) { failed++; console.error("FAIL", what); } };
@@ -63,6 +63,41 @@ const c = dayCost([
 ], mid);
 ok(c.total === 12.5 && c.sessions === 2, `day cost 12.5 over 2 sessions (got ${c.total} / ${c.sessions})`);
 
+
+// /api/oauth/usage: a real answer of 2026-11-18 (scratchpad/orch/usage-real.json, no token in it), the
+// useful keys only, plus coded internal keys that must not come through. `now` in seconds, as main.js.
+const REAL_NOW = 1795004483; // 2026-11-18T12:21:23Z, its seven_day_breakdown.as_of
+const real = {
+  five_hour: null,
+  limits: [
+    { kind: "weekly_all", group: "weekly", percent: 60, severity: "normal", resets_at: "2026-11-24T19:00:00.451550+00:00", scope: null, is_active: true },
+    { kind: "weekly_scoped", group: "weekly", percent: 0, severity: "normal", resets_at: "2026-11-24T19:00:00+00:00",
+      scope: { model: { id: null, display_name: "Fable" }, surface: null }, is_active: false },
+  ],
+  seven_day_breakdown: { rows: [
+    { key: "claude_code", display_name: "Claude Code", percent: 100, percent_of_limit: 60 },
+    { key: "chat", display_name: "Chats", percent: 0, percent_of_limit: 0 },
+    { key: "cowork", display_name: "Cowork", percent: 0, percent_of_limit: 0 },
+    { key: "other", display_name: "Other", percent: 0, percent_of_limit: 0 },
+  ] },
+  weekly_scoped_shares: [{ limit_index: 1, used_percent_of_weekly: 0, allowance_percent_of_weekly: 50 }],
+  extra_usage: { is_enabled: false, monthly_limit: null, used_credits: null, currency: null, disabled_reason: null, user_disabled: true },
+  spend: { used: { amount_minor: 0, currency: "USD", exponent: 2 }, limit: null, percent: 0, severity: "normal", enabled: false, disabled_reason: null },
+  amber_secret: { a: 1 }, brass_thimble: 7,
+};
+const u = parseOauthUsage(real, REAL_NOW);
+ok(u.week.used === 60 && u.week.severity === "normal" && u.week.active === true && u.week.resets === toUnix("2026-11-24T19:00:00.451550+00:00"), "weekly_all: 60 %, normal, active");
+ok(resetLabel(u.week, REAL_NOW) === "reset dans 6 j", `weekly_all reset (${resetLabel(u.week, REAL_NOW)})`);
+ok(u.scoped.used === 0 && u.scoped.active === false && u.scoped.name === "Fable", `weekly_scoped: Fable from scope.model (${u.scoped.name})`);
+ok(u.rows.map((r) => `${r.label} ${r.value}`).join(", ") === "Claude Code 100, Chats 0, Cowork 0, Other 0", "four surfaces");
+ok(u.shares.length === 1 && u.shares[0].label === "Fable" && u.shares[0].value === 50 && u.shares[0].used === 0, "Fable: 50 % of the week allowed, 0 % used (limit_index)");
+ok(u.extra.enabled === false && u.extra.byUser === true && u.extra.used === null, "extra usage: off, by the user");
+ok(u.spend.enabled === false && u.spend.used.amount === 0 && u.spend.used.currency === "USD" && moneyLabel(u.spend.used) === "0,00 USD", "spend: off, 0,00 USD used");
+ok(moneyLabel(parseOauthUsage({ spend: { used: { amount_minor: 1234, currency: "EUR", exponent: 2 } } }, NOW).spend.used) === "12,34 EUR", "minor units / 10^exponent");
+ok(!JSON.stringify(u).includes("amber") && !JSON.stringify(u).includes("brass"), "coded keys never come through");
+const odd = parseOauthUsage({ limits: [{ kind: "weekly_all", percent: "lots" }], seven_day_breakdown: { rows: "x" }, weekly_scoped_shares: [{ limit_index: 9 }] }, NOW);
+ok(odd.week === null && odd.rows.length === 0 && odd.shares.length === 0 && odd.extra === null, "unknown shapes: nothing, not a guess");
+ok(parseOauthUsage(null, NOW) === null, "no body");
 
 if (failed) process.exit(1);
 console.log("data.check: ok");

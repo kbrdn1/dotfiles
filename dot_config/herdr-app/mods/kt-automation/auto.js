@@ -1,17 +1,19 @@
 // auto.js: what kt-automation reads and builds, pure (no herdr, no gpui, no module state), so Bun
 // checks it (auto.check.mjs): the scan's files sorted out, a loop's definition, its cale, the loops
 // running now (live data in), « Itération N/M » on a screen, where and how a loop is launched, an
-// automation script's summary, the dedicated session's task and intentions.
+// automation script's summary, the dedicated session's task and intentions. Its words to people are
+// codes (launch's errors, loopDef's script) that main.js says (I18N.md); what goes to the session stays
+// in French.
 
 /** The dedicated session's first message, as written (the intention follows it). */
 export const TASK = [
-  "Session dédiée à mes automatisations : loops Claude (me:loop:*) et automatisations Herdr (sheprd-automate). Lis ~/.claude/WORKFLOW.md (section Loops) et la skill concernée, puis demande-moi ce que je veux (ne change rien avant).",
-  "Règles :",
-  "- un loop se crée par /me:create-loop (skill + commande-cale qui lit le SKILL.md) ; son eval gate est une commande shell déterministe ; jamais de continue-on-error, de test skippé ni de re-run à l'aveugle ;",
-  "- une automatisation Herdr se crée par la skill herdr-automations : écrire, lancer `sheprd-automate check`, me montrer le plan ; ne jamais l'approuver toi-même ;",
-  "- worktree gwm d'abord : un agent ne travaille jamais dans le checkout principal ;",
-  "- ~/.claude passe par chezmoi (`chezmoi add <chemins>`, jamais d'apply sans chemin, 0700) ; un loop de projet vit dans <repo>/.claude et part par une PR ;",
-  "- commit seulement quand je le demande, Gitmoji + Conventional, sans tiret cadratin.",
+  "Session dédiée à mes automatisations : loops Claude (me:loop:*) et automatisations Herdr (sheprd-automate). Lis ~/.claude/WORKFLOW.md (section Loops) et la skill concernée, puis demande-moi ce que je veux (ne change rien avant).", // i18n: agent
+  "Règles :", // i18n: agent
+  "- un loop se crée par /me:create-loop (skill + commande-cale qui lit le SKILL.md) ; son eval gate est une commande shell déterministe ; jamais de continue-on-error, de test skippé ni de re-run à l'aveugle ;", // i18n: agent
+  "- une automatisation Herdr se crée par la skill herdr-automations : écrire, lancer `sheprd-automate check`, me montrer le plan ; ne jamais l'approuver toi-même ;", // i18n: agent
+  "- worktree gwm d'abord : un agent ne travaille jamais dans le checkout principal ;", // i18n: agent
+  "- ~/.claude passe par chezmoi (`chezmoi add <chemins>`, jamais d'apply sans chemin, 0700) ; un loop de projet vit dans <repo>/.claude et part par une PR ;", // i18n: agent
+  "- commit seulement quand je le demande, Gitmoji + Conventional, sans tiret cadratin.", // i18n: agent
 ].join("\n");
 
 // The loops that read the PR of their branch: they run in that PR's worktree, never elsewhere.
@@ -88,16 +90,16 @@ export function loopDef(md) {
   const fm = /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "";
   const description = /^description:\s*(.*)$/m.exec(fm)?.[1]?.trim().replace(/^(["'])([\s\S]*)\1$/, "$2") ?? null;
   const dim = (k) => new RegExp(`\\*\\*${k}:?\\*\\*:?\\s*\`?([\\w-]+)`, "i").exec(text)?.[1] ?? null;
-  const body = section(text, "Définition");
+  const body = section(text, "Définition"); // i18n: tech (the loop file's heading)
   const d = {};
   for (const l of String(body ?? "").split("\n")) {
     const m = /^- \*\*([\w-]+)\*\*\s*(?:\([^)]*\))?\s*:\s*(.*)$/.exec(l.trim());
     if (m && !(m[1] in d)) d[m[1]] = m[2].trim();
   }
-  // A check written as a fenced script under the Définition ("ci-dessous"): say how long it is.
+  // A check written as a fenced script under the Définition ("ci-dessous"): its language and length,
+  // said by main.js.
   const fence = /^\s*(```|~~~)(\w*)\s*\n([\s\S]*?)^\s*\1/m.exec(String(body ?? ""));
-  const n = fence ? fence[3].trimEnd().split("\n").length : 0;
-  const script = fence ? ` · script ${fence[2] || "shell"} de ${n} ligne${n > 1 ? "s" : ""}` : "";
+  const script = fence ? { lang: fence[2] || "shell", n: fence[3].trimEnd().split("\n").length } : null;
   const check = d.check_command ?? d.check ?? null;
   return {
     description,
@@ -106,7 +108,8 @@ export function loopDef(md) {
     goal: d.goal ? stripMd(d.goal) : null,
     max: d.max_iterations ? stripMd(d.max_iterations) : null,
     exit: d.exit_when ? stripMd(d.exit_when) : null,
-    check: check ? stripMd(check) + script : null,
+    check: check ? stripMd(check) : null,
+    script: check ? script : null,
   };
 }
 
@@ -162,16 +165,17 @@ export function spaceFor(path, spaces, panes) {
 }
 
 /** How the loop `name` starts in the worktree `wt` ({ path, branch, is_main }): `pr` is its PR number
- *  (gh pr view, in the worktree) or null. One of: { error } (refused), { show } (the same loop already
- *  runs there: show it), { command, task, space } (the app command kt-confirm runs). */
+ *  (gh pr view, in the worktree) or null. One of: { error, name?, where? } (refused: "name", "noWorktree",
+ *  "main" or "noPr", said by main.js), { show } (the same loop already runs there: show it),
+ *  { command, task, space } (the app command kt-confirm runs). */
 export function launch({ name, wt, pr, spaces = [], panes = [], live = [] }) {
-  if (!NAME.test(String(name ?? ""))) return { error: `Nom de loop invalide : ${name}` };
-  if (!wt?.path) return { error: "Aucun worktree choisi." };
-  if (wt.is_main) return { error: "Jamais dans le checkout principal : choisis un worktree gwm." };
+  if (!NAME.test(String(name ?? ""))) return { error: "name", name }; // i18n: tech
+  if (!wt?.path) return { error: "noWorktree" }; // i18n: tech
+  if (wt.is_main) return { error: "main" }; // i18n: tech
   const path = trimSlash(wt.path);
   const twin = live.find((r) => r.name === name && within(r.cwd, path));
   if (twin) return { show: twin };
-  if (PR_LOOPS.has(name) && !pr) return { error: `Pas de PR ouverte pour ${wt.branch ?? path} : ce loop lit la PR de sa branche.` };
+  if (PR_LOOPS.has(name) && !pr) return { error: "noPr", where: wt.branch ?? path }; // i18n: tech
   const task = `/me:loop:${name}`;
   const space = spaceFor(path, spaces, panes);
   const tab = `loop:${name}`;
@@ -198,19 +202,13 @@ export function luau(text) {
   return { triggers, caps, agent: has("agent"), worktree: has("worktree"), steps: ["pull", "run", "sh", "worktree", "agent", "notify"].filter(has) };
 }
 
-/** A trigger as people read it: « tous les jours à 03:00 », « toutes les 6h », « cron … », « à la main ». */
-export function when(tr) {
-  if (tr.kind === "at") return `à ${tr.spec ?? "?"}`;
-  if (tr.kind === "every") return `toutes les ${tr.spec ?? "?"}`;
-  if (tr.kind === "cron") return `cron ${tr.spec ?? "?"}`;
-  return "à la main";
-}
-
-// ---------- the session's intentions ----------
+// ---------- the session's intentions (they go to Claude: in French) ----------
 
 export const intents = {
+  // i18n: agent
   createLoop: (desc, repo) => `/me:create-loop ${desc} (portée : ${repo ? `projet, ${repo}/.claude ; il part par une PR` : "globale, ~/.claude"})`,
-  editLoop: (name, path) => `modifier le loop me:loop:${name} (${path})`,
+  editLoop: (name, path) => `modifier le loop me:loop:${name} (${path})`, // i18n: agent
+  // i18n: agent
   createAutomation: (desc, repo) => `créer une automatisation Herdr avec la skill herdr-automations, ${repo ? `dans ${repo}/.herdr/automations` : "personnelle, dans ~/.config/herdr-automate/automations"} : ${desc}`,
-  editAutomation: (path) => `modifier l'automatisation Herdr ${path} (puis sheprd-automate check, et me montrer le plan)`,
+  editAutomation: (path) => `modifier l'automatisation Herdr ${path} (puis sheprd-automate check, et me montrer le plan)`, // i18n: agent
 };

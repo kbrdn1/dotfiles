@@ -14,9 +14,13 @@ plugin({
         run: (name, args) => { h.ran.push([name, args]); return null; },
         hc: async (args) => { h.sent.push(args); return { code: h.sendCode, stdout: "", stderr: h.sendCode ? "refused" : "" }; },
         notify: () => "n1",
+        // i18n.js (session.js' words): no language set, a check: French.
+        shared: () => undefined, setShared: () => {}, exec: async () => ({ code: 0, stdout: "" }), checking: () => true,
       },
       loader: "object",
     }));
+    // i18n.js draws its language button with gpui-kit: unused here.
+    b.module("gpui-kit", () => ({ exports: { div: () => ({}), svg: () => ({}) }, loader: "object" }));
   },
 });
 const { session, decide, dedicated, intention } = await import("./session.js");

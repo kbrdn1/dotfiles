@@ -3,25 +3,74 @@
 // read from ~/.claude/cache/herdr/<terminal>.flow.json ({ v: 1, workflow,
 // steps: [{ id, label, state, tool, source }], updatedAt }, written by
 // claude-flow). On top, the context: the workflow's readable name, the project
-// and branch (its issue), the PR and the CI from /me:report's facts, the
-// progress bar and what's running. Below, the steps grouped in phases
+// and branch (the flow's, else the terminal's; its issue), the PR and the CI from
+// /me:report's facts (that branch's report), the
+// progress by steps (viz.js steps: a dithered segment a step). Below, the steps grouped in phases
 // (Préparation, Spec, Implémentation, Livraison, Clôture), a phase all done
 // folded to one line, each step one 28 px row with its details as pills.
 // Read-only. Follows the cache folder with watchFolder (10 s fallback), only
-// while shown; one loop animation: the running step's pulse.
+// while shown; loop animations only on the running step: its row's pulse and its segment's.
+// Keys (vim.js; kt-keys lists them, group "panel"): ctrl-b l (pane.go, "focus") or
+// `kt-flow.key:<keys>` gives Flow the keyboard: a cursor (an accent ring on the ink), first on the
+// header of the phase running (else the first unfolded one). j k gg G ctrl-d ctrl-u move over
+// phases, steps, Review's passes and their findings; h folds (a phase, Review, a pass, a finding;
+// on a row that doesn't fold: folds its parent and goes there), l unfolds; enter / o as a click
+// (a phase, Review, a pass, a finding; the PR step opens the PR); O opens a finding in Zed; y copies
+// (a finding's place, a pass's sha, a step's label); r reads again; esc gives the keyboard back to
+// the terminal; [ ] the panel's previous / next tab; ? the keys. While Flow has the keyboard it
+// keeps following the same terminal.
+// CI unfolds like Review: the PR's pushed commits (its last 10, read by `gh` on unfold, on r and
+// when the followed terminal changes, never in a loop; a commit whose checks all ended is never
+// read again), a bar and a row each, one unfolded at a time into its checks (failures first), a
+// failed one's "Extrait des logs" (`gh run view --log-failed`, its last 40 lines) on demand. Keys
+// as Review's: j k move, l / h unfold / fold (a commit, a check's logs), enter as a click, O
+// opens a check's run, y copies a commit's sha or a check's link.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
-import { focused, panes, spaces, theme, layout, settings, readTextFile, watchFolder, exec, home, nextCommand, checking } from "herdr";
+import { v_flex, h_flex, ScrollHandle, Scrollbar } from "gpui-base";
+import { focused, panes, spaces, theme, layout, settings, readTextFile, watchFolder, exec, home, nextCommand, checking, run, notify, openOverlay, shared } from "herdr";
 import * as fs from "fs/promises";
-import { NAMES, workflowName, issueOf, phasesOf, details, runningLine, findPlans, passOf, decisionOf, locOf } from "./steps.js";
+import { nameOf, speak, workflowName, issueOf, flowBranch, phasesOf, details, findPlans, passOf, decisionOf, locOf,
+  checkState, checkMs, tally, checkOrder, duration, runIdOf, logTail, ciLine } from "./steps.js";
+import { makeT, relative } from "./i18n.js";
+import strings from "./strings.js";
+import { Vim, keysOf, step } from "./vim.js";
+import { motionState, frame, enter, collapse } from "./motion.js";
+import { refreshOn } from "./bus.js";
+// Monocode's dithered visuals (kt-keys' viz.js) and the header's pixel band (dither.js), byte-identical copies.
+import { viz } from "./viz.js";
+// kt-keys' roll.js (a byte-identical copy): viz's figures and the CI pill's count roll to their new digits.
+import { roll, rollText } from "./roll.js";
+import { ditherBand, TOP } from "./dither.js";
 
 const ME = "flow"; // this block's id in the layout's "panel-body" stack
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// The project's color (shared "kt.projects", the registry entry holding `folder`), else the accent.
+function projectColor(t, folder) {
+  const e = folder && (shared("kt.projects") ?? []).filter((x) => !x.machine && x.folder && (folder === x.folder || folder.startsWith(`${x.folder}/`)))
+    .sort((a, b) => b.folder.length - a.folder.length)[0];
+  const c = e?.color;
+  return !c ? t.accent : c.startsWith("#") ? c : t[c] ?? t.accent;
+}
 const CACHE = () => `${home()}/.claude/cache/herdr`;
+// The panel's tabs in order, and each one's mod: [ / ] show the next one and give it the keyboard.
+const TABS = ["files", "diff", "history", "flow", "crosstalk", "gwm-panel"];
+const TAB_MODS = { files: "kt-files", diff: "kt-diff", history: "kt-history", flow: "kt-flow", crosstalk: "kt-crosstalk", "gwm-panel": "kt-gwm" };
+// The keyboard follows a moment later: a `<mod>.focus` sent at once reaches no copy (the new tab
+// isn't shown yet) and the app gives the keyboard back to the terminal.
+function panelTab(dir, cx) {
+  const child = TABS[(TABS.indexOf(ME) + dir + TABS.length) % TABS.length];
+  run("layout.select", { stack: "panel-body", child });
+  // gwm-panel: kt-gwm's panel copy only (its page copy may show too).
+  cx.timer.after(120, () => run(child === "gwm-panel" ? "kt-gwm.panel-focus" : `${TAB_MODS[child]}.focus`));
+}
+// NORMAL / INSERT, kt-keys' pill: INSERT on the ink, NORMAL plain.
+const modePill = (t, vim) => div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+  .border_color(vim.insert ? alpha(t.accent, "66") : t.border).bg(vim.insert ? alpha(t.accent, "24") : t.background)
+  .font_family(MONO).text_size(9).text_color(vim.insert ? t.accent : t.muted).child(vim.label);
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -56,25 +105,40 @@ function summarizeReport(d) {
   return { pr, ci, at: d?.generatedAt ?? null };
 }
 
-function ago(ms) {
-  const s = Math.max(0, (Date.now() - ms) / 1000);
-  if (s < 60) return "à l'instant";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  return h < 24 ? `il y a ${h} h` : `il y a ${Math.floor(h / 24)} j`;
-}
+const tr = makeT(strings);
+speak(makeT); // steps.js' words follow kt.lang too
+const ago = (ms) => relative(ms);
 
 export default class Flow extends View {
   init(_props, cx) {
     this.term = null;
     this.flow = null;
     this.fold = {}; // phase id -> folded, once clicked
+    this.motion = motionState(); // ANIMATIONS.md: the tab fades in, phases / Review / CI open on their height
+    this.showGen = 0;
+    this.headW = 0; // the header card, measured: its dither band and the visuals' width
     this.repos = {}; // cwd -> { name, gh } | null
     this.report = null;
     this.copied = false;
+    this.ciOpen = false; // CI unfolded (read on unfold)
+    this.ci = null; // { key: "owner/repo#n", repo, head, commits: [{ sha, subject }], ahead, error }
+    this.ciRuns = {}; // "owner/repo@sha" -> { runs, done } | { error }: a done one is never read again
+    this.openCommit = null; // the CI commit unfolded into its checks
+    this.ciLog = null; // a failed check's log extract: { key, loading } | { key, lines } | { key, error }
+    this.logScroll = ScrollHandle.new(); // the extract opens on its last lines
+    this.handle = cx.focus_handle();
+    this.vim = new Vim();
+    this.cur = null; // the keys' cursor: "p:<phase>", "s:<step>", "pass:<n>" or "f:<finding>"
+    this.flat = []; // what it walks, in order: { id, kind, card (its phase's index), ... }
+    this.phasesScroll = ScrollHandle.new();
     if (checking()) return;
     this.read(cx);
+    // The keyboard went away (Herdr doesn't always redraw then): drop the cursor. A hidden copy
+    // doesn't render, so this tick notes that the tab went away: shown again, it reads and fades in.
+    cx.timer.every(500, (cx) => {
+      if (this.shown && !visible()) this.shown = false;
+      if (this.keyed !== this.handle.is_focused()) cx.notify();
+    });
     // claude-flow writes into one folder: wake on its changes, read when they're ours.
     cx.spawn(async (cx) => {
       for (;;) {
@@ -97,9 +161,128 @@ export default class Flow extends View {
         } else if (c === "review") this.reviewOpen = true;
         else if (c.startsWith("pass:")) { this.reviewOpen = true; this.openPass = Number(c.slice(5)); this.openFinding = null; }
         else if (c === "finding:first") this.openFinding = (this.report?.review?.findings ?? []).find((f) => f.pass === this.openPass)?.id ?? null;
+        // `focus` (pane.go) takes the keyboard; `key:<keys>` takes it and types those keys, for tests.
+        else if (c === "focus") this.focusIn();
+        else if (c.startsWith("key:")) {
+          this.focusIn();
+          for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
+        }
         cx.notify();
       }
     });
+  }
+
+  // The terminal followed: the focused one, but kept while Flow has the keyboard (taking it may
+  // move focused(), and another terminal would unfold every phase again).
+  follow() {
+    return this.handle.is_focused() && this.term ? this.term : terminal();
+  }
+
+  // ---------- keys (vim.js; kt-keys lists them) ----------
+
+  // The keyboard comes here: NORMAL, the cursor where it was, else on the running phase's header.
+  focusIn() {
+    this.handle.focus();
+    this.vim.normal();
+    if (!this.flat.some((x) => x.id === this.cur)) {
+      const heads = this.flat.filter((x) => x.kind === "phase");
+      this.cur = (heads.find((x) => x.p.current && !x.folded) ?? heads.find((x) => !x.folded) ?? heads[0])?.id ?? null;
+    }
+    this.reveal = true;
+  }
+
+  key(e, cx) {
+    if (!this.act(this.vim.handle(e), cx)) return; // not ours: ctrl-b, cmd-* go on
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  // What the cursor walks, in the order shown: phase headers, the steps of unfolded ones, Review's
+  // passes when it's open and the findings of the open pass.
+  walk(phases) {
+    const out = [];
+    const rv = this.report?.review;
+    phases.forEach((p, card) => {
+      const folded = this.folded(p);
+      out.push({ id: `p:${p.id}`, kind: "phase", p, folded, card });
+      if (folded) return;
+      for (const s of p.steps) {
+        out.push({ id: `s:${s.id}`, kind: "step", s, phase: p.id, card });
+        if (s.id === "ci" && this.isCiOpen(s)) {
+          for (const pc of this.pushed()) {
+            out.push({ id: `ci:${pc.sha}`, kind: "commit", pc, card });
+            if (this.openCommit !== pc.sha) continue;
+            for (const r of checkOrder(pc.runs)) out.push({ id: `ck:${pc.sha}:${r.name}`, kind: "check", r, sha: pc.sha, card });
+          }
+        }
+        if (s.id !== "review" || !this.isReviewOpen(s)) continue;
+        for (const ps of rv.passes ?? []) {
+          out.push({ id: `pass:${ps.pass}`, kind: "pass", ps, card });
+          if (this.openPass !== ps.pass) continue;
+          for (const f of (rv.findings ?? []).filter((y) => y.pass === ps.pass)) out.push({ id: `f:${f.id}`, kind: "finding", f, pass: ps.pass, card });
+        }
+      }
+    });
+    return out;
+  }
+
+  // One vim action on the timeline; false: not one Flow has, and the key goes on.
+  act(a, cx) {
+    if (!a) return false;
+    if (a === "pending" || a === "count") return true;
+    const flat = this.flat;
+    const i = flat.findIndex((x) => x.id === this.cur);
+    const x = flat[i];
+    const to = (id) => { this.cur = id; this.reveal = true; };
+    if (this.ciAct(a, x, cx, to)) return true;
+    const review = flat.find((y) => y.id === "s:review");
+    const reviewOpen = review ? this.isReviewOpen(review.s) : false;
+    if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
+      const j = step(a, i, flat.length, this.vim.count, 12);
+      if (j >= 0) to(flat[j].id);
+    } else if (a === "left") {
+      // An open row folds; on one that doesn't fold (or already folded), its parent folds and takes the cursor.
+      if (x?.kind === "phase") this.fold[x.p.id] = true;
+      else if (x?.kind === "step" && x.s.id === "review" && reviewOpen) this.reviewOpen = false;
+      else if (x?.kind === "step") { this.fold[x.phase] = true; to(`p:${x.phase}`); }
+      else if (x?.kind === "pass" && this.openPass === x.ps.pass) { this.openPass = null; this.openFinding = null; }
+      else if (x?.kind === "pass") { this.reviewOpen = false; to("s:review"); }
+      else if (x?.kind === "finding" && this.openFinding === x.f.id) this.openFinding = null;
+      else if (x?.kind === "finding") { this.openPass = null; this.openFinding = null; to(`pass:${x.pass}`); }
+    } else if (a === "right") {
+      if (x?.kind === "phase") this.fold[x.p.id] = false;
+      else if (x?.kind === "step" && x.s.id === "review" && this.report?.review?.passes?.length) this.reviewOpen = true;
+      else if (x?.kind === "pass" && this.openPass !== x.ps.pass) { this.openPass = x.ps.pass; this.openFinding = null; }
+      else if (x?.kind === "finding") this.openFinding = x.f.id;
+    } else if (a === "open") {
+      // As a click: the phase, Review, a pass, a finding toggle; the PR step opens its PR.
+      if (x?.kind === "phase") this.fold[x.p.id] = !x.folded;
+      else if (x?.kind === "step" && x.s.id === "review" && this.report?.review?.passes?.length) this.reviewOpen = !reviewOpen;
+      else if (x?.kind === "step") {
+        const pr = details(x.s).find((d) => d.pr)?.pr;
+        const url = pr ? this.prUrl(pr) : null;
+        if (url) exec("open", [url]).catch(() => {});
+      } else if (x?.kind === "pass") { this.openPass = this.openPass === x.ps.pass ? null : x.ps.pass; this.openFinding = null; }
+      else if (x?.kind === "finding") this.openFinding = this.openFinding === x.f.id ? null : x.f.id;
+    } else if (a === "open-alt") {
+      const loc = x?.kind === "finding" ? locOf(x.f.loc) : null, root = this.report?.root;
+      if (loc && root) exec("open", [`zed://file${root}/${loc}`]).catch(() => {});
+    } else if (a === "yank") {
+      const text = x?.kind === "finding" ? x.f.loc ?? x.f.title : x?.kind === "pass" ? x.ps.sha : x?.kind === "step" ? x.s.label : null;
+      if (text) {
+        cx.write_to_clipboard(String(text));
+        notify({ title: tr("copied"), body: String(text), level: "success", timeout: 2000 });
+      }
+    } else if (a === "refresh") {
+      this.relink = true;
+      this.reportDirty = true;
+      this.read(cx);
+      if (this.ciOpen) this.loadCi(cx, true);
+    } else if (a === "escape") run("pane.go", { direction: "left" });
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "panel" } });
+    else if (a === "panel-prev" || a === "panel-next") panelTab(a === "panel-next" ? 1 : -1, cx);
+    else return false;
+    return true;
   }
 
   // Follows the report folder: collect.py rewrites facts.json atomically, read it again then.
@@ -124,16 +307,21 @@ export default class Flow extends View {
 
   read(cx) {
     if (!visible() || this.reading) return;
-    const term = terminal();
+    this.readAt = Date.now(); // DATA-SYNC.md: back on the tab, read again only past 10 s
+    const term = this.follow();
     const pane = term ? panes().find((p) => p.terminal === term) : null;
     const cwd = pane?.cwd ?? null;
     let branch = pane?.branch ?? null;
+    const own = branch; // the terminal's own branch, before the flow's replaces it
     this.reading = true;
     cx.spawn(async (cx) => {
       try {
         const text = term ? await readTextFile(`${CACHE()}/${term}.flow.json`).catch(() => null) : null;
         let flow = null;
         try { flow = text ? JSON.parse(text) : null; } catch { flow = term === this.term ? this.flow : null; } // a torn write keeps the last one
+        // The flow's branch before the terminal's: a session that dispatches stays on dev and works in
+        // worktrees (`cd "$WT"`), so its report, issue and branch shown are the flow's.
+        branch = flowBranch(flow?.steps) ?? branch;
         // The project: its repo (git, once per folder) and its /me:report facts for this branch.
         if (cwd && !(cwd in this.repos)) {
           const [top, origin] = await Promise.all([
@@ -142,7 +330,7 @@ export default class Flow extends View {
           ]);
           // The project's name: its GitHub repo's (a worktree's folder isn't), else its folder's.
           const gh = origin.code ? null : githubRepo(origin.stdout);
-          this.repos[cwd] = top.code ? null : { name: gh ? gh.split("/")[1] : top.stdout.trim().split("/").pop(), gh };
+          this.repos[cwd] = top.code ? null : { name: gh ? gh.split("/")[1] : top.stdout.trim().split("/").pop(), gh, top: top.stdout.trim() };
         }
         const repo = cwd ? this.repos[cwd] : null;
         // A shell that just started may not report its branch yet: ask git.
@@ -164,6 +352,16 @@ export default class Flow extends View {
               report = { ...summarizeReport(d.facts ? d : { facts: d, generatedAt: d.generatedAt }), review: f.review ?? null, root: f.repoPath ?? null };
             }
           } catch { report = this.report; } // a torn write keeps the last one
+          // The review loops copy each pass into review/ and then run collect.py, a step sessions drop
+          // (seen: 8 passes copied, facts.json still on pass 1). More passes on disk than in the facts:
+          // run it ourselves, once per count, so Review unfolds from the first finished pass.
+          const onDisk = folder ? new Set((await fs.readdir(`${folder}/review`).catch(() => []))
+            .map((n) => /^pass-(\d+)-(?:standards|spec)\.md$/.exec(n)?.[1]).filter(Boolean)).size : 0;
+          const root = report?.root ?? (repo?.top && own === branch ? repo.top : null);
+          if (!checking() && root && onDisk > (report?.review?.passes?.length ?? 0) && this.regen !== `${folder}#${onDisk}`) {
+            this.regen = `${folder}#${onDisk}`;
+            exec(`${home()}/.claude/skills/me/report/collect.py`, [], { cwd: root, timeout: 120000 }).catch(() => {});
+          }
           this.watchReport(cx, folder);
         }
         // The branch's report page and the plans holding the flow's issue: on opening the panel and
@@ -183,7 +381,12 @@ export default class Flow extends View {
         const key = JSON.stringify([term, cwd, branch, text, report, this.page, this.plans]);
         this.issue = issue;
         if (key === this.key) return;
-        if (term !== this.term) this.fold = {};
+        if (term !== this.term) {
+          this.fold = {};
+          this.ciOpen = false; // another terminal: its CI is read when unfolded
+          this.openCommit = null;
+          this.ciLog = null;
+        }
         this.key = key;
         this.term = term;
         this.cwd = cwd;
@@ -220,39 +423,43 @@ export default class Flow extends View {
     const f = this.flow;
     const repo = this.cwd ? this.repos[this.cwd] : null;
     const issue = this.issue;
-    const prStep = steps.find((s) => s.id === "pr");
-    const prN = this.report?.pr?.number ?? details(prStep ?? { id: "pr" }).find((d) => d.pr)?.pr ?? null;
+    const prN = this.prOf();
     const prState = this.report?.pr?.number === prN ? this.report.pr : null;
     const prColor = !prState ? t.muted : prState.state === "MERGED" ? t.ansi5 : prState.state === "CLOSED" ? c.err : prState.draft ? t.dim : t.done;
     const ci = this.report?.ci;
     const ciColor = !ci ? t.muted : ci.fail ? c.err : ci.pending ? c.warn : c.ok;
-    const doneN = steps.filter((s) => s.state === "done").length;
-    const running = runningLine(steps);
     const url = prN ? this.prUrl(prN) : null;
-    return v_flex().flex_none().rounded(16).border(1).border_color(t.border).bg(t.background).px(14).py(12).gap(9)
+    // DESIGN-REFERENCE.md: the project's pixel band behind the header, inside its border (width less 2,
+    // radius 16 less 1), measured on the card itself.
+    const band = ditherBand(this.headW - 2, 60, 15, alpha(projectColor(t, this.report?.root ?? this.cwd), settings().dark !== false ? "6b" : "4d"), TOP);
+    return v_flex().id("kf-head").relative().overflow_hidden().flex_none().rounded(16).border(1).border_color(t.border).bg(t.background).px(14).py(12).gap(9)
+      .on_size_change((size, cx) => { if (Math.abs(size.width - this.headW) > 0.5) { this.headW = size.width; cx.notify(); } })
+      .when(Boolean(band), (el) => el.child(band))
       .child(h_flex().gap(8).items_center()
         .child(svg("mods/kt-panel-head/workflow.svg").size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().text_size(13.5).font_semibold().child(workflowName(f.workflow)))
-        .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(f.updatedAt ? ago(f.updatedAt) : "")))
+        .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(f.updatedAt ? ago(f.updatedAt) : ""))
+        .when(this.keyed, (el) => el.child(modePill(t, this.vim))))
       .when(Boolean(repo || this.branch), (el) => el.child(h_flex().gap(6).items_center().min_w(0)
         .child(svg(I("git-branch")).size(12).flex_none().text_color(t.muted))
         .child(div().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.muted)
           .child([repo?.name, this.branch].filter(Boolean).join(" · ")))))
       .when(Boolean(issue || prN || ci?.total || this.page || this.plans?.length), (el) => el.child(h_flex().flex_wrap().gap(6).items_center()
         .when(Boolean(issue), (el) => el.child(this.pill(t, "kf-issue", `#${issue}`, t.muted)))
+        // i18n: tech (PR #n and GitHub's state, the same in every language)
         .when(Boolean(prN), (el) => el.child(this.pill(t, "kf-pr", `PR #${prN}${prState ? ` · ${prState.draft ? "draft" : prState.state.toLowerCase()}` : ""}`, prColor,
           url ? () => exec("open", [url]).catch(() => {}) : null, I("git-pull-request"))))
-        .when(Boolean(ci?.total), (el) => el.child(this.pill(t, "kf-ci", `CI ${ci.ok}/${ci.total}`, ciColor)))
-        .when(Boolean(this.page), (el) => el.child(this.pill(t, "kf-report", "Rapport", t.ansi4,
-          () => exec("open", [this.page]).catch(() => {}), I("file-text"), "Rapport /me:report de la branche")))
+        // Its id carries the repo and branch: another thread's CI shows at once, not rolling.
+        .when(Boolean(ci?.total), (el) => el.child(this.pill(t, "kf-ci", rollText(this.motion, `kf-ci-n-${repo?.name}|${this.branch}`, `CI ${ci.ok}/${ci.total}`, 14), ciColor))) // i18n: tech
+        .when(Boolean(this.page), (el) => el.child(this.pill(t, "kf-report", tr("report"), t.ansi4,
+          () => exec("open", [this.page]).catch(() => {}), I("file-text"), tr("reportTip"))))
         .children((this.plans ?? []).map((p, i) => this.pill(t, `kf-plan-${i}`, p.title, t.ansi5,
-          () => exec("open", [p.path]).catch(() => {}), I("layers"), `Plan /me:report --plan · ${p.slug}`)))))
-      .child(h_flex().gap(10).items_center()
-        .child(h_flex().flex_1().h(6).gap(3).children(steps.map((s) => div().flex_1().h_full().rounded_full()
-          .bg(s.state === "done" ? c.ok : s.state === "current" ? c.accent : s.state === "failed" ? c.err : t.input))))
-        .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(`${doneN}/${steps.length}`)))
-      .when(Boolean(running), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(c.accent)
-        .child(`EN COURS · ${running}`)));
+          () => exec("open", [p.path]).catch(() => {}), I("layers"), `Plan /me:report --plan · ${p.slug}`))))) // i18n: tech
+      // The progress by steps (viz.js steps), a segment per step in the list's order and names, as wide as
+      // the card (viz measures it); too narrow for every name, the running one and n / total.
+      // The list's own state colours (colors()): done green, running accent, failed red.
+      .child(((c) => viz(t, this.motion, { roll }).steps(steps.map((s) => ({ label: nameOf(s.id), state: s.state })),
+        { id: "kf-progress", colors: { done: c.ok, current: c.accent, failed: c.err } }))(this.colors(t)));
   }
 
   // ---------- steps ----------
@@ -270,22 +477,30 @@ export default class Flow extends View {
     return Boolean(this.report?.review?.passes?.length) && (this.reviewOpen ?? s.state === "current");
   }
 
+  // The keys' cursor on this row, while Flow has the keyboard (an accent ring on the ink).
+  ring(id) {
+    return this.keyed && this.cur === id;
+  }
+
   step(t, c, s, first, last, pulse) {
     const on = s.state === "current";
     const live = on || s.state === "done";
     const toneOf = (d) => (d.tone === "ok" ? c.ok : d.tone === "err" ? c.err : d.tone === "dim" ? t.dim : t.muted);
     const rail = (show) => div().w(1).flex_1().when(show, (el) => el.bg(t.border));
-    const folds = s.id === "review" && Boolean(this.report?.review?.passes?.length);
-    const open = folds && this.isReviewOpen(s);
+    const ci = s.id === "ci" && this.ciFolds();
+    const folds = ci || (s.id === "review" && Boolean(this.report?.review?.passes?.length));
+    const open = folds && (ci ? this.isCiOpen(s) : this.isReviewOpen(s));
+    const cursor = this.ring(`s:${s.id}`);
     return h_flex().id(`kf-s-${s.id}`).h(28).px(6).gap(8).items_center().rounded(8)
-      .when(on, (el) => el.bg(alpha(t.accent, "14")).border(1).border_color(alpha(t.accent, "66")))
-      .when(!on, (el) => el.border(1).border_color(alpha(t.accent, "00")))
-      .when(folds, (el) => el.cursor_pointer().when(!on, (e) => e.hover((st) => st.bg(t.hover)))
-        .on_click((_e, cx) => { this.reviewOpen = !open; cx.notify(); }))
+      .border(1).border_color(cursor ? alpha(t.accent, "99") : on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
+      .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+      .when(on && !cursor, (el) => el.bg(alpha(t.accent, "14")))
+      .when(folds, (el) => el.cursor_pointer().when(!on && !cursor, (e) => e.hover((st) => st.bg(t.hover)))
+        .on_click((_e, cx) => { if (ci) this.toggleCi(!open, cx); else this.reviewOpen = !open; cx.notify(); }))
       .child(v_flex().w(14).h_full().flex_none().items_center()
         .child(rail(!first)).child(this.dot(t, c, s, pulse)).child(rail(!last && !open)))
       .child(div().flex_none().text_size(12.5).text_color(s.state === "pending" ? t.muted : t.foreground).when(on, (el) => el.font_medium())
-        .child(NAMES[s.id] ?? s.id))
+        .child(nameOf(s.id)))
       .when(folds, (el) => el.child(svg(I(open ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(open ? t.accent : t.muted)))
       .child(h_flex().flex_1().min_w(0).gap(5).items_center().overflow_hidden()
         .children(details(s).map((d, i) => d.pr
@@ -294,7 +509,7 @@ export default class Flow extends View {
             ? this.pill(t, `kf-d-${s.id}-${i}`, d.text, toneOf(d))
             : div().min_w(0).truncate().when(Boolean(d.mono), (el) => el.font_family(MONO).text_size(11)).when(!d.mono, (el) => el.text_size(11.5))
               .text_color(t.muted).child(d.text))))
-      .when(s.source === "host", (el) => el.child(div().id(`kf-h-${s.id}`).flex_none().text_color(t.dim).tooltip("détecté par gwm/git/gh")
+      .when(s.source === "host", (el) => el.child(div().id(`kf-h-${s.id}`).flex_none().text_color(t.dim).tooltip(tr("hostTip"))
         .child(svg("mods/kt-flow/scan-eye.svg").size(12))))
       .when(live && Boolean(s.tool), (el) => el.child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(s.tool)));
   }
@@ -308,34 +523,40 @@ export default class Flow extends View {
     const rv = this.report.review;
     const passes = rv.passes ?? [], findings = rv.findings ?? [];
     const sums = passes.map(passOf);
-    const max = Math.max(1, ...sums.map((x) => x.blockers));
     const lastN = passes.at(-1)?.pass;
     const root = this.report.root ?? null;
     const prioColor = (pr) => (/P[012]/.test(pr) ? c.err : t.muted);
     const toneColor = (tone) => (tone === "ok" ? c.ok : tone === "warn" ? c.warn : t.dim);
     const axis = (label, ran) => h_flex().flex_none().gap(3).items_center().font_family(MONO).text_size(10)
       .text_color(ran ? t.dim : c.warn).child(label)
-      .child(ran ? svg(I("check")).size(10).text_color(c.ok) : div().child("non exécuté"));
+      .child(ran ? svg(I("check")).size(10).text_color(c.ok) : div().child(tr("notRun")));
     const rows = [];
     passes.forEach((p, i) => {
       const x = sums[i], last = p.pass === lastN, open = this.openPass === p.pass;
+      const cursor = this.ring(`pass:${p.pass}`);
       rows.push(h_flex().id(`kf-pass-${p.pass}`).h(28).px(6).gap(7).items_center().rounded(8).cursor_pointer()
-        .when(last, (el) => el.bg(alpha(t.accent, "14")))
-        .when(!last, (el) => el.hover((st) => st.bg(t.hover)))
+        .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+        .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+        .when(last && !cursor, (el) => el.bg(alpha(t.accent, "14")))
+        .when(!last && !cursor, (el) => el.hover((st) => st.bg(t.hover)))
         .on_click((_e, cx) => { this.openPass = open ? null : p.pass; this.openFinding = null; cx.notify(); })
         .child(svg(I(open ? "chevron-down" : "chevron-right")).size(11).flex_none().text_color(open ? t.accent : t.dim))
-        .child(div().flex_none().text_size(12).text_color(last ? t.foreground : t.muted).when(last, (el) => el.font_medium()).child(`Passe ${p.pass}`))
+        .child(div().flex_none().text_size(12).text_color(last ? t.foreground : t.muted).when(last, (el) => el.font_medium()).child(tr("pass", { n: p.pass })))
         .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(String(p.sha ?? "").slice(0, 7)))
         .child(h_flex().flex_1().min_w(0).gap(4).items_center().overflow_hidden()
           .children(["p0", "p1", "p2"].filter((k) => x[k] > 0).map((k) => this.pill(t, `kf-pc-${p.pass}-${k}`, `${k.toUpperCase()} ${x[k]}`, c.err)))
           .when(x.p3 > 0, (el) => el.child(this.pill(t, `kf-pc-${p.pass}-p3`, `P3 ${x.p3}`, t.muted)))
-          .when(x.clean, (el) => el.child(this.pill(t, `kf-pc-${p.pass}-ok`, "0 bloquant", c.ok))))
+          .when(x.clean, (el) => el.child(this.pill(t, `kf-pc-${p.pass}-ok`, tr("noBlocker"), c.ok))))
         .child(axis("std", x.std)).child(axis("spec", x.spec)));
       if (!open) return;
+      const fr = []; // the open pass's findings, one fold
       for (const f of findings.filter((y) => y.pass === p.pass)) {
         const d = decisionOf(f), loc = locOf(f.loc), shown = this.openFinding === f.id;
-        rows.push(h_flex().id(`kf-f-${f.id}`).h(26).ml(18).px(6).gap(7).items_center().rounded(8).cursor_pointer()
-          .when(shown, (el) => el.bg(t.hover)).when(!shown, (el) => el.hover((st) => st.bg(t.hover)))
+        const cursor = this.ring(`f:${f.id}`);
+        fr.push(h_flex().id(`kf-f-${f.id}`).h(26).ml(18).px(6).gap(7).items_center().rounded(8).cursor_pointer()
+          .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+          .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+          .when(shown && !cursor, (el) => el.bg(t.hover)).when(!shown && !cursor, (el) => el.hover((st) => st.bg(t.hover)))
           .on_click((_e, cx) => { this.openFinding = shown ? null : f.id; cx.notify(); })
           .child(this.pill(t, `kf-fp-${f.id}`, f.prio ?? "?", prioColor(f.prio ?? "")))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(f.title ?? f.id))
@@ -345,52 +566,308 @@ export default class Flow extends View {
             .tooltip(f.loc).child(loc.split("/").pop())))
           .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(toneColor(d.tone)).child(d.text)));
         if (shown) {
-          rows.push(v_flex().ml(18).mb(4).p(10).gap(6).rounded(8).border(1).border_color(t.border).bg(t.raised)
+          fr.push(enter(this.motion, v_flex().ml(18).mb(4).p(10).gap(6).rounded(8).border(1).border_color(t.border).bg(t.raised), `kf-fd-${f.id}`, { dy: 0 })
             .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(`${f.axis ?? ""} · ${f.loc ?? ""}`))
             .child(div().w_full().text_size(12).line_height("17px").text_color(t.foreground).child(f.detail ?? "—")));
         }
       }
+      rows.push(enter(this.motion, v_flex().gap(2), `kf-pf-${p.pass}`, { dy: 0 }).children(fr));
     });
-    return [v_flex().ml(13).pl(10).pb(4).gap(2).border_l(1).border_color(t.border)
+    // One height level only (the phase's body, around this): Review, its passes and findings, and CI fade
+    // in, and the phase's fold grows to them. Nested folds would chase each other's height every frame.
+    // The convergence (viz.js): the open findings and their change since the previous pass, then each
+    // pass's blocking (P0 to P2) and non-blocking (P3) findings, as wide as this body (viz measures it).
+    const V = viz(t, this.motion, { roll });
+    const openOf = (n) => findings.filter((f) => f.pass === n && decisionOf(f).tone === "warn").length;
+    const prevN = passes.at(-2)?.pass, open = openOf(lastN), delta = prevN == null ? 0 : open - openOf(prevN);
+    return [enter(this.motion, v_flex().ml(13).pl(10).pb(4).gap(2).border_l(1).border_color(t.border), "kf-review", { dy: 0 })
       .child(h_flex().h(30).px(6).gap(8).items_center()
-        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child("CONVERGENCE"))
-        .child(h_flex().h(22).gap(3).items_end().children(sums.map((x, i) => div().w(7).h(Math.max(2, Math.round((20 * x.blockers) / max))).rounded(2)
-          .bg(x.blockers ? c.err : c.ok).opacity(passes[i].pass === lastN ? 1 : 0.5))))
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child("CONVERGENCE")) // i18n: tech
         .child(div().flex_1())
         .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim)
-          .child(`${rv.reviewer ? `${rv.reviewer} · ` : ""}${passes.length} passe${passes.length > 1 ? "s" : ""} · ${findings.length} findings`)))
+          .child(tr("passes", { who: rv.reviewer ? `${rv.reviewer} · ` : "", n: passes.length, f: findings.length }))))
+      .child(v_flex().px(6).pt(2).pb(10).gap(12)
+        .child(V.stat(tr("openFindings"), String(open), {
+          delta: delta ? `${delta > 0 ? "+" : "−"}${Math.abs(delta)}` : null,
+          detail: prevN == null ? tr("firstPass") : delta ? tr("sincePass", { n: prevN }) : tr("stableSince", { n: prevN }),
+          better: "lower", id: "kf-rv-open" }))
+        .child(V.chart("bar", [
+          { label: tr("blocking"), values: sums.map((x) => x.blockers), color: "negative" },
+          { label: tr("nonBlocking"), values: sums.map((x) => x.p3), color: "muted" },
+        ], { labels: passes.map((p) => `P${p.pass}`), height: 140, id: "kf-rv-chart" })))
       .children(rows)];
   }
 
-  phase(t, c, p, pulseId) {
-    const folded = this.fold[p.id] ?? (p.done === p.total && !p.failed);
+  // ---------- CI (the PR's check runs, per pushed commit) ----------
+
+  // The followed project's GitHub repo, the flow's PR, and the CI read for them: "owner/repo#n".
+  prOf() {
+    const pr = (this.flow?.steps ?? []).find((s) => s.id === "pr");
+    return this.report?.pr?.number ?? details(pr ?? { id: "pr" }).find((d) => d.pr)?.pr ?? null;
+  }
+  ciKey() {
+    const gh = this.cwd ? this.repos[this.cwd]?.gh : null, n = this.prOf();
+    return gh && n ? `${gh}#${n}` : null;
+  }
+  ciFolds() { return Boolean(this.ciKey()); }
+  isCiOpen(s) { return s.id === "ci" && this.ciOpen && this.ciFolds(); }
+
+  toggleCi(open, cx) {
+    this.ciOpen = open;
+    if (open) this.loadCi(cx, false);
+  }
+  toggleCommit(sha) {
+    this.openCommit = this.openCommit === sha ? null : sha;
+    this.ciLog = null;
+  }
+  openRun(r) {
+    const url = r?.html_url ?? r?.details_url;
+    if (url) exec("open", [url]).catch(() => {});
+  }
+
+  // The PR's last 10 commits and each one's check runs (`gh`, 20 s each), and the local branch's
+  // commits the PR hasn't (unpushed). Only on unfold, on r (force) and when the PR read changes;
+  // a commit whose checks all ended is kept and never read again.
+  loadCi(cx, force) {
+    const key = this.ciKey();
+    if (!key || this.ciLoading || (!force && this.ci?.key === key)) return;
+    const [repo, n] = key.split("#");
+    const branch = this.branch, cwd = this.cwd;
+    this.ciLoading = true;
+    const gh = (args) => exec("gh", args, { timeout: 20e3 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e?.message ?? e) }));
+    const why = (r, what) => r.stderr.trim().split("\n").pop() || tr("failed", { what, code: r.code });
+    cx.spawn(async (cx) => {
+      let ci;
+      try {
+        const pv = await gh(["pr", "view", n, "-R", repo, "--json", "commits,headRefOid"]);
+        if (pv.code) throw new Error(`gh pr view ${n} : ${why(pv, "gh pr view")}`);
+        const d = JSON.parse(pv.stdout);
+        const commits = (d.commits ?? []).slice(-10).map((x) => ({ sha: x.oid, subject: x.messageHeadline ?? "" }));
+        await Promise.all(commits.map(async ({ sha }) => {
+          const k = `${repo}@${sha}`;
+          if (this.ciRuns[k]?.done) return;
+          // i18n: tech
+          const r = await gh(["api", `repos/${repo}/commits/${sha}/check-runs?per_page=100`, "--jq",
+            // i18n: tech
+            "[.check_runs[] | {name, status, conclusion, started_at, completed_at, html_url, details_url}]"]);
+          let runs = null;
+          try { runs = r.code ? null : JSON.parse(r.stdout); } catch { runs = null; }
+          this.ciRuns[k] = Array.isArray(runs) ? { runs, done: runs.length > 0 && runs.every((x) => x.status === "completed") } : { error: why(r, "gh api check-runs") };
+        }));
+        // ci-until-green's guard: commits on the local branch the PR's head hasn't.
+        let ahead = 0;
+        if (branch && cwd && d.headRefOid) {
+          const r = await exec("git", ["rev-list", "--count", `${d.headRefOid}..refs/heads/${branch}`], { cwd }).catch(() => null);
+          ahead = r?.code === 0 ? Number(r.stdout.trim()) || 0 : 0;
+        }
+        ci = { key, repo, head: d.headRefOid ?? null, commits, ahead, error: null };
+      } catch (e) {
+        ci = { key, repo, commits: [], error: String(e?.message ?? e) };
+      }
+      this.ciLoading = false;
+      if (this.ciKey() === key) this.ci = ci;
+      cx.notify();
+    });
+  }
+
+  // The commits that ran checks (an intermediate commit of a push has none), the PR's head always;
+  // each with its runs and their tally.
+  pushed() {
+    const ci = this.ci;
+    if (!ci?.commits?.length || ci.key !== this.ciKey()) return [];
+    return ci.commits.map((x) => ({ ...x, ...(this.ciRuns[`${ci.repo}@${x.sha}`] ?? {}) }))
+      .filter((x) => x.runs?.length || x.error || x.sha === ci.head)
+      .map((x) => ({ ...x, runs: x.runs ?? [], tally: tally(x.runs ?? []) }));
+  }
+
+  // A failed check's log extract, on demand: `gh run view <run> --log-failed`, its job's last 40 lines.
+  showLog(x, cx, only) {
+    const key = x.id;
+    if (this.ciLog?.key === key) { if (!only) this.ciLog = null; return; }
+    const id = runIdOf(x.r), repo = this.ci?.repo;
+    if (!id || !repo) { this.ciLog = { key, error: tr("notActions") }; return; }
+    this.ciLog = { key, loading: true };
+    cx.spawn(async (cx) => {
+      const r = await exec("gh", ["run", "view", id, "--log-failed", "-R", repo], { timeout: 20e3 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e?.message ?? e) }));
+      if (this.ciLog?.key !== key) return;
+      const lines = logTail(r.stdout, x.r.name, 40);
+      this.ciLog = lines.length ? { key, run: id, lines }
+        : { key, error: r.code ? `gh run view ${id} : ${r.stderr.trim().split("\n").pop() || tr("code", { code: r.code })}` : tr("noFailedLog") };
+      this.logReveal = Boolean(lines.length);
+      cx.notify();
+    });
+  }
+
+  // CI's rows under the keys, as Review's; false: not a CI row (the timeline's keys go on).
+  ciAct(a, x, cx, to) {
+    const step = x?.kind === "step" && x.s.id === "ci" && this.ciFolds();
+    if (!step && x?.kind !== "commit" && x?.kind !== "check") return false;
+    const open = step && this.isCiOpen(x.s);
+    if (a === "left") {
+      if (step && !open) return false; // folds its phase, as any step
+      if (step) this.ciOpen = false;
+      else if (x.kind === "commit" && this.openCommit === x.pc.sha) this.toggleCommit(x.pc.sha);
+      else if (x.kind === "commit") { this.ciOpen = false; to("s:ci"); }
+      else if (this.ciLog?.key === x.id) this.ciLog = null;
+      else { this.toggleCommit(x.sha); to(`ci:${x.sha}`); }
+    } else if (a === "right") {
+      if (step) this.toggleCi(true, cx);
+      else if (x.kind === "commit") { if (this.openCommit !== x.pc.sha) this.toggleCommit(x.pc.sha); }
+      else if (checkState(x.r) === "fail") this.showLog(x, cx, true);
+    } else if (a === "open") {
+      if (step) this.toggleCi(!open, cx);
+      else if (x.kind === "commit") this.toggleCommit(x.pc.sha);
+      else if (checkState(x.r) === "fail") this.showLog(x, cx);
+      else this.openRun(x.r);
+    } else if (a === "open-alt" && x.kind === "check") this.openRun(x.r);
+    else if (a === "yank" && !step) {
+      const text = x.kind === "commit" ? x.pc.sha : x.r.html_url ?? x.r.details_url ?? x.r.name;
+      cx.write_to_clipboard(String(text));
+      notify({ title: tr("copied"), body: String(text), level: "success", timeout: 2000 });
+    } else return false;
+    return true;
+  }
+
+  // Under an open CI step, as Review's: the runs' convergence (a bar per pushed commit, its height
+  // the failed checks, green when all pass, the last one inked), a row per commit (sha, subject,
+  // ✓ ✗ … pills, time), one unfolded into its checks, a failed one's log extract below it.
+  ciBody(t, c, s) {
+    if (s.id !== "ci" || !this.isCiOpen(s)) return [];
+    const box = (rows) => [enter(this.motion, v_flex().ml(13).pl(10).pb(4).gap(2).border_l(1).border_color(t.border), "kf-ci", { dy: 0 }).children(rows)];
+    const note = (text, color) => div().px(6).py(6).font_family(MONO).text_size(10.5).line_height("15px").text_color(color ?? t.dim).child(text);
+    const ci = this.ci?.key === this.ciKey() ? this.ci : null;
+    if (!ci) return box([note(tr("readingChecks", { key: this.ciKey() }))]);
+    if (ci.error) return box([note(ci.error, c.err)]);
+    const pushed = this.pushed();
+    const last = pushed.at(-1)?.sha;
+    // A check's conclusion in words (GitHub's: success, failure…); an unknown one as it comes.
+    const CONCLUSIONS = ["success", "failure", "cancelled", "timed_out", "skipped", "neutral", "action_required", "startup_failure", "stale"];
+    const word = (c) => (CONCLUSIONS.includes(c) ? tr(`c.${c}`) : String(c ?? ""));
+    const rows = [];
+    for (const p of pushed) {
+      const x = p.tally, open = this.openCommit === p.sha, head = p.sha === last && p.sha === ci.head;
+      const cursor = this.ring(`ci:${p.sha}`);
+      rows.push(h_flex().id(`kf-ci-${p.sha}`).h(28).px(6).gap(7).items_center().rounded(8).cursor_pointer()
+        .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+        .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+        .when(head && !cursor, (el) => el.bg(alpha(t.accent, "14")))
+        .when(!head && !cursor, (el) => el.hover((st) => st.bg(t.hover)))
+        .on_click((_e, cx) => { this.toggleCommit(p.sha); cx.notify(); })
+        .child(svg(I(open ? "chevron-down" : "chevron-right")).size(11).flex_none().text_color(open ? t.accent : t.dim))
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(head ? t.foreground : t.muted).child(p.sha.slice(0, 7)))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(head ? t.foreground : t.muted).when(head, (el) => el.font_medium()).child(p.subject))
+        .child(h_flex().flex_none().gap(4).items_center()
+          .when(x.ok > 0, (el) => el.child(this.pill(t, `kf-cio-${p.sha}`, `✓ ${x.ok}`, c.ok)))
+          .when(x.fail > 0, (el) => el.child(this.pill(t, `kf-cif-${p.sha}`, `✗ ${x.fail}`, c.err)))
+          .when(x.pending > 0, (el) => el.child(this.pill(t, `kf-cip-${p.sha}`, `… ${x.pending}`, c.warn)))
+          .when(!x.total, (el) => el.child(this.pill(t, `kf-cin-${p.sha}`, p.error ? tr("unreadable") : tr("noCheck"), p.error ? c.err : t.muted, null, null, p.error))))
+        .child(h_flex().w(54).flex_none().justify_end().font_family(MONO).text_size(10.5).text_color(t.dim).child(duration(x.ms))));
+      if (!open) continue;
+      for (const r of checkOrder(p.runs)) {
+        const st = checkState(r), id = `ck:${p.sha}:${r.name}`, logs = this.ciLog?.key === id ? this.ciLog : null;
+        const color = st === "fail" ? c.err : st === "pending" ? c.warn : st === "ok" ? c.ok : t.dim;
+        const cursor = this.ring(id), x = { id, r, sha: p.sha };
+        rows.push(h_flex().id(`kf-${id}`).h(26).ml(18).px(6).gap(7).items_center().rounded(8)
+          .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+          .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+          .when(!cursor, (el) => el.hover((st) => st.bg(t.hover)))
+          .child(h_flex().size(14).flex_none().items_center().justify_center().text_color(color)
+            .child(st === "ok" ? svg(I("check")).size(12) : st === "fail" ? svg(I("x")).size(12)
+              : div().size(7).rounded_full().bg(color).when(st === "pending", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1400 }))))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(st === "skip" ? t.muted : t.foreground).child(r.name))
+          .when(st === "fail" && Boolean(runIdOf(r)), (el) => el.child(h_flex().id(`kf-logbtn-${id}`).flex_none().h(18).px(7).gap(4).items_center().rounded_full()
+            .border(1).border_color(alpha(c.err, "4d")).bg(alpha(c.err, logs ? "33" : "1a")).font_family(MONO).text_size(10.5).text_color(c.err)
+            .cursor_pointer().hover((st) => st.bg(alpha(c.err, "33")))
+            .on_click((_e, cx) => { cx.stop_propagation(); this.showLog(x, cx); cx.notify(); })
+            .child(svg(I("file-text")).size(11)).child(logs ? tr("hideLogs") : tr("showLogs"))))
+          .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(st === "pending" ? "" : duration(checkMs(r))))
+          .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(color)
+            .child(st === "pending" ? (r.status === "queued" ? tr("queued") : tr("inProgress")) : word(r.conclusion)))
+          .when(Boolean(r.html_url ?? r.details_url), (el) => el.child(div().id(`kf-run-${id}`).flex_none().text_color(t.dim).cursor_pointer()
+            .hover((st) => st.text_color(t.foreground)).tooltip(tr("openRun"))
+            .on_click((_e, cx) => { cx.stop_propagation(); this.openRun(r); })
+            .child(svg(I("external-link")).size(12)))));
+        if (!logs) continue;
+        if (!logs.lines) { rows.push(div().ml(18).child(note(logs.loading ? tr("readingLogs") : logs.error, logs.loading ? t.dim : c.err))); continue; }
+        if (this.logReveal) { this.logScroll.scroll_to_item(logs.lines.length); this.logReveal = false; }
+        // overflow_y_scroll + a Scrollbar of the same id: scroll_to_item does nothing on overflow_y_scrollbar.
+        rows.push(div().relative().ml(18).mb(4)
+          .child(v_flex().id(`kf-logs-${id}`).p(10).gap(1).max_h(240).overflow_y_scroll().track_scroll(this.logScroll)
+            .rounded(8).border(1).border_color(t.border).bg(t.raised).font_family(MONO).text_size(10.5).line_height("15px")
+            .child(div().pb(4).text_color(t.dim).child(tr("lastLines", { run: logs.run, n: logs.lines.length })))
+            .children(logs.lines.map((l) => div().w_full().text_color(t.foreground).child(l || " "))))
+          .child(Scrollbar.vertical(`kf-logs-${id}`).absolute().inset_0()));
+      }
+    }
+    if (!pushed.length) rows.push(note(tr("noCommits")));
+    if (ci.ahead > 0) {
+      rows.push(h_flex().h(26).px(6).gap(7).items_center().rounded(8).bg(alpha(c.warn, "14"))
+        .child(svg(I("git-commit")).size(12).flex_none().text_color(c.warn))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(c.warn)
+          .child(tr("unpushed", { n: ci.ahead })))
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(this.branch ?? "")));
+    }
+    // The convergence (viz.js): each pushed commit's green and red checks, and the last one's checks still
+    // running as a progress (done over total), as wide as this body. Nothing pushed: viz says « aucune donnée ».
+    const V = viz(t, this.motion, { roll });
+    const head = pushed.at(-1)?.tally;
+    return [enter(this.motion, v_flex().ml(13).pl(10).pb(4).gap(2).border_l(1).border_color(t.border), "kf-ci", { dy: 0 })
+      .child(h_flex().h(30).px(6).gap(8).items_center()
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child("CONVERGENCE")) // i18n: tech
+        .child(div().flex_1())
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(`${this.ciLoading ? "… " : ""}${ciLine(pushed)}`)))
+      .child(v_flex().px(6).pt(2).pb(10).gap(12)
+        .when(Boolean(head?.pending), (el) => el.child(V.progress(tr("checksRunning"), head.total - head.pending, {
+          max: head.total, detail: tr("checksDone", { done: head.total - head.pending, total: head.total, sha: String(last).slice(0, 7) }),
+          color: head.fail ? "negative" : "warning", id: "kf-ci-progress" })))
+        .child(V.chart("bar", [
+          { label: tr("green"), values: pushed.map((p) => p.tally.ok), color: "positive" },
+          { label: tr("red"), values: pushed.map((p) => p.tally.fail), color: "negative" },
+        ], { labels: pushed.map((p) => String(p.sha).slice(0, 7)), height: 140, id: "kf-ci-chart" })))
+      .children(rows)];
+  }
+
+  // A phase all done is folded until clicked (or h / l).
+  folded(p) {
+    return this.fold[p.id] ?? (p.done === p.total && !p.failed);
+  }
+
+  phase(t, c, p, pulseId, cx) {
+    const folded = this.folded(p);
     const all = p.done === p.total;
+    const cursor = this.ring(`p:${p.id}`);
+    // Its steps unfold and fold on their height (motion.js collapse, given a builder: the fold closes too).
+    const body = collapse(this.motion, `kf-pb-${p.id}`, !folded, () => v_flex()
+      .children(p.steps.flatMap((s, i) => [this.step(t, c, s, i === 0, i === p.steps.length - 1, s.id === pulseId), ...this.reviewBody(t, c, s), ...this.ciBody(t, c, s)])), { cx });
     return v_flex().flex_none().rounded(12).border(1).border_color(t.border).bg(t.background).p(4)
       .child(h_flex().id(`kf-p-${p.id}`).h(28).px(6).gap(8).items_center().rounded(8).cursor_pointer()
-        .hover((s) => s.bg(t.hover))
+        .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+        .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+        .when(!cursor, (el) => el.hover((s) => s.bg(t.hover)))
         .on_click((_e, cx) => { this.fold[p.id] = !folded; cx.notify(); })
         .child(svg(I(folded ? "chevron-right" : "chevron-down")).size(12).flex_none().text_color(t.muted))
         .when(all, (el) => el.child(svg(I("check")).size(12).flex_none().text_color(c.ok)))
         .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(p.current ? t.foreground : t.muted).child(p.label))
         .child(div().flex_none().font_family(MONO).text_size(11).text_color(all ? c.ok : p.failed ? c.err : t.dim).child(`${p.done}/${p.total}`)))
-      .when(!folded, (el) => el.children(p.steps.flatMap((s, i) => [this.step(t, c, s, i === 0, i === p.steps.length - 1, s.id === pulseId), ...this.reviewBody(t, c, s)])));
+      .when(Boolean(body), (el) => el.child(body));
   }
 
   // ---------- empty ----------
 
   empty(t) {
-    const why = !this.term ? "Aucun terminal local au focus." : `Pas de flow pour ${this.term}.`;
+    const why = !this.term ? tr("noTerminal") : tr("noFlow", { term: this.term });
     return v_flex().size_full().gap(4).text_color(t.foreground)
+      .when(this.keyed, (el) => el.child(h_flex().flex_none().px(14).pt(6).child(div().flex_1()).child(modePill(t, this.vim))))
       .child(v_flex().flex_1().rounded(16).border(1).border_color(t.border).bg(t.background).items_center().justify_center().gap(12).p(24)
         .child(div().size(44).rounded_full().border(1).border_dashed().border_color(t.input).flex().items_center().justify_center()
           .text_color(t.dim).child(svg("mods/kt-panel-head/workflow.svg").size(18)))
         .child(div().text_size(14).font_medium().child(why))
         .child(div().max_w(380).text_size(12.5).line_height("19px").text_color(t.muted)
-          .child("Flow suit, étape par étape, le workflow que la session Claude Code de ce terminal déroule : issue, worktree, implémentation, PR, review, CI, merge. claude-flow le publie dès qu'un workflow démarre."))
+          .child(tr("about")))
         .child(h_flex().gap(8).items_center()
-          .child(div().text_size(12).text_color(t.dim).child("Afficher le flow dans la session :"))
+          .child(div().text_size(12).text_color(t.dim).child(tr("showIn")))
           .child(h_flex().id("kf-kbd").h(24).px(9).gap(6).items_center().rounded(6).border(1).border_color(t.input).bg(t.raised)
-            .font_family(MONO).text_size(11.5).text_color(this.copied ? t.done : t.foreground).cursor_pointer().tooltip("Copier")
+            .font_family(MONO).text_size(11.5).text_color(this.copied ? t.done : t.foreground).cursor_pointer().tooltip(tr("copy"))
             .hover((s) => s.border_color(t.accent))
             .on_click((_e, cx) => {
               cx.write_to_clipboard("/me:flow");
@@ -398,23 +875,56 @@ export default class Flow extends View {
               cx.timer.after(1500, (cx) => { this.copied = false; cx.notify(); });
               cx.notify();
             })
-            .child(this.copied ? "copié" : "/me:flow")
+            .child(this.copied ? tr("copiedShort") : "/me:flow")
             .when(!this.copied, (el) => el.child(svg("mods/kt-diff/copy.svg").size(11).text_color(t.dim))))));
   }
 
   render(cx) {
     const vis = visible();
-    if (vis && !this.shown) this.relink = true; // the panel opens: look for the report and plans again
-    if (vis && !checking() && (!this.shown || terminal() !== this.term)) this.read(cx);
+    // The panel opens (and the last read is past 10 s, DATA-SYNC.md): look for the report and plans again.
+    const stale = !this.shown && Date.now() - (this.readAt ?? 0) > 10e3;
+    if (vis && stale) this.relink = true;
+    if (vis && !checking() && (stale || this.follow() !== this.term)) this.read(cx);
+    if (vis && !this.shown) this.showGen++;
     this.shown = vis;
+    // DATA-SYNC.md: a commit, a push or a PR made elsewhere, or an agent of this space that stopped
+    // working: the report, the plans and the CI are read again.
+    const sp = spaces().find((s) => s.active)?.id;
+    if (vis && !checking()) refreshOn(this, cx, "flow", ["git", "gh", ...(sp ? [`agent:${sp}`] : [])], async (cx) => {
+      this.relink = true;
+      this.read(cx);
+      if (this.ciOpen) this.loadCi(cx, true);
+    });
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
+    this.keyed = this.handle.is_focused();
+    // The same root in both states, so the keyboard stays here (focus, key:, esc, [ ]).
+    const root = (el) => el.id("kt-flow").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx));
     const steps = this.flow?.steps ?? [];
-    if (!steps.length) return this.empty(t);
+    if (!steps.length) {
+      this.flat = [];
+      return root(this.empty(t));
+    }
     const c = this.colors(t);
+    // CI unfolded on another PR than the one read (the report moved): read it, once per PR.
+    if (this.ciOpen && !checking() && this.ciKey() && this.ci?.key !== this.ciKey()) this.loadCi(cx, false);
     const pulseId = steps.find((s) => s.state === "current")?.id;
-    return v_flex().size_full().gap(4).text_color(t.foreground)
+    const phases = phasesOf(steps);
+    this.flat = this.walk(phases);
+    // The cursor's phase card brought into view once after it moved. ponytail: kf-phases' children
+    // are the cards, so a row deep in a card taller than the panel may stay below; flatten if it bites.
+    if (this.reveal) {
+      const at = this.flat.find((x) => x.id === this.cur);
+      if (at) this.phasesScroll.scroll_to_item(at.card);
+      this.reveal = false;
+    }
+    // The content fades in each time the tab is shown (the root keeps the keyboard).
+    return root(v_flex().size_full().text_color(t.foreground)).child(enter(m, v_flex().size_full().gap(4), `kf-in-${this.showGen}`, { dy: 0 })
       .child(this.head(t, c, steps))
-      .child(v_flex().id("kf-phases").flex_1().min_h(0).overflow_y_scrollbar().gap(4)
-        .children(phasesOf(steps).map((p) => this.phase(t, c, p, pulseId))));
+      // overflow_y_scroll + a Scrollbar of the same id: scroll_to_item does nothing on overflow_y_scrollbar.
+      .child(div().relative().flex_1().min_h(0)
+        .child(v_flex().id("kf-phases").size_full().overflow_y_scroll().track_scroll(this.phasesScroll).gap(4)
+          .children(phases.map((p) => this.phase(t, c, p, pulseId, cx))))
+        .child(Scrollbar.vertical("kf-phases").absolute().inset_0())));
   }
 }

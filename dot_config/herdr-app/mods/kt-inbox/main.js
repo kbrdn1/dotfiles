@@ -28,21 +28,34 @@
 // Selection (select.js): x / space pick the cursor's row, V a range, ctrl-a every listed row,
 // ⌘-click / ⇧-click; a bar then acts on them (bulk.js): open, copy the links, gwm review (PRs with a
 // local checkout, never bootstrapped), close (open ones only, each listed in a danger confirm).
+// A PR's Code tab is Changes' (diffview's sectionHead and fileItems): one foldable section, compact
+// rows, each file unfolding into its diff, an image into its before / after (its blobs from the local
+// clone, else GitHub); on hover Zed and its nvim command (the PR's worktree, else the local clone,
+// whose checkout may be another branch) and the file on GitHub. Its keys (the "code" zone: l / enter
+// / o on the open PR, or a click on a file): Changes' j k gg G ctrl-d ctrl-u, h l fold / unfold (h on
+// a folded file folds the section, on the folded section goes back to the list), enter / o, O Zed
+// (else GitHub), y the path, r, / the filter, ? kt-keys, q the thread, esc back to the list; dd / x
+// and [ ] do nothing there (nothing to discard on a PR).
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, TextView, ScrollHandle } from "gpui-base";
+import { v_flex, h_flex, TextView, ScrollHandle, Scrollbar } from "gpui-base";
 import { exec, theme, spaces, panes, run, layout, openOverlay, notify, nextCommand, settings, readTextFile, appHome, checking, shared, setShared, knownAgents, home } from "herdr";
 import { parsePatch } from "./diff.js";
 import { ICON_MAP } from "./icons.js";
-import { fileList, action, alpha, colorize, cleanTokens } from "./diffview.js";
+import { fileItems, sectionHead, action, alpha, colorize, cleanTokens, zed, firstLine, IMAGE, loadPreview, cleanPreviews } from "./diffview.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { Select, lines } from "./select.js";
 import { planClose, planReview, describe } from "./bulk.js";
 import { filterRow, filterState } from "./filters.js";
-import { motionState, frame, enter, pulse } from "./motion.js";
+import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
+// kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
+import { rollText } from "./roll.js";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { ditherBand, TOP } from "./dither.js";
+import { makeT, relative } from "./i18n.js";
+import strings from "./strings.js";
 
+const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
 // The filter row (filters.js): the types, then the relations (none on = everything in the scope).
 // Tints per FILTERS.md: PR ansi2, Issues ansi4, Assignées ansi3, Créées ansi5, Mentionnées ansi6.
@@ -62,44 +75,36 @@ const REL_ARGS = {
 };
 const PR_FIELDS = "number,title,body,state,isDraft,author,assignees,createdAt,updatedAt,baseRefName,headRefName,url,mergeable,reviewDecision,labels,additions,deletions,changedFiles,isCrossRepository";
 const ISSUE_FIELDS = "number,title,body,state,author,assignees,createdAt,updatedAt,url,labels,comments";
-const KINDS = [[null, "Tout"], ["pr", "PR"], ["issue", "Issues"]];
-const RELS = [["assignee", "Assignées"], ["author", "Créées"], ["mentions", "Mentionnées"]];
+// Words: strings.js' kind.<all|pr|issue> and rel.<id>.
+const KINDS = [null, "pr", "issue"];
+const RELS = ["assignee", "author", "mentions"];
 // Labels get a theme color by name (GitHub's own hex would ignore the theme).
 const LABEL_COLORS = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
 // `gh pr checks` bucket -> theme color name.
-const BUCKET = { pass: "done", fail: "ansi1", cancel: "ansi1", pending: "ansi3", skipping: "dim" };
+const BUCKET = { pass: "done", fail: "ansi1", cancel: "ansi1", pending: "ansi3", skipping: "dim" }; // i18n: tech
 
 const gh = (args, timeout = 20e3) => exec("gh", args, { timeout }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
 const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
 const load = (k) => parse(localStorage.getItem(k) ?? "null", null);
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const time = (iso) => Date.parse(iso ?? "") || 0;
+const ago = (iso) => relative(iso);
+// A refused or failed one, as a confirm's list line ("name : why").
+const line = (item, why) => tr("line", { item, why });
+const more = (n) => tr("more", { n });
 
-function ago(iso) {
-  if (!iso) return "";
-  const s = Math.max(0, (Date.now() - time(iso)) / 1000);
-  if (s < 60) return "à l'instant";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `il y a ${h} h`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `il y a ${d} j`;
-  if (d < 365) return `il y a ${Math.floor(d / 30)} mois`;
-  const y = Math.floor(d / 365);
-  return `il y a ${y} an${y > 1 ? "s" : ""}`;
-}
-
-// State -> label, icon, theme color name. Upper-cased: search says "open", view says "OPEN".
+// State -> label (GitHub's own word, in both languages), icon, theme color name. Upper-cased:
+// search says "open", view says "OPEN".
+// i18n: tech
 function look(kind, state, draft) {
   const s = String(state ?? "").toUpperCase();
   if (kind === "pr") {
-    if (s === "MERGED") return { label: "Merged", icon: "git-merge", color: "ansi5" };
-    if (s === "CLOSED") return { label: "Closed", icon: "git-pull-request-closed", color: "ansi1" };
-    if (draft) return { label: "Draft", icon: "git-pull-request", color: "dim" };
-    return { label: "Open", icon: "git-pull-request", color: "ansi2" };
+    if (s === "MERGED") return { label: "Merged", icon: "git-merge", color: "ansi5" }; // i18n: tech
+    if (s === "CLOSED") return { label: "Closed", icon: "git-pull-request-closed", color: "ansi1" }; // i18n: tech
+    if (draft) return { label: "Draft", icon: "git-pull-request", color: "dim" }; // i18n: tech
+    return { label: "Open", icon: "git-pull-request", color: "ansi2" }; // i18n: tech
   }
-  return s === "CLOSED" ? { label: "Closed", icon: "circle-check", color: "ansi5" } : { label: "Open", icon: "circle-dashed", color: "ansi2" };
+  return s === "CLOSED" ? { label: "Closed", icon: "circle-check", color: "ansi5" } : { label: "Open", icon: "circle-dashed", color: "ansi2" }; // i18n: tech
 }
 
 function labelColor(t, name) {
@@ -159,7 +164,16 @@ export default class Inbox extends View {
     this.diffs = {}; // "owner/repo#n" -> { at, files } | { at, error } (memory only: can be big)
     this.openFiles = new Set(); // "owner/repo#n:path" unfolded in the Code tab
     this.tokens = {}; // "owner/repo#n:path" -> colorize's { mode, label, old, new }, made when a file unfolds
+    this.previews = {}; // "owner/repo#n:path" -> { before, after } | { error } | null (loading), made when an image unfolds
     this.hotFile = null;
+    // The Code tab's keys: the zone they go to ("list", or "code": the open PR's files), its cursor ("h":
+    // the section's header, else "f:<path>"), what it walks (code() rebuilds it), its own reveal.
+    this.zone = "list";
+    this.fcur = null;
+    this.codeFlat = [];
+    this.codeFold = false;
+    this.codeReveal = false;
+    this.codeScroll = ScrollHandle.new();
     this.map = null; // Catppuccin's map.json
     this.tab = "summary";
     this.busy = null; // the running action's label
@@ -303,7 +317,7 @@ export default class Inbox extends View {
       const prs = parse(p.stdout, null);
       const issues = parse(i.stdout, null);
       const how = repo ? ["gh pr list", "gh issue list"] : ["gh search prs", "gh search issues"];
-      const error = (!prs && (p.stderr.trim() || `${how[0]} a échoué`)) || (!issues && (i.stderr.trim() || `${how[1]} a échoué`)) || null;
+      const error = (!prs && (p.stderr.trim() || tr("failed", { cmd: how[0] }))) || (!issues && (i.stderr.trim() || tr("failed", { cmd: how[1] }))) || null;
       if (prs || issues) {
         const items = [...(prs ?? []).map((x) => item("pr", x, repo)), ...(issues ?? []).map((x) => item("issue", x, repo))].sort((a, b) => time(b.updatedAt) - time(a.updatedAt));
         if (!error) save(key, { at: Date.now(), items });
@@ -370,7 +384,7 @@ export default class Inbox extends View {
         if (x.key === this.sel?.key) this.markSeen(x.key);
         if (time(next.data.updatedAt) > (this.diffs[x.key]?.at ?? 0)) delete this.diffs[x.key];
         this.saveDetails();
-      } else this.details[x.key] = { ...(d ?? {}), at: d?.at ?? 0, error: next.error || "gh n'a rien renvoyé" };
+      } else this.details[x.key] = { ...(d ?? {}), at: d?.at ?? 0, error: next.error || tr("nothingBack") };
       cx.notify();
     });
   }
@@ -387,22 +401,58 @@ export default class Inbox extends View {
     if (!x || x.kind !== "pr" || this.inflight[key] || (d && Date.now() - d.at < DETAIL_TTL)) return;
     this.inflight[key] = true;
     cx.spawn(async (cx) => {
-      const r = await gh(["pr", "diff", String(x.number), "-R", x.repo]);
+      // Zed's checkout: the PR's worktree (its branch, its review branch), else the local clone, on this computer.
+      const clone = this.cloneOf(x.repo), head = this.details[x.key]?.data?.headRefName;
+      const [r, wt] = await Promise.all([
+        gh(["pr", "diff", String(x.number), "-R", x.repo]),
+        clone && head ? this.worktreeOf(clone, head, x.number) : null,
+      ]);
       delete this.inflight[key];
       // The raw patch, parsed and drawn after DIFF-SPEC (the 1500-line cap is per file).
       this.diffs[x.key] = r.code
-        ? { at: Date.now(), error: r.stderr.trim() || "gh pr diff a échoué" }
-        : { at: Date.now(), files: parsePatch(r.stdout) };
-      // Files still unfolded take their colors again (the PR may have moved; same blobs: the cache).
-      for (const f of this.diffs[x.key].files ?? []) if (this.openFiles.has(`${x.key}:${f.path}`)) this.colorize(x, f, cx);
+        ? { at: Date.now(), error: r.stderr.trim() || tr("diffFailed") }
+        : { at: Date.now(), files: parsePatch(r.stdout), root: wt ?? clone };
+      // Files still unfolded take their colors and images again (the PR may have moved; same blobs: the cache).
+      for (const k of Object.keys(this.previews)) if (k.startsWith(`${x.key}:`)) delete this.previews[k];
+      for (const f of this.diffs[x.key].files ?? []) if (this.openFiles.has(`${x.key}:${f.path}`)) { this.colorize(x, f, cx); this.preview(x, f, cx); }
       cx.notify();
     });
   }
 
-  // Unfolds a file of a PR's Code tab, and colors it.
+  // Unfolds a file of a PR's Code tab, colors it, and shows an image's before / after.
   openFile(x, f, cx) {
     this.openFiles.add(`${x.key}:${f.path}`);
     this.colorize(x, f, cx);
+    this.preview(x, f, cx);
+  }
+
+  toggleFile(x, f, cx) {
+    const k = `${x.key}:${f.path}`;
+    if (this.openFiles.has(k)) this.openFiles.delete(k);
+    else this.openFile(x, f, cx);
+  }
+
+  // An unfolded image of a PR: its two blobs (the patch's index hashes) from the local clone, else from
+  // GitHub (GraphQL gives the full oid, the REST blob endpoint its raw bytes), into diffview's cache.
+  preview(x, f, cx) {
+    const k = `${x.key}:${f.path}`;
+    if (!IMAGE.test(f.path) || this.previews[k] !== undefined) return;
+    if (!f.ids) { this.previews[k] = { error: "unavailable" }; return; } // i18n: tech (diffview's pv.<error>)
+    const none = (id) => /^0+$/.test(id), clone = this.cloneOf(x.repo);
+    let oids = null;
+    const side = (id) => (none(id) ? null : { id, write: async (abs) => {
+      if (clone && (await exec("sh", ["-c", 'git -C "$1" cat-file blob "$2" > "$3"', "sh", clone, id, abs]).catch(() => null))?.code === 0) return true;
+      oids ??= this.blobs(x.repo, f.ids.filter((i) => !none(i)));
+      const oid = (await oids)?.[id]?.oid;
+      if (!oid) return false;
+      const r = await exec("sh", ["-c", 'gh api -H "Accept: application/vnd.github.raw+json" "repos/$1/git/blobs/$2" > "$3"', "sh", x.repo, oid, abs], { timeout: 30e3 }).catch(() => null);
+      return r?.code === 0;
+    } });
+    this.previews[k] = null;
+    cx.spawn(async (cx) => {
+      const pv = await loadPreview(null, f, side(f.ids[0]), side(f.ids[1]));
+      if (this.previews[k] === null) { this.previews[k] = pv; cx.notify(); }
+    });
   }
 
   // A PR file's code in Zed's theme (diffview's colorize), for the appearance now. Its two blobs are
@@ -434,10 +484,11 @@ export default class Inbox extends View {
     });
   }
 
-  // Blobs of a GitHub repo by (abbreviated) hash, one GraphQL query: hash -> { text, isBinary, isTruncated } | null.
+  // Blobs of a GitHub repo by (abbreviated) hash, one GraphQL query: hash -> { oid, text, isBinary, isTruncated } | null.
   async blobs(repo, ids) {
     const [owner, name] = repo.split("/");
-    const q = `{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){${ids.map((id, i) => `b${i}:object(expression:${JSON.stringify(id)}){... on Blob{text isBinary isTruncated}}`).join(" ")}}}`;
+    // i18n: tech
+    const q = `{repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){${ids.map((id, i) => `b${i}:object(expression:${JSON.stringify(id)}){... on Blob{oid text isBinary isTruncated}}`).join(" ")}}}`;
     const r = await gh(["api", "graphql", "-f", `query=${q}`], 30e3);
     const data = parse(r.stdout, null)?.data?.repository ?? {};
     return Object.fromEntries(ids.map((id, i) => [id, data[`b${i}`] ?? null]));
@@ -468,7 +519,7 @@ export default class Inbox extends View {
       // Others showing this repo's PRs and issues read again (a failed call may have half applied).
       const repo = p.args[p.args.indexOf("-R") + 1];
       bump("gh", ...(repo ? [`gh:${repo}`] : []));
-      if (r.code) this.actionError = { key: p.key, text: (r.stderr || r.stdout).trim() || `gh ${p.args.slice(0, 2).join(" ")} a échoué (code ${r.code})` };
+      if (r.code) this.actionError = { key: p.key, text: (r.stderr || r.stdout).trim() || tr("failedCode", { cmd: `gh ${p.args.slice(0, 2).join(" ")}`, code: r.code }) };
       delete this.diffs[p.key];
       this.loadList(cx, true);
       if (p.key === this.sel?.key) this.loadDetail(cx, true);
@@ -480,29 +531,29 @@ export default class Inbox extends View {
     const n = String(x.number);
     const R = ["-R", x.repo];
     const state = String(data?.state ?? x.state).toUpperCase();
-    const what = `« ${data?.title ?? x.title} »`;
+    const v = { n, title: data?.title ?? x.title, repo: x.repo };
     const url = data?.url ?? x.url;
     const out = [];
     if (x.kind === "pr" && state === "OPEN") {
       const draft = data?.isDraft ?? x.draft;
       if (!draft)
-        out.push(this.pill(t, "merge", "Merger", "git-merge", true, () =>
-          this.ask(x, "Merge", `Merger la PR #${n} ?`, `${what} (${x.repo}) : ${data?.headRefName ?? "sa branche"} sera mergée dans ${data?.baseRefName ?? "la base"} par un merge commit. La branche est conservée.`, ["pr", "merge", n, ...R, "--merge"])));
+        out.push(this.pill(t, "merge", tr("pill.merge"), "git-merge", true, () =>
+          this.ask(x, tr("busy.merge"), tr("ask.merge.title", v), tr("ask.merge.detail", { ...v, head: data?.headRefName ?? tr("ask.merge.head"), base: data?.baseRefName ?? tr("ask.merge.base") }), ["pr", "merge", n, ...R, "--merge"])));
       out.push(draft
-        ? this.pill(t, "ready", "Prête pour review", "circle-check", false, () =>
-            this.ask(x, "Prête pour review", `Marquer la PR #${n} prête pour review ?`, `${what} (${x.repo}) quittera le mode draft.`, ["pr", "ready", n, ...R]))
-        : this.pill(t, "draft", "Passer en draft", "circle-dashed", false, () =>
-            this.ask(x, "Passage en draft", `Passer la PR #${n} en draft ?`, `${what} (${x.repo}) repassera en draft.`, ["pr", "ready", n, ...R, "--undo"])));
-      out.push(this.pill(t, "close", "Fermer", "git-pull-request-closed", false, () => this.askClose(x)));
+        ? this.pill(t, "ready", tr("pill.ready"), "circle-check", false, () =>
+            this.ask(x, tr("busy.ready"), tr("ask.ready.title", v), tr("ask.ready.detail", v), ["pr", "ready", n, ...R]))
+        : this.pill(t, "draft", tr("pill.draft"), "circle-dashed", false, () =>
+            this.ask(x, tr("busy.draft"), tr("ask.draft.title", v), tr("ask.draft.detail", v), ["pr", "ready", n, ...R, "--undo"])));
+      out.push(this.pill(t, "close", tr("pill.close"), "git-pull-request-closed", false, () => this.askClose(x)));
     }
     if (x.kind === "issue" && state === "OPEN")
-      out.push(this.pill(t, "close", "Fermer", "circle-check", false, () => this.askClose(x)));
+      out.push(this.pill(t, "close", tr("pill.close"), "circle-check", false, () => this.askClose(x)));
     if (x.kind === "issue" && state === "CLOSED")
-      out.push(this.pill(t, "reopen", "Rouvrir", "circle-dashed", false, () =>
-        this.ask(x, "Réouverture", `Rouvrir l'issue #${n} ?`, `${what} (${x.repo}) sera rouverte.`, ["issue", "reopen", n, ...R])));
-    if (x.kind === "pr") out.push(this.pill(t, "agent", "Agent sur la PR", "sparkles", false, (cx) => this.agentOnPr(x, data, cx)));
-    out.push(this.pill(t, "copy", "Copier le lien", null, false, (cx) => this.copyLink(x, cx)));
-    out.push(this.pill(t, "open", "Ouvrir sur GitHub", "external-link", false, () => exec("open", [url]).catch(() => {})));
+      out.push(this.pill(t, "reopen", tr("pill.reopen"), "circle-dashed", false, () =>
+        this.ask(x, tr("busy.reopen"), tr("ask.reopen.title", v), tr("ask.reopen.detail", v), ["issue", "reopen", n, ...R])));
+    if (x.kind === "pr") out.push(this.pill(t, "agent", tr("pill.agent"), "sparkles", false, (cx) => this.agentOnPr(x, data, cx)));
+    out.push(this.pill(t, "copy", tr("pill.copy"), null, false, (cx) => this.copyLink(x, cx)));
+    out.push(this.pill(t, "open", tr("pill.github"), "external-link", false, () => exec("open", [url]).catch(() => {})));
     return out;
   }
 
@@ -511,9 +562,9 @@ export default class Inbox extends View {
     const data = this.details[x.key]?.data;
     if (String(data?.state ?? x.state).toUpperCase() !== "OPEN") return;
     const n = String(x.number);
-    const what = `« ${data?.title ?? x.title} »`;
-    if (x.kind === "pr") this.ask(x, "Fermeture", `Fermer la PR #${n} ?`, `${what} (${x.repo}) sera fermée sans être mergée.`, ["pr", "close", n, "-R", x.repo]);
-    else this.ask(x, "Fermeture", `Fermer l'issue #${n} ?`, `${what} (${x.repo}) sera fermée.`, ["issue", "close", n, "-R", x.repo]);
+    const v = { n, title: data?.title ?? x.title, repo: x.repo };
+    if (x.kind === "pr") this.ask(x, tr("busy.close"), tr("ask.closePr.title", v), tr("ask.closePr.detail", v), ["pr", "close", n, "-R", x.repo]);
+    else this.ask(x, tr("busy.close"), tr("ask.closeIssue.title", v), tr("ask.closeIssue.detail", v), ["issue", "close", n, "-R", x.repo]);
   }
 
   // ---------- an agent on a PR ----------
@@ -537,9 +588,9 @@ export default class Inbox extends View {
 
   agentOnPr(x, data, cx) {
     const clone = this.cloneOf(x.repo);
-    if (!clone) return notify({ title: "Pas de clone local", body: `Aucun projet ouvert n'a ${x.repo} pour origin : ouvre son dépôt dans Herdr, puis recommence.`, level: "warning", timeout: 7000 });
+    if (!clone) return notify({ title: tr("noClone.title"), body: tr("noClone.body", { repo: x.repo }), level: "warning", timeout: 7000 });
     if (this.busy) return;
-    this.busy = "Recherche du worktree";
+    this.busy = tr("busy.findWorktree");
     const n = x.number;
     cx.spawn(async (cx) => {
       const head = data?.headRefName ?? null;
@@ -565,21 +616,21 @@ export default class Inbox extends View {
       const fork = data?.isCrossRepository !== false;
       const boot = Boolean(toml && trusted && !fork);
       this.pending = { kind: "review", key: x.key, x, clone, bootstrap: boot };
-      const intro = `Aucun worktree n'a la branche de cette PR : gwm review en crée un, isolé du checkout principal, puis l'agent y démarre.`;
-      const list = cmds.length ? `\n\nBootstrap du dépôt${boot ? "" : ", non lancé"} :\n${cmds.map((c) => `• ${c}`).join("\n")}` : "";
+      const intro = tr("agent.intro");
+      const list = cmds.length ? `\n\n${tr(boot ? "agent.boot" : "agent.bootOff")}\n${cmds.map((c) => `• ${c}`).join("\n")}` : "";
       openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
         // Running the repo's commands on the PR's code is what makes it dangerous.
-        title: `Ouvrir un agent sur la PR #${n} ?`, tone: boot ? "danger" : "info", danger: boot, icon: "git-pull-request",
+        title: tr("agent.title", { n }), tone: boot ? "danger" : "info", danger: boot, icon: "git-pull-request",
         subtitle: [x.repo, head && data?.baseRefName ? `${head} → ${data.baseRefName}` : head, "gwm review"],
         detail: intro + list,
-        facts: [["dépôt", x.repo], ["clone", clone.replace(home(), "~")], ["branche", head ?? "—"], ["origine", fork ? "fork" : "même dépôt", fork ? "blocked" : null],
-          ["worktree", `review/pr-${n}-… (nouveau)`],
-          ["bootstrap", !toml ? "aucun .gwm.toml" : boot ? "lancé (.gwm.toml approuvé)" : fork ? "non lancé (code d'un fork)" : "non lancé (.gwm.toml non approuvé)", toml && !boot ? "blocked" : boot ? "ansi1" : null]],
-        warning: boot ? "Le bootstrap exécute les commandes du .gwm.toml (installations, hooks) sur le code de cette PR."
-          : toml && fork ? "PR venue d'un fork : le bootstrap n'est jamais lancé sur son code. Relis-la, puis lance gwm bootstrap dans le worktree si tu lui fais confiance."
-          : toml && !trusted ? "Le .gwm.toml de ce dépôt n'est pas approuvé : le worktree est créé sans bootstrap. Pour l'installer, approuve-le d'abord (gwm trust add, ou Nouveau thread)." : null,
-        consequence: "gwm review crée une branche review/pr-… et son worktree ; un agent y démarre dans un nouveau projet.",
-        label: "Créer et ouvrir", command: { name: "kt-inbox.confirmed" },
+        facts: [[tr("fact.repo"), x.repo], ["clone", clone.replace(home(), "~")], [tr("fact.branch"), head ?? "—"], [tr("fact.origin"), fork ? "fork" : tr("origin.same"), fork ? "blocked" : null],
+          ["worktree", tr("worktree.new", { n })],
+          ["bootstrap", !toml ? tr("boot.none") : boot ? tr("boot.on") : fork ? tr("boot.fork") : tr("boot.untrusted"), toml && !boot ? "blocked" : boot ? "ansi1" : null]],
+        warning: boot ? tr("agent.warnBoot")
+          : toml && fork ? tr("agent.warnFork")
+          : toml && !trusted ? tr("agent.warnUntrusted") : null,
+        consequence: tr("agent.consequence"),
+        label: tr("agent.label"), command: { name: "kt-inbox.confirmed" },
       } });
       cx.notify();
     });
@@ -598,7 +649,7 @@ export default class Inbox extends View {
       if (path) {
         bump(...gitTopics(path));
         await this.startAgent(path, p.x);
-      } else this.actionError = { key: p.key, text: (r.stderr || r.stdout).trim() || `gwm review a échoué (code ${r.code})` };
+      } else this.actionError = { key: p.key, text: (r.stderr || r.stdout).trim() || tr("failedCode", { cmd: "gwm review", code: r.code }) };
       cx.notify();
     });
   }
@@ -624,28 +675,28 @@ export default class Inbox extends View {
     if (!picked.length) return null;
     const n = picked.length;
     const actions = [
-      ["open", "Ouvrir", "external-link", () => { for (const x of picked) if (x.url) exec("open", [x.url]).catch(() => {}); }],
-      ["copy", "Copier les liens", "file-text", (cx) => {
+      ["open", tr("bulk.open"), "external-link", () => { for (const x of picked) if (x.url) exec("open", [x.url]).catch(() => {}); }],
+      ["copy", tr("bulk.copy"), "file-text", (cx) => {
         cx.write_to_clipboard(picked.map((x) => x.url).filter(Boolean).join("\n"));
-        notify({ title: n > 1 ? `${n} liens copiés` : "Lien copié", body: "Un par ligne.", level: "success", timeout: 2500 });
+        notify({ title: tr("copied", { n }), body: tr("onePerLine"), level: "success", timeout: 2500 });
       }],
-      ["review", "Review (gwm)", "git-pull-request", (cx) => this.askBulkReview(picked, cx)],
-      ["close", "Fermer", "x", () => this.askBulkClose(picked), true],
+      ["review", tr("bulk.review"), "git-pull-request", (cx) => this.askBulkReview(picked, cx)],
+      ["close", tr("bulk.close"), "x", () => this.askBulkClose(picked), true],
     ];
     return h_flex().absolute().bottom(10).left(0).right(0).px(8).justify_center()
       .child(enter(this.m, div().max_w_full(), "kti-bulk-in").child(h_flex().id("kti-bulk").max_w_full().flex_wrap().p(4).gap(2).items_center()
         .rounded(12).border(1).border_color(t.border).bg(t.popover).shadow_lg()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(`${n} sélectionné${n > 1 ? "s" : ""}`))
+        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(rollText(this.m, "kti-sel-n", tr("selected", { n }), 15)))
         .child(div().w(1).h(18).flex_none().bg(t.border))
         .when(Boolean(this.busy), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
-          .child(svg(I("refresh-cw")).size(13).spin(900)).child(`${this.busy} en cours…`)))
+          .child(svg(I("refresh-cw")).size(13).spin(900)).child(tr("running", { what: this.busy }))))
         .when(!this.busy, (el) => el.children(actions.map(([id, label, icon, onClick, danger]) => h_flex().id(`kti-bulk-${id}`).h(28).px(10).gap(6).items_center().rounded(8)
           .text_size(12).text_color(danger ? t.ansi1 : t.foreground).cursor_pointer().hover((s) => s.bg(danger ? alpha(t.ansi1, "1a") : t.hover))
           .on_click((_e, cx) => { onClick(cx); cx.notify(); })
           .child(svg(I(icon)).size(13)).child(label))))
         .child(h_flex().id("kti-bulk-clear").size(28).flex_none().items_center().justify_center().rounded(8).text_color(t.muted)
-          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Vider la sélection (esc)")
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("clearSelection"))
           .on_click((_e, cx) => { this.multi.clear(); cx.notify(); })
           .child(svg(I("x")).size(13)))));
   }
@@ -663,49 +714,49 @@ export default class Inbox extends View {
 
   // The refused ones, as kt-confirm lists them under its heading.
   refusedText(refused) {
-    return refused.length ? `\n\nRefusés, laissés de côté :\n${lines(refused.map((r) => `${describe(r.item)} : ${r.why}`))}` : "";
+    return refused.length ? `\n\n${tr("refused")}\n${lines(refused.map((r) => line(describe(r.item), tr(`why.${r.why}`))), 10, more)}` : "";
   }
 
   // Fermer: the open ones only, each listed in a danger confirm, closed one after another.
   askBulkClose(picked) {
     if (this.busy) return;
     const plan = planClose(picked);
-    if (!plan.ok.length) return notify({ title: "Rien à fermer", body: lines(plan.refused.map((r) => `${describe(r.item)} : ${r.why}`), 6), level: "warning", timeout: 7000 });
+    if (!plan.ok.length) return notify({ title: tr("nothingToClose"), body: lines(plan.refused.map((r) => line(describe(r.item), tr(`why.${r.why}`))), 6, more), level: "warning", timeout: 7000 });
     const n = plan.ok.length;
-    this.pending = { kind: "bulk", what: "close", label: "Fermeture", repos: [...new Set(plan.ok.map((x) => x.repo))],
+    this.pending = { kind: "bulk", what: "close", label: tr("busy.close"), repos: [...new Set(plan.ok.map((x) => x.repo))],
       calls: plan.calls.map((args, i) => ({ cmd: "gh", args, label: describe(plan.ok[i]) })) };
     openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
-      title: `Fermer ${n > 1 ? `ces ${n} éléments` : "cet élément"} ?`, danger: true, icon: "git-pull-request-closed",
-      subtitle: [`${n} sur ${picked.length} sélectionné${picked.length > 1 ? "s" : ""}`, "gh close", "un à la fois"],
-      detail: `Fermés sur GitHub, un appel gh après l'autre. Rien n'est supprimé : ils restent consultables et peuvent être rouverts.${this.refusedText(plan.refused)}`,
+      title: tr("bulkClose.title", { n }), danger: true, icon: "git-pull-request-closed",
+      subtitle: [tr("bulkClose.of", { k: n, n: picked.length }), "gh close", tr("oneAtATime")],
+      detail: `${tr("bulkClose.detail")}${this.refusedText(plan.refused)}`,
       items: plan.ok.map((x) => ({ label: describe(x), detail: x.repo })),
-      consequence: `${n > 1 ? `Les ${n} seront fermés` : "Il sera fermé"} sur GitHub ; une PR fermée ainsi n'est pas mergée.`,
-      label: "Fermer", command: { name: "kt-inbox.confirmed" },
+      consequence: tr("bulkClose.consequence", { n }),
+      label: tr("bulk.close"), command: { name: "kt-inbox.confirmed" },
     } });
   }
 
   // Review (gwm): PRs with a local checkout of their repo, one review worktree each, never bootstrapped.
   askBulkReview(picked, cx) {
     if (this.busy) return;
-    this.busy = "Recherche des clones";
+    this.busy = tr("busy.findClones");
     cx.spawn(async (cx) => {
       await this.resolveClones();
       this.busy = null;
       const plan = planReview(picked, (repo) => this.cloneOf(repo));
       if (!plan.ok.length) {
-        notify({ title: "Aucune review possible", body: lines(plan.refused.map((r) => `${describe(r.item)} : ${r.why}`), 6), level: "warning", timeout: 7000 });
+        notify({ title: tr("noReview"), body: lines(plan.refused.map((r) => line(describe(r.item), tr(`why.${r.why}`))), 6, more), level: "warning", timeout: 7000 });
         return cx.notify();
       }
       const n = plan.ok.length;
-      this.pending = { kind: "bulk", what: "review", label: "gwm review",
+      this.pending = { kind: "bulk", what: "review", label: "gwm review", // i18n: tech
         calls: plan.calls.map((c, i) => ({ cmd: "gwm", args: c.args, cwd: c.cwd, label: describe(plan.ok[i]) })) };
       openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
-        title: `Créer ${n > 1 ? `${n} worktrees` : "un worktree"} de review ?`, tone: "info", icon: "git-pull-request",
-        subtitle: [`${n} PR`, "gwm review", "sans bootstrap"],
-        detail: `gwm review, une PR après l'autre, chacune dans un worktree isolé du checkout principal de son dépôt.${this.refusedText(plan.refused)}`,
+        title: tr("bulkReview.title", { n }), tone: "info", icon: "git-pull-request",
+        subtitle: [`${n} PR`, "gwm review", tr("noBootstrap")],
+        detail: `${tr("bulkReview.detail")}${this.refusedText(plan.refused)}`,
         items: plan.ok.map((x) => ({ label: describe(x), detail: this.cloneOf(x.repo).replace(home(), "~") })),
-        consequence: "Le bootstrap n'est pas lancé : le code des PR ne s'exécute pas avant d'avoir été relu.",
-        label: "Créer", command: { name: "kt-inbox.confirmed" },
+        consequence: tr("bulkReview.consequence"),
+        label: tr("bulkReview.label"), command: { name: "kt-inbox.confirmed" },
       } });
       cx.notify();
     });
@@ -720,7 +771,7 @@ export default class Inbox extends View {
         cx.notify();
         const r = c.cmd === "gh" ? await gh(c.args, 60e3)
           : await exec("gwm", c.args, { cwd: c.cwd, timeout: 600e3 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
-        if (r.code) failed.push(`${c.label} : ${((r.stderr || r.stdout).trim().split("\n").pop()) || `code ${r.code}`}`);
+        if (r.code) failed.push(line(c.label, ((r.stderr || r.stdout).trim().split("\n").pop()) || tr("code", { code: r.code })));
       }
       this.busy = null;
       // Others read again, even after a half-done run.
@@ -730,8 +781,8 @@ export default class Inbox extends View {
       if (p.what === "close") this.loadList(cx, true);
       const done = p.calls.length - failed.length;
       notify({
-        title: failed.length ? `${p.label} : ${done}/${p.calls.length}` : p.what === "close" ? `${done} fermé${done > 1 ? "s" : ""}` : `${done} worktree${done > 1 ? "s" : ""} de review`,
-        body: failed.length ? lines(failed, 5) : p.what === "close" ? "Sur GitHub." : "Prêts dans gwm, sans bootstrap.",
+        title: failed.length ? tr("result", { label: p.label, done, total: p.calls.length }) : p.what === "close" ? tr("closedN", { n: done }) : tr("reviewN", { n: done }),
+        body: failed.length ? lines(failed, 5, more) : p.what === "close" ? tr("onGithub") : tr("readyInGwm"),
         level: failed.length ? "warning" : "success", timeout: 8000,
       });
       cx.notify();
@@ -743,7 +794,7 @@ export default class Inbox extends View {
     const url = this.details[x.key]?.data?.url ?? x.url;
     if (!url) return;
     cx.write_to_clipboard(url);
-    notify({ title: "Lien copié", body: `${x.kind === "pr" ? "la PR" : "l'issue"} #${x.number} de ${x.repo}`, level: "success", timeout: 2500 });
+    notify({ title: tr("linkCopied"), body: tr(x.kind === "pr" ? "linkOf.pr" : "linkOf.issue", { n: x.number, repo: x.repo }), level: "success", timeout: 2500 });
   }
 
   // ---------- pieces ----------
@@ -810,7 +861,7 @@ export default class Inbox extends View {
   }
 
   markdown(t, id, text) {
-    return div().text_size(13).text_color(t.foreground).child(TextView.markdown(id, text?.trim() || "_Pas de description._").selectable(true));
+    return div().text_size(13).text_color(t.foreground).child(TextView.markdown(id, text?.trim() || tr("noDescription")).selectable(true));
   }
 
   // ---------- left ----------
@@ -831,6 +882,71 @@ export default class Inbox extends View {
     this.reveal = true;
   }
 
+  // The Code zone takes the keys (NORMAL), on the open PR's Code tab: the cursor on `path`, else where it
+  // was (code() puts it on the first file when that isn't there).
+  codeIn(path) {
+    this.tab = "code";
+    this.zone = "code";
+    this.handle.focus();
+    this.vim.normal();
+    if (path) this.fcur = `f:${path}`;
+    this.codeReveal = true;
+  }
+
+  // One vim action in the Code zone: Changes' keys on the open PR's files; false: not one it has.
+  codeKey(a, cx) {
+    if (!a) return false;
+    if (a === "pending" || a === "count") return true;
+    const x = this.sel, d = this.diffs[x?.key];
+    const flat = this.codeFlat;
+    const i = flat.findIndex((e) => e.id === this.fcur);
+    const f = flat[i]?.file;
+    const open = f && this.openFiles.has(`${x.key}:${f.path}`);
+    const to = (id) => { this.fcur = id; this.codeReveal = true; };
+    const out = () => { this.zone = "list"; this.reveal = true; };
+    // `/`: vim is in INSERT already, the filter types.
+    if (a === "filter") this.zone = "list";
+    else if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
+      const j = step(a, i, flat.length, this.vim.count, 16);
+      if (j >= 0) to(flat[j].id);
+    } else if (a === "left") {
+      // An unfolded diff folds; on a folded file, the section folds and its header takes the cursor; on
+      // the folded section, back to the list.
+      if (open) this.openFiles.delete(`${x.key}:${f.path}`);
+      else if (f) { this.codeFold = true; to("h"); }
+      else if (!this.codeFold) this.codeFold = true;
+      else out();
+    } else if (a === "right") {
+      if (!f) this.codeFold = false;
+      else if (!open) this.openFile(x, f, cx);
+    } else if (a === "open") {
+      if (!f) this.codeFold = !this.codeFold;
+      else this.toggleFile(x, f, cx);
+    } else if (a === "open-alt") { if (f) this.openAt(x, f, d?.root); }
+    else if (a === "yank") {
+      if (f) {
+        const p = d?.root ? `${d.root}/${f.path}` : f.path;
+        cx.write_to_clipboard(p);
+        notify({ title: tr("pathCopied"), body: p, level: "success", timeout: 2000 });
+      }
+    } else if (a === "delete" || a === "panel-prev" || a === "panel-next") return true; // nothing to discard on a PR
+    else if (a === "refresh") this.refresh(cx);
+    else if (a === "escape") out();
+    else if (a === "quit") run("layout.select", { stack: "view", child: "thread" });
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } });
+    else return false;
+    return true;
+  }
+
+  // O and the file's first action: Zed at the file's first line in a local checkout, else the file in the
+  // PR on GitHub (its anchor is the sha256 of its path).
+  openAt(x, f, root) {
+    if (root) return zed(`${root}/${f.path}`, f.status === "D" ? 0 : firstLine(f));
+    const url = this.details[x.key]?.data?.url ?? x.url;
+    exec("sh", ["-c", 'printf %s "$1" | shasum -a 256', "sh", f.path])
+      .then((r) => exec("open", [`${url}/files#diff-${r.stdout.split(" ")[0].trim()}`])).catch(() => {});
+  }
+
   // The cursor's item: this.cur when shown, else the first one.
   at(list) {
     return list.find((x) => x.key === this.cur) ?? list[0] ?? null;
@@ -846,6 +962,8 @@ export default class Inbox extends View {
   // toggle the cursor's row, V a visual range, ctrl-a every listed row, esc empties), then vim's
   // (dd still closes the cursor's item). A move in a visual range extends it.
   press(e, cx) {
+    // The Code zone takes the keys first: x, space or dd there never pick nor close the list's items.
+    if (this.zone === "code" && !this.vim.insert && this.tab === "code" && this.sel?.kind === "pr") return this.codeKey(this.vim.handle(e), cx);
     const order = this.filtered().map((x) => x.key);
     if (!this.vim.insert && this.multi.key(keyOf(e).name, this.at(this.filtered())?.key, order)) return true;
     const taken = this.keyAct(this.vim.handle(e), cx);
@@ -869,15 +987,17 @@ export default class Inbox extends View {
       if (j >= 0) this.cur = list[j].key;
       this.reveal = true;
     } else if (a === "tab-next" || a === "tab-prev") {
-      const k = KINDS.findIndex(([id]) => id === this.kind);
-      this.kind = KINDS[(k + (a === "tab-next" ? 1 : KINDS.length - 1)) % KINDS.length][0];
+      const k = KINDS.indexOf(this.kind);
+      this.kind = KINDS[(k + (a === "tab-next" ? 1 : KINDS.length - 1)) % KINDS.length];
       this.cur = null;
     } else if (a === "panel-prev" || a === "panel-next") {
       // [ ] : the relations, round (none, Assignées, Créées, Mentionnées).
-      const rels = [null, ...RELS.map(([r]) => r)];
+      const rels = [null, ...RELS];
       this.setRel(rels[(rels.indexOf(this.rel) + (a === "panel-next" ? 1 : rels.length - 1)) % rels.length], cx);
     } else if (a === "open" || a === "right" || a === "submit") {
-      if (x) {
+      // On the PR already open, l / enter / o go into its Code tab (History's way into a commit's files).
+      if (x && a !== "submit" && x.key === this.sel?.key && x.kind === "pr") this.codeIn(null);
+      else if (x) {
         this.cur = x.key;
         this.select(x, cx);
       }
@@ -928,7 +1048,9 @@ export default class Inbox extends View {
         .child(h_flex().size(32).flex_none().rounded(10).items_center().justify_center().border(1).border_color(alpha(iconColor, "4d")).bg(alpha(t.background, "e6"))
           .child(svg(I(icon)).size(16).text_color(iconColor)))
         .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(title))
+          // motion.js sharpen: the title comes into focus when it arrives or changes, once.
+          .child(((ttl) => (this.m ? sharpen(this.m, `kti-title-${key}:${title}`, ttl) : ttl()))(
+            () => div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(title)))
           .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(sub)))
         .children(right ?? []));
   }
@@ -951,7 +1073,8 @@ export default class Inbox extends View {
       .when(on, (el) => el.child(svg(I("check")).size(11).text_color(t.accent_foreground)));
   }
 
-  row(t, x, cursor, order) {
+  // `gone`: closing (rows() gave it -1), drawn as it was but no longer a target: no click or box.
+  row(t, x, cursor, order, gone = false) {
     const on = x.key === this.sel?.key;
     const picked = this.multi.has(x.key);
     const lk = look(x.kind, x.state, x.draft);
@@ -962,18 +1085,17 @@ export default class Inbox extends View {
       .when(on || cursor === "ring", (el) => el.bg(alpha(t.accent, "24")))
       .when(!on && cursor !== "ring" && picked, (el) => el.bg(alpha(t.accent, "14")))
       .when(!on && !picked && cursor === "mark", (el) => el.bg(t.hover))
-      .when(!on && !picked && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
-      .cursor_pointer()
+      .when(!gone && !on && !picked && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
       // ⌘-click toggles, ⇧-click a range (select.js); a plain click empties the selection and opens.
-      .on_click((e, cx) => {
+      .when(!gone, (el) => el.cursor_pointer().on_click((e, cx) => {
         this.cur = x.key;
         if (!this.multi.click(e.modifiers, x.key, order)) this.select(x, cx);
         cx.notify();
-      })
+      }))
       .child(h_flex().h(18).gap(7).items_center()
-        .when(this.multi.size > 0, (el) => el.child(this.check(t, x, picked, true)))
+        .when(this.multi.size > 0, (el) => el.child(this.check(t, x, picked, !gone)))
         .child(svg(I(lk.icon)).size(14).flex_none().text_color(t[lk.color]))
-        .child(this.eyebrow(t, `${x.kind === "pr" ? "Pull request" : "Issue"} · #${x.number}`).flex_1().min_w(0).truncate())
+        .child(this.eyebrow(t, `${x.kind === "pr" ? "Pull request" : "Issue"} · #${x.number}`).flex_1().min_w(0).truncate()) // i18n: tech
         .when(unread, (el) => el.child(div().size(7).rounded_full().flex_none().bg(t.accent)))
         .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(ago(x.updatedAt))))
       .child(div().text_size(13.5).font_medium().text_color(t.foreground).line_height("19px").max_h(38).overflow_hidden().child(x.title))
@@ -981,7 +1103,7 @@ export default class Inbox extends View {
       .when(x.labels.length > 0, (el) => el.child(h_flex().flex_wrap().gap(4).pt(2).children(x.labels.map((l) => this.tag(t, labelColor(t, l), l)))));
   }
 
-  left(t) {
+  left(t, cx) {
     const shown = this.filtered();
     const order = shown.map((x) => x.key); // the selection's order (select.js)
     this.multi.keep(this.items.map((x) => x.key));
@@ -989,15 +1111,20 @@ export default class Inbox extends View {
     const focused = (this.keyed = this.handle.is_focused());
     const typing = focused && this.vim.insert;
     // The keys' cursor, while the page has the keyboard: its row, brought into view once after it moved.
-    const cur = focused ? this.at(shown)?.key : null;
-    const rows = [];
-    for (const x of shown) {
-      if (this.reveal && x.key === cur) {
-        this.listScroll.scroll_to_item(rows.length + (this.error ? 1 : 0));
+    // None while the Code zone has the keys: one cursor shows at a time.
+    const cur = focused && this.zone !== "code" ? this.at(shown)?.key : null;
+    // The rows open and close on their height, in order (motion.js rows(), keyed repo#number): a filter,
+    // a kind, a refresh. `at` counts them as rows() builds them, the closing ones included: they are the
+    // list's direct children, after the error's line, which scroll_to_item reveals.
+    let at = this.error ? 1 : 0;
+    const rows = rowsOf(this.m, cx, "kti-rows", shown, (x) => x.key, (x, i) => {
+      if (i >= 0 && this.reveal && x.key === cur) {
+        this.listScroll.scroll_to_item(at);
         this.reveal = false;
       }
-      rows.push(this.row(t, x, x.key === cur ? (typing ? "mark" : "ring") : null, order));
-    }
+      at++;
+      return this.row(t, x, i >= 0 && x.key === cur ? (typing ? "mark" : "ring") : null, order, i < 0);
+    });
     const repo = this.repo();
     const tint = this.tint(t);
     const q = this.query.trim().toLowerCase();
@@ -1007,26 +1134,27 @@ export default class Inbox extends View {
     // (a repo scope to the global view) and refresh, over the scope's dither.
     const head = this.band(t, "list", tint, "layers", tint,
       this.scope.repo === undefined ? "Inbox" : repo ?? "Global",
-      [this.scope.repo === undefined ? "lecture du dépôt…" : repo ? "PR et issues ouvertes du dépôt" : "toutes tes PR et issues", `${this.items.length} ouvertes`].join(" · "),
+      // The count rolls; its id carries the scope, so another repo's count shows at once.
+      rollText(this.m, `kti-head-n-${repo ?? "global"}`, [this.scope.repo === undefined ? tr("scope.reading") : repo ? tr("scope.repo") : tr("scope.global"), tr("openCount", { n: this.items.length })].join(" · "), 14),
       [
-        ...(this.scope.repo ? [this.chip(t, "kti-global", "Global", this.global, (cx) => {
+        ...(this.scope.repo ? [this.chip(t, "kti-global", "Global", this.global, (cx) => { // i18n: tech
           this.global = !this.global;
           if (!checking()) this.rescoped(cx);
         })] : []),
         h_flex().id("kti-refresh").size(30).flex_none().items_center().justify_center().rounded_full().border(1).border_color(t.border).bg(alpha(t.background, "e6"))
-          .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Actualiser (r)")
+          .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("refreshTip"))
           .on_click((_e, cx) => { this.refresh(cx); cx.notify(); })
           .child(svg(I("refresh-cw")).size(13).when(loading, (el) => el.spin(900))),
       ]);
     const filters = filterRow({
       id: "kti-filters", state: this.filters, t, bg: t.background, reduced: Boolean(shared("kt.reducedMotion")),
       items: [
-        ...KINDS.map(([k, label]) => ({ key: k ?? "all", label, count: count(k), tint: k ? KIND_TINT[k] : null })),
-        ...RELS.map(([r, label]) => ({ key: r, label, tint: REL_TINT[r], group: "rel" })),
+        ...KINDS.map((k) => ({ key: k ?? "all", label: tr(`kind.${k ?? "all"}`), count: count(k), tint: k ? KIND_TINT[k] : null })),
+        ...RELS.map((r) => ({ key: r, label: tr(`rel.${r}`), tint: REL_TINT[r], group: "rel" })),
       ],
       active: [this.kind ?? "all", this.rel],
       onPick: (key, cx) => {
-        if (KINDS.some(([k]) => (k ?? "all") === key)) {
+        if (KINDS.some((k) => (k ?? "all") === key)) {
           this.kind = key === "all" ? null : key;
           this.cur = null;
         } else this.setRel(this.rel === key ? null : key, cx);
@@ -1045,7 +1173,7 @@ export default class Inbox extends View {
           .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
           .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
-            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : "Filtrer"))
+            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : tr("filter")))
           .when(Boolean(this.query), (el) => el.child(div().id("kti-clear").flex_none().text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.cur = null; cx.notify(); })
             .child(svg(I("x")).size(13)))))
@@ -1058,7 +1186,7 @@ export default class Inbox extends View {
       .child(v_flex().id("kti-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.listScroll).py(4).gap(2)
         .when(Boolean(bar), (el) => el.pb(64))
         .when(Boolean(this.error), (el) => el.child(this.empty(t, this.error, t.ansi1)))
-        .when(!shown.length && !this.error, (el) => el.child(this.empty(t, loading ? "Chargement depuis GitHub…" : this.items.length ? "Aucun élément ne correspond au filtre." : "Rien dans l'Inbox.", null, loading)))
+        .when(!shown.length && !this.error, (el) => el.child(this.empty(t, loading ? tr("loading") : this.items.length ? tr("noMatch") : tr("empty"), null, loading)))
         .children(rows))
       .when(Boolean(bar), (el) => el.child(bar));
     return v_flex().w(400).flex_none().h_full().min_h(0).gap(4).child(controls).child(list);
@@ -1084,8 +1212,8 @@ export default class Inbox extends View {
     const assignees = (data?.assignees ?? []).map((a) => `@${a.login}`);
     const kpis = [];
     if (x.kind === "pr" && data) {
-      kpis.push(["Fichiers", String(data.changedFiles ?? 0)]);
-      kpis.push(["Lignes", h_flex().gap(8).text_size(15)
+      kpis.push([tr("kpi.files"), String(data.changedFiles ?? 0)]);
+      kpis.push([tr("kpi.lines"), h_flex().gap(8).text_size(15)
         .child(div().text_color(t.done).child(`+${data.additions ?? 0}`)).child(div().text_color(t.ansi1).child(`−${data.deletions ?? 0}`))]);
       const c = this.checkCounts(d.checks ?? []);
       kpis.push(["Checks", c.total
@@ -1094,84 +1222,115 @@ export default class Inbox extends View {
         : "—"]);
     }
     // A repo scope's list doesn't count comments (null): an issue's detail does, a PR shows "—".
-    kpis.push(["Commentaires", x.kind === "issue" && data?.comments ? String(Math.max(x.comments ?? 0, data.comments.length)) : x.comments == null ? "—" : String(x.comments)]);
-    if (x.kind === "issue") kpis.push(["Ouverte", ago(data?.createdAt ?? x.createdAt)]);
+    kpis.push([tr("kpi.comments"), x.kind === "issue" && data?.comments ? String(Math.max(x.comments ?? 0, data.comments.length)) : x.comments == null ? "—" : String(x.comments)]);
+    if (x.kind === "issue") kpis.push([tr("kpi.opened"), ago(data?.createdAt ?? x.createdAt)]);
     const meta = (label, value) => h_flex().gap(10).items_center().min_h(20)
       .child(this.eyebrow(t, label).w(92).flex_none())
       .child(typeof value === "string" ? div().min_w(0).truncate().text_size(13).text_color(t.foreground).child(value) : value);
-    const review = { APPROVED: ["Approuvée", t.done], CHANGES_REQUESTED: ["Changements demandés", t.ansi1], REVIEW_REQUIRED: ["Review requise", t.ansi3] }[data?.reviewDecision];
+    const review = { APPROVED: [tr("review.approved"), t.done], CHANGES_REQUESTED: [tr("review.changes"), t.ansi1], REVIEW_REQUIRED: [tr("review.required"), t.ansi3] }[data?.reviewDecision];
     const conflict = data?.mergeable === "CONFLICTING";
     const err = this.actionError?.key === x.key ? this.actionError.text : null;
     // The detail's head: the item's state icon over the scope's dither, what it is, where, its state.
-    const head = this.band(t, "detail", this.tint(t), lk.icon, t[lk.color], `${x.kind === "pr" ? "Pull request" : "Issue"} #${x.number}`,
-      [x.repo, `mise à jour ${ago(data?.updatedAt ?? x.updatedAt)}`].filter(Boolean).join(" · "), [this.tag(t, t[lk.color], lk.label)]);
+    const head = this.band(t, "detail", this.tint(t), lk.icon, t[lk.color], `${x.kind === "pr" ? "Pull request" : "Issue"} #${x.number}`, // i18n: tech
+      [x.repo, tr("updated", { ago: ago(data?.updatedAt ?? x.updatedAt) })].filter(Boolean).join(" · "), [this.tag(t, t[lk.color], lk.label)]);
     return this.card(t).flex_none()
       .child(head)
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(this.tint(t), "4d")))
       .child(v_flex().p(18).gap(14)
-      .child(div().text_size(21).font_semibold().line_height("28px").text_color(t.foreground).child(data?.title ?? x.title))
+      .child(((ttl) => (this.m ? sharpen(this.m, `kti-dtitle-${x.key}`, ttl) : ttl()))(
+        () => div().text_size(21).font_semibold().line_height("28px").text_color(t.foreground).child(data?.title ?? x.title)))
       .when(labels.length > 0, (el) => el.child(h_flex().flex_wrap().gap(5).children(labels.map((l) => this.tag(t, labelColor(t, l), l)))))
       .child(h_flex().flex_wrap().gap_y(10).children(kpis.map(([label, value], i) => this.kpi(t, label, value, i === 0))))
       .child(this.dashed(t))
       .child(v_flex().gap(6)
-        .child(meta("Auteur", `@${data?.author?.login ?? x.author}`))
-        .child(meta("Assignés", assignees.length ? assignees.join(", ") : "—"))
-        .child(meta("Activité", `créée ${ago(data?.createdAt ?? x.createdAt)} · mise à jour ${ago(data?.updatedAt ?? x.updatedAt)}`))
+        .child(meta(tr("meta.author"), `@${data?.author?.login ?? x.author}`))
+        .child(meta(tr("meta.assignees"), assignees.length ? assignees.join(", ") : "—"))
+        .child(meta(tr("meta.activity"), tr("activity", { created: ago(data?.createdAt ?? x.createdAt), updated: ago(data?.updatedAt ?? x.updatedAt) })))
+        // i18n: tech (Branches: git's word, the same in every language)
         .when(x.kind === "pr" && Boolean(data?.baseRefName), (el) => el.child(meta("Branches", h_flex().min_w(0).gap(8).items_center().font_family(MONO).text_size(12)
           .child(div().flex_none().text_color(t.foreground).child(data.baseRefName))
           .child(div().flex_none().text_color(t.dim).child("←"))
           .child(div().min_w(0).truncate().text_color(t.accent).child(data.headRefName))
           .when(Boolean(review), (el) => el.child(this.tag(t, review[1], review[0])))
-          .when(conflict, (el) => el.child(this.tag(t, t.ansi1, "Conflits")))))))
+          .when(conflict, (el) => el.child(this.tag(t, t.ansi1, tr("conflicts"))))))))
       .child(this.dashed(t))
       .child(h_flex().flex_wrap().gap(6).items_center()
         .children(this.actions(t, x, data))
         .when(Boolean(this.busy), (el) => el.child(h_flex().gap(6).items_center().pl(4).text_size(12).text_color(t.muted)
-          .child(svg(I("refresh-cw")).size(12).spin(900)).child(`${this.busy} en cours…`))))
+          .child(svg(I("refresh-cw")).size(12).spin(900)).child(tr("running", { what: this.busy })))))
       .when(Boolean(err), (el) => el.child(div().px(12).py(8).rounded(12).border(1).border_color(alpha(t.ansi1, "4d")).bg(alpha(t.ansi1, "1a"))
         .font_family(MONO).text_size(11.5).text_color(t.ansi1).child(err))));
   }
 
-  // The PR's files after DIFF-SPEC (grouped by folder, each unfolding into its diff).
-  code(t, x) {
+  // The PR's files as Changes draws them (diffview's sectionHead and fileItems): one foldable section,
+  // compact rows opening and closing on their height, each unfolding into its diff, an image into its
+  // before / after. On hover: Zed and its nvim command in a local checkout (d.root), the file on GitHub.
+  // The keys' cursor while the Code zone has them, brought into view once after it moved.
+  code(t, x, cx) {
     const d = this.diffs[x.key];
-    if (!d) return this.empty(t, "Chargement du diff…", null, true);
+    if (!d) return this.empty(t, tr("loadingDiff"), null, true);
     if (d.error) return this.empty(t, d.error, t.ansi1);
-    const url = this.details[x.key]?.data?.url ?? x.url;
+    if (!d.files.length) return this.empty(t, tr("noFiles"));
+    const dark = settings().dark !== false, root = d.root ?? null;
+    const k = (f) => `${x.key}:${f.path}`;
     const o = {
-      id: `kti-f-${x.key}`, map: this.map, dark: settings().dark !== false, root: null,
-      isOpen: (f) => this.openFiles.has(`${x.key}:${f.path}`),
-      isHot: (f) => this.hotFile === `${x.key}:${f.path}`,
-      tokens: (f) => { const tk = this.tokens[`${x.key}:${f.path}`]; return tk?.mode === (settings().dark !== false ? "dark" : "light") ? tk : null; },
-      toggle: (f, cx) => {
-        const k = `${x.key}:${f.path}`;
-        if (this.openFiles.has(k)) this.openFiles.delete(k); else this.openFile(x, f, cx);
-        cx.notify();
-      },
+      id: `kti-f-${x.key}`, map: this.map, dark, root, compact: true,
+      preview: (f) => this.previews[k(f)],
+      tokens: (f) => { const tk = this.tokens[k(f)]; return tk?.mode === (dark ? "dark" : "light") ? tk : null; },
+      isOpen: (f) => this.openFiles.has(k(f)),
+      isHot: (f) => this.hotFile === k(f),
+      // A click toggles, and takes the keys' cursor (and the keyboard) along.
+      toggle: (f, cx) => { this.codeIn(f.path); this.toggleFile(x, f, cx); cx.notify(); },
       hover: (f, on, cx) => {
-        const k = `${x.key}:${f.path}`;
-        const next = on ? k : this.hotFile === k ? null : this.hotFile;
+        const next = on ? k(f) : this.hotFile === k(f) ? null : this.hotFile;
         if (next !== this.hotFile) { this.hotFile = next; cx.notify(); }
       },
-      // GitHub's anchor for a file is the sha256 of its path.
-      actions: (f) => [action(t, `kti-gh-${x.key}:${f.path}`, I("external-link"), "Ouvrir sur GitHub", () =>
-        exec("sh", ["-c", 'printf %s "$1" | shasum -a 256', "sh", f.path])
-          .then((r) => exec("open", [`${url}/files#diff-${r.stdout.split(" ")[0].trim()}`])).catch(() => {}))],
+      actions: (f) => {
+        const id = `kti-fa-${k(f)}`, abs = root ? `${root}/${f.path}` : null;
+        return [
+          ...(abs ? [
+            action(t, `${id}:zed`, I("external-link"), tr("openZed"), () => this.openAt(x, f, root)),
+            action(t, `${id}:nvim`, "mods/kt-diff/copy.svg", tr("copyNvim"), (cx) => cx.write_to_clipboard(`nvim +${firstLine(f)} '${abs.replace(/'/g, "'\\''")}'`)),
+          ] : []),
+          action(t, `${id}:gh`, I("file-diff"), tr("pill.github"), () => this.openAt(x, f, null)),
+        ];
+      },
     };
-    if (!d.files.length) return this.empty(t, "Aucun fichier dans ce diff.");
-    return v_flex().id("kti-code").flex_1().min_h(0).overflow_y_scrollbar().p(4).gap(2)
-      .children(fileList(t, d.files, o));
+    // Another PR, or the diff just in: the cursor goes on the first file (the header, folded).
+    const shown = this.codeFold ? [] : [...d.files].sort((a, b) => a.path.localeCompare(b.path));
+    if (this.fcur !== "h" && !shown.some((f) => `f:${f.path}` === this.fcur)) this.fcur = shown.length ? `f:${shown[0].path}` : "h";
+    const ring = (id) => this.keyed && this.zone === "code" && this.fcur === id;
+    const flat = [{ id: "h" }];
+    const items = [];
+    const put = (id, el) => {
+      if (this.codeReveal && id && id === this.fcur) this.codeScroll.scroll_to_item(items.length);
+      items.push(el);
+    };
+    put("h", sectionHead(t, { id: "kti-code-head", label: tr("code.files"), count: d.files.length, folded: this.codeFold, ring: ring("h"),
+      toggle: (cx) => { this.codeFold = !this.codeFold; cx.notify(); },
+      actions: [action(t, "kti-code-refresh", I("refresh-cw"), tr("refreshTip"), (cx) => this.refresh(cx))] }));
+    for (const { el, f } of fileItems(t, this.m, cx, `kti-rows-${x.key}`, this.codeFold ? [] : d.files, o,
+      { ring: (f) => ring(`f:${f.path}`), fold: (f) => `kti-open:${k(f)}` })) {
+      if (f) flat.push({ id: `f:${f.path}`, file: f });
+      put(f ? `f:${f.path}` : null, el);
+    }
+    this.codeFlat = flat;
+    this.codeReveal = false;
+    // overflow_y_scroll + a Scrollbar of the same id: scroll_to_item does nothing on overflow_y_scrollbar.
+    return div().relative().flex_1().min_h(0)
+      .child(v_flex().id("kti-code").size_full().overflow_y_scroll().track_scroll(this.codeScroll).p(4).gap(1).children(items))
+      .child(Scrollbar.vertical("kti-code").absolute().inset_0());
   }
 
   checksView(t, d) {
     const cs = d?.checks ?? [];
-    if (!d?.data) return this.empty(t, "Chargement des checks…", null, true);
-    if (!cs.length) return this.empty(t, "Aucun check sur cette PR.");
+    if (!d?.data) return this.empty(t, tr("loadingChecks"), null, true);
+    if (!cs.length) return this.empty(t, tr("noChecks"));
     const c = this.checkCounts(cs);
     return v_flex().id("kti-checks").flex_1().min_h(0).overflow_y_scrollbar().py(4).gap(2)
       .child(h_flex().mx(4).px(12).py(8).gap(12).items_center()
         .child(this.meter(t, [[c.pass, t.done], [c.fail, t.ansi1], [c.pending, t.ansi3]], c.total, 24))
-        .child(this.eyebrow(t, `${c.pass} ok · ${c.fail} ko · ${c.pending} en cours · ${c.total} au total`)))
+        .child(this.eyebrow(t, tr("checkCounts", { pass: c.pass, fail: c.fail, pending: c.pending, total: c.total }))))
       .children(cs.map((ck, i) => {
         const color = t[BUCKET[ck.bucket] ?? "dim"];
         return h_flex().id(`kti-ck-${i}`).mx(4).px(12).h(38).gap(10).items_center().rounded(12).hover((s) => s.bg(t.hover))
@@ -1183,17 +1342,17 @@ export default class Inbox extends View {
       }));
   }
 
-  body(t, x, d) {
+  body(t, x, d, cx) {
     const data = d?.data;
     const card = this.card(t).flex_1();
-    if (!data) return card.child(this.empty(t, d?.error ?? "Chargement depuis GitHub…", d?.error ? t.ansi1 : t.dim, !d?.error));
+    if (!data) return card.child(this.empty(t, d?.error ?? tr("loading"), d?.error ? t.ansi1 : t.dim, !d?.error));
     const scroll = (id) => v_flex().id(id).flex_1().min_h(0).overflow_y_scrollbar();
     if (x.kind === "issue") {
       const comments = data.comments ?? [];
       return card.child(scroll("kti-issue").p(18).gap(14)
         .child(this.markdown(t, `kti-md-${x.key}`, data.body))
         .child(this.dashed(t))
-        .child(this.eyebrow(t, comments.length ? `Commentaires · ${comments.length} derniers` : "Aucun commentaire"))
+        .child(this.eyebrow(t, comments.length ? tr("comments", { n: comments.length }) : tr("noComments")))
         .children(comments.map((c, i) => v_flex().gap(8).p(12).rounded(12).border(1).border_color(t.border)
           .child(h_flex().gap(8).items_center()
             .child(this.eyebrow(t, `@${c.author?.login ?? "?"}`, t.foreground))
@@ -1201,26 +1360,26 @@ export default class Inbox extends View {
           .child(this.markdown(t, `kti-mdc-${x.key}-${i}`, c.body)))));
     }
     const nChecks = (d.checks ?? []).length;
-    const tabs = [["summary", "Summary"], ["code", `Code · ${data.changedFiles ?? 0}`], ["checks", `Checks · ${nChecks}`]];
+    const tabs = [["summary", "Summary"], ["code", `Code · ${data.changedFiles ?? 0}`], ["checks", `Checks · ${nChecks}`]]; // i18n: tech
     return card
       .child(h_flex().flex_none().px(12).py(10).gap(6).items_center()
         .children(tabs.map(([id, label]) => this.chip(t, `kti-tab-${id}`, label, this.tab === id, () => { this.tab = id; }))))
       .child(this.dashed(t))
       .when(this.tab === "summary", (el) => el.child(scroll("kti-summary").p(18).child(this.markdown(t, `kti-md-${x.key}`, data.body))))
-      .when(this.tab === "code", (el) => el.child(this.code(t, x)))
+      .when(this.tab === "code", (el) => el.child(this.code(t, x, cx)))
       .when(this.tab === "checks", (el) => el.child(this.checksView(t, d)));
   }
 
-  right(t) {
+  right(t, cx) {
     const x = this.sel;
     const panel = v_flex().flex_1().min_w(0).h_full().min_h(0).gap(4);
     if (!x) {
       const busy = Boolean(this.inflight[this.listKey()]);
-      return panel.child(this.card(t).flex_1().child(this.empty(t, busy ? "Chargement depuis GitHub…" : "Sélectionne une pull request ou une issue.", null, busy)));
+      return panel.child(this.card(t).flex_1().child(this.empty(t, busy ? tr("loading") : tr("pick"), null, busy)));
     }
     const d = this.details[x.key];
     // The detail fades in each time another item opens (its id carries the item).
-    return enter(this.m, panel.child(this.head(t, x, d)).child(this.body(t, x, d)), `kti-detail-${x.key}`, { dy: 0 });
+    return enter(this.m, panel.child(this.head(t, x, d)).child(this.body(t, x, d, cx)), `kti-detail-${x.key}`, { dy: 0 });
   }
 
   render(cx) {
@@ -1252,7 +1411,7 @@ export default class Inbox extends View {
         cx.notify();
       });
       this.loadList(cx, false);
-      cx.spawn(async () => { await cleanTokens("kt-inbox"); });
+      cx.spawn(async () => { await cleanPreviews(); await cleanTokens("kt-inbox"); });
     }
     if (!vis && this.shown && this.handle.is_focused() && !checking()) {
       // Back to the thread: the keyboard goes back to its terminal.
@@ -1262,11 +1421,14 @@ export default class Inbox extends View {
     }
     this.shown = vis;
     if (vis && this.tab === "code" && this.sel?.kind === "pr" && !checking()) this.loadDiff(cx);
+    // The Code zone lasts while its tab shows a PR, in NORMAL (the filter typing, a tab or an item
+    // changed: the keys are the list's again).
+    if (this.zone === "code" && (this.vim.insert || this.tab !== "code" || this.sel?.kind !== "pr")) this.zone = "list";
     const t = theme();
     // No frame of its own: the work card around it paints the background. Each arrival fades the
     // page in (no rise: the stack doesn't clip).
     return enter(this.m, h_flex().size_full().gap(4).text_color(t.foreground)
-      .child(this.left(t))
-      .child(this.right(t)), `kti-page-${this.arrivals}`, { dy: 0 });
+      .child(this.left(t, cx))
+      .child(this.right(t, cx)), `kti-page-${this.arrivals}`, { dy: 0 });
   }
 }

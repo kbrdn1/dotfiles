@@ -48,9 +48,15 @@ import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { AddMenu, AddForm, menuSize } from "./form.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
-import { motionState, frame, enter, pulse } from "./motion.js";
+import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
+// kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
+import { rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
 import { METHODS } from "./add.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 const MONO = "Monaspace Krypton";
 const CODE = "Monaspace Neon"; // the viewer's code blocks
@@ -61,8 +67,15 @@ const OWN = (name) => `mods/kt-skills/${name}.svg`;
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const PAGE = 80; // rows per page: plain rows (a virtual list's rows can't hold their own buttons)
 // The source segments and their filter tints (FILTERS.md; "Tous" stays neutral).
-const SEGS = [["all", "Tous"], ["personal", "Personnels", "ansi4"], ["plugin", "Plugins", "ansi5"], ["project", "Projet", "ansi2"], ["command", "Commandes", "ansi3"]];
-const SOURCE = { personal: "Personnel", plugin: "Plugin", project: "Projet" };
+const SEGS = [["all"], ["personal", "ansi4"], ["plugin", "ansi5"], ["project", "ansi2"], ["command", "ansi3"]];
+// A group's key word per source: glabel ("Personnel · me") keys the ids (kts-fold-…) and the
+// unfolded set, the same in every language; gtext() shows it in words (strings.js' src.<source>).
+const GROUP = { personal: "Personnel", plugin: "Plugin", project: "Projet", commands: "Commandes" }; // i18n: tech
+const gtext = (g) => {
+  const i = g.indexOf(" · ");
+  const src = Object.keys(GROUP).find((k) => GROUP[k] === g.slice(0, i));
+  return src ? `${tr(`src.${src}`)}${g.slice(i)}` : g;
+};
 // The whole scan in one process: each (glob, dir) listed by rg (links followed, hidden
 // folders skipped), then every file's mtime and real path (macOS stat: PATH's may be GNU's).
 const LIST = `while [ $# -gt 1 ]; do g=$1; d=$2; shift 2; [ -d "$d" ] && rg --files --follow --no-ignore -g "$g" "$d"; done | tr '\\n' '\\0' | xargs -0 /usr/bin/stat -L -f '%m%t%R%t%N'`;
@@ -112,7 +125,7 @@ export default class Skills extends View {
     }
     this.handle = cx.focus_handle();
     this.segRow = filterState(); // the source filter row (filters.js)
-    this.motion = motionState(); // motion.js: the detail and the bulk bar fade in
+    this.motion = motionState(); // motion.js: the detail and the bulk bar fade in, the rows open and close
     this.headW = 0; // the head card's width (its dither)
     this.more = false; // the head's ⋯ menu
     this.scannedAt = 0;
@@ -288,7 +301,7 @@ export default class Skills extends View {
       order = 1;
     }
     const name = [r.prefix, ...parts].filter(Boolean).join(":");
-    const label = r.kind === "command" && r.source === "personal" ? "Commandes" : SOURCE[r.source];
+    const label = GROUP[r.kind === "command" && r.source === "personal" ? "commands" : r.source];
     const off = fmt(meta["user-invocable"]).toLowerCase() === "false";
     return {
       key: f.path, path: f.path, real: f.real, name, kind: r.kind, source: r.source, group, order,
@@ -350,7 +363,7 @@ export default class Skills extends View {
       const text = await readTextFile(path).catch(() => null);
       if (this.doc?.key !== x.key || this.doc.path !== path) return;
       const segs = text == null ? [] : blocks(path === x.path ? frontmatter(text).body : text);
-      this.doc.segs = segs.length ? segs : [{ kind: "md", text: text == null ? "_Fichier illisible._" : "_Fichier vide._" }];
+      this.doc.segs = segs.length ? segs : [{ kind: "md", key: text == null ? "unreadableMd" : "emptyMd" }];
       this.docScroll.scroll_to_item(0);
       cx.notify();
     });
@@ -386,7 +399,7 @@ export default class Skills extends View {
   copy(x, cx) {
     const text = x.invocable ? `/${x.name}` : x.name;
     cx.write_to_clipboard(text);
-    notify({ title: "Copié", body: text, level: "success", timeout: 2000 });
+    notify({ title: tr("copied"), body: text, level: "success", timeout: 2000 });
   }
 
   // Zed's CLI when it's there (every file in one window), else its URL scheme, one by one.
@@ -459,14 +472,14 @@ export default class Skills extends View {
     return h_flex().absolute().bottom(12).left(0).right(0).px(8).justify_center()
       .child(enter(this.m, div().max_w_full(), "kts-bulk-in").child(h_flex().id("kts-bulk").max_w_full().flex_wrap().p(4).gap(2).items_center().rounded(12).border(1).border_color(t.border).bg(t.popover).shadow_lg()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(`${n} sélectionné${n > 1 ? "s" : ""}`))
+        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(rollText(this.m, "kts-sel-n", tr("selected", { n }), 15)))
         .child(div().w(1).h(18).flex_none().bg(t.border))
         .children(actions.map(([id, label, icon, onClick]) => h_flex().id(`kts-bulk-${id}`).h(28).px(10).gap(6).items_center().rounded(8)
           .text_size(12).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => { onClick(cx); cx.notify(); })
           .child(svg(icon).size(13)).child(label)))
         .child(h_flex().id("kts-bulk-clear").size(28).flex_none().items_center().justify_center().rounded(8).text_color(t.muted)
-          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Vider la sélection (esc)")
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("clearSelection"))
           .on_click((_e, cx) => { this.multi.clear(); cx.notify(); })
           .child(svg(I("x")).size(13)))));
   }
@@ -477,12 +490,12 @@ export default class Skills extends View {
     this.bulkActions = null;
     if (!picked.length) return null;
     this.bulkActions = [
-      ["copy", "Copier les /noms", OWN("copy"), (cx) => {
+      ["copy", tr("copyNames"), OWN("copy"), (cx) => {
         cx.write_to_clipboard(picked.map((x) => (x.invocable ? `/${x.name}` : x.name)).join("\n"));
-        notify({ title: `${picked.length} nom${picked.length > 1 ? "s" : ""} copié${picked.length > 1 ? "s" : ""}`, body: "Un par ligne.", level: "success", timeout: 2000 });
+        notify({ title: tr("namesCopied", { n: picked.length }), body: tr("onePerLine"), level: "success", timeout: 2000 });
       }],
-      ["zed", "Ouvrir dans Zed", I("external-link"), () => this.zed(picked.map((x) => x.real))],
-      ["finder", "Révéler dans le Finder", I("folder"), () => exec("open", ["-R", ...picked.map((x) => x.real)]).catch(() => {})],
+      ["zed", tr("openZed"), I("external-link"), () => this.zed(picked.map((x) => x.real))],
+      ["finder", tr("revealFinder"), I("folder"), () => exec("open", ["-R", ...picked.map((x) => x.real)]).catch(() => {})],
     ];
     return this.bulkBar(t, picked.length, this.bulkActions);
   }
@@ -587,21 +600,22 @@ export default class Skills extends View {
     const typing = this.keyed && this.vim.insert;
     const skills = this.items.filter((x) => x.kind === "skill").length;
     const filtered = this.query.trim() || this.seg !== "all";
-    const count = !this.scanned ? "…" : filtered ? `${shown} / ${this.items.length}` : `${skills} skills · ${this.items.length - skills} commandes`;
+    const count = !this.scanned ? "…" : filtered ? `${shown} / ${this.items.length}` : tr("count", { skills, commands: this.items.length - skills });
     // Concentric radii: the card (16) holds its toolbar 4 px in, so the toolbar's boxes are 12.
     const seg = filterRow({ id: "kts-seg", t, state: this.segRow, active: this.seg, reduced: Boolean(shared("kt.reducedMotion")),
-      items: SEGS.map(([key, label, tint]) => ({ key, label, tint, count: q.filter((x) => this.matches(x, key)).length })),
+      items: SEGS.map(([key, tint]) => ({ key, label: tr(`seg.${key}`), tint, count: q.filter((x) => this.matches(x, key)).length })),
       onPick: (k) => { this.seg = k; this.page = 0; this.cur = null; } });
     // DESIGN-REFERENCE.md's head: the band on the page's dither (Skills: ansi4), the rest under it.
     return this.card(t).id("kts-head").relative().flex_none().px(4).pb(4).gap(4)
       .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
       .children([dither(this.headW, 60, 16, t.ansi4)].filter(Boolean))
-      .child(bandRow(t, { color: t.ansi4, icon: I("sparkles"), title: "Skills",
-        sub: [count, "Claude Code : personnels, harness, plugins, projet"],
+      .child(bandRow(t, { m: this.m, color: t.ansi4, icon: I("sparkles"), title: "Skills", // i18n: tech
+        // Filtering or not in the id: « shown / total » and « N skills · N commandes » don't roll into each other.
+        sub: [rollText(this.m, `kts-head-n-${filtered ? "f" : "a"}`, count, 14), tr("sources")],
         buttons: [
-          iconBtn(t, "kts-b-add", I("plus"), "Ajouter (a)", () => this.openAdd()),
-          iconBtn(t, "kts-b-refresh", I("refresh-cw"), this.busy ? "Analyse…" : "Rafraîchir (r)", (cx) => { if (!checking()) this.scan(cx); }),
-          iconBtn(t, "kts-b-more", "mods/kt-crosstalk/ellipsis.svg", "Plus", () => { this.more = !this.more; }, this.more)] }))
+          iconBtn(t, "kts-b-add", I("plus"), tr("addTip"), () => this.openAdd()),
+          iconBtn(t, "kts-b-refresh", I("refresh-cw"), this.busy ? tr("analysingTip") : tr("refreshTip"), (cx) => { if (!checking()) this.scan(cx); }),
+          iconBtn(t, "kts-b-more", "mods/kt-crosstalk/ellipsis.svg", tr("moreTip"), () => { this.more = !this.more; }, this.more)] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi4, "4d")))
       .child(h_flex().flex_wrap().gap(4).items_center()
         // The filter: the keys' ring (and the ink) while typing in it; the mode beside it.
@@ -612,13 +626,13 @@ export default class Skills extends View {
           .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
           .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
-            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : "Filtrer"))
+            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : tr("filter")))
           .when(Boolean(this.query), (el) => el.child(div().id("kts-clear").flex_none().text_color(t.dim).cursor_pointer()
             .hover((s) => s.text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.page = 0; this.cur = null; cx.notify(); })
             .child(svg(I("x")).size(13)))))
         .when(Boolean(this.keyed), (el) => el.child(this.mode(t, typing)))
-        .when(this.busy, (el) => el.child(pulse(this.m, div().px(8).font_family(MONO).text_size(11).text_color(t.dim).child("analyse…"), true))))
+        .when(this.busy, (el) => el.child(pulse(this.m, div().px(8).font_family(MONO).text_size(11).text_color(t.dim).child(tr("analysing")), true))))
       .child(div().px(4).pb(2).child(seg));
   }
 
@@ -626,10 +640,10 @@ export default class Skills extends View {
   moreItems() {
     const dir = `${home()}/.claude/skills`;
     return [
-      ["kts-mi-add", I("plus"), "Ajouter un skill… (a)", () => this.openAdd()],
-      ["kts-mi-finder", I("folder"), "Révéler ~/.claude/skills dans le Finder", () => exec("open", [dir]).catch(() => {})],
-      ["kts-mi-zed", I("external-link"), "Ouvrir ~/.claude/skills dans Zed", () => this.zed([dir])],
-      ["kts-mi-keys", I("keyboard"), "Les touches (?)", () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })],
+      ["kts-mi-add", I("plus"), tr("mi.add"), () => this.openAdd()],
+      ["kts-mi-finder", I("folder"), tr("mi.finder"), () => exec("open", [dir]).catch(() => {})],
+      ["kts-mi-zed", I("external-link"), tr("mi.zed"), () => this.zed([dir])],
+      ["kts-mi-keys", I("keyboard"), tr("mi.keys"), () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })],
     ];
   }
 
@@ -638,76 +652,77 @@ export default class Skills extends View {
 
   groupRow(t, label, n, first) {
     return h_flex().px(8).pt(first ? 6 : 14).pb(6).gap(10).items_center()
-      .child(this.eyebrow(t, `${label} · ${n}`).flex_none())
+      .child(this.eyebrow(t, `${gtext(label)} · ${n}`).flex_none())
       .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border));
   }
 
   // `cursor`: "ring" (NORMAL: a 1 px accent ring with the ink), "mark" (INSERT: ctrl-n/p's row) or null.
   // Selected (select.js): its box checked and a lighter ink than the open row's (border 66, ink 24).
-  row(t, x, cursor) {
+  // `gone`: closing (rows() gave it -1), drawn as it was but no longer a target: no click, hover or box.
+  row(t, x, cursor, gone = false) {
     const on = x.key === this.sel;
-    const hot = on || x.key === this.hot;
+    const hot = !gone && (on || x.key === this.hot);
     const picked = this.multi.has(x.key);
     const badges = [];
-    if (x.kind === "command" && x.source !== "personal") badges.push("commande");
-    if (x.model) badges.push(`modèle ${x.model}`);
-    if (x.tools) badges.push("outils restreints");
-    if (x.off) badges.push("non invocable");
+    if (x.kind === "command" && x.source !== "personal") badges.push(tr("badge.command"));
+    if (x.model) badges.push(tr("badge.model", { model: x.model }));
+    if (x.tools) badges.push(tr("badge.tools"));
+    if (x.off) badges.push(tr("badge.off"));
     return h_flex().id(`kts-row-${x.key}`).pl(10).pr(14).py(10).gap(10).items_start().rounded(12).border(1)
       .border_color(cursor === "ring" ? alpha(t.accent, "99") : on ? alpha(t.accent, "66") : t.border)
       .bg(on || cursor === "ring" ? alpha(t.accent, "24") : picked ? alpha(t.accent, "14") : cursor === "mark" ? t.hover : t.background)
-      .when(!on && !cursor && !picked, (el) => el.hover((s) => s.bg(t.hover)))
-      .cursor_pointer()
-      .on_click((e, cx) => {
-        this.cur = x.key;
-        if (!this.multi.click(e.modifiers, x.key, this.order())) this.select(x, cx);
-        cx.notify();
-      })
-      .on_hover((h, cx) => {
-        const next = h ? x.key : this.hot === x.key ? null : this.hot;
-        if (next !== this.hot) { this.hot = next; cx.notify(); }
-      })
-      .child(this.check(t, `kts-check-${x.key}`, picked, picked || this.multi.size > 0 || x.key === this.hot, () => this.multi.toggle(x.key)).mt(2))
+      .when(!gone && !on && !cursor && !picked, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(!gone, (el) => el.cursor_pointer()
+        .on_click((e, cx) => {
+          this.cur = x.key;
+          if (!this.multi.click(e.modifiers, x.key, this.order())) this.select(x, cx);
+          cx.notify();
+        })
+        .on_hover((h, cx) => {
+          const next = h ? x.key : this.hot === x.key ? null : this.hot;
+          if (next !== this.hot) { this.hot = next; cx.notify(); }
+        }))
+      .child(this.check(t, `kts-check-${x.key}`, picked, !gone && (picked || this.multi.size > 0 || x.key === this.hot), () => this.multi.toggle(x.key)).mt(2))
       .child(v_flex().flex_1().min_w(0).gap(3).child(h_flex().h(20).gap(8).items_center()
         .child(h_flex().min_w(0).items_center().font_family(MONO).text_size(13).font_medium()
           .when(x.invocable, (el) => el.child(div().flex_none().text_color(t.dim).child("/")))
           .child(div().min_w(0).truncate().text_color(t.foreground).child(x.name)))
         .children(badges.map((b) => this.tag(t, t.dim, b)))
         .child(div().flex_1())
-        .child(this.tag(t, t.muted, SOURCE[x.source]))
+        .child(this.tag(t, t.muted, tr(`src.${x.source}`)))
         .child(div().w(46).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(x.harness)))
       .child(div().truncate().text_size(12.5).text_color(x.description ? t.muted : t.dim)
-        .child(x.unreadable ? "Fichier illisible." : x.description || "Pas de description."))
+        .child(x.unreadable ? tr("unreadable") : x.description || tr("noDescription")))
       .child(h_flex().h(20).gap(8).items_center()
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(tilde(x.real)))
         .when(hot, (el) => el.child(h_flex().flex_none().gap(2)
-          .child(this.icon(t, `kts-see-${x.key}`, OWN("eye"), "Aperçu", (cx) => this.select(x, cx)))
-          .child(this.icon(t, `kts-copy-${x.key}`, OWN("copy"), x.invocable ? `Copier /${x.name}` : "Copier le nom", (cx) => this.copy(x, cx)))
-          .child(this.icon(t, `kts-open-${x.key}`, I("external-link"), "Ouvrir dans Zed", () => this.zed([x.real])))))));
+          .child(this.icon(t, `kts-see-${x.key}`, OWN("eye"), tr("preview"), (cx) => this.select(x, cx)))
+          .child(this.icon(t, `kts-copy-${x.key}`, OWN("copy"), x.invocable ? tr("copySlash", { name: x.name }) : tr("copyName"), (cx) => this.copy(x, cx)))
+          .child(this.icon(t, `kts-open-${x.key}`, I("external-link"), tr("openZed"), () => this.zed([x.real])))))));
   }
 
   // A group's "Fragments et templates · N", folded by default; a click unfolds it.
-  foldRow(t, e, cursor) {
+  foldRow(t, e, cursor, gone = false) {
     return h_flex().id(`kts-fold-${e.glabel}`).h(36).px(14).gap(8).items_center().rounded(12).border(1).border_dashed()
       .border_color(cursor === "ring" ? alpha(t.accent, "99") : t.border).text_size(12.5).text_color(cursor === "ring" ? t.foreground : t.muted)
       .when(cursor === "ring", (el) => el.bg(alpha(t.accent, "24")))
       .when(cursor === "mark", (el) => el.bg(t.hover))
-      .cursor_pointer()
-      .hover((s) => s.bg(t.hover).text_color(t.foreground))
-      .on_click((_e, cx) => {
-        this.cur = idOf(e);
-        if (this.unfolded.has(e.glabel)) this.unfolded.delete(e.glabel);
-        else this.unfolded.add(e.glabel);
-        cx.notify();
-      })
+      .when(!gone, (el) => el.cursor_pointer()
+        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => {
+          this.cur = idOf(e);
+          if (this.unfolded.has(e.glabel)) this.unfolded.delete(e.glabel);
+          else this.unfolded.add(e.glabel);
+          cx.notify();
+        }))
       .child(svg(I(e.open ? "chevron-down" : "chevron-right")).size(13).flex_none())
-      .child(`Fragments et templates · ${e.fold}`);
+      .child(tr("fragments", { n: e.fold }));
   }
 
-  list(t, shown) {
+  list(t, shown, cx) {
     const card = this.card(t).flex_1().min_w(0).h_full();
     if (!shown.length) {
-      const text = this.error ?? (!this.scanned || this.busy ? "Analyse des skills…" : this.items.length ? "Aucun skill ne correspond au filtre." : "Aucun skill trouvé.");
+      const text = this.error ?? (!this.scanned || this.busy ? tr("analysingSkills") : this.items.length ? tr("noMatch") : tr("none"));
       return card.child(this.empty(t, text, this.error ? t.ansi1 : t.dim));
     }
     const per = {};
@@ -727,13 +742,21 @@ export default class Skills extends View {
     const typing = this.keyed && this.vim.insert;
     const onCur = this.keyed ? this.at(entries) : null;
     const cur = onCur ? idOf(onCur) : null;
+    // One rows() per section of the page (motion.js): a filter or a fold closes and opens its rows on
+    // their height, in order. The page is in the id: another page replaces this one at once and its
+    // rows open. `at` counts the rows as rows() builds them, the closing ones included: they are the
+    // list's direct children, which scroll_to_item reveals.
     const rows = [];
-    slice.forEach((e, i) => {
-      if (i === 0 || slice[i - 1].glabel !== e.glabel) rows.push(this.groupRow(t, e.glabel, per[e.glabel], i === 0));
-      if (idOf(e) === this.reveal) { this.scroll.scroll_to_item(rows.length); this.reveal = null; }
-      const c = idOf(e) === cur ? (typing ? "mark" : "ring") : null;
-      rows.push(e.x ? this.row(t, e.x, c) : this.foldRow(t, e, c));
-    });
+    for (const g of [...new Set(slice.map((e) => e.glabel))]) {
+      rows.push(this.groupRow(t, g, per[g], rows.length === 0));
+      let at = rows.length;
+      rows.push(...rowsOf(this.m, cx, `kts-rows-${page}-${g}`, slice.filter((e) => e.glabel === g), idOf, (e, i) => {
+        if (i >= 0 && idOf(e) === this.reveal) { this.scroll.scroll_to_item(at); this.reveal = null; }
+        at++;
+        const c = i >= 0 && idOf(e) === cur ? (typing ? "mark" : "ring") : null;
+        return e.x ? this.row(t, e.x, c, i < 0) : this.foldRow(t, e, c, i < 0);
+      }));
+    }
     const go = (p) => (_e, cx) => { this.page = p; this.cur = null; this.scroll.scroll_to_item(0); cx.notify(); };
     // The pager sits 4 px inside the card (16): its buttons are 12.
     const step = (id, label, to, ok) => h_flex().id(id).h(30).px(11).items_center().rounded(12).border(1).border_color(t.border)
@@ -749,9 +772,9 @@ export default class Skills extends View {
           .when(Boolean(bar), (el) => el.pb(64)).children(rows))
         .when(Boolean(bar), (el) => el.child(bar)))
       .when(pages > 1, (el) => el.child(this.dashed(t)).child(h_flex().flex_none().p(4).gap(4).items_center()
-        .child(this.eyebrow(t, `${from + 1}–${from + slice.length} sur ${entries.length}`).px(10).flex_1())
-        .child(step("kts-prev", "‹ Précédents", page - 1, page > 0))
-        .child(step("kts-next", "Suivants ›", page + 1, page < pages - 1))));
+        .child(this.eyebrow(t, tr("paging", { from: from + 1, to: from + slice.length, n: entries.length })).px(10).flex_1())
+        .child(step("kts-prev", tr("prev"), page - 1, page > 0))
+        .child(step("kts-next", tr("next"), page + 1, page < pages - 1))));
   }
 
   // ---------- detail ----------
@@ -779,22 +802,22 @@ export default class Skills extends View {
     // actions as icon buttons with their key; it fades in and rises when a skill opens (motion.js).
     const card = this.card(t).w(w).flex_none().h_full().relative().px(4).pb(4).overflow_hidden()
       .children([dither(w, 60, 16, t.ansi4)].filter(Boolean))
-      .child(bandRow(t, { color: t.ansi4, icon: I("sparkles"), title: x.invocable ? `/${x.name}` : x.name,
-        sub: [x.glabel, x.version, x.harness],
+      .child(bandRow(t, { m: this.m, color: t.ansi4, icon: I("sparkles"), title: x.invocable ? `/${x.name}` : x.name,
+        sub: [gtext(x.glabel), x.version, x.harness],
         buttons: [
-          iconBtn(t, "kts-d-copy", OWN("copy"), x.invocable ? `Copier /${x.name} (y)` : "Copier le nom (y)", (cx) => this.copy(x, cx)),
-          iconBtn(t, "kts-d-zed", I("external-link"), "Ouvrir dans Zed (O)", () => this.zed([file])),
-          iconBtn(t, "kts-d-finder", I("folder"), "Révéler dans le Finder", () => exec("open", ["-R", file]).catch(() => {})),
-          iconBtn(t, "kts-close", I("x"), "Fermer", () => { this.sel = null; this.doc = null; })] }))
+          iconBtn(t, "kts-d-copy", OWN("copy"), x.invocable ? tr("copySlashY", { name: x.name }) : tr("copyNameY"), (cx) => this.copy(x, cx)),
+          iconBtn(t, "kts-d-zed", I("external-link"), tr("openZedO"), () => this.zed([file])),
+          iconBtn(t, "kts-d-finder", I("folder"), tr("revealFinder"), () => exec("open", ["-R", file]).catch(() => {})),
+          iconBtn(t, "kts-close", I("x"), tr("close"), () => { this.sel = null; this.doc = null; })] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi4, "4d")))
       .child(v_flex().flex_none().px(10).py(8).gap(2)
-        .child(path("Fichier", x.real))
+        .child(path(tr("path.file"), x.real))
         .when(x.path !== x.real, (el) => el.child(path("Via", x.path))))
       .child(this.dashed(t))
       // Everything below scrolls as one: the description and frontmatter card, then the file.
       .child(v_flex().id("kts-doc").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.docScroll)
         .child(v_flex().flex_none().px(14).py(12).gap(12)
-          .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || "Pas de description."))
+          .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || tr("noDescription")))
           .when(meta.length > 0, (el) => el.child(v_flex().gap(6).children(meta.map(([k, v]) => pair(k, fmt(v)))))))
         .child(this.dashed(t))
         .child(crumb)
@@ -806,11 +829,11 @@ export default class Skills extends View {
   // quotes, tables, in the theme's colors), its fenced code as blocks of our own; a ~80-character
   // column with airy lines.
   body(t, x, d) {
-    if (!d?.segs) return this.empty(t, "Chargement…");
+    if (!d?.segs) return this.empty(t, tr("loading"));
     return v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14)
       .text_size(13.5).line_height("22px").text_color(t.foreground)
       .children(d.segs.map((s, i) => (s.kind === "code" ? this.codeBlock(t, `${d.path}#${i}`, s)
-        : TextView.markdown(`kts-md-${d.path}#${i}`, s.text).selectable(true)
+        : TextView.markdown(`kts-md-${d.path}#${i}`, s.text ?? tr(s.key)).selectable(true)
           .on_link_click((url, cx) => { this.link(x, url, cx); cx.notify(); }))));
   }
 
@@ -884,7 +907,7 @@ export default class Skills extends View {
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t, q, shown.length))
       .child(h_flex().flex_1().min_h(0).gap(4)
-        .child(this.list(t, shown))
+        .child(this.list(t, shown, cx))
         .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45)))))
       // The head's ⋯, last so that it draws over the list.
       .when(this.more, (el) => el.relative().child(moreMenu(t, "kts-more", props()?.overlay ? 60 : 56, this.moreItems(), () => { this.more = false; })));

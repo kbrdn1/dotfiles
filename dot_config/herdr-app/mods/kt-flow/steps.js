@@ -3,25 +3,35 @@
 // pieces to draw (claude-flow's herdrLabel: "<name> <detail>", or the detail alone for
 // pin, commits, push, pr and issue-closed).
 
+import words from "./steps.strings.js";
+
+// Its words (I18N.md): French here (node, the check), the shown language once main.js has called
+// speak(makeT) with i18n.js' (this file stays pure: no herdr import).
+const fr = (k, v = {}) => {
+  const s = words.fr[k];
+  return String(typeof s === "object" ? (v.n < 2 ? s.one : s.other) : s ?? "").replace(/\{(\w+)\}/g, (_, x) => v[x] ?? "");
+};
+let tr = fr;
+export const speak = (makeT) => { tr = makeT(words); };
+
 // claude-flow's own step names, as they start a label.
 const RAW = {
   issue: "issue", branch: "branch", worktree: "worktree", pin: "pin", spec: "spec", plan: "plan", tasks: "tasks",
   implement: "implement", commits: "commits", docs: "docs", push: "push", pr: "pr", review: "review", ci: "ci",
-  merge: "merge", "issue-closed": "issue closed", note: "note",
+  merge: "merge", "issue-closed": "issue closed", note: "note", // i18n: tech
 };
 
-export const NAMES = {
-  issue: "Issue", branch: "Branche", worktree: "Worktree", pin: "Pin", spec: "Spec", plan: "Plan", tasks: "Tâches",
-  implement: "Implémentation", commits: "Commits", docs: "Docs", push: "Push", pr: "PR", review: "Review", ci: "CI",
-  merge: "Merge", "issue-closed": "Issue fermée", note: "Note",
-};
+/** A step's shown name (its id when it's not one of claude-flow's). */
+export const nameOf = (id) => (id in RAW ? tr(`name.${id}`) : id);
 
+// A phase's label is read when drawn (phasesOf spreads it): the language shown then.
+const phase = (id, steps) => ({ id, get label() { return tr(`phase.${id}`); }, steps });
 export const PHASES = [
-  { id: "prep", label: "Préparation", steps: ["issue", "branch", "worktree", "pin"] },
-  { id: "spec", label: "Spec", steps: ["spec", "plan", "tasks"] },
-  { id: "impl", label: "Implémentation", steps: ["implement", "commits", "docs"] },
-  { id: "ship", label: "Livraison", steps: ["push", "pr", "review", "ci"] },
-  { id: "close", label: "Clôture", steps: ["merge", "issue-closed", "note"] },
+  phase("prep", ["issue", "branch", "worktree", "pin"]),
+  phase("spec", ["spec", "plan", "tasks"]),
+  phase("impl", ["implement", "commits", "docs"]),
+  phase("ship", ["push", "pr", "review", "ci"]),
+  phase("close", ["merge", "issue-closed", "note"]),
 ];
 
 /** `me:spec-issue-worktree-pr` -> "Spec · Issue → Worktree → PR". */
@@ -30,19 +40,33 @@ export function workflowName(w) {
   let s = String(w).replace(/^me:/, "");
   const spec = s.startsWith("spec-");
   if (spec) s = s.slice(5);
-  const WORDS = { issue: "Issue", worktree: "Worktree", branch: "Branche", pr: "PR", goal: "Sprint", release: "Release" };
-  return (spec ? "Spec · " : "") + s.split("-").map((p) => WORDS[p] ?? p).join(" → ");
+  const WORDS = ["issue", "worktree", "branch", "pr", "goal", "release"];
+  const name = s.split("-").map((p) => (WORDS.includes(p) ? tr(`wf.${p}`) : p)).join(" → ");
+  return spec ? tr("wf.spec", { name }) : name;
 }
 
 /** The issue of a `<type>/#N-slug` branch, else null. */
 export const issueOf = (branch) => String(branch ?? "").match(/^[\w.-]+\/#(\d+)(?:-|$)/)?.[1] ?? null;
+
+/**
+ * The branch the flow works on: its `branch` step's, else its `worktree` step's folder name (gwm
+ * names it after the branch, `feat/#61-x` -> `feat-61-x`: /me:report's folder for it), else null.
+ * A step still pending (its bare name) or missing gives nothing.
+ */
+export function flowBranch(steps) {
+  const word = (id) => {
+    const s = (Array.isArray(steps) ? steps : []).find((x) => x?.id === id);
+    return s ? rest(s).trim().split(/\s+/)[0] || null : null;
+  };
+  return word("branch") ?? word("worktree")?.split("/").filter(Boolean).pop() ?? null;
+}
 
 /** The step's phases, empty ones left out; unknown steps go last under "Autres". */
 export function phasesOf(steps) {
   const known = new Set(PHASES.flatMap((p) => p.steps));
   const groups = PHASES.map((p) => ({ ...p, steps: steps.filter((s) => p.steps.includes(s.id)) }));
   const other = steps.filter((s) => !known.has(s.id));
-  if (other.length) groups.push({ id: "other", label: "Autres", steps: other });
+  if (other.length) groups.push({ id: "other", label: tr("phase.other"), steps: other });
   return groups.filter((g) => g.steps.length).map((g) => ({
     ...g,
     done: g.steps.filter((s) => s.state === "done").length,
@@ -71,22 +95,22 @@ export function details(step) {
     case "implement": {
       const out = [];
       const e = r.match(/(\d+) edits?/);
-      if (e) out.push({ text: `${e[1]} edit${+e[1] > 1 ? "s" : ""}` });
+      if (e) out.push({ text: tr("edits", { n: +e[1] }) });
       const add = r.match(/\+(\d+)/), del = r.match(/(?:^|\s)-(\d+)/);
       if (add && +add[1]) out.push({ text: `+${add[1]}`, tone: "ok", mono: true });
       if (del && +del[1]) out.push({ text: `−${del[1]}`, tone: "err", mono: true });
       return out;
     }
     case "review": {
-      const out = frac[0] ? [{ text: `passe ${frac[0]}` }] : [];
+      const out = frac[0] ? [{ text: tr("pass", { f: frac[0] }) }] : [];
       const b = r.match(/P0P1P2=(\d+)/);
-      if (b) out.push({ text: `${b[1]} bloquant${+b[1] > 1 ? "s" : ""}`, tone: +b[1] ? "err" : "ok" });
-      if (/spec skipped/.test(r)) out.push({ text: "spec sautée", tone: "dim" });
+      if (b) out.push({ text: tr("blockers", { n: +b[1] }), tone: +b[1] ? "err" : "ok" });
+      if (/spec skipped/.test(r)) out.push({ text: tr("specSkipped"), tone: "dim" });
       return out;
     }
     case "ci": {
-      if (frac.length >= 2) return [{ text: `passe ${frac[0]}` }, { text: `${frac[1]} checks`, tone: full(frac[1]) ? "ok" : "err" }];
-      return frac.length ? [{ text: `${frac[0]} checks`, tone: full(frac[0]) ? "ok" : "err" }] : [];
+      if (frac.length >= 2) return [{ text: tr("pass", { f: frac[0] }) }, { text: tr("checks", { f: frac[1] }), tone: full(frac[1]) ? "ok" : "err" }];
+      return frac.length ? [{ text: tr("checks", { f: frac[0] }), tone: full(frac[0]) ? "ok" : "err" }] : [];
     }
     case "pr": {
       const n = r.match(/#(\d+)/)?.[1];
@@ -147,13 +171,80 @@ export function passOf(p) {
 /** A finding's decision (review/decisions.tsv): { text, tone: ok | dim | warn }. */
 export function decisionOf(f) {
   const s = String(f?.status ?? "").toLowerCase();
-  if (s === "fixed") return { text: f.ref ? `corrigé ${String(f.ref).slice(0, 7)}` : "corrigé", tone: "ok" };
-  if (["wontfix", "discarded", "rejected", "skipped", "invalid"].includes(s)) return { text: s === "wontfix" ? "wontfix" : "écarté", tone: "dim" };
-  return { text: "ouvert", tone: "warn" };
+  if (s === "fixed") return { text: f.ref ? tr("fixedRef", { ref: String(f.ref).slice(0, 7) }) : tr("fixed"), tone: "ok" };
+  if (["wontfix", "discarded", "rejected", "skipped", "invalid"].includes(s)) return { text: s === "wontfix" ? "wontfix" : tr("dropped"), tone: "dim" }; // i18n: tech
+  return { text: tr("open"), tone: "warn" };
 }
 
 /** A finding's `loc` as "path:line" (the first location; "(idem …)" dropped), null without one. */
 export const locOf = (loc) => String(loc ?? "").trim().split(/\s+\(|\s+/)[0] || null;
+
+// ---------- CI (GitHub's check runs, per pushed commit) ----------
+
+const RANK = { fail: 0, pending: 1, ok: 2, skip: 3 };
+
+/** A check run's state: "pending" until completed, then "ok" (success), "skip" (neutral, skipped) or "fail". */
+export function checkState(r) {
+  if (r?.status !== "completed") return "pending";
+  if (r.conclusion === "success") return "ok";
+  return r.conclusion === "neutral" || r.conclusion === "skipped" ? "skip" : "fail";
+}
+
+/** A check's time, start to end (null while it runs or without times). */
+export const checkMs = (r) => {
+  const s = Date.parse(r?.started_at ?? ""), e = Date.parse(r?.completed_at ?? "");
+  return s && e ? Math.max(0, e - s) : null;
+};
+
+/** A commit's checks counted: { ok (skipped ones too: nothing failed), fail, pending, total, ms: first start to last end, null while any runs }. */
+export function tally(runs) {
+  const n = { ok: 0, fail: 0, pending: 0, total: (runs ?? []).length, ms: null };
+  let a = Infinity, b = -Infinity;
+  for (const r of runs ?? []) {
+    const st = checkState(r);
+    n[st === "skip" ? "ok" : st]++;
+    const s = Date.parse(r.started_at ?? ""), e = Date.parse(r.completed_at ?? "");
+    if (s) a = Math.min(a, s);
+    if (e) b = Math.max(b, e);
+  }
+  if (!n.pending && a < Infinity && b > -Infinity) n.ms = Math.max(0, b - a);
+  return n;
+}
+
+/** The checks to list: failures first, then running, passed, skipped; by name within. */
+export const checkOrder = (runs) => [...(runs ?? [])].sort((x, y) => RANK[checkState(x)] - RANK[checkState(y)] || String(x.name).localeCompare(String(y.name)));
+
+/** "42 s", "3 min 05", "1 h 02"; "" without a time. */
+export function duration(ms) {
+  if (ms == null || !Number.isFinite(ms)) return "";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return tr("dur.s", { s });
+  const m = Math.floor(s / 60);
+  return m < 60 ? tr("dur.m", { m, s: String(s % 60).padStart(2, "0") }) : tr("dur.h", { h: Math.floor(m / 60), m: String(m % 60).padStart(2, "0") });
+}
+
+/** The GitHub Actions run of a check (from its html_url, else details_url), null for another app's: only runs have logs. */
+export const runIdOf = (r) => [r?.html_url, r?.details_url].map((u) => String(u ?? "").match(/\/actions\/runs\/(\d+)/)?.[1]).find(Boolean) ?? null;
+
+/** The last `n` lines of `gh run view --log-failed` for the job `name` (every job's when none matches), without the job and step columns, timestamps or colors. */
+export function logTail(text, name, n = 40) {
+  const rows = String(text ?? "").replace(/\x1b\[[0-9;]*m/g, "").split("\n").filter((l) => l.trim()).map((l) => l.split("\t"));
+  const mine = rows.filter((p) => p[0] === name);
+  return (mine.length ? mine : rows)
+    .map((p) => (p.length > 2 ? p.slice(2).join("\t") : p.join("\t")).replace(/^﻿?\d{4}-\d\d-\d\dT[\d:.]+Z ?/, ""))
+    .slice(-n);
+}
+
+/** The CI's line over the pushed commits (oldest first, each { sha, tally }): "3 runs · 9/9 checks · vert depuis abc1234". */
+export function ciLine(pushed) {
+  if (!pushed?.length) return tr("noRun");
+  const green = (t) => t.total > 0 && !t.fail && !t.pending;
+  const last = pushed.at(-1).tally;
+  let i = pushed.length;
+  while (i > 0 && green(pushed[i - 1].tally)) i--;
+  const state = green(last) ? tr("greenSince", { sha: pushed[i].sha.slice(0, 7) }) : last.fail ? tr("failing", { n: last.fail }) : last.pending ? tr("running", { n: last.pending }) : tr("noCheck");
+  return tr("ci", { n: pushed.length, ok: last.ok, total: last.total, state });
+}
 
 /** What's running, in one line: each current step's label up to its first " · ". */
 export const runningLine = (steps) => steps.filter((s) => s.state === "current").map((s) => String(s.label ?? s.id).split(" · ")[0]).join(" · ");

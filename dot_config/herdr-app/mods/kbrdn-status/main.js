@@ -3,13 +3,21 @@
 // model + context and the account quota on the right.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, agents, theme, run, window, keys, focused, exec, readTextFile, home, checking } from "herdr";
+import { spaces, agents, theme, run, window, keys, focused, exec, readTextFile, home, checking, shared } from "herdr";
 import { summarize } from "./ci.js";
+import { motionState, frame, enter } from "./motion.js";
+import { companion } from "./companion-logo.js";
+import { refreshOn } from "./bus.js";
+import { costLevel, levelColor } from "./levels.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 const CACHE = "/.claude/cache/statusline/"; // written by ~/.claude/scripts/statusline.ts
 const left = (sec) => {
   const h = Math.max(0, sec) / 3600;
-  return h >= 48 ? `${Math.round(h / 24)}j` : h >= 1 ? `${Math.round(h)}h` : `${Math.round(h * 60)}m`;
+  return h >= 48 ? tr("left.d", { n: Math.round(h / 24) }) : h >= 1 ? tr("left.h", { n: Math.round(h) }) : tr("left.m", { n: Math.round(h * 60) });
 };
 
 export default class KbrdnStatus extends View {
@@ -17,6 +25,9 @@ export default class KbrdnStatus extends View {
     this.width = 0;
     this.quota = null;
     this.session = {};
+    this.bridge = {}; // terminal -> herdr-bridge's { state, since, action }, for the companion
+    this.memos = {}; // agent address -> companion-logo's memo
+    this.motion = motionState(); // ANIMATIONS.md: a group that comes in fades in, the context meter slides
     this.pr = {};
     this.prKey = "";
     this.busy = false;
@@ -40,7 +51,10 @@ export default class KbrdnStatus extends View {
       const t = focused()?.terminal;
       const session = t ? await this.json(`${dir}herdr-${t}.json`) : undefined;
       if (t && session !== undefined) this.session[t] = session;
-      const next = JSON.stringify([this.quota, t && this.session[t]]);
+      // herdr-bridge: what the focused agent does now (the companion's badge); a torn read keeps the last.
+      const bridge = t ? await this.json(`${home()}/.claude/cache/herdr/${t}.json`) : undefined;
+      if (t && bridge !== undefined) this.bridge[t] = bridge && { state: bridge.state, since: bridge.since, action: bridge.action };
+      const next = JSON.stringify([this.quota, t && this.session[t], t && this.bridge[t]]);
       if (next !== this.last) { this.last = next; cx.notify(); }
     });
   }
@@ -87,21 +101,21 @@ export default class KbrdnStatus extends View {
     if (issue) chips.push(div().text_color(t.ansi3).child(`#${issue}`));
     const pr = space && this.pr[space.id];
     if (!pr) return chips;
-    const state = pr.state === "MERGED" ? ["mergée", t.ansi5] : pr.state === "CLOSED" ? ["fermée", t.dim] : pr.draft ? ["brouillon", t.muted] : ["", t.ansi4];
+    const state = pr.state === "MERGED" ? ["merged", t.ansi5] : pr.state === "CLOSED" ? ["closed", t.dim] : pr.draft ? ["draft", t.muted] : ["", t.ansi4];
     chips.push(div().id("kbrdn-pr").cursor_pointer().text_color(state[1]).hover((s) => s.text_color(t.foreground))
-      .on_click(() => exec("open", [pr.url])).child(`PR #${pr.number}${state[0] ? ` ${state[0]}` : ""}`));
+      .on_click(() => exec("open", [pr.url])).child(state[0] ? tr("pr", { n: pr.number, state: tr(`pr.${state[0]}`) }) : `PR #${pr.number}`));
     if (pr.state !== "OPEN") return chips;
     const ci = pr.ci;
     const [text, color] = {
       pass: [`CI ${ci.passed}/${ci.total} ✓`, t.done],
       fail: [`CI ${ci.failed} ✗ /${ci.total}`, t.ansi1],
       pending: [`CI ${ci.passed + ci.failed}/${ci.total} …`, t.ansi3],
-      stale: ["CI · HEAD ≠ PR", t.dim],
+      stale: ["CI · HEAD ≠ PR", t.dim], // i18n: tech
       none: ["CI —", t.dim],
     }[ci.state];
     chips.push(div().text_color(color).child(text));
-    if (wide && pr.review === "APPROVED") chips.push(div().text_color(t.done).child("review ✓"));
-    if (wide && pr.review === "CHANGES_REQUESTED") chips.push(div().text_color(t.ansi1).child("changements demandés"));
+    if (wide && pr.review === "APPROVED") chips.push(div().text_color(t.done).child("review ✓")); // i18n: tech
+    if (wide && pr.review === "CHANGES_REQUESTED") chips.push(div().text_color(t.ansi1).child(tr("changesRequested")));
     return chips;
   }
 
@@ -111,8 +125,23 @@ export default class KbrdnStatus extends View {
     return pct >= alarm ? t.ansi1 : pct >= warn ? t.ansi3 : t.ansi5;
   }
 
+  // The fill slides to a new value (ReaderBar.vue's bar, ANIMATIONS.md), at once under reduced motion.
   meter(t, pct, color) {
-    return div().w(36).h(4).rounded(2).bg(t.raised).child(div().h(4).rounded(2).w(Math.max(2, 36 * Math.min(1, pct / 100))).bg(color));
+    return div().w(36).h(4).rounded(2).bg(t.raised).child(div().id("ks-ctx-fill").h(4).rounded(2).w(Math.max(2, 36 * Math.min(1, pct / 100))).bg(color)
+      .when(!this.motion.reduced, (el) => el.transition("width", { duration: 240, easing: "ease-out" })));
+  }
+  // The focused terminal's agent, alive (kt-threads' companion-logo.js): 20×16, its smallest clean size,
+  // the bob inside its own box so nothing else in the bar moves. No agent there: nothing.
+  pet(list, cx) {
+    const ft = focused()?.terminal;
+    const a = ft && list.find((x) => x.address === ft);
+    if (!a) return null;
+    const b = this.bridge[ft];
+    return companion({
+      program: a.program, state: a.status, id: `ks-pet-${a.address}`, cx, size: 20, height: 16,
+      action: b?.state ? (b.action ?? null) : undefined, since: b?.state ? b.since : undefined,
+      memo: (this.memos[a.address] ??= {}),
+    });
   }
 
   sessionChips(t, list, wide) {
@@ -125,7 +154,7 @@ export default class KbrdnStatus extends View {
       const color = this.ctxColor(t, s.ctx_pct, s.window);
       chips.push(h_flex().gap(6).items_center().child(this.meter(t, s.ctx_pct, color)).child(div().text_color(color).child(`${s.ctx_pct.toFixed(0)}%`)));
     }
-    if (wide && s.cost_usd != null) chips.push(div().text_color(t.muted).child(`$${s.cost_usd.toFixed(2)}`));
+    if (wide && s.cost_usd != null) chips.push(div().text_color(levelColor(t, costLevel(s.cost_usd, s.model), { okGreen: true })).child(`$${s.cost_usd.toFixed(2)}`));
     return chips;
   }
 
@@ -140,33 +169,41 @@ export default class KbrdnStatus extends View {
     };
     const chips = [];
     if (wide && q.five_hour) chips.push(chip("5h", q.five_hour));
-    if (q.seven_day) chips.push(chip("7j", q.seven_day));
+    if (q.seven_day) chips.push(chip(tr("week"), q.seven_day));
     return chips;
   }
 
-  render() {
+  render(cx) {
     const t = theme();
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const space = spaces().find((s) => s.active);
+    // DATA-SYNC.md: a commit, a push or a PR anywhere, or an agent of this space that stopped working: the
+    // PR and its CI are read again (the branch is Herdr's own, live).
+    if (!checking()) refreshOn(this, cx, "pr", ["git", "gh", ...(space ? [`agent:${space.id}`] : [])], async (cx) => this.loadPr(cx, true));
     const list = agents();
     const needs = list.filter((a) => a.status === "blocked").length;
     const wide = !this.width || this.width >= 980;
+    const pet = this.pet(list, cx);
     const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(13)).child(text);
-    const group = (chips) => h_flex().gap(10).items_center().flex_none().children(chips);
+    // A group that comes in (a PR found, a session, the quota) fades in where it stands: no slide in a bar.
+    const group = (chips, id) => enter(m, h_flex().gap(10).items_center().flex_none(), id, { dy: 0 }).children(chips);
     const sep = () => div().w(1).h(12).bg(t.border);
     const pr = this.prChips(t, space, wide);
     const session = this.sessionChips(t, list, wide);
     const quota = this.quotaChips(t, wide);
     return h_flex().id("root").on_size_change((size, cx) => { this.width = size.width; cx.notify(); })
       .size_full().px(14).gap(16).items_center().bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
-      .when(wide, (el) => el.child(label(space?.machine ? "server" : "monitor", space?.machine ?? "This computer")))
+      .when(Boolean(pet), (el) => el.child(pet))
+      .when(wide, (el) => el.child(label(space?.machine ? "server" : "monitor", space?.machine ?? tr("thisComputer"))))
       .when(Boolean(space?.branch), (el) => el.child(h_flex().min_w(0).child(label("branch", div().truncate().child(space.branch)))))
-      .when(pr.length > 0, (el) => el.child(group(pr)))
-      .child(h_flex().gap(6).items_center().flex_none().child(div().size(6).rounded(3).bg(t.dim)).child(`${list.length} agents`)
-        .when(needs > 0, (el) => el.child(div().text_color(t.blocked).child(`· ${needs} needs you`))))
+      .when(pr.length > 0, (el) => el.child(group(pr, "ks-pr")))
+      .child(h_flex().gap(6).items_center().flex_none().child(div().size(6).rounded(3).bg(t.dim)).child(tr("agents", { n: list.length }))
+        // i18n: tech (NEEDS YOU, the agent state: the same in every language)
+        .when(needs > 0, (el) => el.child(enter(m, div().text_color(t.blocked), "ks-needs", { dy: 0 }).child(`· ${needs} needs you`))))
       .child(div().flex_1())
-      .when(session.length > 0, (el) => el.child(group(session)))
+      .when(session.length > 0, (el) => el.child(group(session, "ks-session")))
       .when(session.length > 0 && quota.length > 0, (el) => el.child(sep()))
-      .when(quota.length > 0, (el) => el.child(group(quota)))
+      .when(quota.length > 0, (el) => el.child(group(quota, "ks-quota")))
       .when(wide, (el) => el.child(div().id("palette").flex_none().text_color(t.dim).on_click(() => run("app.palette")).child(this.hint(t))));
   }
 }

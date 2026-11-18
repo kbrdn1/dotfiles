@@ -35,7 +35,8 @@ plugin({
         spaces: () => spacesData,
         run: (n, a) => log.run.push([n, a]),
         theme: () => new Proxy({}, { get: (_t, k) => `#${String(k).padEnd(6, "0").slice(0, 6)}` }),
-        shared: (k) => log.shared[k],
+        // Reduced motion: leave() closes at once (this mock's timer.after never fires).
+        shared: (k) => (k === "kt.reducedMotion" ? true : log.shared[k]),
         setShared: (k, v) => { log.shared[k] = v; },
         openOverlay: (o) => { log.open.push(o); return "ov2"; },
         closeOverlay: (id) => log.close.push(id),
@@ -43,6 +44,7 @@ plugin({
         home: () => ROOT,
         pickFolder: async () => "/new/proj",
         checking: () => false,
+        exec: async () => ({ code: 1, stdout: "", stderr: "" }), // i18n.js imports it
         nextCommand: () => new Promise(() => {}),
         settings: () => ({ dark: true }),
       },

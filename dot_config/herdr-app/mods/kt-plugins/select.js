@@ -114,9 +114,10 @@ export function partition(items, why) {
   return { ok, refused };
 }
 
-// A confirm's list: one "• line" each, at most `max`, then "… et N autres".
-export function lines(list, max = 10) {
+// A confirm's list: one "• line" each, at most `max`, then `more(N)` for the rest: the mod's words
+// ("… et N autres", I18N.md), "… +N" without one.
+export function lines(list, max = 10, more = (n) => `… +${n}`) {
   const out = list.slice(0, max).map((s) => `• ${s}`);
-  if (list.length > max) out.push(`… et ${list.length - max} autre${list.length - max > 1 ? "s" : ""}`);
+  if (list.length > max) out.push(more(list.length - max));
   return out.join("\n");
 }

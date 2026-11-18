@@ -1,0 +1,23 @@
+<!-- gwm.app's icon, drawn into an .icns by scripts/bundle.sh: the app's own
+     accent tile and branch mark, on Apple's 1024 px grid (an 824 px body,
+     100 px margins). The colours repeat src/theme.rs, which an SVG cannot
+     read: ACCENT (#d4825d) lit as accent_tile() lights it, its HSL lightness
+     +0.05 at the top and -0.06 at the bottom. Change both together.
+     The mark is assets/icons/git-branch.svg, Hugeicons (MIT, see NOTICE).
+     No drop shadow: sips, which draws this, ignores SVG filters. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="lit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d99271"/>
+      <stop offset="1" stop-color="#ce6f45"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#lit)"/>
+  <g transform="translate(272 272) scale(20)" fill="none" stroke="white" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 19H13C15.8284 19 17.2426 19 18.1213 18.1213C19 17.2426 19 15.8284 19 13V10M19 10C19.7002 10 21.0085 11.9943 21.5 12.5M19 10C18.2998 10 16.9915 11.9943 16.5 12.5"/>
+    <path d="M5 7L5 17"/>
+    <circle cx="5" cy="5" r="2"/>
+    <circle cx="19" cy="5" r="2"/>
+    <circle cx="5" cy="19" r="2"/>
+  </g>
+</svg>

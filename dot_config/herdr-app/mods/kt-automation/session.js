@@ -8,8 +8,12 @@
 // into the mods that use it. Check: bun mods/kt-automation/session.check.mjs.
 
 import { spaces, agents, panes, run, hc } from "herdr";
+import { makeT } from "./i18n.js";
+import words from "./session.strings.js";
 
-export const intention = (x) => `Intention : ${x}`;
+// Its own words (I18N.md), copied with it; the intention goes to Claude in French.
+const tr = makeT(words);
+export const intention = (x) => `Intention : ${x}`; // i18n: agent
 
 /** The live session: the tab named `name` on a local space, and its agent (null once Claude left). */
 export function session(name) {
@@ -35,8 +39,8 @@ export function showSession(s) {
 export function decide(status, name) {
   if (status === "idle") return { args: ["send", "--if", "idle"] };
   if (status === "done") return { args: ["send"] };
-  if (status === "blocked") return { why: `La session ${name} attend une réponse de ta part : l'intention n'est pas partie.` };
-  return { why: `La session ${name} travaille (${status ?? "état inconnu"}) : l'intention n'est pas partie.` };
+  if (status === "blocked") return { why: tr("blocked", { name }) };
+  return { why: tr("working", { name, status: status ?? tr("unknown") }) };
 }
 
 /** Opens or reuses the session `name`. `intent` null: just show it (or open it on `task`).
@@ -48,12 +52,12 @@ export async function dedicated({ name, folder, task, intent }) {
     showSession(s);
     return { done: "shown" };
   }
-  if (s && !s.agent) return { why: `La session ${name} n'a plus d'agent : Claude en est sorti.` };
+  if (s && !s.agent) return { why: tr("gone", { name }) };
   if (s) {
     const d = decide(s.agent.status, name);
     if (d.why) return d;
     const r = await hc([...d.args, s.agent.address, intention(intent)]).catch((e) => ({ code: -1, stderr: String(e?.message ?? e) }));
-    if (r.code !== 0) return { why: `La session ${name} n'a pas pris l'intention : ${(r.stderr || r.stdout || `code ${r.code}`).trim().split("\n")[0]}` };
+    if (r.code !== 0) return { why: tr("refused", { name, why: (r.stderr || r.stdout || tr("code", { code: r.code })).trim().split("\n")[0] }) };
     showSession(s);
     return { done: "sent" };
   }

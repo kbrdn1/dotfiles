@@ -6,7 +6,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { run, layout, theme } from "herdr";
+import { run, layout, theme, shared } from "herdr";
+import { motionState, frame, ink } from "./motion.js";
 
 const SURFACES = [
   ["files", "Files", "mods/kt-threads/folder-tree.svg"],
@@ -38,12 +39,21 @@ const own = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
 export default class PanelHead extends View {
   init() {
     this.width = WIDE;
+    this.segW = {}; // segment id -> its measured width, for the ink
+    this.motion = motionState();
   }
 
   render() {
     const t = theme();
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const active = find(layout(), "panel-body")?.active ?? SURFACES[0][0];
     const wide = this.width >= WIDE;
+    // kbrdn.dev SegmentInk: one pill gliding to the shown segment (ANIMATIONS.md), once the
+    // segments before it are measured; it lands at once the first time.
+    const at = SURFACES.findIndex(([id]) => id === active);
+    const before = SURFACES.slice(0, at).map(([id]) => this.segW[id]);
+    const placed = at >= 0 && this.segW[active] && before.every(Boolean);
+    const left = placed ? before.reduce((s, w) => s + w + 2, 0) : 0;
     // Inside the panel card (it paints the background): no rule.
     return h_flex()
       .id("ph-root")
@@ -55,22 +65,31 @@ export default class PanelHead extends View {
       .px(4)
       .gap(2)
       .items_center()
-      .children(
+      .child(h_flex().relative().flex_none().h(28).gap(2).items_center()
+        .child(placed
+          ? ink(m, div().id("ph-ink").absolute().top(0).h(28).left(left).w(this.segW[active]).rounded_full()
+            .border(1).border_color(alpha(t.accent, "66")).bg(alpha(t.accent, "24")))
+          : div().id("ph-ink-wait").absolute().w(0).h(0))
+        .children(
         SURFACES.map(([id, label, icon]) => {
           const on = id === active;
           return own(
             h_flex()
               .id(`ph-${id}`)
+              .on_size_change((size, cx) => {
+                if (this.segW[id] === size.width) return;
+                this.segW[id] = size.width;
+                cx.notify();
+              })
               .flex_none()
               .h(28)
               .px(on || wide ? 11 : 8)
               .gap(7)
               .items_center()
               .rounded_full()
-              // kbrdn.dev SegmentInk (transparent border elsewhere: no shift).
+              // The ink is the pill under the segments (transparent border here: no shift).
               .border(1)
-              .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
-              .when(on, (el) => el.bg(alpha(t.accent, "24")))
+              .border_color(alpha(t.accent, "00"))
               .font_family(MONO)
               .text_size(11)
               .text_color(on ? t.accent : t.muted)
@@ -82,7 +101,7 @@ export default class PanelHead extends View {
               .when(on || wide, (el) => el.child(label.toUpperCase())),
           );
         }),
-      )
+      ))
       .child(div().flex_1())
       .child(
         own(

@@ -5,6 +5,11 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { home, settings } from "herdr";
 import { ditherBand, TOP } from "./dither.js";
+import { sharpen } from "./motion.js";
+import { makeT, relative } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 export const MONO = "Monaspace Krypton";
 export const CODE = "Monaspace Neon"; // fenced code and plugin.json
@@ -15,19 +20,13 @@ export const SPIN = "mods/workspace-chrome/spinner.svg";
 export const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 export const veil = () => (settings().dark ? alpha("#000000", "8c") : alpha("#0a0a0a", "59"));
 export const tilde = (p) => (p && (p === home() || p.startsWith(home() + "/")) ? `~${p.slice(home().length)}` : p ?? "");
-export const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
-
 const pad = (n) => String(n).padStart(2, "0");
-/** "à l'instant", "il y a 3 h", then a date from a week on. */
+/** "à l'instant", "il y a 3 h" (i18n.js relative), then a date from a week on. */
 export function ago(at) {
-  if (!at) return "date inconnue";
-  const s = Math.max(0, (Date.now() - at) / 1000);
-  if (s < 60) return "à l'instant";
-  if (s < 3600) return `il y a ${Math.floor(s / 60)} min`;
-  if (s < 86400) return `il y a ${Math.floor(s / 3600)} h`;
-  if (s < 7 * 86400) return `il y a ${Math.floor(s / 86400)} j`;
+  if (!at) return tr("unknownDate");
+  if (Date.now() - at < 7 * 86400e3) return relative(at);
   const d = new Date(at);
-  return `le ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  return tr("onDate", { d: pad(d.getDate()), m: pad(d.getMonth() + 1), y: d.getFullYear() });
 }
 
 export const card = (t) => v_flex().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background);
@@ -131,7 +130,8 @@ export function marketTint(name, markets) {
 /** A 60 px head over a dither of `color`, inside its card's 1 px border (`radius`: the card's minus
  *  that border): mark, title (14 semibold), mono subtitle (10.5), icon buttons on the right. `w`: its
  *  measured width (`onW(width, cx)` reports it), the trame waits for it. */
-export function band(t, id, color, { mark, title, sub, actions = [], radius = 15, w = 0, onW }) {
+// `m`: the page's motion state; given, the title comes into focus (motion.js sharpen) when it arrives or changes.
+export function band(t, id, color, { mark, title, sub, actions = [], radius = 15, w = 0, onW, m }) {
   return div().id(id).relative().flex_none().h(60).overflow_hidden().rounded_t(radius)
     .on_size_change((size, cx) => { if (Math.abs(w - size.width) >= 0.5) onW?.(size.width, cx); })
     // dither.js (shared): the trame 1:1 through 2 px rows as wide as the top arcs allow, so the
@@ -140,7 +140,8 @@ export function band(t, id, color, { mark, title, sub, actions = [], radius = 15
     .child(h_flex().size_full().px(12).gap(10).items_center()
       .child(mark)
       .child(v_flex().flex_1().min_w(0).gap(2)
-        .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(title))
+        .child(((ttl) => (m ? sharpen(m, `${id}-title:${title}`, ttl) : ttl()))(
+          () => div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(title)))
         .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(sub)))
       .children(actions.filter(Boolean)));
 }

@@ -3,7 +3,7 @@
 // loop is launched (never the main checkout, the PR required, one loop of a name per worktree, the
 // space found again, the exact task), plus a Luau script's summary.
 import assert from "node:assert/strict";
-import { classify, loopDef, isCale, running, iteration, targets, spaceFor, launch, luau, when, trimSlash, within, TASK, intents } from "./auto.js";
+import { classify, loopDef, isCale, running, iteration, targets, spaceFor, launch, luau, trimSlash, within, TASK, intents } from "./auto.js";
 
 const H = "/Users/k";
 
@@ -54,7 +54,7 @@ Loop auto-cadencé. **mode:** closed · **trigger:** self-pace · **exécution:*
 `;
 const d = loopDef(md);
 assert.deepEqual(d, { description: "Loop auto-cadencé — fait x", mode: "closed", trigger: "self-pace", exec: "single", defined: true,
-  goal: "tous les checks passent", max: "6", exit: "CI_FAILED=0", check: "ci-dessous. · script bash de 1 ligne" });
+  goal: "tous les checks passent", max: "6", exit: "CI_FAILED=0", check: "ci-dessous.", script: { lang: "bash", n: 1 } });
 assert.equal(loopDef("# rien").defined, false);
 assert.equal(loopDef("# rien").mode, null);
 
@@ -98,9 +98,10 @@ assert.equal(spaceFor("/r/app", spaces, [])?.id, "sA");
 // launch: the main checkout refused, a PR required for a PR loop, one loop of a name per worktree,
 // a tab in the worktree's space or a new space there, and the exact task.
 const wt = { path: "/r/app-worktrees/feat-1/", branch: "feat/#1-x", is_main: false };
-assert.match(launch({ name: "ci-until-green", wt: { ...wt, is_main: true }, pr: 1 }).error, /checkout principal/);
-assert.match(launch({ name: "ci-until-green", wt, pr: null }).error, /Pas de PR ouverte pour feat\/#1-x/);
-assert.match(launch({ name: "bad name", wt, pr: 1 }).error, /invalide/);
+assert.equal(launch({ name: "ci-until-green", wt: { ...wt, is_main: true }, pr: 1 }).error, "main");
+assert.deepEqual(launch({ name: "ci-until-green", wt, pr: null }), { error: "noPr", where: "feat/#1-x" });
+assert.deepEqual(launch({ name: "bad name", wt, pr: 1 }), { error: "name", name: "bad name" });
+assert.equal(launch({ name: "ci-until-green", wt: {}, pr: 1 }).error, "noWorktree");
 assert.equal(launch({ name: "ci-until-green", wt, pr: 2, live }).show.address, "t1");
 assert.ok(!launch({ name: "codex-review-pr", wt, pr: 2, live }).show); // another loop there: fine
 const viaTab = launch({ name: "ci-until-green", wt, pr: 2, spaces, panes: [{ terminal: "t9", cwd: "/r/app-worktrees/feat-1", tab: "bB" }] });
@@ -124,7 +125,6 @@ assert.equal(l.caps, `agents_per_run = 2, tokens_per_day = 2_000_000, wall_time 
 assert.ok(l.agent && !l.worktree);
 assert.deepEqual(l.steps, ["pull", "sh", "agent", "notify"]);
 assert.ok(!luau(`herdr.manual(function() sh("x") end) -- agent { }`).agent);
-assert.deepEqual(l.triggers.map(when), ["à 03:00", "toutes les 6h", "à la main"]);
 
 // The session's task, as written, and the intentions.
 assert.ok(TASK.startsWith("Session dédiée à mes automatisations : loops Claude (me:loop:*)"));

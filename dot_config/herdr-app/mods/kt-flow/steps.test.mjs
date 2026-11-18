@@ -1,11 +1,45 @@
 // node mods/kt-flow/steps.test.mjs: steps.js on labels from real claude-flow flows.
 import assert from "node:assert/strict";
-import { workflowName, issueOf, phasesOf, details, runningLine, findPlans, passOf, decisionOf, locOf } from "./steps.js";
+import { workflowName, issueOf, flowBranch, phasesOf, details, runningLine, findPlans, passOf, decisionOf, locOf, checkState, tally, checkOrder, duration, runIdOf, logTail, ciLine } from "./steps.js";
 
 assert.equal(workflowName("me:issue-worktree-pr"), "Issue → Worktree → PR");
 assert.equal(workflowName("me:spec-issue-worktree-pr"), "Spec · Issue → Worktree → PR");
 assert.equal(issueOf("chore/#145-deps-audit"), "145");
 assert.equal(issueOf("dev"), null);
+
+// The flow's branch (t2v, t1s): the branch step's, else the worktree's folder, else none.
+const B = (id, label) => ({ id, label, state: "done" });
+assert.equal(flowBranch([B("issue", "issue #61"), B("branch", "branch feat/#61-every-workflow"), B("worktree", "worktree feat-61-every-workflow")]), "feat/#61-every-workflow");
+assert.equal(flowBranch([B("branch", "branch"), B("worktree", "worktree feat-50-securite-du-compte")]), "feat-50-securite-du-compte");
+assert.equal(flowBranch([B("worktree", "worktree /Users/x/wt/repo/feat-7-herdr-outbox")]), "feat-7-herdr-outbox");
+assert.equal(flowBranch([B("issue", "issue #61")]), null);
+assert.equal(flowBranch(undefined), null);
+assert.equal(flowBranch([{ id: "branch" }, null]), null);
+
+// CI: check runs as `gh api repos/<repo>/commits/<sha>/check-runs` gives them (claude-crosstalk #8's, kalima #29's).
+const run = (name, status, conclusion, s, e, url) => ({ name, status, conclusion, started_at: s, completed_at: e, html_url: url });
+const runs = [
+  run("GitGuardian Security Checks", "completed", "success", "2026-11-18T05:35:05Z", "2026-11-18T05:35:06Z", "https://github.com/kbrdn1/claude-crosstalk/runs/134602560289"),
+  run("validate + test", "completed", "success", "2026-11-18T05:35:07Z", "2026-11-18T05:35:32Z", "https://github.com/kbrdn1/claude-crosstalk/actions/runs/44245262519/job/134602555105"),
+  run("Build et tests", "completed", "cancelled", "2026-11-18T05:35:00Z", "2026-11-18T05:38:10Z", "https://github.com/kbrdn1/kalima/actions/runs/43288079227/job/131426699584"),
+  run("lint", "in_progress", null, "2026-11-18T05:36:00Z", null, null),
+  run("docs", "completed", "skipped", null, null, null),
+];
+assert.deepEqual(runs.map(checkState), ["ok", "ok", "fail", "pending", "skip"]);
+assert.deepEqual(tally(runs.slice(0, 2)), { ok: 2, fail: 0, pending: 0, total: 2, ms: 27000 });
+assert.deepEqual(tally(runs), { ok: 3, fail: 1, pending: 1, total: 5, ms: null });
+assert.deepEqual(checkOrder(runs).map((r) => r.name), ["Build et tests", "lint", "GitGuardian Security Checks", "validate + test", "docs"]);
+assert.deepEqual([duration(27000), duration(190000), duration(3725000), duration(null)], ["27 s", "3 min 10", "1 h 02", ""]);
+assert.deepEqual(runs.map(runIdOf), [null, "44245262519", "43288079227", null, null]);
+const log = "build\tRun tests\t\x1b[31m2026-11-18T05:37:59.1234567Z FAIL a.test.ts\x1b[0m\nlint\tRun lint\t2026-11-18T05:37:59Z ok\nbuild\tRun tests\t2026-11-18T05:38:00.5Z exit 1\n";
+assert.deepEqual(logTail(log, "build"), ["FAIL a.test.ts", "exit 1"]);
+assert.deepEqual(logTail(log, "other", 1), ["exit 1"]);
+assert.deepEqual(logTail("", "build"), []);
+const P = (sha, rs) => ({ sha, tally: tally(rs) });
+assert.equal(ciLine([P("aaaaaaa1", [runs[2]]), P("bbbbbbb2", runs.slice(0, 2)), P("ccccccc3", runs.slice(0, 2))]), "3 runs · 2/2 checks · vert depuis bbbbbbb");
+assert.equal(ciLine([P("aaaaaaa1", runs.slice(0, 3))]), "1 run · 2/3 checks · 1 en échec");
+assert.equal(ciLine([P("aaaaaaa1", [runs[3]])]), "1 run · 0/1 checks · 1 en cours");
+assert.equal(ciLine([]), "aucun run");
 
 const d = (id, label) => details({ id, label });
 assert.deepEqual(d("review", "review 4/8 · P0P1P2=2"), [{ text: "passe 4/8" }, { text: "2 bloquants", tone: "err" }]);

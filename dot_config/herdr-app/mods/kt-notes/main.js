@@ -39,10 +39,18 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView, Editor, EditorState } from "gpui-base";
 import { exec, theme, spaces, panes, run, layout, openOverlay, notify, nextCommand, props, shared, setShared, home, watchFolder, checking, settings, readTextFile, writeTextFile } from "herdr";import { filterRow, filterState, nextKey } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
-import { motionState, frame, enter, pulse } from "./motion.js";
+import { motionState, frame, enter, pulse, rows as motionRows } from "./motion.js";
+// kt-keys' roll.js (a byte-identical copy): the head's counts roll to their new digits.
+import { rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { notePath, projectPath, normalize, present, segments, toggleTask, preview, parseFind, classify, caseRival, external, relativePath } from "./notes.js";
+import { makeT, relative } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
+// A read-only reason ({ key, vars }, kept by the open note): said in the language shown.
+const says = (r) => (r && typeof r === "object" ? tr(r.key, r.vars) : r);
 
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -61,21 +69,10 @@ const lastLine = (s) => String(s ?? "").trim().split("\n").filter(Boolean).pop()
 const trim = (p) => (typeof p === "string" && p.length > 1 ? p.replace(/\/+$/, "") : p);
 const inside = (cwd, p) => Boolean(cwd && p) && (cwd === p || cwd.startsWith(`${p}/`));
 const tilde = (p) => (p && inside(p, home()) ? `~${p.slice(home().length)}` : p ?? "");
-const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
 const isHome = (s) => !s.machine && trim(s.folder) === trim(home());
 const errText = (e) => String(e?.message ?? e).replace(/^`herdr\.\w+`:\s*/, "");
 
-function ago(sec) {
-  if (!sec) return "";
-  const s = Math.max(0, Date.now() / 1000 - sec);
-  if (s < 60) return "à l'instant";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `il y a ${h} h`;
-  const d = Math.floor(h / 24);
-  return d < 30 ? `il y a ${d} j` : `il y a ${Math.floor(d / 30)} mois`;
-}
+const ago = (sec) => (sec ? relative(sec * 1000) : "");
 
 // kt-gwm's logoOf(): a project's logo for the appearance now, else the other one's.
 function logoOf(e) {
@@ -203,7 +200,7 @@ export default class Notes extends View {
   async readList(repo) {
     const r = await sh("gwm", ["list", "--format=json"], { cwd: repo.main ?? repo.folder, on: repo.machine, timeout: 30e3 });
     const rows = r.code === 0 ? parse(r.stdout, null) : null;
-    if (!Array.isArray(rows)) return { wts: null, listError: lastLine(r.stderr || r.stdout) || `gwm list a échoué (code ${r.code})` };
+    if (!Array.isArray(rows)) return { wts: null, listError: lastLine(r.stderr || r.stdout) || tr("listFailed", { code: r.code }) };
     return { wts: rows.map((w) => ({ name: w.name, branch: w.branch ?? null, path: trim(w.path), is_main: Boolean(w.is_main) })), listError: null };
   }
 
@@ -294,23 +291,23 @@ export default class Notes extends View {
   rowsOf(repo) {
     const d = this.data[repo.id];
     if (!d) return [];
-    const remote = repo.machine ? "space distant : lecture seule (cette page n'écrit que sur cette machine)" : null;
+    const remote = repo.machine ? { key: "ro.remote" } : null;
     const p = d.project;
-    const out = [{ id: "project", kind: "project", title: "Note du projet", text: present(p?.text) ? p.text : null, mtime: p?.mtime ?? 0,
+    const out = [{ id: "project", kind: "project", title: tr("projectNote"), text: present(p?.text) ? p.text : null, mtime: p?.mtime ?? 0,
       path: projectPath(repo.common), readonly: remote }];
     // Read by "Tous les projets" only (no gwm list yet): no worktree row, no orphan until the list comes.
     const { rows, orphans } = d.listed ? classify(d.wts ?? [], d.notes ?? [], d.branches ?? []) : { rows: [], orphans: [] };
     for (const w of rows) {
       const path = notePath(repo.common, w.branch);
       const rival = w.branch && caseRival(w.branch, d.branches ?? []);
-      const why = !w.branch ? "HEAD détachée : une note gwm est attachée à une branche"
-        : !relativePath(w.branch) ? "ce nom de branche ne peut pas être un fichier : gwm n'y attache pas de note"
-        : rival ? `« ${w.branch} » et « ${rival} » ne diffèrent que par la casse : gwm refuse cette note` : remote;
+      const why = !w.branch ? { key: "ro.detached" }
+        : !relativePath(w.branch) ? { key: "ro.badName" }
+        : rival ? { key: "ro.case", vars: { branch: w.branch, rival } } : remote;
       out.push({ id: `wt:${w.path}`, kind: "wt", title: w.name, w, branch: w.branch, text: w.note?.text ?? null, mtime: w.note?.mtime ?? 0, path, readonly: why });
     }
     // gwm list failed: its notes have no worktree to sit on, they stay listed (read only), said so.
     for (const o of orphans) out.push({ id: `or:${o.branch}`, kind: "orphan", title: o.branch, branch: o.branch, gone: o.gone, text: o.text, mtime: o.mtime,
-      path: `${repo.common}/${o.rel}`, readonly: d.wts ? "note sans worktree : lecture seule" : "liste des worktrees indisponible : lecture seule" });
+      path: `${repo.common}/${o.rel}`, readonly: { key: d.wts ? "ro.orphan" : "ro.noList" } });
     return out;
   }
 
@@ -677,7 +674,7 @@ export default class Notes extends View {
     const p = this.zone === "note" ? this.doc?.path : this.cursorItem()?.path ?? this.cursorItem()?.repo?.folder;
     if (!p) return;
     cx.write_to_clipboard(p);
-    notify({ title: "Chemin copié", body: tilde(p), level: "success", timeout: 2500 });
+    notify({ title: tr("pathCopied"), body: tilde(p), level: "success", timeout: 2500 });
   }
 
   // ---------- pieces ----------
@@ -711,26 +708,28 @@ export default class Notes extends View {
       .font_family(MONO).text_size(9).text_color(typing ? t.accent : t.muted).child(typing ? "INSERT" : "NORMAL");
   }
 
-  // A list row: its icon, title (and branch), the note's first line, its date.
-  row(t, it, cursor, open) {
+  // A list row: its icon, title (and branch), the note's first line, its date. `gone`: closing (rows()
+  // gave it -1), drawn as it was but no longer a target.
+  row(t, it, cursor, open, gone = false) {
     const icon = it.kind === "project" ? PEN : it.kind === "wt" ? I("git-branch") : I("circle-alert");
     const tint = it.kind === "project" ? t.accent : it.kind === "wt" ? t.ansi2 : t.ansi3;
     const pv = preview(it.text);
     return h_flex().id(`kn-row-${it.id}`).flex_none().h(54).px(10).gap(10).items_center().rounded(12).border(1)
       .border_color(cursor ? alpha(t.accent, "99") : open ? alpha(t.accent, "4d") : alpha(t.accent, "00"))
       .bg(cursor ? alpha(t.accent, "24") : open ? alpha(t.accent, "14") : alpha(t.accent, "00"))
-      .cursor_pointer().when(!cursor && !open, (el) => el.hover((s) => s.bg(t.hover)))
-      .on_click((_e, cx) => { this.open(it, cx); cx.notify(); })
+      .when(!gone, (el) => el.cursor_pointer().when(!cursor && !open, (el) => el.hover((s) => s.bg(t.hover)))
+        .on_click((_e, cx) => { this.open(it, cx); cx.notify(); }))
       .child(div().relative().flex_none().size(28).rounded(8).border(1).border_color(alpha(tint, "4d")).bg(alpha(tint, "1a")).flex().items_center().justify_center()
         .child(svg(icon).size(14).text_color(tint))
         .when(Boolean(it.text), (el) => el.child(div().absolute().right(-2).top(-2).size(8).rounded_full().border(2).border_color(t.background).bg(tint))))
       .child(v_flex().flex_1().min_w(0).overflow_hidden().gap(2)
         .child(h_flex().min_w(0).gap(6).items_center()
-          .child(div().flex_none().max_w(200).truncate().text_size(13).font_medium().text_color(t.foreground).child(it.title))
+          // The title gives way before the tags (flex_none): a tag cut mid-word says nothing.
+          .child(div().min_w(0).max_w(200).truncate().text_size(13).font_medium().text_color(t.foreground).child(it.title))
           .when(it.kind === "wt" && Boolean(it.branch) && it.branch !== it.title, (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(it.branch)))
-          .when(it.kind === "wt" && it.w?.is_main, (el) => el.child(this.tag(t, t.dim, "principal")))
-          .when(it.kind === "orphan", (el) => el.child(this.tag(t, it.gone ? t.ansi3 : t.dim, it.gone ? "branche supprimée" : "worktree retiré"))))
-        .child(div().truncate().text_size(12).text_color(pv ? t.muted : t.dim).child(pv || (it.kind === "project" ? "Vide : la note du projet" : !it.branch && it.kind === "wt" ? "HEAD détachée" : "Pas de note"))))
+          .when(it.kind === "wt" && it.w?.is_main, (el) => el.child(this.tag(t, t.dim, tr("main"))))
+          .when(it.kind === "orphan", (el) => el.child(this.tag(t, it.gone ? t.ansi3 : t.dim, it.gone ? tr("branchGone") : tr("wtGone")))))
+        .child(div().truncate().text_size(12).text_color(pv ? t.muted : t.dim).child(pv || (it.kind === "project" ? tr("emptyProject") : !it.branch && it.kind === "wt" ? tr("detached") : tr("noNote")))))
       .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(it.mtime ? ago(it.mtime) : ""));
   }
 
@@ -738,29 +737,29 @@ export default class Notes extends View {
   // to read only, then the reader or the editor.
   note(t, d, keyed) {
     const reading = d.mode !== "edit" || !d.ed;
-    const state = d.loading ? "lecture…" : d.saving ? "enregistrement…" : d.error ? `échec : ${d.error}` : d.conflict ? "modifiée ailleurs"
-      : d.mark ? "modifiée" : d.savedAt ? `enregistrée ${ago(d.savedAt / 1000)}` : d.readonly ? "lecture seule" : "";
+    const state = d.loading ? tr("st.reading") : d.saving ? tr("st.saving") : d.error ? tr("st.failed", { error: d.error }) : d.conflict ? tr("st.conflict")
+      : d.mark ? tr("st.dirty") : d.savedAt ? tr("st.saved", { ago: ago(d.savedAt / 1000) }) : d.readonly ? tr("st.readonly") : "";
     const stateColor = d.error || d.conflict ? t.ansi3 : d.mark ? t.foreground : t.dim;
     const rel = d.path ? tilde(d.path) : "";
     const head = h_flex().flex_none().h(56).px(16).gap(10).items_center()
       .child(v_flex().flex_1().min_w(0).gap(2)
-        .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(d.title))
+        .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(d.kind === "project" ? tr("projectNote") : d.title))
         .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child([d.branch, rel].filter(Boolean).join(" · "))))
       .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(stateColor).child(state))
       .when(!d.readonly, (el) => el.child(h_flex().flex_none().gap(4)
-        .child(this.pill(t, "kn-read", "Lire", "mods/kt-skills/eye.svg", reading, "Lire (esc)", (cx) => this.read(cx)))
-        .child(this.pill(t, "kn-edit", "Éditer", I("square-pen"), !reading, "Éditer (i)", (cx) => this.edit(cx)))))
-      .child(iconBtn(t, "kn-copy", "mods/kt-gwm/copy.svg", "Copier le chemin (y)", (cx) => this.copy(cx)));
+        .child(this.pill(t, "kn-read", tr("read"), "mods/kt-skills/eye.svg", reading, tr("readTip"), (cx) => this.read(cx)))
+        .child(this.pill(t, "kn-edit", tr("edit"), I("square-pen"), !reading, tr("editTip"), (cx) => this.edit(cx)))))
+      .child(iconBtn(t, "kn-copy", "mods/kt-gwm/copy.svg", tr("copyPath"), (cx) => this.copy(cx)));
     const banner = d.conflict && h_flex().flex_none().mx(12).mb(8).px(12).py(8).gap(10).items_center().rounded(12).border(1)
       .border_color(alpha(t.ansi3, "66")).bg(alpha(t.ansi3, "1a"))
       .child(svg(I("circle-alert")).size(14).flex_none().text_color(t.ansi3))
       .child(v_flex().flex_1().min_w(0)
-        .child(div().text_size(12.5).font_medium().text_color(t.foreground).child("Modifiée ailleurs"))
-        .child(div().text_size(12).text_color(t.muted).child("Le fichier a changé depuis sa lecture (TUI de gwm, un éditeur). Rien n'a été écrasé.")))
-      .child(this.pill(t, "kn-reload", "Recharger", I("refresh-cw"), false, "Prendre la version du disque", (cx) => this.resolve(false, cx)))
-      .child(this.pill(t, "kn-keep", "Garder la mienne", I("check"), false, "Écrire ma version par-dessus", (cx) => this.resolve(true, cx)));
+        .child(div().text_size(12.5).font_medium().text_color(t.foreground).child(tr("conflict.title")))
+        .child(div().text_size(12).text_color(t.muted).child(tr("conflict.body"))))
+      .child(this.pill(t, "kn-reload", tr("reload"), I("refresh-cw"), false, tr("reloadTip"), (cx) => this.resolve(false, cx)))
+      .child(this.pill(t, "kn-keep", tr("keep"), I("check"), false, tr("keepTip"), (cx) => this.resolve(true, cx)));
     const why = d.readonly && h_flex().flex_none().mx(16).mb(6).gap(8).items_center().text_size(12).text_color(t.dim)
-      .child(svg(I("circle-alert")).size(12).flex_none()).child(div().min_w(0).truncate().child(d.readonly));
+      .child(svg(I("circle-alert")).size(12).flex_none()).child(div().min_w(0).truncate().child(says(d.readonly)));
     let body;
     if (!reading) {
       body = v_flex().flex_1().min_h(0).px(10).pb(10).child(Editor.new(d.ed).flex_1().min_h(0));
@@ -776,10 +775,10 @@ export default class Notes extends View {
             : this.taskRow(t, d, s, s.line === curLine))))
         : v_flex().flex_1().items_center().justify_center().gap(8).p(24)
           .child(svg(PEN).size(20).text_color(t.dim))
-          .child(div().text_size(13.5).font_medium().text_color(t.foreground).child(d.loading ? "Lecture…" : d.kind === "project" ? "Pas encore de note de projet" : "Pas encore de note"))
-          .child(div().max_w(420).text_size(12).text_color(t.dim).child(d.loading ? "" : d.readonly ? d.readonly
-            : d.kind === "project" ? "i ou Éditer pour l'écrire. Elle vit dans .git/kbrdn/notes/project.md : locale, hors du dépôt, partagée par ses worktrees."
-            : `i ou Éditer pour l'écrire. Elle va dans .git/gwm/notes/${relativePath(d.branch) ?? ""}, la note que N ouvre dans gwm.`));
+          .child(div().text_size(13.5).font_medium().text_color(t.foreground).child(d.loading ? tr("reading") : d.kind === "project" ? tr("noProjectNote") : tr("noNoteYet")))
+          .child(div().max_w(420).text_size(12).text_color(t.dim).child(d.loading ? "" : d.readonly ? says(d.readonly)
+            : d.kind === "project" ? tr("howto.project")
+            : tr("howto.wt", { path: relativePath(d.branch) ?? "" })));
     }
     return v_flex().size_full().child(head).child(div().flex_none().mx(12).mb(8).h(0).border_t(1).border_dashed().border_color(t.border))
       .when(Boolean(banner), (el) => el.child(banner)).when(Boolean(why), (el) => el.child(why)).child(body);
@@ -806,7 +805,7 @@ export default class Notes extends View {
     return this.box(t).id("kn-head").relative().flex_none().px(4).pb(12).gap(10)
       .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
       .children([dither(this.headW, 60, 16, color)].filter(Boolean))
-      .child(bandRow(t, { color, icon: PEN, mark, title, sub, buttons }))
+      .child(bandRow(t, { m: this.m, color, icon: PEN, mark, title, sub, buttons }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(color, "4d")))
       .child(h_flex().px(8).gap(8).items_center()
         .child(h_flex().id("kn-filter").flex_1().min_w(0).h(34).px(13).gap(8).items_center().rounded_full().border(1)
@@ -814,7 +813,7 @@ export default class Notes extends View {
           .on_click((_e, cx) => { this.vim.edit(); this.zone = "list"; this.handle.focus(); cx.notify(); })
           .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
-            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : "Chercher dans les notes (/)"))
+            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : tr("search")))
           .when(Boolean(this.query), (el) => el.child(div().id("kn-clear").flex_none().text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.cur = null; cx.notify(); })
             .child(svg(I("x")).size(13)))))
@@ -838,37 +837,44 @@ export default class Notes extends View {
     const notes = all.filter((x) => x.text);
     const last = Math.max(0, ...notes.map((x) => x.mtime));
     this.sections = [
-      { key: "all", label: "Tout", count: all.length },
-      { key: "project", label: "Projet", tint: "accent", count: 1 },
-      { key: "wt", label: "Worktrees", tint: "ansi2", count: all.filter((x) => x.kind === "wt").length },
-      { key: "orphan", label: "Orphelines", tint: "ansi3", count: all.filter((x) => x.kind === "orphan").length },
+      { key: "all", label: tr("sec.all"), count: all.length },
+      { key: "project", label: tr("sec.project"), tint: "accent", count: 1 },
+      { key: "wt", label: "Worktrees", tint: "ansi2", count: all.filter((x) => x.kind === "wt").length }, // i18n: tech
+      { key: "orphan", label: tr("sec.orphan"), tint: "ansi3", count: all.filter((x) => x.kind === "orphan").length },
     ];
-    const head = this.head(t, { color, mark: this.mark(t, e, repo.name, 32), title: `Notes · ${e?.name ?? repo.name}`,
-      sub: [d ? plural(notes.length, "note", "notes") : "…", last ? `modifiée ${ago(last)}` : d ? "aucune note" : null, tilde(repo.main ?? repo.common)],
+    const head = this.head(t, { color, mark: this.mark(t, e, repo.name, 32), title: tr("title", { name: e?.name ?? repo.name }),
+      // The count rolls; its id (and the filter row's scope) carry the project: another one's shows at once.
+      sub: [d ? rollText(this.m, `kn-head-n-${repo.id}`, tr("notes", { n: notes.length }), 14) : "…", last ? tr("modified", { ago: ago(last) }) : d ? tr("none") : null, tilde(repo.main ?? repo.common)],
       buttons: [
-        iconBtn(t, "kn-all", I("layers"), "Tous les projets (h)", () => this.toAll()),
-        pulse(this.m, iconBtn(t, "kn-refresh", I("refresh-cw"), "Relire (r)", (cx) => this.reload(cx, true)), Boolean(this.inflight[`l:${repo.id}:1`])),
-        iconBtn(t, "kn-keys", I("keyboard"), "Les touches (?)", () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })),
+        iconBtn(t, "kn-all", I("layers"), tr("allProjects"), () => this.toAll()),
+        pulse(this.m, iconBtn(t, "kn-refresh", I("refresh-cw"), tr("reread"), (cx) => this.reload(cx, true)), Boolean(this.inflight[`l:${repo.id}:1`])),
+        iconBtn(t, "kn-keys", I("keyboard"), tr("keys"), () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })),
       ] })
-      .child(div().px(8).child(filterRow({ id: "kn-secs", t, state: this.secRow, active: this.sec, reduced: Boolean(shared("kt.reducedMotion")),
+      .child(div().px(8).child(filterRow({ id: "kn-secs", t, state: this.secRow, active: this.sec, reduced: Boolean(shared("kt.reducedMotion")), scope: repo.id,
         items: this.sections, onPick: (k) => { this.sec = k; this.cur = null; } })));
     // The list, its sections under their eyebrow; the keys' cursor ring while the list has them.
     const keyed = this.keyed;
     const shown = all.filter((it) => this.matches(it));
     const cur = keyed && this.zone === "list" && !this.vim.insert ? (shown.find((x) => x.id === this.cur) ?? shown[0])?.id : null;
+    // The notes of a kind open and close on their height, in order (motion.js rows(), keyed by id; the
+    // repo is in the id: another repo replaces this list at once). A kind gone whole (eyebrow too) goes
+    // at once. `at` counts the rows as rows() builds them, the closing ones included: they are the
+    // list's direct children, which scroll_to_item reveals.
     const list = [];
-    let lastKind = null;
-    for (const it of shown) {
-      if (it.kind !== lastKind && it.kind !== "project") {
-        list.push(div().flex_none().px(10).pt(10).pb(4).child(this.eyebrow(t, it.kind === "wt"
-          ? `Worktrees · ${all.filter((x) => x.kind === "wt" && x.text).length}/${all.filter((x) => x.kind === "wt").length}`
-          : `Orphelines · ${all.filter((x) => x.kind === "orphan").length}`)));
+    for (const kind of [...new Set(shown.map((it) => it.kind))]) {
+      if (kind !== "project") {
+        list.push(div().flex_none().px(10).pt(10).pb(4).child(this.eyebrow(t, kind === "wt"
+          ? `Worktrees · ${all.filter((x) => x.kind === "wt" && x.text).length}/${all.filter((x) => x.kind === "wt").length}` // i18n: tech
+          : tr("orphans", { n: all.filter((x) => x.kind === "orphan").length }))));
       }
-      lastKind = it.kind;
-      if (this.reveal && it.id === cur) { this.scroll.scroll_to_item(list.length); this.reveal = false; }
-      list.push(this.row(t, it, it.id === cur, this.doc?.id === it.id));
+      let at = list.length;
+      list.push(...motionRows(this.m, cx, `kn-rows-${repo.id}-${kind}`, shown.filter((it) => it.kind === kind), (it) => it.id, (it, i) => {
+        if (i >= 0 && this.reveal && it.id === cur) { this.scroll.scroll_to_item(at); this.reveal = false; }
+        at++;
+        return this.row(t, it, i >= 0 && it.id === cur, this.doc?.id === it.id, i < 0);
+      }));
     }
-    const none = !d ? "Lecture des notes…" : !shown.length ? "Aucune note ne correspond." : null;
+    const none = !d ? tr("readingNotes") : !shown.length ? tr("noMatch") : null;
     const listCard = this.box(t).w(340).flex_none()
       .child(v_flex().id("kn-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(6).gap(2)
         .when(Boolean(none), (el) => el.child(div().px(10).py(12).text_size(12.5).text_color(t.dim).child(none)))
@@ -881,7 +887,7 @@ export default class Notes extends View {
     return v_flex().size_full().gap(4).child(head).child(h_flex().flex_1().min_h(0).items_stretch().gap(4).child(listCard).child(noteCard));
   }
 
-  everyView(t, sc) {
+  everyView(t, sc, cx) {
     this.sections = [];
     const rows = this.projectRows(sc);
     const q = this.query.trim().toLowerCase();
@@ -890,32 +896,44 @@ export default class Notes extends View {
     const total = rows.reduce((n, p) => n + (p.text ? 1 : 0) + p.n, 0);
     const keyed = this.keyed;
     const cur = keyed && !this.vim.insert ? (shown.find((x) => x.id === this.cur) ?? shown[0])?.id : null;
-    const list = [];
-    shown.forEach((p, i) => {
-      if (i === withNotes.length && i > 0) list.push(div().flex_none().px(10).pt(12).pb(4).child(this.eyebrow(t, "Sans note")));
-      if (this.reveal && p.id === cur) { this.scroll.scroll_to_item(list.length); this.reveal = false; }
-      const on = p.id === cur;
-      list.push(h_flex().id(`kn-proj-${p.id}`).flex_none().h(56).px(12).gap(12).items_center().rounded(12).border(1)
+    // A project's line; `gone`: closing (rows() gave it -1), drawn as it was but no longer a target.
+    const line = (p, on, gone) => h_flex().id(`kn-proj-${p.id}`).flex_none().h(56).px(12).gap(12).items_center().rounded(12).border(1)
         .border_color(on ? alpha(t.accent, "99") : alpha(t.accent, "00")).bg(on ? alpha(t.accent, "24") : alpha(t.accent, "00"))
         .when(!p.has, (el) => el.opacity(0.6))
-        .cursor_pointer().when(!on, (el) => el.hover((s) => s.bg(t.hover)))
-        .on_click((_e, cx) => { this.open(p, cx); cx.notify(); })
+        .when(!gone, (el) => el.cursor_pointer().when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+          .on_click((_e, cx) => { this.open(p, cx); cx.notify(); }))
         .child(this.mark(t, p.e, p.e.name, 24))
         .child(v_flex().flex_1().min_w(0).gap(2)
           .child(h_flex().gap(8).items_center()
             .child(div().flex_none().text_size(13.5).font_medium().text_color(t.foreground).child(p.e.name))
             .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim)
-              .child(!p.repo ? (p.repo === null ? "hors git" : "…") : [p.text ? "note de projet" : null, p.n ? plural(p.n, "note de worktree", "notes de worktree") : null].filter(Boolean).join(" · ") || "aucune note")))
+              .child(!p.repo ? (p.repo === null ? tr("outsideGit") : "…") : [p.text ? tr("projectNoteShort") : null, p.n ? tr("wtNotes", { n: p.n }) : null].filter(Boolean).join(" · ") || tr("none"))))
           .child(div().truncate().text_size(12).text_color(p.text ? t.muted : t.dim).child(preview(p.text) || tilde(p.e.folder))))
-        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(p.mtime ? ago(p.mtime) : "")));
-    });
-    const head = this.head(t, { color: t.ansi3, mark: null, title: "Notes · Tous les projets",
-      sub: [plural(total, "note", "notes"), plural(withNotes.length, "projet", "projets"), "le registre des projets"],
-      buttons: [iconBtn(t, "kn-refresh", I("refresh-cw"), "Relire (r)", (cx) => this.reload(cx, true)),
-        iconBtn(t, "kn-keys", I("keyboard"), "Les touches (?)", () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } }))] });
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(p.mtime ? ago(p.mtime) : ""));
+    // The projects with a note, then « Sans note » and the others: each part's lines open and close on
+    // their height, in order (motion.js rows(), keyed by id); a project getting its first note closes
+    // below and opens above. `at` counts the lines as rows() builds them, the closing ones included:
+    // they are the list's direct children, which scroll_to_item reveals.
+    const without = shown.filter((p) => !p.has);
+    const list = [];
+    const put = (id, ps) => {
+      let at = list.length;
+      list.push(...motionRows(this.m, cx, id, ps, (p) => p.id, (p, i) => {
+        if (i >= 0 && this.reveal && p.id === cur) { this.scroll.scroll_to_item(at); this.reveal = false; }
+        at++;
+        return line(p, i >= 0 && p.id === cur, i < 0);
+      }));
+    };
+    put("kn-every-has", withNotes);
+    if (withNotes.length && without.length) list.push(div().flex_none().px(10).pt(12).pb(4).child(this.eyebrow(t, tr("withoutNote"))));
+    put("kn-every-none", without);
+    const head = this.head(t, { color: t.ansi3, mark: null, title: tr("allTitle"),
+      sub: [rollText(this.m, "kn-all-n", `${tr("notes", { n: total })} · ${tr("projects", { n: withNotes.length })}`, 14), tr("registry")],
+      buttons: [iconBtn(t, "kn-refresh", I("refresh-cw"), tr("reread"), (cx) => this.reload(cx, true)),
+        iconBtn(t, "kn-keys", I("keyboard"), tr("keys"), () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } }))] });
     return v_flex().size_full().gap(4).child(head)
       .child(this.box(t).flex_1().child(v_flex().id("kn-projects").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(6).gap(2)
-        .when(!shown.length, (el) => el.child(div().px(10).py(12).text_size(12.5).text_color(t.dim).child(rows.length ? "Aucun projet ne correspond." : "Aucun projet dans le registre.")))
+        .when(!shown.length, (el) => el.child(div().px(10).py(12).text_size(12.5).text_color(t.dim).child(rows.length ? tr("noProjectMatch") : tr("noProject"))))
         .children(list)));
   }
 
@@ -949,7 +967,7 @@ export default class Notes extends View {
     }
     const root = v_flex().id("kn-root").size_full().text_color(t.foreground).track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx));
     if (sc.kind === "repo") return root.child(this.repoView(t, sc, cx));
-    if (sc.kind === "all") return root.child(this.everyView(t, sc));
-    return root.child(this.head(t, { color: t.ansi3, mark: null, title: "Notes", sub: ["…"], buttons: [] }));
+    if (sc.kind === "all") return root.child(this.everyView(t, sc, cx));
+    return root.child(this.head(t, { color: t.ansi3, mark: null, title: "Notes", sub: ["…"], buttons: [] })); // i18n: tech
   }
 }

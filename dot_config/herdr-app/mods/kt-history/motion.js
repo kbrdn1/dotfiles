@@ -3,13 +3,16 @@
 // another folder): edit here, then copy. No herdr import and no module state (copies of a mod share
 // module code): the state is made in init and the caller reads reduced motion. Bun checks it
 // (motion.check.mjs). Native only: gpui's transition and loop on opacity, width, height, left, top. No
-// repeating timer: rows() drops the rows that closed with ONE cx.timer.after per wave, and nothing runs
-// once a transition has landed.
+// repeating timer: what goes away (rows(), leave(), a closing collapse()) is dropped by ONE one-shot
+// cx.timer.after once its transition ran, and nothing runs once a transition has landed.
 //
 //   init:   this.motion = motionState();
 //   render: const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));   // once, at the top
 //           enter(m, v_flex()…, "kd-body-" + tab)        // fades in and rises 6 px when it first draws
 //           collapse(m, "kd-file-" + path, open, body)   // opens on its height and fades with it; null closed
+//           collapse(m, id, open, () => body, { cx })     // a builder: it also closes on its height
+//           const s = sheet(m, "kk", shown); s.veil(veil…); s.card(card…)   // an overlay's veil and card, in and out
+//           leave(m, cx, "kk", (cx) => closeOverlay(props().overlay))     // the overlay goes away, then closes
 //           rows(m, cx, "kd-files", files, (f) => f.path, (f, i) => row(f, i))   // rows opening and closing in order
 //           sharpen(m, "kd-title-" + tab, () => div()…)  // a heading coming into focus
 //           ink(m, div().id("seg-ink")…)                 // an indicator gliding to its new left/top/width/height
@@ -18,8 +21,9 @@
 
 import { div } from "gpui-kit";
 
-// Kylian's budget: a hover or a small toggle, an opening or a fold, a panel at most.
-export const MS = { hover: 120, open: 180, panel: 240 };
+// Kylian's budget: a hover or a small toggle, an opening or a fold, a panel at most; what leaves goes
+// a little faster than it came (the portfolio's page-out, ease-in).
+export const MS = { hover: 120, open: 180, panel: 240, leave: 140 };
 // How far a block rises as it comes in, in a parent that clips: a row or a popup (swap-up's 0.5em), a
 // page or a tab (tab-switch's 24 px in 0.4 s, at the same speed in Kylian's 180 ms).
 export const DY = { row: 6, page: 12 };
@@ -61,14 +65,35 @@ export function enter(m, el, id, { dy = 6, ms = MS.open, delay = 0 } = {}) {
 export const stagger = (i, n) => (n > 12 ? 0 : Math.min(i, 5) * 30);
 
 // A fold opening on its height, fading with it (Expand.vue). Measured from its content, again whenever
-// that changes (a diff that loads), so nothing is clipped. Closed, it is null: it shuts at once (a fold
-// can hide a tall body; rows() is what closes on its height). `body` keeps its own ids and handlers:
+// that changes (a diff that loads), so nothing is clipped. `body` keeps its own ids and handlers:
 // collapse() wraps it. Not around a list / uniform_list, which needs a definite height.
-export function collapse(m, id, open, body, { ms = MS.open } = {}) {
+// Closing: an element (or null) shuts at once, as before. A builder (`() => body`) closes on its height
+// too: it is built once more and folds to 0 while it fades (ease-in-out), then goes, by ONE
+// cx.timer.after when `cx` is given, else at the first render past `ms` (folded, it shows nothing).
+// gpui consumes an element once drawn, so a closing fold needs its body built again: hence the builder.
+export function collapse(m, id, open, body, { ms = MS.open, cx } = {}) {
+  const all = (m.st ??= new Map());
+  const shut = `${id}~shut`;
   if (!open) {
+    const h = m.h.get(id);
+    let at = all.get(shut);
+    if (!m.reduced && h !== undefined && typeof body === "function" && !(at !== undefined && Date.now() - at > ms)) {
+      if (at === undefined) {
+        all.set(shut, Date.now());
+        cx?.timer.after(ms + 40, (cx) => cx.notify());
+      }
+      m.used.set(id, m.gen);
+      m.used.set(shut, m.gen);
+      const p = policy(ms, 0, "ease-in-out");
+      return div().id(id).w_full().flex_none().overflow_hidden().h(0).opacity(0).transition("height", p).transition("opacity", p)
+        .child(div().id(`${id}~in`).w_full().flex_none().child(body()));
+    }
     m.h.delete(id);
+    all.delete(shut);
     return null;
   }
+  all.delete(shut);
+  if (typeof body === "function") body = body();
   if (m.reduced) return body;
   m.used.set(id, m.gen);
   const h = m.h.get(id);
@@ -80,6 +105,34 @@ export function collapse(m, id, open, body, { ms = MS.open } = {}) {
         m.h.set(id, size.height);
         cx.notify();
       }));
+}
+
+// An overlay going away (Esc, q, a click on its veil, Annuler, after an action): leave() marks it
+// leaving and redraws, sheet() then fades its veil out and lowers its card 6 px (140 ms ease-in, the
+// portfolio's page-out), and ONE cx.timer.after calls close(cx) once that ran. A second call while it
+// leaves does nothing. Reduced motion: close(cx) at once. The action itself is not delayed: run it
+// first, then leave().
+export function leave(m, cx, id, close, { ms = MS.leave } = {}) {
+  if (m.reduced) return void close(cx);
+  const out = (m.out ??= new Set());
+  if (out.has(id)) return;
+  out.add(id);
+  cx.notify();
+  cx.timer.after(ms, (cx) => close(cx));
+}
+export const leaving = (m, id) => Boolean(m.out?.has(id));
+
+// An overlay's veil and card for this render: in once it has laid out (`shown`: the mod's own cue, its
+// first on_size_change), out while it leaves. The veil fades (its opacity carries the card), the card
+// rises from, then sinks back to, `dy` px. Reduced motion: as they are.
+export function sheet(m, id, shown, { dy = 6 } = {}) {
+  const out = leaving(m, id);
+  const p = out ? policy(MS.leave, 0, "ease-in") : policy(MS.open);
+  const on = Boolean(shown) && !out;
+  return {
+    veil: (el) => (m.reduced ? el : el.opacity(on ? 1 : 0).transition("opacity", p)),
+    card: (el) => (m.reduced ? el : el.relative().top(on ? 0 : dy).transition("top", p)),
+  };
 }
 
 // When rows go and rows come in the same render, the new ones wait this long: the old ones go first.
@@ -95,10 +148,17 @@ const HANDOFF = MS.hover;
 // Above 12 rows (before or after the change) or in reduced motion: the plain rows, at once; the first
 // animated render after that takes the rows as they are, without replaying them. A height level of
 // its own: not inside collapse(), not in a list / uniform_list / virtual list.
+// A row at rest (its opening over) lets go of its height: it follows its own content (a card that
+// unfolds inside, a sub-list) with no chase and no render per frame, measured quietly for its exit.
+// Leaving, it is first pinned at that height (fading), then folds at the next render: one more
+// one-shot timer for a wave that holds rows at rest.
 export function rows(m, cx, id, items, keyOf, row, { ms = MS.open } = {}) {
   const all = (m.st ??= new Map());
   let st = all.get(id);
-  if (!st) all.set(id, (st = { order: [], item: new Map(), out: new Map(), late: new Map(), n: 0, wave: 0 }));
+  if (!st) all.set(id, (st = { order: [], item: new Map(), out: new Map(), late: new Map(), rest: new Map(), n: 0, wave: 0 }));
+  st.rest ??= new Map(); // key -> when its height transition is over (then it rests at auto height)
+  const now = Date.now();
+  const rests = (k) => st.rest.has(k) && now >= st.rest.get(k);
   m.used.set(id, m.gen);
   const keys = items.map(keyOf);
   const at = new Map(keys.map((k, i) => [k, i]));
@@ -109,16 +169,18 @@ export function rows(m, cx, id, items, keyOf, row, { ms = MS.open } = {}) {
     st.item = new Map(keys.map((k, i) => [k, items[i]]));
     st.out.clear();
     st.late.clear();
+    st.rest.clear();
     return items.map((it, i) => row(it, i));
   }
   const was = new Set(st.order);
-  for (const k of keys) st.out.delete(k);
+  for (const k of keys) if (st.out.delete(k)) st.rest.delete(k); // back while closing: reopens, then rests
   const went = st.order.filter((k) => !at.has(k) && !st.out.has(k));
   const fresh = keys.filter((k) => !was.has(k));
   // A row keeps its cascade delay until the list changes again: a render in between moves nothing.
   if (went.length || fresh.length) st.late.clear();
   const wave = went.length ? ++st.wave : 0;
-  went.forEach((k, j) => st.out.set(k, { wave, delay: Math.min(j, 5) * 30 }));
+  went.forEach((k, j) => st.out.set(k, { wave, delay: Math.min(j, 5) * 30, pin: rests(k) }));
+  const pins = went.some((k) => st.out.get(k).pin);
   fresh.forEach((k, j) => st.late.set(k, stagger(j, items.length) + (wave ? HANDOFF : 0)));
   // A closing row keeps its place: right after the nearest row above it that is still drawn.
   const order = keys.slice();
@@ -130,12 +192,19 @@ export function rows(m, cx, id, items, keyOf, row, { ms = MS.open } = {}) {
   });
   st.order = order;
   for (const k of keys) st.item.set(k, items[at.get(k)]);
-  if (wave) cx.timer.after(Math.min(went.length - 1, 5) * 30 + ms + 40, (cx) => {
+  // Rows at rest leave pinned at their height for one render, then fold: one timer to fold them.
+  if (pins) cx.timer.after(20, (cx) => {
+    let flip = false;
+    for (const o of st.out.values()) if (o.wave === wave && o.pin) { o.pin = false; flip = true; }
+    if (flip) cx.notify();
+  });
+  if (wave) cx.timer.after(Math.min(went.length - 1, 5) * 30 + ms + 40 + (pins ? 20 : 0), (cx) => {
     const gone = st.order.filter((k) => st.out.get(k)?.wave === wave);
     if (!gone.length) return;
     for (const k of gone) {
       st.out.delete(k);
       st.item.delete(k);
+      st.rest.delete(k);
       m.h.delete(`${id}:${k}`);
     }
     st.order = st.order.filter((k) => !gone.includes(k));
@@ -146,18 +215,30 @@ export function rows(m, cx, id, items, keyOf, row, { ms = MS.open } = {}) {
     const wid = `${id}:${k}`;
     m.used.set(wid, m.gen);
     const h = m.h.get(wid);
-    const p = o ? policy(ms, o.delay, "ease-in-out") : policy(ms, st.late.get(k) ?? 0);
-    // Closing, or new and not measured yet: nothing. Measured: its height. Already there while the list
-    // was plain: as it is, until measured.
+    const late = st.late.get(k);
+    const p = o ? policy(ms, o.delay, "ease-in-out") : policy(ms, late ?? 0);
     const w = div().id(wid).w_full().flex_none().overflow_hidden();
-    const shut = o || (h === undefined && st.late.has(k));
-    return (shut ? w.h(0).opacity(0) : (h === undefined ? w : w.h(h)).opacity(1))
-      .transition("height", p).transition("opacity", p)
+    let el;
+    let quiet = false;
+    if (o?.pin) {
+      // At rest, leaving: pinned where it stands (no height transition this render), fading.
+      el = w.h(h ?? 0).opacity(0).transition("opacity", p);
+    } else if (o || (h === undefined && late !== undefined)) {
+      // Closing, or new and not measured yet: nothing.
+      el = w.h(0).opacity(0).transition("height", p).transition("opacity", p);
+    } else {
+      // Opening (or reopening) to its height until that is over, then at rest: its own height, followed
+      // without a render. Already there while the list was plain: at rest at once.
+      if (!st.rest.has(k)) st.rest.set(k, h === undefined ? 0 : now + (late ?? 0) + ms + 40);
+      quiet = rests(k) || h === undefined;
+      el = (quiet ? w : w.h(h).transition("height", p)).opacity(1).transition("opacity", p);
+    }
+    return el
       .child(div().id(`${wid}~in`).w_full().flex_none().child(row(st.item.get(k), o ? -1 : at.get(k)))
         .on_size_change((size, cx) => {
           if (m.h.get(wid) === size.height) return;
           m.h.set(wid, size.height);
-          cx.notify();
+          if (!quiet) cx.notify();
         }));
   });
 }

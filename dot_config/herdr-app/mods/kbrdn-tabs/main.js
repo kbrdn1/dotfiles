@@ -1,6 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, openOverlay, theme, window, shared, layout, settings } from "herdr";
+import { motionState, frame, ink } from "./motion.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -30,6 +31,7 @@ function label(tab, lead) {
 export default class Tabs extends View {
   init() {
     this.widths = {}; // tab id -> measured width, to slide the ink under the active tab
+    this.motion = motionState();
     this.pressed = null;
     this.scroll = ScrollHandle.new();
     try { this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}"); } catch { this.panels = {}; }
@@ -88,17 +90,16 @@ export default class Tabs extends View {
     localStorage.setItem("panels", JSON.stringify(this.panels));
   }
 
-  // kbrdn.dev SegmentInk: primary-500 at 40% border / 14% fill, 400 ms ease-out on left and width.
-  // It is the scroll area's child 0 (absolute, out of the flow): tab i is item i + 1.
+  // kbrdn.dev SegmentInk: primary-500 at 40% border / 14% fill, gliding on left and width (motion.js
+  // ink: 240 ms, ANIMATIONS.md). It is the scroll area's child 0 (absolute, out of the flow): tab i is item i + 1.
   ink(t, shown, active) {
     const tab = shown[active];
     const w = tab && this.widths[tab.id];
-    if (!w) return div().id("tab-ink").absolute().w(0).h(0);
+    if (!w) return div().id("tab-ink-wait").absolute().w(0).h(0);
     let left = 3;
     for (let i = 0; i < active; i++) left += (this.widths[shown[i].id] ?? 0) + 3;
-    return div().id("tab-ink").absolute().top(3).h(26).left(left).w(w).rounded_full()
-      .border(1).border_color(t.accent + "66").bg(t.accent + "24")
-      .transition("left", { duration: 400, easing: "ease-out" }).transition("width", { duration: 400, easing: "ease-out" });
+    return ink(frame(this.motion, Boolean(shared("kt.reducedMotion"))), div().id("tab-ink").absolute().top(3).h(26).left(left).w(w).rounded_full()
+      .border(1).border_color(t.accent + "66").bg(t.accent + "24"));
   }
 
   render() {

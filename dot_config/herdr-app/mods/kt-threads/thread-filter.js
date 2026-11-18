@@ -80,8 +80,9 @@ export function moveInGroup(reg, fromId, toId, isOpen, display) {
   return out.map((e, k) => ({ ...e, order: k }));
 }
 
-/** Monocode's date groups, by when a thread was last active. */
-export const GROUPS = ["Aujourd'hui", "Hier", "Cette semaine", "Plus ancien"];
+/** Monocode's date groups, by when a thread was last active: their ids, in groupOf's order (kt-threads
+ *  says them: strings.js' date.<id>). */
+export const GROUPS = ["today", "yesterday", "week", "older"];
 export function groupOf(activity, now) {
   const today = midnight(now);
   if (activity >= today) return 0;

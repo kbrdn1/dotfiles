@@ -38,8 +38,13 @@ const builder = (kind) => {
 plugin({ setup(build) {
   build.module("gpui-kit", () => ({ loader: "object", exports: {
     div: () => el(),
+    svg: () => el(),
     PathBuilder: { fill: () => builder("fill"), stroke: (w) => builder(`stroke${w}`) },
     Background: { linear_gradient: (...a) => ({ gradient: a }) },
+  } }));
+  // viz.js' words (i18n.js): no language set, a check: French.
+  build.module("herdr", () => ({ loader: "object", exports: {
+    shared: () => undefined, setShared: () => {}, exec: async () => ({ code: 0, stdout: "" }), checking: () => true,
   } }));
 } });
 globalThis.window = { paint_path: (path, bg) => { const e = el("paint"); e.path = path; e.bg = bg; return e; } };
@@ -199,6 +204,7 @@ const cases = {
   "chart area": () => viz.chart("area", [{ label: "tokens", values: [12e3, 18e3, 15e3, 32e3, 41e3, 38e3, 52e3, 47e3, 61e3, 58e3] }], { width: 400, height: 170 }),
   heatmap: () => viz.heatmap(weeks, { rows: ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"], columns: Array.from({ length: 26 }, (_, i) => ["juin", "juil", "août", "sept", "oct", "nov"][Math.floor(i / 4.4)]), width: 421 }),
   stat: () => viz.stat("Coût du mois", "$412", { detail: "+12.4% vs octobre", trend: [310, 290, 340, 360, 330, 390, 412], better: "lower", width: 220 }),
+  steps: () => viz.steps(["Issue", "Worktree", "Implémentation", "PR", "Review", "CI", "Merge"].map((label, i) => ({ label, state: ["done", "done", "skipped", "done", "current", "todo", "todo"][i] })), { width: 420 }),
 };
 const report = [];
 let total = 0;
@@ -261,5 +267,60 @@ assert.ok(said(one.donut([{ value: 0 }])));
 assert.ok(said(one.heatmap([])));
 assert.ok(said(one.trend([3])));
 assert.ok(said(one.gauge("Q", NaN)));
+
+// steps: a segment per step with a gap between, the tracks painted first, done and failed solid, current
+// half inked, skipped hatched, todo the track alone; the labels under the segments, a tooltip each;
+// narrow, only the step in front and n / total; current breathes, not under reduced motion.
+const ST = ["done", "failed", "current", "skipped", "todo"];
+const sg = V.stepsGeometry(ST, 300);
+assert.deepEqual(sg.rects.slice(0, 5).map((r) => r[4]), Array(5).fill("track"), "tracks first");
+assert.equal(sg.segs.length, 5);
+for (let i = 1; i < 5; i++) assert.equal(sg.segs[i][0] - (sg.segs[i - 1][0] + sg.segs[i - 1][1]), 2 * V.CELL, `a gap before step ${i}`);
+assert.ok(Math.max(...sg.segs.map((s) => s[1])) - Math.min(...sg.segs.map((s) => s[1])) <= V.CELL, "segments of one width, to a cell");
+const inkOf = (key) => sg.rects.filter((r) => r[4] === key).reduce((s, r) => s + r[2] * r[3], 0);
+const segArea = (i) => sg.segs[i][1] * 3 * V.CELL;
+assert.equal(inkOf("done"), segArea(0), "done: solid");
+assert.equal(inkOf("failed"), segArea(1), "failed: solid");
+assert.ok(Math.abs(inkOf("current") / segArea(2) - 0.5) < 0.1, "current: half inked");
+assert.ok(inkOf("skipped") > 0 && inkOf("skipped") / segArea(3) < 0.4, "skipped: a light hatch");
+assert.equal(sg.rects.filter((r) => r[4] !== "track" && r[0] >= sg.segs[4][0]).length, 0, "todo: the track alone");
+const sm = motionState();
+const flow = ["Issue", "Worktree", "PR", "Review", "CI"].map((label, i) => ({ label, state: ["done", "done", "done", "current", "todo"][i] }));
+const stWide = V.viz(t, frame(sm, false)).steps(flow, { width: 400, id: "st" });
+const texts = (x) => { const out = []; (function walk(n) { n?.kids?.forEach((k) => (typeof k === "string" ? out.push(k) : walk(k))); })(x); return out; };
+assert.deepEqual(texts(stWide), ["Issue", "Worktree", "PR", "Review", "CI"], "a label under each step");
+const tips = []; (function walk(n) { if (n?.props?.tooltip) tips.push(n.props.tooltip[0]); n?.kids?.forEach(walk); })(stWide);
+assert.deepEqual(tips, ["Issue · fait", "Worktree · fait", "PR · fait", "Review · en cours", "CI · à faire"]);
+assert.ok(find(stWide, (n) => n.props?.loop), "current breathes");
+const enTips = []; (function walk(n) { if (n?.props?.tooltip) enTips.push(n.props.tooltip[0]); n?.kids?.forEach(walk); })(
+  V.viz(t, null).steps(flow, { width: 400, words: { done: "done", current: "running" } }));
+assert.deepEqual(enTips.slice(2, 5), ["PR · done", "Review · running", "CI · à faire"], "words replace the names given, French for the rest");
+assert.deepEqual(texts(V.viz(t, frame(sm, false)).steps(flow, { width: 150, id: "st" })), ["Review", "3 / 5"], "narrow: the step in front, n / total");
+assert.equal(find(V.viz(t, frame(motionState(), true)).steps(flow, { width: 400, id: "st" }), (n) => n.props?.loop), null, "reduced: still");
+assert.deepEqual(texts(V.viz(t, null).steps([{ label: "Merge", state: "nope" }], { width: 200 })), ["Merge"], "an unknown state is todo");
+assert.ok(said(one.steps([])));
+
+// roll handed in: the gauge's, progress' and stat's figures, and narrow steps' « n / total », go through
+// it, under their own ids; without it (or with no options) the output is the same as before.
+const tree = (x) => JSON.stringify(x, (k, v) => (k === "path" || k === "bg" ? undefined : v));
+const draws = {
+  gauge: (v) => v.gauge("Quota hebdo", 44, { unit: "%", id: "rg" }),
+  progress: (v) => v.progress("Quota 5 h", 62, { width: 320, id: "rp" }),
+  stat: (v) => v.stat("Coût du jour", "$4.12", { width: 220, id: "rs" }),
+  steps: (v) => v.steps(flow, { width: 150, id: "rst" }),
+};
+const calls = [];
+const fakeRoll = (mm, id, s, h, o) => { calls.push([id, s, h, mm.reduced, o?.snap ?? 0]); const e = el("roll"); e.props.id = [id]; return e; };
+for (const [name, draw] of Object.entries(draws)) {
+  assert.equal(tree(draw(V.viz(t, null))), tree(draw(V.viz(t, null, {}))), `${name}: no roll, same output`);
+  assert.ok(find(draw(V.viz(t, frame(motionState(), false), { roll: fakeRoll })), (n) => n.kind === "roll"), `${name}: no roll drawn`);
+}
+assert.deepEqual(calls, [["rg-n", "44%", Math.ceil(Math.round(220 * 0.15) * 1.3), false, 0], ["rp-pct", "62%", 16, false, 0], ["rs-v", "$4.12", 32, false, 0], ["rst-n", "3 / 5", 14, false, 0]]);
+calls.length = 0;
+V.viz(t, null, { roll: fakeRoll }).stat("Coût du jour", "$4.12", { width: 220, id: "rs", snap: 2 });
+assert.equal(calls[0][4], 2, "a stat's snap reaches roll");
+calls.length = 0;
+draws.gauge(V.viz(t, null, { roll: fakeRoll }));
+assert.equal(calls[0][3], false, "no motion state: rolls, not reduced");
 
 console.log("viz.js: ok");

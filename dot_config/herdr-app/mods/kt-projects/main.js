@@ -13,15 +13,22 @@
 // keys (kt-keys, Modales). In a field: Enter renames, Esc leaves it (as before: the rename is
 // dropped, the browse list closes). `kt-projects.key:<keys>` feeds keys ("j j", "o"), for tests.
 
-import { View, div, image } from "gpui-kit";
+import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, props, closeOverlay, shared, setShared, exec, openOverlay, nextCommand, appHome, checking, settings, readTextFile, home } from "herdr";
 import { Vim, keysOf, step } from "./vim.js";
+import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
+import { ditherBand, TOP } from "./dither.js";
 
 const MONO = "Monaspace Krypton";
 // The theme's colors, then kbrdn.dev's primary scale (600, 400, 300, 800).
 const SWATCHES = ["accent", "ansi1", "ansi3", "ansi2", "ansi6", "ansi4", "ansi5", "#c15f3c", "#e8a573", "#f4c895", "#8b3d24"];
 // Where a repo keeps its logo, most telling first. Unmatched globs stay literal and fail -f.
+// i18n: tech
 const LOGO_GLOBS = "public/favicon.svg public/logo.svg public/icon.png assets/logo.* .github/logo.* docs/_assets/logo.* logo.* icon.*";
 const PICTURE = /\.(svg|png|jpe?g|webp|gif|ico)$/i;
 const MAX_FILES = 200;
@@ -30,6 +37,8 @@ const CARD_H = 560;
 // A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const veil = () => (settings().dark ? alpha("#000000", "8c") : alpha("#0a0a0a", "59"));
+const I = (name) => `mods/kt-threads/${name}.svg`;
+const tilde = (p) => (p && p.startsWith(home()) ? `~${p.slice(home().length)}` : p ?? "");
 
 // The home folder is never a project (kt-threads purges it from the registry): not listed here.
 const registry = () => (shared("kt.projects") ?? []).filter((e) => e.machine || e.folder !== home()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -54,7 +63,8 @@ const ext = (path) => path.split(".").pop().toLowerCase();
 // appearance now: its own, else the other mode's.
 const logosOf = (e) => e?.logos ?? { light: e?.logo ?? null, dark: e?.logo ?? null };
 const logoOf = (e) => { const l = logosOf(e); return settings().dark ? (l.dark ?? l.light) : (l.light ?? l.dark); };
-const MODES = [["light", "Clair", "#f5f5f5"], ["dark", "Sombre", "#0f0f0f"]];
+// [mode, its name's key in strings.js, its background].
+const MODES = [["light", "mode.light", "#f5f5f5"], ["dark", "mode.dark", "#0f0f0f"]];
 
 // How light an SVG's drawing is (0..1): the mean luminance of its neutral colors (else of all),
 // null for a raster or an SVG without colors. A light drawing is for dark backgrounds.
@@ -90,6 +100,7 @@ export default class Projects extends View {
     // Keys (vim.js): its mode follows `typing` (a field: INSERT, the list: NORMAL).
     this.vim = new Vim({ field: true });
     this.listScroll = ScrollHandle.new();
+    this.motion = motionState(); // motion.js sheet(): the veil fades and the card rises in, the reverse on dismiss
     if (checking()) return;
     // kt-confirm answers with `kt-projects.confirmed`; `next` / `prev` pick a project; `browse`
     // opens or closes the list of the folder's images; `key:<keys>` types keys, for tests.
@@ -101,7 +112,7 @@ export default class Projects extends View {
         else if (c === "browse") { this.browse = !this.browse; this.typing = this.browse ? "filter" : null; }
         else if (c.startsWith("key:")) {
           this.handle.focus();
-          for (const k of keysOf(c.slice(4))) this.press(k);
+          for (const k of keysOf(c.slice(4))) this.press(k, cx);
         }
         cx.notify();
       }
@@ -162,14 +173,19 @@ export default class Projects extends View {
     if (Boolean(this.typing) !== this.vim.insert) this.typing ? this.vim.edit() : this.vim.normal();
   }
 
+  // motion.js leave(): the veil fades out and the card sinks, then the dialog closes.
+  dismiss(cx) {
+    leave(this.motion, cx, "kp", () => closeOverlay(props().overlay));
+  }
+
   // One key, from the keyboard or `key:` (a name).
-  press(ev) {
+  press(ev, cx) {
     this.sync();
-    return this.act(this.vim.handle(ev));
+    return this.act(this.vim.handle(ev), cx);
   }
 
   // One vim action; false: not one of ours, and the key goes on. In a field, what it did before.
-  act(a) {
+  act(a, cx) {
     if (!a) return false;
     if (a === "pending" || a === "count") return true;
     const e = this.current();
@@ -184,7 +200,7 @@ export default class Projects extends View {
       else if (a === "backspace") this.filter = this.filter.slice(0, -1);
       else if (a === "type") { if (this.filter.length < 80) this.filter += this.vim.char; }
       else return false;
-    } else if (a === "escape" || a === "quit") closeOverlay(props().overlay);
+    } else if (a === "escape" || a === "quit") this.dismiss(cx);
     else if (a === "down" || a === "up") this.step((a === "down" ? 1 : -1) * this.vim.count);
     else if (["top", "bottom", "half-down", "half-up"].includes(a)) {
       const reg = registry();
@@ -321,7 +337,7 @@ export default class Projects extends View {
         for (const { mode, src, rel } of picks) {
           const file = `brand/projects/${kebab(e.name) || "project"}-${tag(e.id)}-${mode}.${ext(src)}`;
           const r = await exec("cp", [src, `${appHome()}/${file}`]);
-          if (r.code !== 0) throw new Error(r.stderr.trim() || `cp exited ${r.code}`);
+          if (r.code !== 0) throw new Error(r.stderr.trim() || tr("cpFailed", { code: r.code }));
           logos[mode] = file;
           from[mode] = rel; // which file of the folder it was, to mark it
         }
@@ -352,8 +368,8 @@ export default class Projects extends View {
   // close its space, then says plainly that its terminals close.
   forget(e) {
     const n = this.spacesOf(e).length;
-    if (!n) return this.ask("remove", e, `Retirer « ${e.name} » ?`, "Herdr l'oublie : il ne sera plus listé ni rouvert d'un clic. Aucun fichier du projet n'est supprimé.", "Retirer");
-    this.ask("close-ask", e, `« ${e.name} » est ouvert`, `Pour le retirer du registre, il faut d'abord fermer ${n > 1 ? `ses ${n} spaces` : "son space"} (sinon il y reviendrait de lui-même). Aucun fichier du projet n'est supprimé.`, n > 1 ? "Fermer les spaces…" : "Fermer le space…");
+    if (!n) return this.ask("remove", e, tr("remove.title", { name: e.name }), tr("remove.detail"), tr("remove.label"));
+    this.ask("close-ask", e, tr("open.title", { name: e.name }), tr("open.detail", { n }), tr("open.label", { n }));
   }
 
   confirmed() {
@@ -365,8 +381,7 @@ export default class Projects extends View {
     if (p.step === "close-ask" && open.length) {
       const tabs = new Set(open.flatMap((s) => s.tabs.map((tb) => tb.id)));
       const n = panes().filter((x) => x.terminal && tabs.has(x.tab)).length;
-      const what = open.length > 1 ? `les ${open.length} spaces de « ${e.name} »` : `le space « ${e.name} »`;
-      return this.ask("close", e, `Fermer ${what} ?`, `${n} terminal${n > 1 ? "aux" : ""} ser${n > 1 ? "ont" : "a"} fermé${n > 1 ? "s" : ""}, et les agents qui y tournent s'arrêteront. Le projet sera ensuite retiré du registre. Aucun fichier du projet n'est supprimé.`, "Fermer et retirer");
+      return this.ask("close", e, tr("close.title", { n: open.length, name: e.name }), tr("close.detail", { n }), tr("close.label"));
     }
     if (p.step === "close") for (const s of open) run("space.close", { id: s.id, confirmed: true });
     if (p.step === "remove" || p.step === "close") {
@@ -399,7 +414,19 @@ export default class Projects extends View {
     const kbd = (k) => div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
     const hint = (k, what) => h_flex().gap(5).items_center().child(kbd(k)).child(div().child(what));
     const dashed = () => div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border);
-    const eyebrow = (s) => div().w(76).flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(s.toUpperCase());
+    // A key of a key / value line (kt-confirm's facts): mono, dim, a fixed width so the values align.
+    const eyebrow = (s) => div().w(76).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(s);
+    // An inner card (radius 12 inside the 16 one), on the terminals' background; its heading in
+    // mono uppercase, what it holds or says at its right.
+    const block = () => v_flex().flex_none().rounded(12).border(1).border_color(t.border).bg(t.background).overflow_hidden();
+    const heading = (s, right) => h_flex().flex_none().px(12).pt(10).pb(6).gap(8).items_center().font_family(MONO).text_size(10.5)
+      .child(div().flex_none().text_color(t.dim).child(s.toUpperCase()))
+      .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(alpha(t.border, "99")))
+      .when(Boolean(right), (el) => el.child(div().flex_none().text_color(t.dim).child(right)));
+    // A short state said in a line (looking, nothing found): its icon, then the words.
+    const say = (icon, text, color = t.dim) => h_flex().min_w(0).gap(8).items_start()
+      .child(icon === "spinner" ? svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().mt(4).spin(900).text_color(t.working) : svg(I(icon)).size(12).flex_none().mt(4).text_color(color))
+      .child(div().min_w(0).text_size(13).line_height("20px").text_color(t.muted).child(text));
     const tile = (x, size) => {
       const color = paint(t, x.color) ?? paint(t, (shared("space.colors") ?? {})[this.spaceOf(x)?.id]) ?? t.dim;
       const logo = logoOf(x);
@@ -468,7 +495,7 @@ export default class Projects extends View {
         .child(div().when(!open, (el) => el.opacity(0.5)).child(tile(x, 24)))
         .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(open ? t.foreground : t.muted).child(x.name))
         .when(Boolean(x.machine), (el) => el.child(div().flex_none().px(6).rounded_full().bg(t.raised).font_family(MONO).text_size(10).text_color(t.dim).child(x.machine)))
-        .child(div().flex_none().font_family(MONO).text_size(10).text_color(open ? t.done : t.dim).child(open ? "OUVERT" : "FERMÉ"));
+        .child(div().flex_none().font_family(MONO).text_size(10).text_color(open ? t.done : t.dim).child(open ? tr("open") : tr("closed")));
     };
 
     const editor = () => {
@@ -497,7 +524,7 @@ export default class Projects extends View {
       // A dropped picture (from the Finder) becomes the logo of `mode`, as a picked one.
       const dropTo = (mode) => (ev, cx) => {
         const src = ev.paths.find((p) => PICTURE.test(p));
-        if (!src) { this.error = "Dépose une image : svg, png, jpg, webp, gif ou ico."; cx.notify(); return; }
+        if (!src) { this.error = tr("dropError"); cx.notify(); return; }
         this.useLogo(e, src, src.startsWith(`${e.folder}/`) ? src.slice(e.folder.length + 1) : null, cx, mode);
       };
       const drop = (ev, cx) => dropTo(this.slot)(ev, cx);
@@ -507,20 +534,20 @@ export default class Projects extends View {
         const own = mine[mode];
         const shown = own ?? mine[mode === "light" ? "dark" : "light"];
         const on = slot === mode;
-        return h_flex().id(`kp-slot-${mode}`).h(44).pl(4).pr(10).gap(10).flex_none().items_center().rounded(14).border(1)
-          .border_color(on ? t.accent + "99" : t.border).bg(on ? t.accent + "14" : t.background).cursor_pointer()
+        return h_flex().id(`kp-slot-${mode}`).h(44).pl(4).pr(8).gap(10).flex_1().min_w(0).items_center().rounded(10).border(1)
+          .border_color(on ? t.accent + "99" : t.border).bg(on ? t.accent + "14" : t.surface).cursor_pointer()
           .on_click((_e, cx) => { this.slot = mode; cx.notify(); })
           .on_drop(dropTo(mode))
-          .child(div().size(34).flex_none().rounded(10).bg(bg).border(1).border_color(t.border).flex().items_center().justify_center()
+          .child(div().size(34).flex_none().rounded(6).bg(bg).border(1).border_color(t.border).flex().items_center().justify_center()
             .child(shown ? div().when(!own, (el) => el.opacity(0.35)).child(image(shown).size(24)) : div().font_family(MONO).text_size(10).text_color("#888888").child("—")))
-          .child(v_flex().gap(1)
-            .child(div().font_family(MONO).text_size(10.5).text_color(on ? t.accent : t.muted).child(label.toUpperCase()))
-            .child(div().text_size(10.5).text_color(t.dim).child(own ? (from[mode] ?? "déposé").split("/").pop() : shown ? "← l'autre" : "aucun")))
+          .child(v_flex().flex_1().min_w(0).gap(1)
+            .child(div().font_family(MONO).text_size(10.5).text_color(on ? t.accent : t.muted).child(tr(label).toUpperCase()))
+            .child(div().truncate().text_size(11.5).text_color(own ? t.foreground : t.dim).child(own ? (from[mode] ?? tr("dropped")).split("/").pop() : shown ? tr("usesOther") : tr("none"))))
           .when(Boolean(own), (el) => el.child(
             div().id(`kp-none-${mode}`).ml(4).px(7).h(20).flex().items_center().rounded_full().border(1).border_color(t.border)
               .font_family(MONO).text_size(10).text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
               .on_click((_e, cx) => { cx.stop_propagation(); this.clearLogo(e, mode); cx.notify(); })
-              .child("AUCUN")));
+              .child(tr("noneButton"))));
       };
       const pair = this.pairs[e.id];
       const pairPreview = (rel, bg) => div().size(22).rounded(7).p(3).bg(bg).child(this.previews[`${e.folder}|${rel}`] ? image(this.previews[`${e.folder}|${rel}`]).size_full() : div());
@@ -529,7 +556,7 @@ export default class Projects extends View {
         .on_click((_e, cx) => this.useLogos(e, [{ mode: "light", src: `${e.folder}/${pair.light}`, rel: pair.light }, { mode: "dark", src: `${e.folder}/${pair.dark}`, rel: pair.dark }], cx))
         .child(pairPreview(pair.light, MODES[0][2]))
         .child(pairPreview(pair.dark, MODES[1][2]))
-        .child(div().font_family(MONO).text_size(10.5).text_color(t.muted).child("PAIRE"));
+        .child(div().font_family(MONO).text_size(10.5).text_color(t.muted).child(tr("pair")));
       // The browse list: every image of the folder, filtered by the field.
       const all = this.files[e.id];
       const q = this.filter.toLowerCase();
@@ -546,66 +573,131 @@ export default class Projects extends View {
             .child(preview ? image(preview).size(18) : div().size(6).rounded(3).bg(t.border)))
           .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(on ? t.accent : t.muted).child(rel));
       };
-      const browser = v_flex().id("kp-browse").gap(6).min_h(0).flex_1().on_drop(drop)
-        .child(h_flex().gap(10).items_center()
-          .child(div().w(76).flex_none())
-          .child(field("kp-filter", "filter", this.filter, "Filtrer les images du dossier…",
+      // A function: an element has one parent, and both the candidates and the browse list are built.
+      const toggle = () => pill("kp-browse-toggle", this.browse ? tr("closeList") : tr("browse"), () => {
+        this.browse = !this.browse;
+        this.typing = this.browse ? "filter" : null;
+      }, { on: this.browse });
+      const browsing = this.browse && !e.machine;
+      // The browse list, in the Logo block: the filter (and how many it keeps), then the images, or
+      // why there are none.
+      const browser = v_flex().id("kp-browse").px(12).pt(8).pb(10).gap(6).min_h(0).flex_1()
+        .child(h_flex().gap(8).items_center()
+          .child(field("kp-filter", "filter", this.filter, tr("filterImages"),
             div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(all ? `${shown.length}${all.length >= MAX_FILES ? "+" : ""}` : "…"),
-            () => { this.typing = "filter"; })))
-        .child(v_flex().id("kp-files").ml(86).flex_1().min_h(0).p(4).gap(1).rounded(14).border(1).border_color(t.border).bg(t.background).overflow_y_scrollbar()
-          .when(all !== null && all !== undefined && !shown.length, (el) => el.child(div().p(8).text_size(11.5).text_color(t.dim).child(all.length ? "Aucune image ne correspond." : "Aucune image dans ce dossier.")))
+            () => { this.typing = "filter"; }))
+          .child(toggle()))
+        .child(v_flex().id("kp-files").flex_1().min_h(0).p(4).gap(1).rounded(10).border(1).border_color(t.border).bg(t.surface).overflow_y_scrollbar()
+          .when(!all, (el) => el.child(div().p(8).child(say("spinner", tr("reading")))))
+          .when(Boolean(all) && !shown.length, (el) => el.child(div().p(8).child(all.length
+            ? say("list-filter", tr("noImageMatch", { q: this.filter }))
+            : say("file", tr("noImage")))))
           .children(shown.map(fileRow)));
+      // The logo candidates of the folder: looking, the ones found (and an evident light/dark pair), none.
+      const candidates = h_flex().id("kp-cands").px(12).pt(8).pb(10).min_h(48).gap(8).items_center()
+        .child(logos === null ? say("spinner", tr("searching"))
+          : logos?.length ? segmented("kp-logos", logos.map(thumb))
+          : pair ? div() : say("circle-dashed", tr("noLogo")))
+        .when(Boolean(pairChip), (el) => el.child(pairChip))
+        .child(div().flex_1())
+        .child(toggle());
+      const opened = this.spacesOf(e);
+      const state = h_flex().flex_none().h(22).px(8).gap(6).items_center().rounded_full().border(1)
+        .border_color(open ? alpha(t.done, "66") : t.border).bg(open ? alpha(t.done, "14") : t.surface)
+        .child(div().size(6).rounded(3).bg(open ? t.done : t.dim))
+        .child(div().font_family(MONO).text_size(10).text_color(open ? t.done : t.dim).child(open ? (opened.length > 1 ? tr("openN", { n: opened.length }) : tr("open")) : tr("closed")));
       return v_flex()
         .flex_1()
         .min_w(0)
         .min_h(0)
         .p(16)
-        .gap(8)
+        .gap(10)
+        // What it is: its mark, its name (15 medium), where it lives (mono), open or closed.
         .child(
-          h_flex().gap(12).items_center().pb(6).on_drop(drop)
+          h_flex().flex_none().gap(12).items_center().on_drop(drop)
             .child(tile(e, 40))
             .child(v_flex().flex_1().min_w(0).gap(2)
-              .child(div().truncate().text_size(16).font_semibold().text_color(t.foreground).child(e.name))
-              .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(`${e.machine ? `${e.machine}:` : ""}${e.folder}`))),
+              .child(div().truncate().text_size(15).font_medium().text_color(t.foreground).child(e.name))
+              .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(e.machine ? `${e.machine} · ${e.folder}` : tilde(e.folder))))
+            .child(state),
         )
-        .child(line("Nom", field("kp-name", "name", this.typing === "name" ? this.draft : e.name, "Nom du projet",
-          this.typing === "name" ? kbd("↵") : div().font_family(MONO).text_size(10.5).text_color(t.dim).child("RENOMMER"),
-          () => { this.typing = "name"; this.draft = e.name; })))
-        .child(line("Couleur", segmented("kp-colors", SWATCHES.map(swatch))))
-        .child(
-          h_flex().id("kp-logo-zone").min_h(48).gap(10).items_center().on_drop(drop)
-            .child(eyebrow("Logo"))
-            .children(MODES.map(slotCard))
-            .when(Boolean(e.machine), (el) => el.child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child("dossier distant : pas de logo"))),
-        )
-        .when(!e.machine, (el) => el.child(
-          h_flex().min_h(36).gap(10).items_center().on_drop(drop)
-            .child(div().w(76).flex_none())
-            .child(logos === null ? div().font_family(MONO).text_size(10.5).text_color(t.dim).child("…") : logos?.length ? segmented("kp-logos", logos.map(thumb)) : div())
-            .when(Boolean(pairChip), (el) => el.child(pairChip))
-            .child(pill("kp-browse-toggle", this.browse ? "Fermer la liste" : "Parcourir…", () => {
-              this.browse = !this.browse;
-              this.typing = this.browse ? "filter" : null;
-            }, { on: this.browse }))
-            .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child("ou dépose une image")),
+        // Its name and color, as key / value lines. Put away while browsing: the images take the room.
+        .when(!browsing, (el) => el.child(
+          block().child(v_flex().px(12).py(6).gap(2)
+            .child(line(tr("name"), field("kp-name", "name", this.typing === "name" ? this.draft : e.name, tr("namePlaceholder"),
+              this.typing === "name" ? kbd("↵") : div().font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("rename")),
+              () => { this.typing = "name"; this.draft = e.name; })))
+            .child(line(tr("color"), segmented("kp-colors", SWATCHES.map(swatch))))),
         ))
-        .when(this.browse && !e.machine, (el) => el.child(browser))
-        .when(Boolean(this.error), (el) => el.child(div().text_size(12).text_color(t.ansi1).child(this.error)))
-        .when(!this.browse, (el) => el.child(div().flex_1()))
+        // Its logo for each mode, then the folder's candidates or the browse list; a drop anywhere sets it.
+        .child(
+          block().id("kp-logo-zone").on_drop(drop).when(browsing, (el) => el.flex_1().min_h(0))
+            .child(heading(tr("logo"), tr("dropHere")))
+            .child(h_flex().px(12).gap(8).items_center().children(MODES.map(slotCard)))
+            .when(Boolean(e.machine), (el) => el.child(div().px(12).pt(8).pb(10)
+              .child(say("circle-alert", tr("remote"), t.blocked))))
+            .when(!e.machine && !browsing, (el) => el.child(candidates))
+            .when(browsing, (el) => el.child(browser)),
+        )
+        .when(Boolean(this.error), (el) => el.child(
+          h_flex().flex_none().gap(9).items_start().px(12).py(9).rounded(12).border(1).border_color(alpha(t.ansi1, "4d")).bg(alpha(t.ansi1, "14"))
+            .child(svg(I("circle-alert")).size(14).flex_none().mt(2).text_color(t.ansi1))
+            .child(div().flex_1().min_w(0).text_size(12.5).line_height("18px").text_color(t.ansi1).child(this.error))))
+        .when(!browsing, (el) => el.child(div().flex_1()))
         .child(dashed())
-        .child(h_flex().pt(8).gap(10).items_center()
-          .child(div().flex_1().min_w(0).text_size(11.5).text_color(t.dim).child(open ? "Ouvert : le retirer demande de fermer son space." : "Retirer ne supprime aucun fichier du projet."))
-          .child(pill("kp-forget", open ? "Fermer et retirer…" : "Retirer", () => this.forget(e), { danger: true })));
+        .child(h_flex().flex_none().gap(10).items_center()
+          .child(div().flex_1().min_w(0).text_size(13).line_height("20px").text_color(t.muted).child(open ? tr("footOpen") : tr("footClosed")))
+          .child(pill("kp-forget", open ? tr("forgetOpen") : tr("forget"), () => this.forget(e), { danger: true })));
     };
+    // No project yet: what the dialog is for, and how one gets here.
+    const nothing = () => v_flex().flex_1().min_w(0).h_full().p(24).items_center().justify_center().child(
+      v_flex().max_w(380).gap(8)
+        .child(h_flex().gap(10).items_center()
+          .child(h_flex().size(32).flex_none().rounded(10).items_center().justify_center().border(1).border_color(alpha(t.accent, "4d")).bg(t.background)
+            .child(svg(I("folder-plus")).size(16).text_color(t.accent)))
+          .child(div().text_size(15).font_medium().text_color(t.foreground).child(tr("nothing.title"))))
+        .child(div().text_size(13).line_height("20px").text_color(t.muted)
+          .child(tr("nothing.text"))));
 
     // Before the first size report (and in `herdr-app check`), the full layout, still transparent.
     const full = !this.size || this.size.width > CARD_W + 40 || this.size.height > CARD_H + 40;
-    const shown = Boolean(this.size);
+    // The modals' motion (motion.js sheet): the veil fades in and the card rises 6 px, once, on the
+    // first size report, and the reverse on dismiss; reduced motion: there at once, gone at once.
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    const s = sheet(m, "kp", Boolean(this.size));
+    // The head, Crosstalk's: a 60 px band over the pixel dither, tinted by the picked project's color
+    // (else its space's, else accent); the mark, the title (14 semibold) and a mono subtitle.
+    const dark = settings().dark;
+    const band = (e && (paint(t, e.color) ?? paint(t, (shared("space.colors") ?? {})[this.spaceOf(e)?.id]))) ?? t.accent;
+    const openN = reg.filter((x) => this.spaceOf(x)).length;
+    const subtitle = [tr("sub.projects", { n: reg.length }), tr("sub.open", { n: openN }), reg.length > openN ? tr("sub.closed", { n: reg.length - openN }) : null].filter(Boolean).join(" · ");
+    const head = div()
+      .id("kp-head")
+      .relative()
+      .flex_none()
+      .h(60)
+      .overflow_hidden()
+      .rounded_t(15)
+      .on_size_change((size, cx) => {
+        if (Math.abs((this.headW ?? 0) - size.width) < 0.5) return;
+        this.headW = size.width;
+        cx.notify();
+      })
+      // Inside the inner card's 1 px border: its radius 16 less the border.
+      .when(this.headW > 30, (el) => el.child(ditherBand(this.headW, 60, 15, alpha(band, dark ? "6b" : "4d"), TOP)))
+      .child(h_flex().size_full().px(14).gap(12).items_center()
+        .child(h_flex().size(32).flex_none().rounded(10).items_center().justify_center().border(1).border_color(alpha(t.accent, "4d")).bg(alpha(t.surface, "e6"))
+          .child(svg(I("layers")).size(16).text_color(t.accent)))
+        .child(v_flex().flex_1().min_w(0).gap(2)
+          // motion.js sharpen: the title comes into focus as the dialog opens, once.
+          .child(sharpen(m, "kp-title", () => div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(tr("title"))))
+          .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(subtitle)))
+        .child(kbd("esc")));
     const card = v_flex()
       .id("kt-projects")
       // A press in the card never reaches the veil.
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .when(full, (el) => el.w(CARD_W).h(CARD_H).max_w_full().max_h_full().relative().top(shown ? 0 : 8).transition("top", { duration: 180, easing: "ease-out" }))
+      .when(full, (el) => s.card(el.w(CARD_W).h(CARD_H).max_w_full().max_h_full()))
       .when(!full, (el) => el.size_full())
       .min_h(0)
       .p(4)
@@ -622,51 +714,44 @@ export default class Projects extends View {
           .bg(t.surface)
           .border(1)
           .border_color(t.border)
-          .child(
-            h_flex().flex_none().px(16).pt(14).pb(10).gap(10).items_center()
-              .child(div().text_size(15).font_semibold().text_color(t.foreground).child("Projets"))
-              .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(String(reg.length)))
-              .child(div().flex_1())
-              .child(kbd("esc")),
-          )
-          .child(dashed())
+          .child(head)
+          .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(band, "4d")))
           .child(
             h_flex().flex_1().min_h(0).items_start()
               .child(
                 v_flex().id("kp-list").w(280).h_full().flex_none().p(8).gap(2).overflow_y_scrollbar().track_scroll(this.listScroll).border_r(1).border_dashed().border_color(t.border)
-                  .when(!reg.length, (el) => el.child(div().p(8).text_size(12).text_color(t.dim).child("Aucun projet : ouvre un dossier avec « Nouveau projet », il s'ajoute ici.")))
+                  .when(!reg.length, (el) => el.child(div().p(8).child(say("circle-dashed", tr("emptyRegistry")))))
                   .children(reg.map(row)),
               )
-              .when(Boolean(e), (el) => el.child(v_flex().flex_1().min_w(0).h_full().child(editor()))),
+              .when(Boolean(e), (el) => el.child(v_flex().flex_1().min_w(0).h_full().child(editor())))
+              .when(!e, (el) => el.child(nothing())),
           )
           .child(dashed())
           .child(
             h_flex().flex_none().px(14).py(10).gap(12).items_center().text_size(11).text_color(t.dim)
               .when(focused, (el) => el.child(mode))
-              .child(hint("↑↓", "projet"))
-              .child(hint("glisser", "réordonner"))
-              .child(hint("↵", "renommer"))
-              .child(hint("esc", this.typing ? "annuler" : "fermer")),
+              .child(hint("↑↓", tr("hint.project")))
+              .child(hint(tr("hint.drag"), tr("hint.reorder")))
+              .child(hint("↵", tr("hint.rename")))
+              .child(hint("esc", this.typing ? tr("hint.cancel") : tr("hint.close"))),
           ),
       );
     // Full window: a veil (a click on it closes), the card in its middle; in a card-sized box (an
-    // explicit `width: 780, height: 560`) the card fills it as before, no veil. Fades in once.
-    return div()
+    // explicit `width: 780, height: 560`) the card fills it as before, no veil. Fades in once, out on dismiss.
+    return s.veil(div()
       .id("kt-projects-veil")
       .size_full()
       .flex()
       .items_center()
-      .justify_center()
-      .opacity(shown ? 1 : 0)
-      .transition("opacity", { duration: 160, easing: "ease-out" })
+      .justify_center())
       .on_size_change((size, cx) => {
         this.size = size;
         cx.notify();
       })
-      .when(full, (el) => el.bg(veil()).on_click(() => closeOverlay(props().overlay)))
+      .when(full, (el) => el.bg(veil()).on_click((_e, cx) => this.dismiss(cx)))
       .track_focus(this.handle)
       .on_key_down((ev, cx) => {
-        if (!this.press(ev)) return; // not ours: ctrl-b, cmd-* go on
+        if (!this.press(ev, cx)) return; // not ours: ctrl-b, cmd-* go on
         cx.stop_propagation();
         cx.notify();
       })

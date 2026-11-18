@@ -14,10 +14,17 @@
 // back to the terminal; [ ] the panel's previous / next tab; ? the keys.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex, Editor, EditorState, ScrollHandle } from "gpui-base";
-import { spaces, panes, exec, readTextFile, settings, theme, layout, home, appHome, checking, run, nextCommand, notify, openOverlay } from "herdr";
+import { v_flex, h_flex, Editor, EditorState, ScrollHandle, Scrollbar } from "gpui-base";
+import { spaces, panes, exec, readTextFile, settings, theme, layout, home, appHome, checking, run, nextCommand, notify, openOverlay, shared } from "herdr";
 import { ICON_MAP, catIcon } from "./icons.js";
 import { Vim, keysOf, step } from "./vim.js";
+import { motionState, frame, enter } from "./motion.js";
+import { gitTopics, refreshOn } from "./bus.js";
+import { shouldRead } from "./reread.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 const ME = "files"; // this block's id in the layout's "panel-body" stack
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -93,6 +100,8 @@ export default class Files extends View {
     this.code = null;
     this.query = "";
     this.shown = false;
+    this.motion = motionState(); // ANIMATIONS.md: the tab and an opened file fade in
+    this.showGen = 0;
     this.handle = cx.focus_handle();
     // Search files is the field: typing in it is vim's INSERT mode.
     this.vim = new Vim({ field: true });
@@ -117,8 +126,12 @@ export default class Files extends View {
           cx.notify();
         }
       });
-      // The keyboard went away (Herdr doesn't always redraw then): drop the cursor.
-      cx.timer.every(500, (cx) => { if (this.keyed !== this.handle.is_focused()) cx.notify(); });
+      // The keyboard went away (Herdr doesn't always redraw then): drop the cursor. A hidden copy
+      // doesn't render, so this tick notes that the tab went away: shown again, it reads and fades in.
+      cx.timer.every(500, (cx) => {
+        if (this.shown && !visible()) this.shown = false;
+        if (this.keyed !== this.handle.is_focused()) cx.notify();
+      });
     }
     this.refresh(cx);
     cx.timer.every(5000, (cx) => this.refresh(cx));
@@ -183,7 +196,7 @@ export default class Files extends View {
       const p = x && this.root ? (this.on ? x.path : `${this.root}/${x.path}`) : null;
       if (p) {
         cx.write_to_clipboard(p);
-        notify({ title: "Copié", body: p, level: "success", timeout: 2000 });
+        notify({ title: tr("copied"), body: p, level: "success", timeout: 2000 });
       }
     } else if (a === "refresh") {
       this.plain = null;
@@ -198,10 +211,13 @@ export default class Files extends View {
   }
 
   refresh(cx) {
+    // A read already running (maybe for the previous place, which it drops): run once more when it ends.
+    if (this.busy) { this.again = true; return; }
     if (!visible()) return;
     const cwd = folder(), on = machine(), key = location();
-    if (!cwd || this.busy) return;
+    if (!cwd) return;
     this.busy = true;
+    this.readAt = Date.now(); // DATA-SYNC.md: back on the tab, read again only past 10 s
     cx.spawn(async (cx) => {
       try {
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
@@ -216,7 +232,7 @@ export default class Files extends View {
         // kbrdn: outside git, list a folder once (no 5 s rg), and never the whole home folder.
         if (top.code !== 0) {
           if (!on && root === home()) {
-            this.paths = []; this.marks = {}; this.note = "Dossier personnel : rien à lister hors d'un dépôt git.";
+            this.paths = []; this.marks = {}; this.note = "home"; // i18n: tech (note.<note>, said at render)
             return;
           }
           if (this.plain === key) return;
@@ -232,7 +248,11 @@ export default class Files extends View {
           for (const l of st.stdout.split("\n").filter(Boolean)) this.marks[l.slice(3)] = l.startsWith("??") ? "U" : "M";
         }
       } catch { this.paths = []; this.marks = {}; }
-      finally { this.busy = false; cx.notify(); }
+      finally {
+        this.busy = false;
+        cx.notify();
+        if (this.again) { this.again = false; this.refresh(cx); }
+      }
     });
   }
 
@@ -243,12 +263,12 @@ export default class Files extends View {
     if (!path || !cx) return;
     const root = this.root, on = this.on;
     cx.spawn(async (cx) => {
-      const text = (await readTextFile(`${root}/${path}`, { on }).catch(() => null)) ?? "(can't read this file)";
+      const text = (await readTextFile(`${root}/${path}`, { on }).catch(() => null)) ?? tr("unreadable");
       if (this.file !== path || root !== this.root || on !== this.on) return;
       const t = theme();
       this.code = EditorState.new({
         language: ((ext) => LANG[ext] ?? ext)(path.includes(".") ? path.split(".").pop() : "txt"),
-        value: text.length > MAX_BYTES ? text.slice(0, MAX_BYTES) + "\n… (cut)" : text,
+        value: text.length > MAX_BYTES ? text.slice(0, MAX_BYTES) + "\n" + tr("cut") : text,
         readonly: true,
         font_family: settings().font_family,
         font_size: 12,
@@ -326,10 +346,21 @@ export default class Files extends View {
   }
 
   render(cx) {
-    // Coming into view (or still without a folder): look now, not at the next tick.
+    // Another thread, space or worktree: read now, shown or back from hidden (never the previous checkout
+    // until the 5 s tick); back on the tab at the same place, only past 10 s (reread.js); still without a
+    // folder: now. this.loc moves only while shown: a hidden copy doesn't render.
     const vis = visible();
-    if (vis && (!this.shown || !this.root)) this.refresh(cx);
+    const loc = location();
+    const read = !checking() && (shouldRead({ vis, shown: this.shown, loc, lastLoc: this.loc, readAt: this.readAt, now: Date.now() }) || (vis && !this.root));
+    if (vis) this.loc = loc;
+    if (read) this.refresh(cx);
+    if (vis && !this.shown) this.showGen++;
     this.shown = vis;
+    // DATA-SYNC.md: the M / U badges follow another mod's action on this repo, or an agent of this space
+    // that stopped working.
+    const sp = spaces().find((s) => s.active)?.id;
+    if (vis) refreshOn(this, cx, "git", [...gitTopics(this.root), ...(sp ? [`agent:${sp}`] : [])], async (cx) => this.refresh(cx));
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
     this.keyed = this.handle.is_focused();
     const typing = this.keyed && this.vim.insert;
@@ -379,34 +410,38 @@ export default class Files extends View {
           .child(
             this.query
               ? div().flex_1().truncate().text_color(t.foreground).child(this.query + (typing ? "▏" : ""))
-              : div().flex_1().text_color(t.dim).child((typing ? "▏" : "") + "Search files"),
+              : div().flex_1().text_color(t.dim).child((typing ? "▏" : "") + tr("search")),
           )
           .when(this.keyed, (el) => el.child(modePill(t, this.vim))),
       )
-      .child(
-        v_flex()
-          .id("tf-list")
-          .flex_1()
-          .min_h(0)
-          .px(4)
-          .pb(8)
-          .overflow_y_scrollbar()
-          .track_scroll(this.listScroll)
-          .children(list)
-          .when(this.paths.length === 0, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.note ?? (this.root ? "No files." : "No folder.")))),
-      );
+      // overflow_y_scroll + a Scrollbar of the same id: scroll_to_item does nothing on overflow_y_scrollbar.
+      .child(div().relative().flex_1().min_h(0)
+        .child(
+          v_flex()
+            .id("tf-list")
+            .size_full()
+            .px(4)
+            .pb(8)
+            .overflow_y_scroll()
+            .track_scroll(this.listScroll)
+            .children(list)
+            .when(this.paths.length === 0, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.note ? tr(`note.${this.note}`) : this.root ? tr("noFiles") : tr("noFolder")))),
+        )
+        .child(Scrollbar.vertical("tf-list").absolute().inset_0()));
+    // The content fades in each time the tab is shown (the root keeps the keyboard), an opened file too.
     return h_flex()
       .id("kt-files")
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .size_full()
       .text_color(t.foreground)
+      .child(enter(m, h_flex().size_full(), `tf-in-${this.showGen}`, { dy: 0 })
       .when(Boolean(this.file), (el) =>
         el.child(
-          v_flex()
+          enter(m, v_flex()
             .h_full()
             .flex_1()
-            .min_w(0)
+            .min_w(0), `tf-view-${this.file}`, { dy: 0 })
             .child(
               h_flex()
                 .h(36)
@@ -431,9 +466,11 @@ export default class Files extends View {
                     .child(svg(I("x")).size(13)),
                 ),
             )
-            .child(this.code ? Editor.new(this.code).flex_1().min_h(0) : div().flex_1()),
+            .child(this.code
+              ? enter(m, v_flex().flex_1().min_h(0), `tf-code-${this.file}`, { dy: 0 }).child(Editor.new(this.code).flex_1().min_h(0))
+              : div().flex_1()),
         ),
       )
-      .child(side);
+      .child(side));
   }
 }

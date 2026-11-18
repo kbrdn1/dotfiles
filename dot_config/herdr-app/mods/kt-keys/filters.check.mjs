@@ -130,6 +130,12 @@ assert.equal(all.props.text_color[0], t.foreground);
 assert.equal(pr.props.bg[0], "#00aa0014");
 assert.equal(pr.props.text_color[0], t.muted);
 assert.equal(issueWrap.kids.length, 2, "rule + pill");
+// The count rolls (roll.js): one reel per digit, keyed by the row, the scope and the key; jumps when reduced.
+const reel = (pill) => pill.kids.at(-1).kids[0].kids[0];
+assert.deepEqual([reel(pr).props.id[0], reel(pr).props.top[0], reel(pr).props.transition?.[1]?.duration], ["r-n--pr:1", -4 * 14, 240]);
+assert.equal(pr.kids.at(-1).props.font_family[0], "Monaspace Krypton");
+const scoped = F.filterRow({ ...row, active: "all", scope: "repo", reduced: true }).kids[0].kids[2];
+assert.deepEqual([reel(scoped).props.id[0], reel(scoped).props.transition], ["r-n-repo-pr:1", undefined]);
 // Several on: no ink, each pill its own fill; the cursor's ring.
 // One ink per group with one pill on; none where two are on.
 assert.deepEqual(F.inkIndices(row.items, F.activeSet(["pr", "issue"])), [1, 2]);

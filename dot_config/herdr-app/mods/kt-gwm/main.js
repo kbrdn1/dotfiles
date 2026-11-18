@@ -53,10 +53,16 @@ import { exec, theme, spaces, panes, focused, run, layout, openOverlay, notify, 
 import { Select, partition, lines } from "./select.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
-import { motionState, frame, enter, pulse } from "./motion.js";
+import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
+// kt-keys' roll.js (a byte-identical copy): the head's, the selection's and a worktree's ahead / behind
+// counts roll to their new digits.
+import { roll, rollText } from "./roll.js";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
+import { makeT, lang, relative } from "./i18n.js";
+import strings from "./strings.js";
 
+const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const G = (name) => `mods/kt-gwm/${name}.svg`;
@@ -71,7 +77,7 @@ const INFO_TTL = 5 * 60e3;
 const CLEAN_TTL = 30 * 60e3;
 // gwm's agent kinds -> Herdr's program keys (programs.json) and names.
 const KIND = { claude: "claude", codex: "codex", opencode: "opencode", vibe: "vibe" };
-const KIND_NAME = { claude: "Claude Code", codex: "Codex", opencode: "opencode", vibe: "Mistral Vibe" };
+const KIND_NAME = { claude: "Claude Code", codex: "Codex", opencode: "opencode", vibe: "Mistral Vibe" }; // i18n: tech
 
 // gwm's default socket folder (src/daemon.rs, socket_in): $XDG_RUNTIME_DIR, else $TMPDIR, else
 // /tmp; one that isn't owner-only gets gwm's private gwm-<uid>/ inside.
@@ -98,11 +104,10 @@ const inside = (cwd, p) => Boolean(cwd && p) && (cwd === p || cwd.startsWith(`${
 // The worktree a folder is in: the longest enclosing path (kbrdn.dev-v2 doesn't own kbrdn.dev-v2-worktrees/x).
 const enclosing = (rows, cwd) => rows.filter((w) => inside(cwd, w.path)).sort((a, b) => b.path.length - a.path.length)[0] ?? null;
 const tilde = (p) => (p && inside(p, home()) ? `~${p.slice(home().length)}` : p ?? "");
-const plural = (n, one, many) => `${n} ${n > 1 ? many : one}`;
-// gwm clean's "4.1 GiB" -> "4,1 Go".
-const french = (s) => s.replace(/(\d)\.(\d)/, "$1,$2").replace(/\b([KMGT])iB\b/, "$1o").replace(/\bB$/, "o");
+// gwm clean's "4.1 GiB" -> "4,1 Go" in French, "4.1 GB" in English.
+const size = (s) => (lang() === "fr" ? s.replace(/(\d)\.(\d)/, "$1,$2").replace(/\b([KMGT])iB\b/, "$1o").replace(/\bB$/, "o") : s.replace(/\b([KMGT])iB\b/, "$1B"));
 const isHome = (s) => !s.machine && trim(s.folder) === trim(home());
-const branchOf = (w) => w.branch ?? (w.head ? `HEAD détachée · ${w.head.slice(0, 7)}` : "HEAD détachée");
+const branchOf = (w) => w.branch ?? (w.head ? tr("detachedAt", { sha: w.head.slice(0, 7) }) : tr("detached"));
 // A project's logo for the appearance now (registry `logos: { light, dark }`, or the older single
 // `logo`): its own, else the other mode's; null for none. kt-threads' logoOf().
 function logoOf(e) {
@@ -129,30 +134,22 @@ function hash(s) {
   return a.toString(16).padStart(8, "0") + b.toString(16).padStart(8, "0").slice(0, 4);
 }
 
-function ago(sec) {
-  if (!sec) return "";
-  const s = Math.max(0, Date.now() / 1000 - sec);
-  if (s < 60) return "à l'instant";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `il y a ${m} min`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `il y a ${h} h`;
-  const d = Math.floor(h / 24);
-  return d < 30 ? `il y a ${d} j` : `il y a ${Math.floor(d / 30)} mois`;
-}
+const ago = (sec) => (sec ? relative(sec * 1000) : "");
 
-// gwm status' state -> label, icon, theme color name (no state yet: the bare number, muted).
+// gwm status' state -> label (GitHub's word, in both languages), icon, theme color name (no state
+// yet: the bare number, muted).
+// i18n: tech
 function look(kind, state) {
   const s = String(state ?? "").toUpperCase();
   if (kind === "pr") {
-    if (s === "MERGED") return { label: "merged", icon: "git-merge", color: "ansi5" };
-    if (s === "CLOSED") return { label: "closed", icon: "git-pull-request-closed", color: "ansi1" };
-    if (s === "DRAFT") return { label: "draft", icon: "git-pull-request", color: "dim" };
-    if (s === "OPEN") return { label: "open", icon: "git-pull-request", color: "ansi2" };
+    if (s === "MERGED") return { label: "merged", icon: "git-merge", color: "ansi5" }; // i18n: tech
+    if (s === "CLOSED") return { label: "closed", icon: "git-pull-request-closed", color: "ansi1" }; // i18n: tech
+    if (s === "DRAFT") return { label: "draft", icon: "git-pull-request", color: "dim" }; // i18n: tech
+    if (s === "OPEN") return { label: "open", icon: "git-pull-request", color: "ansi2" }; // i18n: tech
     return { label: "", icon: "git-pull-request", color: "muted" };
   }
-  if (s === "CLOSED") return { label: "closed", icon: "circle-check", color: "ansi5" };
-  if (s === "OPEN") return { label: "open", icon: "circle-dashed", color: "ansi2" };
+  if (s === "CLOSED") return { label: "closed", icon: "circle-check", color: "ansi5" }; // i18n: tech
+  if (s === "OPEN") return { label: "open", icon: "circle-dashed", color: "ansi2" }; // i18n: tech
   return { label: "", icon: "circle-dashed", color: "muted" };
 }
 
@@ -216,7 +213,7 @@ export default class Worktrees extends View {
     this.hot = null; // the hovered card's path
     this.multi = new Select(); // the page's selected cards (paths)
     this.agentOpen = new Set(); // repos (common dirs) whose agent worktrees are unfolded
-    this.motion = motionState(); // motion.js: the bulk bar fades in, Rafraîchir breathes while it loads
+    this.motion = motionState(); // motion.js: the bulk bar fades in, Rafraîchir breathes while it loads, the cards open and close
     this.headW = 0; // the head card's width (its dither)
     this.panelW = 0; // the panel card's
     this.more = false; // the head's ⋯ menu
@@ -316,7 +313,7 @@ export default class Worktrees extends View {
     }
     const r = await sh("gwm", ["list", "--format=json"], { cwd: repo.folder });
     const rows = r.code === 0 ? parse(r.stdout, null) : null;
-    return Array.isArray(rows) ? { rows, source: "cli" } : { rows: [], source: "cli", error: lastLine(r.stderr || r.stdout) || `gwm list a échoué (code ${r.code})` };
+    return Array.isArray(rows) ? { rows, source: "cli" } : { rows: [], source: "cli", error: lastLine(r.stderr || r.stdout) || tr("failedCode", { cmd: "gwm list", code: r.code }) };
   }
 
   // Agent pins (`gwm agents attach`) live in git config, not in the list: branch -> [session ids].
@@ -494,7 +491,8 @@ export default class Worktrees extends View {
       const r = d.rows.length > 1 ? await sh("gwm", ["clean"], { cwd: main, timeout: 120e3 }) : { code: 0, stdout: "" };
       delete this.inflight[k];
       const total = r.stdout.match(/^Total reclaimable:\s*(.+)$/m)?.[1]?.trim();
-      this.clean[repo.common] = { at: Date.now(), total: total ? french(total) : null, error: r.code === 0 ? null : lastLine(r.stderr) || `code ${r.code}` };
+      // The raw total: size() says it in the language shown (a cached one is drawn again in the new one).
+      this.clean[repo.common] = { at: Date.now(), total: total ?? null, error: r.code === 0 ? null : lastLine(r.stderr) || tr("code", { code: r.code }) };
       const stale = Date.now() - 86400e3;
       for (const [x, v] of Object.entries(this.clean)) if (v.at < stale) delete this.clean[x];
       save("clean", this.clean);
@@ -589,19 +587,19 @@ export default class Worktrees extends View {
 
   // Why a worktree can't go now, or null. Never forced.
   refusal(w) {
-    if (w.is_main) return "c'est le checkout principal";
-    if (w.is_locked) return "il est verrouillé";
-    if (w.status?.unknown) return "son état git est inconnu";
-    if (w.status?.is_dirty) return "des modifications ne sont pas commitées";
-    if ((w.agents?.sessions ?? []).some((s) => s.freshness === "active")) return "un agent y est actif (gwm agents)";
+    if (w.is_main) return tr("why.main");
+    if (w.is_locked) return tr("why.locked");
+    if (w.status?.unknown) return tr("why.unknown");
+    if (w.status?.is_dirty) return tr("why.dirty");
+    if ((w.agents?.sessions ?? []).some((s) => s.freshness === "active")) return tr("why.agentActive");
     const here = panes().filter((p) => p.terminal && !p.terminal.includes("/") && inside(trim(p.cwd), w.path));
-    if (here.some((p) => p.program?.agent)) return "un agent tourne dans un terminal Herdr ouvert dessus";
-    if (here.length) return "un terminal Herdr y est ouvert";
+    if (here.some((p) => p.program?.agent)) return tr("why.agentTerminal");
+    if (here.length) return tr("why.terminal");
     return null;
   }
 
   refuse(name, title, why) {
-    notify({ title, body: `${name} : ${why}.`, level: "warning", timeout: 6000 });
+    notify({ title, body: tr("refuseBody", { name, why }), level: "warning", timeout: 6000 });
   }
 
   ask(p, title, detail, label, danger) {
@@ -618,25 +616,25 @@ export default class Worktrees extends View {
   // Why gwm sync can't run on a worktree now, or null.
   syncRefusal(w) {
     const s = w.status ?? {};
-    if (s.is_dirty) return "des modifications ne sont pas commitées, gwm sync ne rebase pas dessus";
-    if (!s.has_upstream) return "la branche n'a pas d'upstream";
+    if (s.is_dirty) return tr("why.syncDirty");
+    if (!s.has_upstream) return tr("why.noUpstream");
     return null;
   }
 
   askSync(w) {
     const why = this.syncRefusal(w);
-    if (why) return this.refuse(w.name, w.status?.is_dirty ? "Sync refusé" : "Sync impossible", why);
+    if (why) return this.refuse(w.name, w.status?.is_dirty ? tr("syncRefused") : tr("syncImpossible"), why);
     const s = w.status ?? {};
-    this.ask({ kind: "sync", path: w.path, name: w.name }, `Synchroniser ${w.name} ?`,
-      `gwm sync : fetch de l'upstream de ${w.branch}, puis rebase${s.behind ? ` (${plural(s.behind, "commit", "commits")} de retard)` : ""}. En cas de conflit, gwm annule le rebase et laisse le worktree tel quel.`,
-      "Synchroniser", false);
+    this.ask({ kind: "sync", path: w.path, name: w.name }, tr("sync.title", { name: w.name }),
+      tr("sync.detail", { branch: w.branch, behind: s.behind ? tr("sync.behind", { n: s.behind }) : "" }),
+      tr("sync.label"), false);
   }
 
   askRemove(repo, w) {
     const why = this.refusal(w);
-    if (why) return this.refuse(w.name, "Suppression refusée", why);
-    this.ask({ kind: "remove", path: w.path, name: w.name, repo }, `Supprimer le worktree ${w.name} ?`,
-      `${tilde(w.path)} sera supprimé par gwm remove. La branche ${w.branch ?? "(HEAD détachée)"} est conservée.`, "Supprimer", true);
+    if (why) return this.refuse(w.name, tr("removeRefused"), why);
+    this.ask({ kind: "remove", path: w.path, name: w.name, repo }, tr("remove.title", { name: w.name }),
+      tr("remove.detail", { path: tilde(w.path), branch: w.branch ?? tr("remove.detached") }), tr("remove.label"), true);
   }
 
   // The bulk bar's Sync and Supprimer: each selected worktree checked with the single action's rule
@@ -646,18 +644,18 @@ export default class Worktrees extends View {
     if (this.busy) return;
     const remove = kind === "remove";
     const plan = partition(picked, (s) => (remove ? this.refusal(s.w) : this.syncRefusal(s.w)) ?? more(s.w));
-    const refused = plan.refused.map(({ item, why }) => `${item.w.name} : ${why}`);
+    const refused = plan.refused.map(({ item, why }) => tr("line", { name: item.w.name, why }));
+    const rest = (k) => tr("more", { n: k });
     if (!plan.ok.length)
-      return notify({ title: remove ? "Suppression refusée" : "Sync refusé", body: lines(refused, 6), level: "warning", timeout: 9000 });
+      return notify({ title: remove ? tr("removeRefused") : tr("syncRefused"), body: lines(refused, 6, rest), level: "warning", timeout: 9000 });
     const n = plan.ok.length;
     const names = plan.ok.map((s) => s.w.name);
-    const what = remove
-      ? `gwm remove, un worktree à la fois, chacun après un --dry-run qui doit viser son chemin et un nouvel examen ; jamais --force. Les branches sont conservées.`
-      : `gwm sync, un worktree à la fois : fetch de l'upstream, puis rebase. En cas de conflit, gwm annule le rebase et laisse le worktree tel quel.`;
+    const what = remove ? tr("bulk.removeWhat") : tr("bulk.syncWhat");
+    const whom = n <= 3 ? names.join(", ") : tr("worktrees", { n });
     this.ask({ kind, items: plan.ok.map((s) => ({ kind, path: s.w.path, name: s.w.name, repo: s.repo })) },
-      `${remove ? "Supprimer" : "Synchroniser"} ${n <= 3 ? names.join(", ") : plural(n, "worktree", "worktrees")} ?`,
-      [what, lines(plan.ok.map((s) => `${s.w.name} — ${tilde(s.w.path)}`)), refused.length ? `Refusés, laissés de côté :\n${lines(refused)}` : ""].filter(Boolean).join("\n\n"),
-      remove ? "Supprimer" : "Synchroniser", remove);
+      remove ? tr("bulk.removeTitle", { what: whom }) : tr("bulk.syncTitle", { what: whom }),
+      [what, lines(plan.ok.map((s) => `${s.w.name} — ${tilde(s.w.path)}`), 10, rest), refused.length ? `${tr("refused")}\n${lines(refused, 10, rest)}` : ""].filter(Boolean).join("\n\n"),
+      remove ? tr("remove.label") : tr("sync.label"), remove);
   }
 
   // Nettoyer: a repo's agent worktrees (claude/*) merged into its default branch (origin/HEAD, an
@@ -674,7 +672,7 @@ export default class Worktrees extends View {
         const r = await sh("git", ["merge-base", "--is-ancestor", w.branch, def], { cwd: main });
         if (r.code === 0) merged.add(w.path);
       }
-      this.askBulk("remove", agents.map((w) => ({ id: w.path, repo, d, w })), (w) => (merged.has(w.path) ? null : `pas encore mergée dans ${def}`));
+      this.askBulk("remove", agents.map((w) => ({ id: w.path, repo, d, w })), (w) => (merged.has(w.path) ? null : tr("why.notMerged", { def })));
       cx.notify();
     });
   }
@@ -690,12 +688,12 @@ export default class Worktrees extends View {
     cx.spawn(async (cx) => {
       const r = await sh("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: path });
       const common = r.code === 0 ? trim(r.stdout.trim()) : "";
-      if (!common) return notify({ title: "Suppression refusée", body: `${tilde(path)} n'est pas un worktree git.`, level: "warning", timeout: 6000 });
+      if (!common) return notify({ title: tr("removeRefused"), body: tr("notWorktree", { path: tilde(path) }), level: "warning", timeout: 6000 });
       const main = common.endsWith("/.git") ? common.slice(0, -5) : null;
       const repo = { folder: main ?? path, common, main, name: (main ?? common).split("/").pop(), slug: null };
       const got = await this.list(repo, false);
       const w = got.rows.map((x) => ({ ...x, path: trim(x.path) })).find((x) => x.path === path);
-      if (!w) return notify({ title: "Suppression refusée", body: `${tilde(path)} n'est pas dans la liste de gwm.`, level: "warning", timeout: 6000 });
+      if (!w) return notify({ title: tr("removeRefused"), body: tr("notListed", { path: tilde(path) }), level: "warning", timeout: 6000 });
       this.askRemove(repo, w);
       cx.notify();
     });
@@ -705,7 +703,7 @@ export default class Worktrees extends View {
   act(p, cx) {
     const items = p.items ?? [p];
     const sync = p.kind === "sync";
-    const label = sync ? "Sync" : "Suppression";
+    const label = sync ? "Sync" : tr("busy.remove"); // i18n: tech
     this.busy = { path: items[0].path, label };
     cx.spawn(async (cx) => {
       const out = [];
@@ -721,8 +719,8 @@ export default class Worktrees extends View {
       else {
         const bad = out.filter((n) => n.level !== "success");
         notify({ level: !bad.length ? "success" : bad.length === out.length ? "error" : "warning",
-          title: `${out.length - bad.length}/${out.length} ${sync ? "synchronisés" : "supprimés"}`,
-          body: bad.length ? lines(bad.map((n) => `${n.title} : ${n.body}`), 5) : sync ? "Rebasés sur leur upstream." : "Branches conservées.",
+          title: tr(sync ? "doneSync" : "doneRemove", { ok: out.length - bad.length, n: out.length }),
+          body: bad.length ? lines(bad.map((n) => tr("line", { name: n.title, why: n.body })), 5, (k) => tr("more", { n: k })) : sync ? tr("rebased") : tr("branchesKept"),
           timeout: bad.length ? 10000 : 5000 });
         this.multi.clear();
       }
@@ -734,8 +732,8 @@ export default class Worktrees extends View {
   async sync(p) {
     const r = await sh("gwm", ["sync"], { cwd: p.path, timeout: 180e3 });
     return r.code === 0
-      ? { level: "success", title: `${p.name} synchronisé`, body: lastLine(r.stdout) }
-      : { level: "error", title: `Sync de ${p.name} échoué`, body: lastLine(r.stderr || r.stdout) || `gwm sync a échoué (code ${r.code})` };
+      ? { level: "success", title: tr("synced", { name: p.name }), body: lastLine(r.stdout) }
+      : { level: "error", title: tr("syncFailed", { name: p.name }), body: lastLine(r.stderr || r.stdout) || tr("failedCode", { cmd: "gwm sync", code: r.code }) };
   }
 
   async remove(p) {
@@ -743,19 +741,19 @@ export default class Worktrees extends View {
     const got = await this.list(p.repo, false);
     const rows = got.rows.map((w) => ({ ...w, path: trim(w.path) }));
     const w = rows.find((x) => x.path === p.path);
-    if (!w) return { level: "error", title: "Suppression annulée", body: `${p.name} n'est plus dans la liste de gwm.` };
+    if (!w) return { level: "error", title: tr("removeCancelled"), body: tr("gone", { name: p.name }) };
     const why = this.refusal(w);
-    if (why) return { level: "warning", title: "Suppression refusée", body: `${w.name} : ${why}.` };
+    if (why) return { level: "warning", title: tr("removeRefused"), body: tr("refuseBody", { name: w.name, why }) };
     const main = rows.find((x) => x.is_main)?.path ?? p.repo.folder;
     // gwm resolves its target by name or id: its plan must name this very path.
     const dry = await sh("gwm", ["remove", w.id, "--dry-run"], { cwd: main });
     const planned = trim(dry.stdout.match(/^\s*path:\s+(.+)$/m)?.[1]?.trim());
     if (dry.code !== 0 || planned !== w.path)
-      return { level: "error", title: "Suppression annulée", body: `gwm ne cible pas ${tilde(w.path)}. ${lastLine(dry.stderr || dry.stdout)}` };
+      return { level: "error", title: tr("removeCancelled"), body: tr("notTargeted", { path: tilde(w.path), last: lastLine(dry.stderr || dry.stdout) }) };
     const r = await sh("gwm", ["remove", w.id], { cwd: main, timeout: 120e3 });
     return r.code === 0
-      ? { level: "success", title: `${w.name} supprimé`, body: `Branche ${w.branch ?? "—"} conservée.` }
-      : { level: "error", title: `Suppression de ${w.name} échouée`, body: lastLine(r.stderr || r.stdout) || `gwm remove a échoué (code ${r.code})` };
+      ? { level: "success", title: tr("removed", { name: w.name }), body: tr("branchKept", { branch: w.branch ?? "—" }) }
+      : { level: "error", title: tr("removeFailed", { name: w.name }), body: lastLine(r.stderr || r.stdout) || tr("failedCode", { cmd: "gwm remove", code: r.code }) };
   }
 
   // ---------- pieces ----------
@@ -840,7 +838,7 @@ export default class Worktrees extends View {
     return h_flex().absolute().bottom(12).left(0).right(0).px(8).justify_center()
       .child(enter(this.m, div().max_w_full(), "kg-bulk-in").child(h_flex().id("kg-bulk").max_w_full().flex_wrap().p(4).gap(2).items_center().rounded(12).border(1).border_color(t.border).bg(t.popover).shadow_lg()
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(`${n} sélectionné${n > 1 ? "s" : ""}`))
+        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(rollText(this.m, "kg-sel-n", tr("selected", { n }), 15)))
         .child(div().w(1).h(18).flex_none().bg(t.border))
         .when(Boolean(progress), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
           .child(svg(I("refresh-cw")).size(13).spin(900)).child(progress ?? "")))
@@ -849,7 +847,7 @@ export default class Worktrees extends View {
           .on_click((_e, cx) => { onClick(cx); cx.notify(); })
           .child(svg(icon).size(13)).child(label))))
         .child(h_flex().id("kg-bulk-clear").size(28).flex_none().items_center().justify_center().rounded(8).text_color(t.muted)
-          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Vider la sélection (esc)")
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("clearSelection"))
           .on_click((_e, cx) => { this.multi.clear(); cx.notify(); })
           .child(svg(I("x")).size(13)))));
   }
@@ -867,15 +865,15 @@ export default class Worktrees extends View {
     this.bulkActions = null;
     if (!picked.length) return null;
     this.bulkActions = [
-      ["open", "Ouvrir", G("enter"), () => { for (const s of picked) this.openSpace(s.d, s.w); }],
-      ["copy", "Copier les chemins", G("copy"), (cx) => {
+      ["open", tr("open"), G("enter"), () => { for (const s of picked) this.openSpace(s.d, s.w); }],
+      ["copy", tr("copyPaths"), G("copy"), (cx) => {
         cx.write_to_clipboard(picked.map((s) => s.w.path).join("\n"));
-        notify({ title: `${plural(picked.length, "chemin copié", "chemins copiés")}`, body: "Un par ligne.", level: "success", timeout: 2500 });
+        notify({ title: tr("pathsCopied", { n: picked.length }), body: tr("onePerLine"), level: "success", timeout: 2500 });
       }],
-      ["sync", "Sync", G("sync"), () => this.askBulk("sync", picked)],
-      ["remove", "Supprimer", G("trash"), () => this.askBulk("remove", picked), true],
+      ["sync", "Sync", G("sync"), () => this.askBulk("sync", picked)], // i18n: tech
+      ["remove", tr("remove"), G("trash"), () => this.askBulk("remove", picked), true],
     ];
-    return this.bulkBar(t, picked.length, this.bulkActions, this.busy && `${this.busy.label} en cours…`);
+    return this.bulkBar(t, picked.length, this.bulkActions, this.busy && tr("running", { what: this.busy.label }));
   }
 
   // Where the data came from: the daemon (done) or the CLI (warning).
@@ -891,7 +889,7 @@ export default class Worktrees extends View {
   // The GitHub icon beside a link: the only way to the browser.
   github(t, id, repo, kind, x, size = 22) {
     return h_flex().id(id).flex_none().size(size).items_center().justify_center().rounded_full().text_color(t.dim)
-      .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Ouvrir sur GitHub")
+      .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("openGithub"))
       .on_click((_e, cx) => { cx.stop_propagation(); this.onGitHub(repo, kind, x); })
       .child(svg(G("github")).size(12));
   }
@@ -903,7 +901,7 @@ export default class Worktrees extends View {
     return h_flex().flex_none().gap(2).items_center()
       .child(h_flex().id(id).flex_none().h(20).px(8).gap(5).items_center().rounded_full().border(1).border_color(alpha(color, "4d")).bg(alpha(color, "1a"))
         .text_color(color).font_family(MONO).text_size(10.5)
-        .cursor_pointer().hover((s) => s.bg(alpha(color, "33"))).tooltip("Ouvrir dans l'Inbox")
+        .cursor_pointer().hover((s) => s.bg(alpha(color, "33"))).tooltip(tr("openInbox"))
         .on_click((_e, cx) => { cx.stop_propagation(); this.inInbox(repo, kind, x); })
         .child(svg(I(lk.icon)).size(11))
         .child(`${kind === "pr" ? "PR " : ""}#${x.number}${lk.label ? ` · ${lk.label}` : ""}`)
@@ -927,19 +925,21 @@ export default class Worktrees extends View {
     });
   }
 
-  // Dirty, ahead/behind, lock: the git state pills.
-  marks(t, w, clean) {
+  // Dirty, ahead/behind, lock: the git state pills. `id`: a panel's (one worktree), its ahead / behind
+  // roll (roll.js); the list's rows (up to every worktree) leave it out and stay still.
+  marks(t, w, clean, id = null) {
     const s = w.status ?? {};
     const out = [];
-    if (s.is_dirty) out.push(this.tag(t, t.ansi3, "● modifié"));
-    else if (clean && !s.unknown) out.push(this.tag(t, t.done, "propre"));
+    const count = (key, text) => (id ? roll(this.m, `${id}-${key}`, text, 14) : text);
+    if (s.is_dirty) out.push(this.tag(t, t.ansi3, tr("mark.dirty")));
+    else if (clean && !s.unknown) out.push(this.tag(t, t.done, tr("mark.clean")));
     if (s.ahead || s.behind)
       out.push(h_flex().flex_none().h(20).px(8).gap(6).items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10.5)
-        .when(s.ahead > 0, (el) => el.child(div().text_color(t.ansi2).child(`↑${s.ahead}`)))
-        .when(s.behind > 0, (el) => el.child(div().text_color(t.ansi3).child(`↓${s.behind}`))));
-    if (s.unknown) out.push(this.tag(t, t.dim, "état inconnu"));
-    if (w.is_locked) out.push(this.tag(t, t.dim, "verrouillé"));
-    if (w.is_prunable) out.push(this.tag(t, t.ansi1, "orphelin"));
+        .when(s.ahead > 0, (el) => el.child(div().text_color(t.ansi2).child(count("ahead", `↑${s.ahead}`))))
+        .when(s.behind > 0, (el) => el.child(div().text_color(t.ansi3).child(count("behind", `↓${s.behind}`)))));
+    if (s.unknown) out.push(this.tag(t, t.dim, tr("mark.unknown")));
+    if (w.is_locked) out.push(this.tag(t, t.dim, tr("mark.locked")));
+    if (w.is_prunable) out.push(this.tag(t, t.ansi1, tr("mark.orphan")));
     return out;
   }
 
@@ -973,7 +973,7 @@ export default class Worktrees extends View {
   // The card's Copier, and y on the cursor.
   copyPath(w, cx) {
     cx.write_to_clipboard(w.path);
-    notify({ title: "Chemin copié", body: tilde(w.path), level: "success", timeout: 2500 });
+    notify({ title: tr("pathCopied"), body: tilde(w.path), level: "success", timeout: 2500 });
   }
 
   // ---------- keys (vim.js; kt-keys lists them) ----------
@@ -1099,20 +1099,21 @@ export default class Worktrees extends View {
   }
 
   // `cursor`: "ring" (NORMAL: a 1 px accent ring with the ink), "mark" (INSERT: ctrl-n/p's card) or null.
-  card(t, repo, d, w, here, cx, cursor) {
-    if (cx) this.statusOf(w, cx);
+  // `gone`: closing (rows() gave it -1), drawn as it was but no longer a target and asking for nothing.
+  card(t, repo, d, w, here, cx, cursor, gone = false) {
+    if (cx && !gone) this.statusOf(w, cx);
     const { issue, pr } = this.links(w);
-    const hot = this.hot === w.path;
+    const hot = !gone && this.hot === w.path;
     const busy = this.busy?.path === w.path;
     const note = (w.note ?? "").split("\n").map((l) => l.replace(/^#+\s*/, "").trim()).find(Boolean) ?? "";
     const top = w.agents?.top;
     const actions = [
-      this.mini(t, `kg-open-${w.path}`, G("enter"), "Ouvrir", () => this.openSpace(d, w)),
-      issue && this.mini(t, `kg-issue-${w.path}`, I("circle-dashed"), "Issue", () => this.inInbox(repo, "issue", issue)),
+      this.mini(t, `kg-open-${w.path}`, G("enter"), tr("open"), () => this.openSpace(d, w)),
+      issue && this.mini(t, `kg-issue-${w.path}`, I("circle-dashed"), "Issue", () => this.inInbox(repo, "issue", issue)), // i18n: tech
       pr && this.mini(t, `kg-pr-${w.path}`, I("git-pull-request"), "PR", () => this.inInbox(repo, "pr", pr)),
-      this.mini(t, `kg-copy-${w.path}`, G("copy"), "Copier", (cx) => this.copyPath(w, cx)),
-      this.mini(t, `kg-sync-${w.path}`, G("sync"), "Sync", () => this.askSync(w)),
-      !w.is_main && this.mini(t, `kg-rm-${w.path}`, G("trash"), "Supprimer", () => this.askRemove(repo, w), true),
+      this.mini(t, `kg-copy-${w.path}`, G("copy"), tr("copy"), (cx) => this.copyPath(w, cx)),
+      this.mini(t, `kg-sync-${w.path}`, G("sync"), "Sync", () => this.askSync(w)), // i18n: tech
+      !w.is_main && this.mini(t, `kg-rm-${w.path}`, G("trash"), tr("remove"), () => this.askRemove(repo, w), true),
     ].filter(Boolean);
     // A card (radius 16) on the page; the shown thread's worktree carries the ink; a selected one a
     // lighter ink and its box checked. A plain click on it only empties the selection.
@@ -1120,27 +1121,28 @@ export default class Worktrees extends View {
     return v_flex().id(`kg-card-${w.path}`).flex_none().rounded(16).border(1)
       .border_color(cursor === "ring" ? alpha(t.accent, "99") : here ? alpha(t.accent, "66") : t.border)
       .bg(cursor === "ring" ? alpha(t.accent, "24") : picked ? alpha(t.accent, "14") : cursor === "mark" ? t.hover : t.background)
-      .on_hover((on, cx) => {
-        const next = on ? w.path : this.hot === w.path ? null : this.hot;
-        if (next !== this.hot) { this.hot = next; cx.notify(); }
-      })
-      .on_click((e, cx) => {
-        this.cur = w.path;
-        this.multi.click(e.modifiers, w.path, this.stops().map((s) => s.id));
-        cx.notify();
-      })
+      .when(!gone, (el) => el
+        .on_hover((on, cx) => {
+          const next = on ? w.path : this.hot === w.path ? null : this.hot;
+          if (next !== this.hot) { this.hot = next; cx.notify(); }
+        })
+        .on_click((e, cx) => {
+          this.cur = w.path;
+          this.multi.click(e.modifiers, w.path, this.stops().map((s) => s.id));
+          cx.notify();
+        }))
       .child(v_flex().pl(10).pr(14).py(10).gap(6).rounded(16).when(here, (el) => el.bg(alpha(t.accent, "1a")))
         .child(h_flex().h(22).gap(8).items_center()
-          .child(this.check(t, `kg-check-${w.path}`, picked, picked || hot || this.multi.size > 0, () => this.multi.toggle(w.path)))
+          .child(this.check(t, `kg-check-${w.path}`, picked, !gone && (picked || hot || this.multi.size > 0), () => this.multi.toggle(w.path)))
           // The project's logo (16 px); the main checkout says so with a tag.
           .child(this.mark(t, repo, 16))
           .child(div().flex_none().max_w(320).truncate().text_size(13.5).font_medium().text_color(t.foreground).child(w.name))
           .child(div().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(here ? t.accent : t.muted)
             .child(branchOf(w)))
-          .when(isAgent(w), (el) => el.child(this.tag(t, t.accent, "agent")))
-          .when(Boolean(w.is_main), (el) => el.child(this.tag(t, t.dim, "principal")))
+          .when(isAgent(w), (el) => el.child(this.tag(t, t.accent, "agent"))) // i18n: tech
+          .when(Boolean(w.is_main), (el) => el.child(this.tag(t, t.dim, tr("main"))))
           // gwm's note (kt-notes): gwm list leaves `note` out when the branch carries none.
-          .when(Boolean(w.note), (el) => el.child(this.tag(t, t.ansi3, "note")))
+          .when(Boolean(w.note), (el) => el.child(this.tag(t, t.ansi3, tr("note"))))
           .child(div().flex_1())
           .children(this.marks(t, w, false))
           .when(Boolean(issue), (el) => el.child(this.link(t, `kg-li-${w.path}`, repo, "issue", issue)))
@@ -1153,7 +1155,7 @@ export default class Worktrees extends View {
             .child(div().min_w(0).truncate().text_size(12).text_color(t.dim).child(note)))
           .child(div().flex_1())
           .when(busy, (el) => el.child(h_flex().flex_none().gap(6).items_center().text_size(12).text_color(t.muted)
-            .child(svg(I("refresh-cw")).size(12).spin(900)).child(`${this.busy.label} en cours…`)))
+            .child(svg(I("refresh-cw")).size(12).spin(900)).child(tr("running", { what: this.busy.label }))))
           .when(!busy && hot, (el) => el.child(h_flex().flex_none().gap(5).items_center().children(actions)))
           .when(!busy && !hot && Boolean(top), (el) => el.child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim)
             .child(`${KIND_NAME[top.kind] ?? top.kind} · ${ago(top.last_activity)}`)))));
@@ -1167,9 +1169,9 @@ export default class Worktrees extends View {
       .text_size(12.5).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => { if (open) this.agentOpen.delete(r.common); else this.agentOpen.add(r.common); cx.notify(); })
       .child(svg(I(open ? "chevron-down" : "chevron-right")).size(13).flex_none())
-      .child(this.tag(t, t.accent, "agent"))
-      .child(div().flex_1().min_w(0).truncate().child(`Worktrees d'agent (claude/*) · ${n}`))
-      .child(this.mini(t, `kg-clean-agents-${r.common}`, G("trash"), "Nettoyer", (cx) => this.cleanAgents(r, d, cx), true));
+      .child(this.tag(t, t.accent, "agent")) // i18n: tech
+      .child(div().flex_1().min_w(0).truncate().child(tr("agentWorktrees", { n })))
+      .child(this.mini(t, `kg-clean-agents-${r.common}`, G("trash"), tr("cleanUp"), (cx) => this.cleanAgents(r, d, cx), true));
   }
 
   // A repo's entry in the projects registry (shared "kt.projects"): by folder (its main checkout's
@@ -1203,10 +1205,10 @@ export default class Worktrees extends View {
     const { sc } = this.moreFor ?? {};
     const d = sc?.kind === "repo" ? this.data[sc.repo.common] : null;
     return [
-      ["kg-mi-new", I("plus"), "Nouveau worktree (ctrl-b G)", () => run("mod.open", { name: "kt-new" })],
-      (sc?.kind === "repo" || sc?.inRepo) && ["kg-mi-global", I("layers"), this.global ? "Revenir au dépôt" : "Vue globale : tous les projets", () => { this.global = !this.global; }],
-      d?.rows.some(isAgent) && ["kg-mi-clean", G("trash"), "Nettoyer les worktrees d'agent", (cx) => this.cleanAgents(sc.repo, d, cx)],
-      ["kg-mi-keys", I("keyboard"), "Les touches (?)", () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })],
+      ["kg-mi-new", I("plus"), tr("newWorktreeKey"), () => run("mod.open", { name: "kt-new" })],
+      (sc?.kind === "repo" || sc?.inRepo) && ["kg-mi-global", I("layers"), this.global ? tr("backToRepo") : tr("globalView"), () => { this.global = !this.global; }],
+      d?.rows.some(isAgent) && ["kg-mi-clean", G("trash"), tr("cleanAgents"), (cx) => this.cleanAgents(sc.repo, d, cx)],
+      ["kg-mi-keys", I("keyboard"), tr("keys"), () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })],
     ];
   }
 
@@ -1218,7 +1220,8 @@ export default class Worktrees extends View {
       .child(this.source(t, new Set(d?.source ? [d.source] : [])) ?? div());
   }
 
-  pageView(t, sc, cx) {
+  // `ask`: render's cx on a shown copy (status, clean), else null; `cx`: render's, for rows().
+  pageView(t, sc, ask, cx) {
     const groups = sc.kind === "repo" ? [sc.repo] : sc.kind === "workspace" ? sc.repos : [];
     const cwd = threadCwd();
     const total = groups.reduce((n, r) => n + (this.data[r.common]?.rows.length ?? 0), 0);
@@ -1235,39 +1238,47 @@ export default class Worktrees extends View {
       const rows = (d?.rows ?? []).filter((w) => this.matches(w));
       shown += rows.length;
       if (sc.kind === "workspace" && (rows.length || d?.error)) list.push(this.groupHead(t, r, d, rows.length));
-      if (d?.error) list.push(this.empty(t, `${r.name} : ${d.error}`, t.ansi1));
+      if (d?.error) list.push(this.empty(t, tr("line", { name: r.name, why: d.error }), t.ansi1));
       const here = d ? enclosing(d.rows, cwd) : null;
-      const put = (w) => {
-        // A card shown means no "none" box above the list: its index is the list's.
-        if (this.reveal && w.path === cur) {
-          this.scroll.scroll_to_item(list.length);
-          this.reveal = false;
-        }
-        list.push(this.card(t, r, d, w, w === here, cx, w.path === cur ? (typing ? "mark" : "ring") : null));
+      // The cards open and close on their height, in order (motion.js rows(), keyed by path); a repo
+      // gone whole (head too) goes at once. A card shown means no "none" box above the list: `at`, the
+      // list's index, counts the cards as rows() builds them, the closing ones included.
+      const put = (id, ws) => {
+        let at = list.length;
+        list.push(...rowsOf(this.m, cx, id, ws, (w) => w.path, (w, i) => {
+          if (i >= 0 && this.reveal && w.path === cur) {
+            this.scroll.scroll_to_item(at);
+            this.reveal = false;
+          }
+          at++;
+          return this.card(t, r, d, w, w === here, ask, i >= 0 && w.path === cur ? (typing ? "mark" : "ring") : null, i < 0);
+        }));
       };
       // Issue worktrees first; Claude Code's own (claude/*: subagents, --worktree, background
-      // sessions) after them, behind one fold, folded until opened.
-      rows.filter((w) => !isAgent(w)).forEach(put);
+      // sessions) after them, behind one fold, folded until opened (none: they close).
+      put(`kg-wt-${r.common}`, rows.filter((w) => !isAgent(w)));
       const agents = rows.filter(isAgent);
       if (agents.length) {
         list.push(this.agentFold(t, r, d, agents.length));
-        if (this.agentOpen.has(r.common)) agents.forEach(put);
+        put(`kg-ag-${r.common}`, this.agentOpen.has(r.common) ? agents : []);
       }
     }
-    const label = sc.kind === "repo" ? sc.repo.name : sc.kind === "wait" ? "…" : "Global";
+    const label = sc.kind === "repo" ? sc.repo.name : sc.kind === "wait" ? "…" : "Global"; // i18n: tech
     // DESIGN-REFERENCE.md's head: the band on the dither of the project's color (Global: ansi2).
     const color = sc.kind === "repo" ? this.projectColor(t, sc.repo) : t.ansi2;
+    // In the rolling counts' ids: another repo's (or Global's) counts show at once, not rolling.
+    const scopeKey = sc.kind === "repo" ? sc.repo.main ?? sc.repo.folder : sc.kind;
     this.moreFor = { sc, color };
     const head = this.box(t).id("kg-head").relative().flex_none().px(4).pb(12).gap(10)
       .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
       .children([dither(this.headW, 60, 16, color)].filter(Boolean))
-      .child(bandRow(t, { color, icon: I("git-branch"), mark: sc.kind === "repo" ? this.mark(t, sc.repo, 32) : null,
-        title: sc.kind === "repo" ? label : sc.kind === "wait" ? "Worktrees" : "Worktrees · Global",
-        sub: [plural(total, "worktree", "worktrees"), [...sources].sort().join(" + "), sc.kind === "repo" ? tilde(sc.repo.main ?? sc.repo.folder) : "tous les projets"],
+      .child(bandRow(t, { m: this.m, color, icon: I("git-branch"), mark: sc.kind === "repo" ? this.mark(t, sc.repo, 32) : null,
+        title: sc.kind === "repo" ? label : sc.kind === "wait" ? "Worktrees" : "Worktrees · Global", // i18n: tech
+        sub: [rollText(this.m, `kg-head-n-${scopeKey}`, tr("worktrees", { n: total }), 14), [...sources].sort().join(" + "), sc.kind === "repo" ? tilde(sc.repo.main ?? sc.repo.folder) : tr("allProjects")],
         buttons: [
-          iconBtn(t, "kg-b-new", I("plus"), "Nouveau worktree (ctrl-b G)", () => run("mod.open", { name: "kt-new" })),
-          pulse(this.m, iconBtn(t, "kg-b-refresh", I("refresh-cw"), "Rafraîchir (r)", (cx) => this.refresh(cx, true), this.spinning > 0), this.spinning > 0),
-          iconBtn(t, "kg-b-more", "mods/kt-crosstalk/ellipsis.svg", "Plus", () => { this.more = !this.more; }, this.more)] }))
+          iconBtn(t, "kg-b-new", I("plus"), tr("newWorktreeKey"), () => run("mod.open", { name: "kt-new" })),
+          pulse(this.m, iconBtn(t, "kg-b-refresh", I("refresh-cw"), tr("refresh"), (cx) => this.refresh(cx, true), this.spinning > 0), this.spinning > 0),
+          iconBtn(t, "kg-b-more", "mods/kt-crosstalk/ellipsis.svg", tr("moreTip"), () => { this.more = !this.more; }, this.more)] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(color, "4d")))
       // The filter: the keys' ring (and the ink) while typing in it; the mode beside it.
       .child(h_flex().px(8).gap(8).items_center()
@@ -1278,19 +1289,19 @@ export default class Worktrees extends View {
           .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
           .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
-            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : "Filtrer par nom, branche, issue, note"))
+            .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : tr("filter")))
           .when(Boolean(this.query), (el) => el.child(div().id("kg-clear").flex_none().text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.cur = null; cx.notify(); })
             .child(svg(I("x")).size(13)))))
         .when(Boolean(this.keyed), (el) => el.child(this.mode(t, typing))))
       // The state row (filters.js): every worktree, or those with changes, a PR open / merged, an agent at work.
-      .child(div().px(8).child(filterRow({ id: "kg-states", t, state: this.wfRow, active: this.wf ?? "all", reduced: Boolean(shared("kt.reducedMotion")),
-        items: [["all", "Tous"], ["dirty", "Modifiés", "ansi3"], ["pr-open", "PR ouverte", "ansi2"], ["pr-merged", "PR mergée", "ansi5"], ["agent", "Agent actif", "working"]]
-          .map(([key, label, tint]) => ({ key, label, tint, count: groups.reduce((n, r) => n + (this.data[r.common]?.rows ?? []).filter((w) => key === "all" || this.wstate(w, key)).length, 0) })),
+      .child(div().px(8).child(filterRow({ id: "kg-states", t, state: this.wfRow, active: this.wf ?? "all", reduced: Boolean(shared("kt.reducedMotion")), scope: scopeKey,
+        items: [["all"], ["dirty", "ansi3"], ["pr-open", "ansi2"], ["pr-merged", "ansi5"], ["agent", "working"]]
+          .map(([key, tint]) => ({ key, label: tr(`wf.${key}`), tint, count: groups.reduce((n, r) => n + (this.data[r.common]?.rows ?? []).filter((w) => key === "all" || this.wstate(w, key)).length, 0) })),
         onPick: (k) => { this.wf = k === "all" ? null : k; this.cur = null; } })));
-    const none = sc.kind === "wait" || (loading && !total) ? "Chargement…"
-      : !groups.length ? "Aucun dépôt dans le registre des projets."
-      : total && !shown ? "Aucun worktree ne correspond au filtre." : !total && !list.length ? "Aucun worktree." : null;
+    const none = sc.kind === "wait" || (loading && !total) ? tr("loading")
+      : !groups.length ? tr("noRepo")
+      : total && !shown ? tr("noMatch") : !total && !list.length ? tr("noWorktree") : null;
     // Rows gone (removed, another repo shown) leave the selection, once every repo has its rows.
     if (groups.every((r) => this.data[r.common])) this.multi.keep(this.stops(true).map((s) => s.id));
     const bar = this.bulk(t);
@@ -1305,14 +1316,14 @@ export default class Worktrees extends View {
     if (sc.kind !== "repo") return more(page);
     // The foot: what `gwm clean --yes` would reclaim (never run here).
     const d = this.data[sc.repo.common];
-    if (cx && d) this.loadClean(sc.repo, d, cx);
+    if (ask && d) this.loadClean(sc.repo, d, ask);
     const c = this.clean[sc.repo.common];
     const measuring = Boolean(this.inflight[`c:${sc.repo.common}`]);
     return more(page.child(h_flex().flex_none().h(40).px(14).gap(8).items_center().rounded(16).border(1).border_color(t.border).bg(t.background)
       .child(svg(G("trash")).size(13).flex_none().text_color(t.dim))
       .child(this.eyebrow(t, "gwm clean", t.muted).flex_none())
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(c?.total ? t.foreground : t.dim)
-        .child(measuring ? "mesure en cours…" : c?.error ? `échec : ${c.error}` : c?.total ? `${c.total} récupérables (rapport seul, rien n'est supprimé)` : c ? "rien à récupérer" : "—"))
+        .child(measuring ? tr("measuring") : c?.error ? tr("cleanFailed", { error: c.error }) : c?.total ? tr("reclaimableReport", { total: size(c.total) }) : c ? tr("nothingToReclaim") : "—"))
       .when(measuring, (el) => el.child(svg(I("refresh-cw")).size(12).spin(900).text_color(t.dim)))));
   }
 
@@ -1337,7 +1348,7 @@ export default class Worktrees extends View {
 
   // `cursor`: the keys' cursor on it (a 1 px accent ring with the ink; transparent border elsewhere).
   linkLine(t, id, kind, x, repo, loading, cursor) {
-    if (!x) return div().h(26).flex().items_center().text_size(12.5).text_color(t.dim).child(kind === "pr" ? "Aucune PR liée" : "Aucune issue liée");
+    if (!x) return div().h(26).flex().items_center().text_size(12.5).text_color(t.dim).child(kind === "pr" ? tr("noPr") : tr("noIssue"));
     const lk = look(kind, x.state);
     return h_flex().id(id).h(30).px(8).mx(-8).gap(8).items_center().rounded(12).border(1)
       .border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00")).when(cursor, (el) => el.bg(alpha(t.accent, "24")))
@@ -1347,7 +1358,7 @@ export default class Worktrees extends View {
       .child(div().flex_none().font_family(MONO).text_size(12).text_color(t.foreground).child(`${kind === "pr" ? "PR " : ""}#${x.number}`))
       .when(Boolean(lk.label), (el) => el.child(this.tag(t, t[lk.color], lk.label)))
       .when(kind === "pr" && x.checks_total > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(11)
-        .text_color(x.checks_passed === x.checks_total ? t.done : t.ansi3).child(`checks ${x.checks_passed}/${x.checks_total}`)))
+        .text_color(x.checks_passed === x.checks_total ? t.done : t.ansi3).child(`checks ${x.checks_passed}/${x.checks_total}`))) // i18n: tech
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.muted).child(x.title ?? (loading ? "gwm status…" : "")))
       .when(Boolean(x.url || repo.slug), (el) => el.child(this.github(t, `${id}-gh`, repo, kind, x, 24)));
   }
@@ -1358,7 +1369,7 @@ export default class Worktrees extends View {
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(s.freshness === "active" ? t.foreground : t.muted)
         .child(s.name?.replace(/\*\*|`/g, "") || KIND_NAME[s.kind] || s.kind))
       .when(pinned, (el) => el.child(svg(I("pin")).size(11).flex_none().text_color(t.accent)))
-      .child(s.freshness === "active" ? this.tag(t, t.working, "actif") : div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(ago(s.last_activity)));
+      .child(s.freshness === "active" ? this.tag(t, t.working, tr("active")) : div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(ago(s.last_activity)));
   }
 
   // A linked worktree: everything about it.
@@ -1377,44 +1388,44 @@ export default class Worktrees extends View {
     // The head, Crosstalk's (DESIGN-REFERENCE.md): the project's logo (32 px) on its band, the
     // worktree's name, its branch · path, where the data came from and Rafraîchir.
     return this.panelBox(t, repo).child(v_flex().id("kg-p-wt").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).px(16).pb(16).gap(12)
-      .child(bandRow(t, { mark: this.mark(t, repo, 32), title: w.name, sub: [branchOf(w), tilde(w.path)],
-        buttons: [this.source(t, new Set(d?.source ? [d.source] : [])), iconBtn(t, "kg-p-refresh", I("refresh-cw"), "Rafraîchir (r)", (cx) => this.refresh(cx, true))] }).mx(-6))
-      .child(h_flex().flex_wrap().gap(5).children(this.marks(t, w, true)))
+      .child(bandRow(t, { m: this.m, mark: this.mark(t, repo, 32), title: w.name, sub: [branchOf(w), tilde(w.path)],
+        buttons: [this.source(t, new Set(d?.source ? [d.source] : [])), iconBtn(t, "kg-p-refresh", I("refresh-cw"), tr("refresh"), (cx) => this.refresh(cx, true))] }).mx(-6))
+      .child(h_flex().flex_wrap().gap(5).children(this.marks(t, w, true, `kg-p-mk-${w.path}`)))
       .child(this.dashed(t))
       .child(v_flex().gap(2)
-        .child(this.eyebrow(t, "Liens"))
+        .child(this.eyebrow(t, tr("links")))
         .child(this.linkLine(t, "kg-p-issue", "issue", issue, repo, statusLoading, cur === "issue"))
         .child(this.linkLine(t, "kg-p-pr", "pr", pr, repo, statusLoading, cur === "pr")))
       .child(this.dashed(t))
       .child(v_flex().gap(2)
-        .child(this.eyebrow(t, sessions.length ? `Agents · ${sessions.length}` : "Aucun agent détecté"))
+        .child(this.eyebrow(t, sessions.length ? `Agents · ${sessions.length}` : tr("noAgent"))) // i18n: tech
         .children(sessions.slice(0, 4).map((s) => this.session(t, s, pins.has(s.id))))
-        .when(sessions.length > 4, (el) => el.child(div().text_size(12).text_color(t.dim).child(`+ ${plural(sessions.length - 4, "autre session", "autres sessions")}`))))
+        .when(sessions.length > 4, (el) => el.child(div().text_size(12).text_color(t.dim).child(tr("moreSessions", { n: sessions.length - 4 })))))
       .when(Boolean(w.note), (el) => el.child(this.dashed(t)).child(v_flex().gap(6)
-        .child(this.eyebrow(t, "Note"))
+        .child(this.eyebrow(t, tr("noteTitle")))
         .child(div().max_h(132).overflow_hidden().text_size(12.5).line_height("19px").text_color(t.dim).child(w.note.trim()))))
       .child(this.dashed(t))
       .child(v_flex().gap(6)
-        .child(this.eyebrow(t, "Préfixe de commit"))
+        .child(this.eyebrow(t, tr("prefixTitle")))
         .child(h_flex().gap(8).items_center()
           .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(prefix ? t.foreground : t.dim).child(prefix ?? (prefix === null ? "—" : "…")))
           .when(Boolean(prefix), (el) => el.child(this.iconButton(t, "kg-p-prefix", G("copy"), (cx) => {
             cx.write_to_clipboard(`${prefix} `);
-            notify({ title: "Préfixe copié", body: prefix, level: "success", timeout: 2500 });
+            notify({ title: tr("prefixCopied"), body: prefix, level: "success", timeout: 2500 });
           })))))
       .child(this.dashed(t))
       .child(h_flex().flex_wrap().gap(6).items_center()
-        .child(this.mini(t, "kg-p-sync", G("sync"), "Sync", () => this.askSync(w)))
+        .child(this.mini(t, "kg-p-sync", G("sync"), "Sync", () => this.askSync(w))) // i18n: tech
         // Its note in kt-notes (shared "kt-notes.open": the repo, the worktree, taken once there).
-        .child(this.mini(t, "kg-p-note", "mods/kt-notes/notebook-pen.svg", "Note", () => {
+        .child(this.mini(t, "kg-p-note", "mods/kt-notes/notebook-pen.svg", tr("noteButton"), () => {
           setShared("kt-notes.open", { root: repo.main ?? repo.folder, worktree: w.path, at: Date.now() });
           show("notes");
         }))
-        .when(Boolean(issue), (el) => el.child(this.mini(t, "kg-p-oi", I("circle-dashed"), "Issue", () => this.inInbox(repo, "issue", issue))))
+        .when(Boolean(issue), (el) => el.child(this.mini(t, "kg-p-oi", I("circle-dashed"), "Issue", () => this.inInbox(repo, "issue", issue)))) // i18n: tech
         .when(Boolean(pr), (el) => el.child(this.mini(t, "kg-p-op", I("git-pull-request"), "PR", () => this.inInbox(repo, "pr", pr))))
-        .child(this.mini(t, "kg-p-all", I("layers"), "Tous les worktrees", () => show(PAGE)))
+        .child(this.mini(t, "kg-p-all", I("layers"), tr("allWorktrees"), () => show(PAGE)))
         .when(busy, (el) => el.child(h_flex().gap(6).items_center().text_size(12).text_color(t.muted)
-          .child(svg(I("refresh-cw")).size(12).spin(900)).child(`${this.busy.label} en cours…`)))));
+          .child(svg(I("refresh-cw")).size(12).spin(900)).child(tr("running", { what: this.busy.label }))))));
   }
 
   // A main checkout: the repo.
@@ -1429,27 +1440,29 @@ export default class Worktrees extends View {
     const doc = info?.doctor;
     const bad = (doc?.checks ?? []).filter((x) => x.status !== "ok");
     const failed = bad.filter((x) => x.status === "failed").length;
-    const doctor = !info ? ["…", t.dim] : !doc ? ["indisponible", t.dim]
-      : failed ? [plural(failed, "échec", "échecs"), t.ansi1]
-      : bad.length ? [plural(bad.length, "avertissement", "avertissements"), t.ansi3] : ["OK", t.done];
-    const trust = { trusted: ["présent · approuvé", t.done], drift: ["présent · modifié depuis l'approbation", t.ansi3],
-      untrusted: ["présent · non approuvé", t.ansi3], absent: ["absent", t.dim], unknown: ["présent · registre illisible", t.dim] }[info?.trust] ?? ["…", t.dim];
+    const doctor = !info ? ["…", t.dim] : !doc ? [tr("unavailable"), t.dim]
+      : failed ? [tr("failures", { n: failed }), t.ansi1]
+      : bad.length ? [tr("warnings", { n: bad.length }), t.ansi3] : ["OK", t.done];
+    const TRUST_COLOR = { trusted: t.done, drift: t.ansi3, untrusted: t.ansi3, absent: t.dim, unknown: t.dim };
+    const trust = TRUST_COLOR[info?.trust] ? [tr(`trust.${info.trust}`), TRUST_COLOR[info.trust]] : ["…", t.dim];
     const sock = d.sock ? d.sock.split("/").pop() : null;
     return this.panelBox(t, repo).child(v_flex().id("kg-p-repo").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(16).gap(12)
-      .child(this.head(t, I("folder"), "Dépôt", d, cx))
-      .child(div().text_size(17).font_semibold().text_color(t.foreground).child(repo.name))
+      .child(this.head(t, I("folder"), tr("repo"), d, cx))
+      // motion.js sharpen: the repo's name comes into focus when it is shown or changes, once.
+      .child(((ttl) => (this.m ? sharpen(this.m, `kg-repo-title:${repo.name}`, ttl) : ttl()))(
+        () => div().text_size(17).font_semibold().text_color(t.foreground).child(repo.name)))
       .child(v_flex().gap(4)
-        .child(this.meta(t, "Branche", h_flex().min_w(0).gap(8).items_center().font_family(MONO).text_size(12)
+        .child(this.meta(t, tr("meta.branch"), h_flex().min_w(0).gap(8).items_center().font_family(MONO).text_size(12)
           .child(div().min_w(0).truncate().text_color(t.accent).child(w?.branch ?? "—"))
-          .children(this.marks(t, w ?? {}, false))))
-        .child(this.meta(t, "Par défaut", info ? info.def ?? "—" : "…", t.foreground))
-        .child(this.meta(t, "Daemon", d.source === "daemon" ? `actif · ${sock}` : "absent · lecture par la CLI", d.source === "daemon" ? t.done : t.ansi3))
+          .children(this.marks(t, w ?? {}, false, `kg-r-mk-${w?.path ?? repo.name}`))))
+        .child(this.meta(t, tr("meta.default"), info ? info.def ?? "—" : "…", t.foreground))
+        .child(this.meta(t, "Daemon", d.source === "daemon" ? tr("daemonOn", { sock }) : tr("daemonOff"), d.source === "daemon" ? t.done : t.ansi3)) // i18n: tech
         .child(this.meta(t, "Doctor", doctor[0], doctor[1]))
         .child(this.meta(t, ".gwm.toml", trust[0], trust[1]))
-        .child(this.meta(t, "gwm clean", this.inflight[`c:${repo.common}`] ? "mesure en cours…" : c?.error ? `échec : ${c.error}` : c?.total ? `${c.total} récupérables` : c ? "rien à récupérer" : "…", c?.total ? t.foreground : t.dim)))
+        .child(this.meta(t, "gwm clean", this.inflight[`c:${repo.common}`] ? tr("measuring") : c?.error ? tr("cleanFailed", { error: c.error }) : c?.total ? tr("reclaimable", { total: size(c.total) }) : c ? tr("nothingToReclaim") : "…", c?.total ? t.foreground : t.dim)))
       .child(this.dashed(t))
       .child(v_flex().gap(2)
-        .child(this.eyebrow(t, linked.length ? `Worktrees · ${linked.length}` : "Aucun worktree lié"))
+        .child(this.eyebrow(t, linked.length ? `Worktrees · ${linked.length}` : tr("noLinked"))) // i18n: tech
         .children(linked.slice(0, 8).map((x) => h_flex().id(`kg-p-w-${x.path}`).h(30).px(8).mx(-8).gap(8).items_center().rounded(12).border(1)
           .border_color(x.path === cur ? alpha(t.accent, "99") : alpha(t.accent, "00")).when(x.path === cur, (el) => el.bg(alpha(t.accent, "24")))
           .cursor_pointer().when(x.path !== cur, (el) => el.hover((s) => s.bg(t.hover)))
@@ -1462,8 +1475,8 @@ export default class Worktrees extends View {
         .when(linked.length > 8, (el) => el.child(div().text_size(12).text_color(t.dim).child(`+ ${linked.length - 8}`))))
       .child(this.dashed(t))
       .child(h_flex().flex_wrap().gap(6)
-        .child(this.mini(t, "kg-p-all", I("layers"), "Tous les worktrees", () => show(PAGE)))
-        .child(this.mini(t, "kg-p-new", I("plus"), "Nouveau worktree", () => run("mod.open", { name: "kt-new" })))));
+        .child(this.mini(t, "kg-p-all", I("layers"), tr("allWorktrees"), () => show(PAGE)))
+        .child(this.mini(t, "kg-p-new", I("plus"), tr("newWorktree"), () => run("mod.open", { name: "kt-new" })))));
   }
 
   panelView(t, sc, cx) {
@@ -1477,10 +1490,10 @@ export default class Worktrees extends View {
       .child(div().text_size(14).font_medium().text_color(t.foreground).child(title))
       .when(Boolean(detail), (el) => el.child(div().max_w(320).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(detail))));
     if (sc.kind === "wait") return blank("…", null);
-    if (sc.kind === "none") return blank("Hors dépôt git", sc.cwd ? tilde(sc.cwd) : "Aucun terminal dans ce thread");
+    if (sc.kind === "none") return blank(tr("outsideRepo"), sc.cwd ? tilde(sc.cwd) : tr("noTerminal"));
     const d = this.data[sc.repo.common];
-    if (!d) return blank("Chargement…", sc.repo.name);
-    if (d.error && !d.rows.length) return blank("gwm list a échoué", d.error);
+    if (!d) return blank(tr("loading"), sc.repo.name);
+    if (d.error && !d.rows.length) return blank(tr("listFailed"), d.error);
     const w = enclosing(d.rows, sc.cwd);
     // The keys' cursor, while the panel has the keyboard. Its rows sit in the card's fifth child
     // (the links, or the linked worktrees): that one is brought into view once after a move.
@@ -1537,6 +1550,6 @@ export default class Worktrees extends View {
     this.shown = vis;
     // Only a shown copy asks for more (gwm status, info, clean): pass cx then.
     const ask = vis && live ? cx : null;
-    return this.panel ? this.panelView(t, sc, ask) : this.pageView(t, sc, ask);
+    return this.panel ? this.panelView(t, sc, ask) : this.pageView(t, sc, ask, cx);
   }
 }

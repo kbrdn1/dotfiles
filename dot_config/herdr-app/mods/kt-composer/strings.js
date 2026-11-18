@@ -1,0 +1,30 @@
+// kt-composer's words (I18N.md). The bar's short labels (CTX, CACHE, TTL, PR, CI, FLOW, TODO, AGENTS,
+// WORKTREE, CHECKOUT, 5H) stay as they are, as git switch.
+export default {
+  fr: {
+    "branch.title": "Branche inchangée",
+    "branch.body": "L'agent travaille dans ce dossier : pas de git switch {branch}.",
+    switchRefused: "git switch a refusé",
+    switchFailed: "git switch n'a pas pu tourner",
+    context: "Contexte",
+    expired: "expiré",
+    duration: "DURÉE",
+    notRun: "non exécuté",
+    blockers: { one: "{n} bloquant", other: "{n} bloquants" },
+    week: "7J",
+    day: "j",
+  },
+  en: {
+    "branch.title": "Branch unchanged",
+    "branch.body": "The agent is working in this folder: no git switch {branch}.",
+    switchRefused: "git switch refused",
+    switchFailed: "git switch couldn't run",
+    context: "Context",
+    expired: "expired",
+    duration: "DURATION",
+    notRun: "not run",
+    blockers: { one: "{n} blocking", other: "{n} blocking" },
+    week: "7D",
+    day: "d",
+  },
+};

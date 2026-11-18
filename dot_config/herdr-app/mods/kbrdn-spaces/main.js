@@ -6,6 +6,12 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { motionState, frame, fade } from "./motion.js";
+import { refreshOn } from "./bus.js";
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -64,6 +70,7 @@ export function tone(t, status) {
 
 export default class Spaces extends View {
   init(_props, cx) {
+    this.motion = motionState(); // ANIMATIONS.md: the active space's ink fades from one row to the next
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
@@ -349,7 +356,7 @@ export default class Spaces extends View {
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
         || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
-    const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : "Loading…");
+    const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : tr("loading"));
     if (!remote.length) {
       if (loading(null) && !rows.length) return [loadingRow(null)];
       this.activeAt = rows.findIndex(r => r.w.active);
@@ -367,7 +374,7 @@ export default class Spaces extends View {
       const icon = svg(`mods/workspace-chrome/${m ? "server" : "monitor"}.svg`).size(13).flex_none();
       const badge = div().absolute().right(-3).bottom(-2).size(6).rounded(3).border_1().border_color(t.chrome).bg(connected ? t.ansi2 : t.dim);
       const head = h_flex().id(`machine-${m ?? "local"}`).h(26).flex_none().px(collapsed ? 0 : 8).gap(7).items_center().text_size(11).text_color(t.dim).font_family("Monaspace Krypton")
-        .when(collapsed, el => el.mt(4).w(RAIL_CELL).justify_center().rounded(6).tooltip(login ? `${m} needs a login: run ${login}. Click for Copy.` : m ? `${m} · ${connected ? "connected" : (machine?.state ?? "asleep").replace(/_/g, " ")}` : "This computer"))
+        .when(collapsed, el => el.mt(4).w(RAIL_CELL).justify_center().rounded(6).tooltip(login ? tr("loginTip", { m, login }) : m ? `${m} · ${connected ? "connected" : (machine?.state ?? "asleep").replace(/_/g, " ")}` : tr("thisComputer"))) // i18n: tech (hc's states)
         .cursor_pointer().hover(s => s.bg(t.hover))
         .on_click((_e, cx) => {
           if (collapsed && login) { run("app.settings", { section: "machines" }); return; }
@@ -376,19 +383,19 @@ export default class Spaces extends View {
           cx.notify();
         })
         .when(machine?.keeps_running_after_logout === false, el => el.child(div().id(`machine-logout-${m}`)
-          .flex_none().text_color(t.blocked).tooltip("Agents stop when you disconnect. Click for the fix.")
+          .flex_none().text_color(t.blocked).tooltip(tr("logoutTip"))
           .on_click((_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "machine-add", kind: "dialog", width: 560 }); }).child("⚠")))
         .when(!collapsed, el => el.child(icon))
         .when(collapsed, el => el.child(div().relative().flex_none().child(icon).when(Boolean(m), el => el.child(badge))))
-        .when(!collapsed, el => el.child(div().flex_1().truncate().child(m ?? "This computer"))
-          .when(!connected && !rebuilt && !login, el => el.child(div().flex_none().child((machine?.state ?? "asleep").replace(/_/g, " "))))
+        .when(!collapsed, el => el.child(div().flex_1().truncate().child(m ?? tr("thisComputer")))
+          .when(!connected && !rebuilt && !login, el => el.child(div().flex_none().child((machine?.state ?? "asleep").replace(/_/g, " ")))) // i18n: tech
           .when(rebuilt, el => el.child(h_flex().flex_none().gap(3).items_center()
-            .child(div().max_w(140).truncate().child(repair?.error || "rebuilt ·"))
+            .child(div().max_w(140).truncate().child(repair?.error || tr("rebuilt")))
             .child(div().id(`machine-connect-${m}`).text_color(repair?.error ? t.blocked : t.muted)
               .hover(s => s.text_color(t.foreground))
-              .tooltip(repair?.error || "This machine was rebuilt or replaced. Click to connect to the new one.")
+              .tooltip(repair?.error || tr("rebuiltTip"))
               .on_click((_e, cx) => { cx.stop_propagation(); this.reconnect(machine, cx); })
-              .child(repair?.busy ? "Connecting…" : "Connect"))))
+              .child(repair?.busy ? tr("connecting") : tr("connect")))))
           .when(connected, el => el.child(div().id(`machine-add-${m ?? "local"}`).flex_none().px(4).rounded(4).hover(s => s.bg(t.hover).text_color(t.foreground))
             .on_click((_e, cx) => { cx.stop_propagation(); run("space.new", { machine: m ?? "" }); }).child("+")))
           .child(div().size(6).rounded(3).flex_none().bg(connected ? t.ansi2 : t.dim))
@@ -396,20 +403,20 @@ export default class Spaces extends View {
       const empty = h_flex().id(`machine-new-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).gap(7).items_center().rounded(7)
         .text_size(12).text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
         .on_click(() => run("space.new", { machine: m ?? "" }))
-        .when(collapsed, el => el.w(RAIL_CELL).rounded(6).justify_center().tooltip(`New space on ${m ?? "this computer"}`)
+        .when(collapsed, el => el.w(RAIL_CELL).rounded(6).justify_center().tooltip(m ? tr("newSpaceOn", { m }) : tr("newSpaceHere"))
           .child(h_flex().size(18).rounded(5).border_1().border_color(t.dim).items_center().justify_center()
             .child(svg("mods/workspace-chrome/plus.svg").size(10))))
-        .when(!collapsed, el => el.child(svg("mods/workspace-chrome/plus.svg").size(12)).child("New space there"));
+        .when(!collapsed, el => el.child(svg("mods/workspace-chrome/plus.svg").size(12)).child(tr("newSpaceThere")));
       if (!collapsed && rebuilt) { before += 1; return [head]; }
       const cell = collapsed ? railCell : (el) => el;
       const guidance = !collapsed && login ? [v_flex().px(8).pb(6).gap(3).flex_none()
-        .child(div().text_size(11).text_color(t.blocked).child("needs a login: run"))
+        .child(div().text_size(11).text_color(t.blocked).child(tr("needsLogin")))
         .child(h_flex().gap(5).items_center()
           .child(div().flex_1().min_w(0).truncate().tooltip(login).text_size(11).text_color(t.muted).child(login))
           .child(div().id(`machine-login-copy-${m}`).flex_none().px(5).py(2).rounded(4)
             .text_size(11).text_color(t.foreground).bg(t.raised).cursor_pointer().hover(s => s.bg(t.hover))
             .on_click((_e, cx) => { cx.stop_propagation(); cx.write_to_clipboard(login); this.copiedLogin = login; cx.notify(); })
-            .child(this.copiedLogin === login ? "Copied" : "Copy")))] : [];
+            .child(this.copiedLogin === login ? tr("copied") : tr("copy"))))] : [];
       const items = [cell(head), ...guidance, ...(folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
       const first = folded ? -1 : mine.findIndex(r => r.w.active);
       if (first >= 0) this.activeAt = before + 1 + guidance.length + first;
@@ -455,9 +462,11 @@ export default class Spaces extends View {
       .flex_none()
       .justify_center()
       .rounded(10)
-      // kbrdn.dev SegmentInk on the active space: primary 14% fill, 40% border (transparent border elsewhere: no shift).
-      .border(1).border_color(on ? t.accent + "66" : t.accent + "00")
-      .when(on, (el) => el.bg(t.accent + "24"))
+      // kbrdn.dev SegmentInk on the active space: primary 14% fill, 40% border, a layer under the row that
+      // fades in and out with the selection (motion.js fade: gpui animates no color). Transparent border: no shift.
+      .border(1).border_color(t.accent + "00")
+      .child(fade(this.motion, div().id(`space-ink-${w.id}`).absolute().top(-1).left(-1).right(-1).bottom(-1).rounded(10)
+        .border(1).border_color(t.accent + "66").bg(t.accent + "24"), on))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .when(this.pressed === w.id && this.over !== w.id, (el) => el.opacity(0.5))
       .when(this.pressed !== null && this.over === w.id && this.pressed !== w.id, (el) => el.child(
@@ -517,8 +526,15 @@ export default class Spaces extends View {
       .child(div().absolute().right(5).text_color(tone(t, w.status)).child(glyph(w.status))));
   }
 
-  render() {
+  render(cx) {
     const t = theme();
+    frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    // DATA-SYNC.md: a commit, a switch or a worktree made by another mod: every known place looks again
+    // (its own watches and the end of an agent's turn already cover what happens outside Herdr).
+    if (cx) refreshOn(this, cx, "git", ["git", "gwm"], async (cx) => {
+      const all = new Set(Object.keys(this.git));
+      if (all.size) this.refreshGit(all, cx);
+    });
     const collapsed = narrow();
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
     const sp = spaces();
@@ -544,7 +560,7 @@ export default class Spaces extends View {
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
         // kbrdn.dev `.eyebrow`
-        .when(!collapsed, el => el.child(div().font_family("Monaspace Krypton").text_size(11).text_color(t.muted).child("SPACES")))
+        .when(!collapsed, el => el.child(div().font_family("Monaspace Krypton").text_size(11).text_color(t.muted).child(tr("spaces"))))
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => run("space.new")).child(svg("mods/workspace-chrome/plus.svg").size(14))))
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always").track_scroll(this.scroll)

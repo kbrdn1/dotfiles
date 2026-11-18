@@ -2,8 +2,10 @@
   "description": "La console des mods : où chacun sert, son état, ses modules partagés, ses options.",
   "overlay": { "kind": "dialog", "width": 1, "height": 1, "frame": "none" },
   "options": [
-    { "key": "watch", "label": "Suivre les changements", "type": "bool", "default": true,
-      "description": "Console ouverte, relit mods/ et layouts/ quand un fichier y change (au plus toutes les 2 s). Sinon, seulement à l'ouverture et sur r." },
-    { "key": "sort", "label": "Tri", "type": "enum", "values": ["name", "recent"], "labels": ["Nom", "Récents"], "default": "name",
-      "description": "L'ordre des mods dans chaque groupe." }
+    { "key": "watch", "label": { "fr": "Suivre les changements", "en": "Follow the changes" }, "type": "bool", "default": true,
+      "description": { "fr": "Console ouverte, relit mods/ et layouts/ quand un fichier y change (au plus toutes les 2 s). Sinon, seulement à l'ouverture et sur r.",
+        "en": "With the console open, reads mods/ and layouts/ again when a file changes there (every 2 s at most). Else, only on opening and on r." } },
+    { "key": "sort", "label": { "fr": "Tri", "en": "Sort" }, "type": "enum", "values": ["name", "recent"],
+      "labels": [{ "fr": "Nom", "en": "Name" }, { "fr": "Récents", "en": "Recent" }], "default": "name",
+      "description": { "fr": "L'ordre des mods dans chaque groupe.", "en": "The mods' order in each group." } }
   ] }

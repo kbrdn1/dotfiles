@@ -11,9 +11,13 @@
 //   its last 256 KiB through tail | grep (codex.rs' tail size; only token_count lines reach the mod).
 // - The others (Grok, Devin, Muse, omp, OpenCode Go, Antigravity) by their credential files or CLI:
 //   none has data here, so they are one « Non disponibles » card that says why.
-// Read only. No network: none of the providers present here has a network collector configured
-// (Codex's quota comes from its rollout, not from codex app-server). No keychain.
-// Loads on open and on Rafraîchir, never on a timer.
+// - Claude Code, also: GET /api/oauth/usage (Claude Code's own /usage endpoint), with the Claude Code
+//   OAuth token read from the keychain for that one request, approved by Kylian (2026-11-18, « 5. oui »):
+//   the weekly limits (all, Fable), the share per surface, Fable's share of the week, the credits.
+//   The statusLine stays the fallback when that call fails.
+// Read only: that one GET is the only network call (Codex's quota comes from its rollout, not from
+// codex app-server), and nothing here can use a limit reset (the button opens claude.ai, no more).
+// Loads on open and on Rafraîchir, never on a timer; the GET at most once per 2 min (USAGE_CACHE).
 // Keys (vim.js): j/k element, gg/G, ctrl-d/u, tab/shift-tab card, enter/o on a session: focus it,
 // r refresh, q/esc close. `kt-usage.key:<keys>` feeds keys, `kt-usage.refresh` refreshes (tests).
 
@@ -22,13 +26,21 @@ import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { theme, props, closeOverlay, settings, nextCommand, checking, agents, knownAgents, exec, home, readTextFile, run, shared, watchFolder } from "herdr";
 import * as fs from "fs/promises";
 import { ring, ringColor } from "./ring.js";
+import { costLevel, levelColor } from "./levels.js";
 import { Vim, keysOf, step } from "./vim.js";
-import { motionState, frame, enter, pulse, stagger, MS } from "./motion.js";
+import { motionState, frame, enter, pulse, stagger, sheet, leave, sharpen } from "./motion.js";
 import { bump } from "./bus.js";
 import { viz } from "./viz.js";
-import { claudeWindows, codexReading, codexWindows, dayCost, resetLabel, ago, clock, day, tierLabel, resetAdvice } from "./data.js";
+import { roll, rollText } from "./roll.js";
+import { claudeWindows, codexReading, codexWindows, dayCost, resetLabel, ago, clock, day, tierLabel, resetAdvice, parseOauthUsage, moneyLabel, speak } from "./data.js";
+import { makeT, num } from "./i18n.js";
+import strings from "./strings.js";
 import { ditherBand, TOP, ALL } from "./dither.js"; // the shared band (DESIGN-REFERENCE.md), tinted per provider
 
+const tr = makeT(strings);
+speak(makeT); // data.js' words follow kt.lang too
+// A window's label (data.js' codes: 5h, 7j) as shown.
+const wlabel = (l) => tr(`w.${l}`);
 const MONO = "Monaspace Krypton";
 const CARD = 780;
 const TIMEOUT = 15000; // every exec
@@ -41,11 +53,8 @@ const unix = () => Math.floor(Date.now() / 1000);
 const midnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return Math.floor(d.getTime() / 1000); };
 const plan = (p) => (p ? p.charAt(0).toUpperCase() + p.slice(1) : null);
 // Limit resets are used only on this official page, by Kylian (support.claude.com/en/articles/17007452).
-// The console opens it in the browser and nothing else: no request to Anthropic, no keychain.
+// The console opens it in the browser and nothing else: it never asks Anthropic to use one.
 const RESETS_URL = "https://claude.ai/settings/usage";
-const RESETS_ABOUT = "Un reset remet à plein la limite qu'il vise (hebdo, Fable, ou les deux). Il est irréversible et peut "
-  + "expirer s'il n'est pas utilisé. La limite hebdomadaire repasse quand même à zéro à son heure habituelle. Il ne "
-  + "s'utilise que sur claude.ai ou Claude Desktop (Réglages › Usage › Reset for free) : Claude Code ne l'expose pas.";
 // Reads. json: null no file, undefined unreadable or torn (statusline.ts rewrites on every render).
 const json = async (p) => { try { const t = await readTextFile(p); return t == null ? null : JSON.parse(t); } catch { return undefined; } };
 const has = async (p) => { try { return await fs.exists(p); } catch { return false; } };
@@ -57,7 +66,67 @@ const sh = async (script, args) => {
     return r.code === 0 ? r.stdout : null;
   } catch { return null; }
 };
-const usd = (n) => `$${n.toFixed(2)}`;
+const usd = (n) => `$${num(n, 2)}`;
+
+// ---------- Claude Code's usage endpoint (one GET, Kylian's approval) ----------
+// The only network call of the console: GET, this URL, these two headers. The token is Claude Code's
+// OAuth access token, read from the keychain for this one request and dropped with it: never stored,
+// logged, shown, nor handed to a program (it travels in fetch's header only). No OAuth refresh: a 401
+// says so and stops (a refresh would rotate Claude Code's own tokens).
+const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+const USAGE_TTL = 120000; // 2 min
+// The last answer (parsed usage or an error message, never the token), shared by the console's copies
+// so that closing and reopening it within 2 min doesn't call again.
+let USAGE_CACHE = null; // { at: ms, usage?, error? }
+
+async function claudeToken() {
+  let r;
+  try {
+    r = await exec("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], { timeout: TIMEOUT });
+  } catch {
+    return { error: "keychainUnavailable" }; // i18n: tech (err.<error>, said at render)
+  }
+  if (r.code !== 0) return { error: "keychainNotFound" }; // i18n: tech
+  try {
+    const token = JSON.parse(r.stdout)?.claudeAiOauth?.accessToken;
+    return typeof token === "string" && token ? { token } : { error: "keychainNoToken" }; // i18n: tech
+  } catch {
+    return { error: "keychainUnreadable" }; // i18n: tech
+  }
+}
+
+// 15 s at most: fetch has no timeout of its own, so it races a one-shot timer (the request may finish
+// later; its answer is then ignored).
+async function fetchUsage(cx, now) {
+  const t = await claudeToken();
+  if (t.error) return { error: t.error };
+  let res;
+  try {
+    res = await Promise.race([
+      fetch(USAGE_URL, { method: "GET", headers: { Authorization: `Bearer ${t.token}`, "anthropic-beta": "oauth-2025-04-20" } }),
+      new Promise((_, fail) => cx.timer.after(TIMEOUT, () => fail(new Error("timeout")))),
+    ]);
+  } catch (e) {
+    return { error: e?.message === "timeout" ? "timeout" : "network" }; // i18n: tech
+  }
+  if (res.status === 401) return { error: "expired" }; // i18n: tech
+  // fetch follows redirects and offers no switch: an answer from another host is refused.
+  if (!String(res.url ?? USAGE_URL).startsWith("https://api.anthropic.com/")) return { error: "host" }; // i18n: tech
+  if (!res.ok) return { error: "http", status: res.status }; // i18n: tech
+  try {
+    const usage = parseOauthUsage(await res.json(), now);
+    return usage ? { usage } : { error: "unreadable" }; // i18n: tech
+  } catch {
+    return { error: "unreadable" }; // i18n: tech
+  }
+}
+
+// The cached answer when it is under 2 min old, else one GET (errors are cached too: no retry loop).
+async function usageApi(cx) {
+  if (USAGE_CACHE && Date.now() - USAGE_CACHE.at < USAGE_TTL) return { ...USAGE_CACHE, cached: true };
+  USAGE_CACHE = { at: Date.now(), ...(await fetchUsage(cx, unix())) };
+  return USAGE_CACHE;
+}
 // A provider's tint: its Herdr tile when it has a color; Claude Code's and Codex's tiles are both
 // #1c1d21, which would vanish on a dark card and look alike, so then FILTERS.md's provider tints.
 const TINTS = { claude: "accent", codex: "ansi6", opencode: "ansi2", cursor: "ansi4" };
@@ -110,8 +179,9 @@ export default class Usage extends View {
 
   // Not named close(): Herdr calls a view's close(cx) when its overlay goes and on a hot reload, and
   // closing the overlay from there shut the console on every save of this mod.
-  dismiss() {
-    closeOverlay(props().overlay);
+  // motion.js leave(): the veil fades out and the card sinks, then the dialog closes.
+  dismiss(cx) {
+    leave(this.motion, cx, "ku", () => closeOverlay(props().overlay));
   }
 
   // A full read; then bump("usage") (DATA-SYNC.md): kt-threads' 5h rings and kbrdn-status follow.
@@ -122,7 +192,7 @@ export default class Usage extends View {
     cx.notify();
     cx.spawn(async (cx) => {
       try {
-        this.data = await this.load(this.data);
+        this.data = await this.load(this.data, cx);
         this.error = null;
       } catch (e) {
         this.error = String(e?.message ?? e);
@@ -135,12 +205,13 @@ export default class Usage extends View {
 
   // ---------- reading (all local, read only) ----------
 
-  // Everything: on open and on Rafraîchir.
-  async load(prev) {
+  // Everything: on open and on Rafraîchir (the folder watches re-read their own source only, never the API).
+  async load(prev, cx) {
     const d = { at: unix(), programs: {} };
     // Program tiles, and whether Herdr finds each CLI (its own check, at most once a minute).
     try { for (const p of await knownAgents()) d.programs[p.key] = p; } catch { /* tiles fall back */ }
     d.claude = await this.loadClaude(prev?.claude, d.programs, true);
+    d.api = await usageApi(cx);
     d.codex = await this.loadCodex(d.programs);
     d.others = await this.loadOthers(d.programs);
     return d;
@@ -233,7 +304,7 @@ export default class Usage extends View {
     if (!a) return false;
     if (a === "pending" || a === "count") return true;
     const n = this.items.length;
-    if (a === "escape" || a === "quit") this.dismiss();
+    if (a === "escape" || a === "quit") this.dismiss(cx);
     else if (a === "refresh") this.refresh(cx);
     else if (a === "open" || a === "right") this.activate(this.items[this.cur], cx);
     else if (a === "tab-next" || a === "tab-prev") this.jump(a === "tab-next" ? 1 : -1);
@@ -264,7 +335,7 @@ export default class Usage extends View {
     else if (it.kind === "resets") this.openResets();
     else if (it.kind === "session") {
       run("agent.focus", { terminal: it.terminal });
-      this.dismiss();
+      this.dismiss(cx);
     }
   }
 
@@ -308,7 +379,9 @@ export default class Usage extends View {
       .child(h_flex().size_full().px(12).gap(10).items_center()
         .child(mark)
         .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(title))
+          // motion.js sharpen: the title comes into focus when it arrives or changes, once.
+          .child(((ttl) => (this.m ? sharpen(this.m, `${id}-title:${title}`, ttl) : ttl()))(
+            () => div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(title)))
           .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(sub)))
         .children(buttons));
   }
@@ -328,7 +401,8 @@ export default class Usage extends View {
 
   eyebrow(t, text) {
     return h_flex().pt(4).gap(10).items_center()
-      .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(text.toUpperCase()))
+      // An element (rollText: a count that rolls) goes as it is.
+      .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(typeof text === "string" ? text.toUpperCase() : text))
       .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border));
   }
 
@@ -339,20 +413,20 @@ export default class Usage extends View {
     if (!w.missing && !w.passed) {
       const p = Math.round(w.used);
       const reset = div().id(`${id}-reset`).text_size(12).text_color(t.dim)
-        .tooltip(w.resets ? `${day(w.resets)} à ${clock(w.resets)}` : "reset non fourni").child(resetLabel(w, now));
+        .tooltip(w.resets ? tr("dayAt", { day: day(w.resets), time: clock(w.resets) }) : tr("resetNone")).child(resetLabel(w, now));
       if (main) return h_flex().gap(16).items_center()
-        .child(this.V.gauge(name, w.used, { unit: "%", size: 168, color: ringColor(t, p), id }))
-        .child(v_flex().flex_1().min_w(0).gap(4).child(div().font_family(MONO).text_size(11).text_color(t.muted).child(w.label)).child(reset));
-      return this.V.progress(name, w.used, { detail: resetLabel(w, now), color: ringColor(t, p), id });
+        .child(this.V.gauge(name, w.used, { unit: "%", size: 168, color: ringColor(t, p, { severity: w.severity }), id }))
+        .child(v_flex().flex_1().min_w(0).gap(4).child(div().font_family(MONO).text_size(11).text_color(t.muted).child(wlabel(w.label))).child(reset));
+      return this.V.progress(name, w.used, { detail: resetLabel(w, now), color: ringColor(t, p, { severity: w.severity }), id });
     }
     const empty = (mark) => div().size(48).flex_none().rounded_full().border(2).border_dashed().border_color(t.border)
       .flex().items_center().justify_center().font_family(MONO).text_size(12).text_color(t.dim).child(mark);
     const small = (text, color = t.dim) => div().text_size(11).text_color(color).child(text);
-    const lines = [div().font_family(MONO).text_size(11).text_color(t.muted).child(w.label)];
+    const lines = [div().font_family(MONO).text_size(11).text_color(t.muted).child(wlabel(w.label))];
     if (w.missing) lines.push(small(why, t.muted));
     else {
-      lines.push(small("usage actuel inconnu", t.muted));
-      lines.push(small(`${resetLabel(w, now)}, après la dernière lecture (${Math.round(w.last)} %)`));
+      lines.push(small(tr("unknownUsage"), t.muted));
+      lines.push(small(tr("afterLast", { reset: resetLabel(w, now), n: Math.round(w.last) })));
     }
     return h_flex().gap(12).items_center().child(empty(w.missing ? "—" : "?")).child(v_flex().flex_1().min_w(0).gap(2).children(lines));
   }
@@ -366,7 +440,7 @@ export default class Usage extends View {
       .border_color(on ? alpha(t.accent, "99") : t.border)
       .on_click((_e, cx) => { this.cur = i; cx.notify(); })
       .child(this.band(t, { id: `ku-band-${key}`, tint, mark: this.tile(t, key, 32), title: name, sub,
-        buttons: [this.iconBtn(t, `ku-refresh-${key}`, I("refresh-cw"), "Rafraîchir (r)", (cx) => this.refresh(cx))] }))
+        buttons: [this.iconBtn(t, `ku-refresh-${key}`, I("refresh-cw"), tr("refreshTip"), (cx) => this.refresh(cx))] }))
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(tint, "4d")))
       // Breathes while a refresh reads (motion.js pulse: a loop only in that active state).
       .child(pulse(this.m, v_flex().id(`ku-body-${key}`).p(12).gap(10).children(body), this.busy));
@@ -379,65 +453,95 @@ export default class Usage extends View {
     const items = [{ kind: "card", id: "claude" }];
     // The weekly limit first: on Ultra (Max 20x, verified) it is the only one, Anthropic removed the
     // 5h window late October 2026 (five_hour null). A five_hour that comes back shows beside it.
-    const [five, week] = claudeWindows(q, now);
-    list.push(this.window(t, "ku-g-claude-7j", week, { why: "non fourni par Claude Code en ce moment", name: "Quota hebdo", main: true }, now));
-    if (!five.missing) list.push(this.window(t, "ku-p-claude-5h", five, { name: "Quota 5 h" }, now));
-    if (five.missing) list.push(div().px(10).text_size(12).text_color(t.muted).child(c.plan === "Ultra"
-      ? "Fenêtre 5h : supprimée sur ton abonnement (Ultra vérifié)"
-      : "Fenêtre 5h : non fournie par Claude Code en ce moment"));
+    // The usage endpoint's answer (cached 2 min) when the GET answered; the statusLine otherwise.
+    const api = this.data.api;
+    const u = api?.usage;
+    const [five, slWeek] = claudeWindows(q, now);
+    const week = u?.week ?? slWeek;
+    list.push(this.window(t, "ku-g-claude-7j", week, { why: tr("notGivenNow"), name: tr("weekQuota"), main: true }, now));
+    list.push(div().px(10).font_family(MONO).text_size(10.5).text_color(api?.error ? t.blocked : t.dim).child(
+      api?.error ? tr("api.error", { error: tr(`err.${api.error}`, { status: api.status }) })
+        : u ? tr("api.read", { ago: ago(Math.floor(api.at / 1000), now), cached: api.cached ? tr("api.cached") : "",
+          severity: u.week?.severity ? tr("api.severity", { severity: u.week.severity }) : "" })
+          : tr("api.notYet")));
+    // Fable's weekly limit, and its share of the week, as the endpoint gives them.
+    if (u?.scoped) list.push(this.window(t, "ku-p-claude-fable", u.scoped, {
+      why: tr("notGiven"), name: tr(u.scoped.active === false ? "scopedInactive" : "scopedName", { name: u.scoped.name ?? tr("scoped") }) }, now));
+    if (u?.shares.length) list.push(div().px(10).text_size(12).text_color(t.muted).child(u.shares.map((s) =>
+      tr(s.used != null ? "shareUsed" : "share", { name: s.label ?? tr("scoped"), n: Math.round(s.value), used: s.used != null ? Math.round(s.used) : "" })).join(" · ")));
+    if (!five.missing) list.push(this.window(t, "ku-p-claude-5h", five, { name: tr("fiveQuota") }, now));
+    if (five.missing) list.push(div().px(10).text_size(12).text_color(t.muted).child(tr(c.plan === "Ultra" ? "five.ultra" : "five.none")));
+    // The week per surface (Claude Code, Chats, Cowork, Other): a donut, the second heavy visual.
+    if (u?.rows.length) {
+      list.push(this.eyebrow(t, tr("bySurface")));
+      list.push(div().px(10).child(this.V.donut(u.rows.map((r) => ({ label: r.label, value: r.value })),
+        { label: tr("surfaces"), value: tr("sevenDays"), size: 132, id: "ku-d-claude-surfaces" })));
+    }
+    // Usage credits: said as the endpoint gives them, or "non fourni".
+    if (u) {
+      const credit = (name, c) => {
+        if (c == null) return tr("credit.none", { name });
+        const state = c.enabled === false ? (c.byUser ? tr("credit.offByYou") : c.reason ? tr("credit.offWhy", { why: c.reason }) : tr("credit.off"))
+          : c.enabled ? tr("credit.on") : tr("credit.unknown");
+        const used = moneyLabel(c.used);
+        return !used ? tr("credit.line", { name, state })
+          : c.limit ? tr("credit.usedOf", { name, state, used, limit: moneyLabel(c.limit) }) : tr("credit.used", { name, state, used });
+      };
+      list.push(div().px(10).text_size(12).text_color(t.muted).child(`${credit(tr("credits"), u.extra)} · ${credit(tr("spend"), u.spend)}`));
+    }
 
     // The live Claude sessions on this computer (a remote one's statusLine files are on its machine).
     const byT = new Map(c.files.map((f) => [f.terminal, f]));
     const live = agents().filter((a) => a.app === "claude-code" && !a.address.includes("/"));
-    list.push(this.eyebrow(t, `Sessions actives · ${live.length}`));
-    if (!live.length) list.push(div().px(10).text_size(12).text_color(t.dim).child("Aucune session Claude Code en cours dans Herdr."));
+    list.push(this.eyebrow(t, rollText(this.m, "ku-sessions-n", tr("sessions", { n: live.length }).toUpperCase(), 14)));
+    if (!live.length) list.push(div().px(10).text_size(12).text_color(t.dim).child(tr("noSession")));
     for (const a of live) {
       const idx = base + items.length;
       items.push({ kind: "session", id: `s-${a.address}`, terminal: a.address });
-      list.push(this.session(t, a, byT.get(a.address), idx, now));
+      // A row's figures roll while the list stays short (ANIMATIONS.md: not past 12 rows).
+      list.push(this.session(t, a, byT.get(a.address), idx, now, live.length <= 12));
     }
 
     const cost = dayCost(c.files, midnight());
     // A stat without its trend: there is no history of past days to draw one from (none is invented).
     list.push(h_flex().px(10).gap(10).items_start()
-      .child(div().flex_1().min_w(0).child(this.V.stat("Coût du jour", cost.sessions ? usd(cost.total) : "—", {
-        detail: `${cost.sessions} session${cost.sessions > 1 ? "s" : ""} écrite${cost.sessions > 1 ? "s" : ""} aujourd'hui`, id: "ku-s-claude-cost" })))
-      .child(this.pill(t, "ESTIMATION", t.blocked)));
-    list.push(div().px(10).text_size(11).text_color(t.dim).child(
-      "Équivalent API calculé par Claude Code, pas facturé sur l'abonnement. Dernier cost_usd de chaque session (sans double compte), "
-      + "cumulé depuis le début de la session ; une session dont le terminal a resservi n'est plus comptée."));
+      .child(div().flex_1().min_w(0).child(this.V.stat(tr("dayCost"), cost.sessions ? usd(cost.total) : "—", {
+        detail: tr("written", { n: cost.sessions }), id: "ku-s-claude-cost", snap: 2 })))
+      .child(this.pill(t, tr("estimate"), t.blocked)));
+    list.push(div().px(10).text_size(11).text_color(t.dim).child(tr("costAbout")));
 
     // Limit resets: what one does, when one is worth it (computed from the weekly window), and the
     // official page. Nothing here can use a reset: the button only opens claude.ai in the browser.
     const adv = resetAdvice(week, now);
-    list.push(this.eyebrow(t, "Resets de limite"));
-    list.push(div().px(10).text_size(11.5).text_color(t.dim).child(RESETS_ABOUT));
+    list.push(this.eyebrow(t, tr("resets")));
+    list.push(div().px(10).text_size(11.5).text_color(t.dim).child(tr("resetsAbout")));
     list.push(h_flex().px(10).gap(8).items_center()
       .child(div().flex_none().size(7).rounded_full().bg(adv.worth ? t.blocked : t.done))
       .child(div().flex_1().min_w(0).text_size(12.5).text_color(adv.worth ? t.foreground : t.muted).child(adv.text)));
     list.push(div().px(10).text_size(11.5).text_color(t.dim)
-      .child("Resets disponibles : non lisibles d'ici (ni la status line ni Claude Code ne les donnent). Leur nombre est sur claude.ai."));
+      .child(tr("resetsAvailable")));
     const ri = base + items.length;
     items.push({ kind: "resets", id: "resets" });
     const onR = this.cur === ri;
     list.push(h_flex().px(10).child(h_flex().id("ku-resets").flex_none().h(30).px(12).gap(8).items_center().rounded_full().border(1)
       .border_color(onR ? alpha(t.accent, "99") : t.border).bg(onR ? alpha(t.accent, "24") : t.background)
-      .cursor_pointer().hover((s) => s.bg(t.hover)).tooltip("Ouvre claude.ai/settings/usage dans le navigateur (enter)")
+      .cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(tr("resetsTip"))
       .on_click((_e, cx) => { cx.stop_propagation(); this.cur = ri; this.openResets(); })
       .child(svg(I("external-link")).size(13).text_color(t.muted))
-      .child(div().text_size(12).text_color(t.foreground).child("Gérer mes resets"))
-      .child(div().font_family(MONO).text_size(10).text_color(t.dim).child("ouvre claude.ai, rien n'est utilisé d'ici"))));
+      .child(div().text_size(12).text_color(t.foreground).child(tr("manageResets")))
+      .child(div().font_family(MONO).text_size(10).text_color(t.dim).child(tr("resetsNote")))));
 
     return {
       items,
+      // i18n: tech (Claude Code, API + statusLine)
       el: this.card(t, base, { key: "claude", name: "Claude Code", body: list,
-        sub: [c.plan ? `${c.plan}${c.tier ? ` (${c.tier})` : ""}` : "plan inconnu", q?.updated_at ? `quota mis à jour ${ago(q.updated_at, now)}` : "quota jamais observé", "statusLine"].join(" · ") }),
+        sub: [c.plan ? `${c.plan}${c.tier ? ` (${c.tier})` : ""}` : tr("unknownPlan"), q?.updated_at ? tr("quotaUpdated", { ago: ago(q.updated_at, now) }) : tr("quotaNever"), u ? "API + statusLine" : "statusLine"].join(" · ") }), // i18n: tech
     };
   }
 
-  session(t, a, s, i, now) {
+  session(t, a, s, i, now, few = false) {
     const on = this.cur === i;
-    const model = s?.model ? `${s.model}${s.effort && s.effort !== "high" ? ` · ${s.effort}` : ""}` : "pas encore de statusLine";
+    const model = s?.model ? `${s.model}${s.effort && s.effort !== "high" ? ` · ${s.effort}` : ""}` : tr("noStatusLine");
     const ctx = s?.ctx_pct;
     return h_flex().id(`ku-s-${a.address}`).h(34).px(10).gap(10).items_center().rounded(12).border(1)
       .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
@@ -449,11 +553,15 @@ export default class Usage extends View {
       .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(on ? t.foreground : t.muted).child(`${a.space_name} · ${a.tab_name}`))
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(s?.model ? t.accent : t.dim).child(model))
       .child(h_flex().w(96).flex_none().gap(6).items_center().justify_end()
-        .when(ctx == null, (el) => el.child(div().text_size(11).text_color(t.dim).child("ctx non fourni")))
-        .when(ctx != null, (el) => el.child(ring(t, `ku-ctx-${a.address}`, ctx, 18))
-          .child(div().font_family(MONO).text_size(11).text_color(t.muted).child(`ctx ${Math.round(ctx)} %`))))
-      .child(div().w(70).flex_none().text_right().font_family(MONO).text_size(11).text_color(t.muted)
-        .child(s?.cost_usd > 0 ? usd(s.cost_usd) : "—"))
+        .when(ctx == null, (el) => el.child(div().text_size(11).text_color(t.dim).child(tr("noCtx"))))
+        .when(ctx != null, (el) => el.child(ring(t, `ku-ctx-${a.address}`, ctx, 18, { window: s?.window }))
+          .child(div().font_family(MONO).text_size(11).text_color(ringColor(t, Math.round(ctx), { kind: "ctx", window: s?.window ?? 1_000_000 }))
+            .child(few ? rollText(this.m, `ku-ctxn-${a.address}`, tr("ctx", { n: Math.round(ctx) }), 15) : tr("ctx", { n: Math.round(ctx) })))))
+      // The status line's cost colour (levels.js): green, yellow, red against the model's price. The
+      // dollars roll, the cents don't (they change at every reading).
+      .child(div().w(70).flex_none().flex().justify_end().text_right().font_family(MONO).text_size(11)
+        .text_color(s?.cost_usd > 0 ? levelColor(t, costLevel(s.cost_usd, s?.model), { okGreen: true }) : t.muted)
+        .child(!(s?.cost_usd > 0) ? "—" : few ? roll(this.m, `ku-cost-${a.address}`, usd(s.cost_usd), 15, { snap: 2 }) : usd(s.cost_usd)))
       .child(div().w(76).flex_none().text_right().text_size(10.5).text_color(t.dim).child(s?.updated_at ? ago(s.updated_at, now) : ""));
   }
 
@@ -464,19 +572,15 @@ export default class Usage extends View {
     if (r) {
       // Primary and secondary as progress bars, each as wide as its half of the card (viz measures it).
       list.push(h_flex().gap(16).items_start().children(codexWindows(r.limits, now).map((w) => div().flex_1().min_w(0)
-        .child(this.window(t, `ku-p-codex-${w.label}`, w, { why: "absente du dernier rollout", name: w.label === "5h" ? "Quota 5 h" : "Quota 7 j" }, now)))));
-      list.push(div().text_size(11).text_color(t.dim).child(
-        `Fenêtres primaire et secondaire du dernier rollout (${day(r.at)} à ${clock(r.at)}). `
-        + "Un rollout ne dit pas quel compte l'a servi : chiffre non vérifiable contre le compte connecté."));
+        .child(this.window(t, `ku-p-codex-${w.label}`, w, { why: tr("rolloutMissing"), name: w.label === "5h" ? tr("fiveQuota") : tr("weekQuota7") }, now)))));
+      list.push(div().text_size(11).text_color(t.dim).child(tr("codexAbout", { day: day(r.at), time: clock(r.at) })));
     } else {
-      list.push(div().text_size(12).text_color(t.muted).child(c.rollouts
-        ? `Non disponible : aucun événement token_count avec rate_limits dans les ${c.rollouts} derniers rollouts.`
-        : "Non disponible : aucun rollout dans ~/.codex/sessions (Codex n'a pas encore tourné)."));
+      list.push(div().text_size(12).text_color(t.muted).child(c.rollouts ? tr("noTokenCount", { n: c.rollouts }) : tr("noRollout")));
     }
     return {
       items: [{ kind: "card", id: "codex" }],
       el: this.card(t, base, { key: "codex", name: "Codex", body: list,
-        sub: [plan(r?.plan) ?? "plan inconnu", r?.at ? `rollout ${ago(r.at, now)}` : "jamais observé", "compte non vérifiable"].join(" · ") }),
+        sub: [plan(r?.plan) ?? tr("unknownPlan"), r?.at ? tr("rolloutAgo", { ago: ago(r.at, now) }) : tr("neverSeen"), tr("unverifiable")].join(" · ") }),
     };
   }
 
@@ -488,20 +592,18 @@ export default class Usage extends View {
     const absent = OTHERS.filter(([k]) => !o[k]).map(([, name]) => name);
     const seen = OTHERS.filter(([k]) => o[k]).map(([, name]) => name);
     const body = [];
-    if (o.opencode) body.push(line("OpenCode", o.opencodeGo
-      ? "Abonnement Go configuré, mais son appel réseau n'est pas transposé dans cette console (herdr-agent-quota le lit)."
-      : "Installé, sans clé opencode-go dans auth.json : pas d'abonnement Go à mesurer (les autres routes n'ont pas de quota côté OpenCode)."));
-    if (seen.length) body.push(line(seen.join(", "), "Identifiants ou CLI présents, mais leur collecteur n'est pas transposé dans cette console (herdr-agent-quota le lit)."));
-    if (absent.length) body.push(line(absent.join(", "), "Non détectés : ni identifiants ni CLI sur cette machine."));
-    const extra = [o.gemini && "Gemini", o.cursor && "Cursor"].filter(Boolean);
-    if (extra.length) body.push(line(extra.join(", "), "Dossiers présents, mais herdr-agent-quota n'a pas de collecteur pour eux : rien à lire sans inventer."));
+    if (o.opencode) body.push(line("OpenCode", tr(o.opencodeGo ? "oc.go" : "oc.noGo"))); // i18n: tech
+    if (seen.length) body.push(line(seen.join(", "), tr("seen")));
+    if (absent.length) body.push(line(absent.join(", "), tr("absent")));
+    const extra = [o.gemini && "Gemini", o.cursor && "Cursor"].filter(Boolean); // i18n: tech
+    if (extra.length) body.push(line(extra.join(", "), tr("folders")));
     const on = this.cur === base;
     return {
       items: [{ kind: "card", id: "others" }],
       el: v_flex().id("ku-card-others").p(12).gap(8).rounded(16).bg(t.surface).border(1)
         .border_color(on ? alpha(t.accent, "99") : t.border)
         .on_click((_e, cx) => { this.cur = base; cx.notify(); })
-        .child(div().text_size(13).font_semibold().text_color(t.muted).child("Non disponibles"))
+        .child(div().text_size(13).font_semibold().text_color(t.muted).child(tr("unavailable")))
         .children(body),
     };
   }
@@ -510,10 +612,13 @@ export default class Usage extends View {
     const t = theme();
     const now = unix();
     const m = (this.m = frame(this.motion, Boolean(shared("kt.reducedMotion"))));
-    this.V = viz(t, m); // Monocode's dithered gauge / progress / stat, on this render's motion state
+    // Monocode's dithered gauge / progress / stat, on this render's motion state; with roll, their
+    // numbers roll to a new value (the gauge's percent, the progress percent, the stat value).
+    this.V = viz(t, m, { roll });
     // The opening (ANIMATIONS.md 1): the veil fades in, the card rises 6 px, 180 ms ease-out, once
     // the veil has its first size. Reduced motion: in place at once.
     const shown = m.reduced || Boolean(this.size);
+    const s = sheet(m, "ku", shown); // and out on dismiss: the veil fades, the card sinks 6 px, 140 ms ease-in
     const d = this.data;
     const items = [{ kind: "refresh", id: "refresh" }];
     const cards = [];
@@ -537,14 +642,13 @@ export default class Usage extends View {
     const onBtn = this.cur === 0;
     const refresh = h_flex().id("ku-refresh").flex_none().h(30).px(12).gap(6).items_center().rounded_full().border(1)
       .border_color(onBtn ? alpha(t.accent, "99") : t.border).bg(onBtn ? alpha(t.accent, "24") : t.background)
-      .text_size(12).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover)).tooltip("Rafraîchir (r)")
+      .text_size(12).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(tr("refreshTip"))
       .on_click((_e, cx) => { cx.stop_propagation(); this.cur = 0; this.refresh(cx); })
       .child(this.busy ? svg(I("refresh-cw")).size(13).spin(900) : svg(I("refresh-cw")).size(13))
-      .child("Rafraîchir");
+      .child(tr("refresh"));
     const mark = div().flex_none().size(32).rounded(10).border(1).border_color(alpha(t.accent, "4d")).bg(alpha(t.accent, "1a"))
       .flex().items_center().justify_center().child(svg(I("gauge")).size(18).text_color(t.accent));
-    const sub = this.busy && !d ? "Lecture…"
-      : d ? `Rafraîchi à ${clock(d.at)} · lecture seule, aucun appel réseau` : "Pas encore lu";
+    const sub = this.busy && !d ? tr("reading") : d ? tr("refreshed", { time: clock(d.at) }) : tr("notRead");
 
     const listH = Math.max(200, (this.size?.height ?? 760) - 300);
     // The cards come in with a short cascade (ANIMATIONS.md 6: 30 ms apart), once: their ids stay
@@ -552,50 +656,48 @@ export default class Usage extends View {
     const body = d
       ? cards.map((c, i) => enter(m, v_flex().child(c.el), `ku-in-${c.part}`, { delay: stagger(i, cards.length) }))
       : [pulse(m, div().id("ku-loading").p(16).text_size(13).text_color(t.dim)
-        .child(this.error ? `Lecture impossible : ${this.error}` : "Lecture des sources…"), this.busy)];
+        .child(this.error ? tr("readFailed", { error: this.error }) : tr("readingSources")), this.busy)];
 
     const src = (label, text) => h_flex().gap(8).items_start()
       .child(div().w(52).flex_none().font_family(MONO).text_size(9.5).text_color(t.muted).child(label))
       .child(div().flex_1().min_w(0).font_family(MONO).text_size(9.5).text_color(t.dim).child(text));
-    const rollout = d?.codex?.from ? d.codex.from.replace(home(), "~") : "~/.codex/sessions/AAAA/MM/JJ/rollout-*.jsonl";
+    const rollout = d?.codex?.from ? d.codex.from.replace(home(), "~") : tr("rolloutPath");
     const hint = (k, what) => h_flex().gap(5).items_center()
       .child(div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k))
       .child(what);
     const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1).border_color(t.border).bg(t.background)
       .font_family(MONO).text_size(9).text_color(t.muted).child(this.vim.label);
 
-    const card = v_flex().id("ku-card")
+    const card = s.card(v_flex().id("ku-card")
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .w(CARD).max_w_full().relative().top(shown ? 0 : 6)
-      .when(!m.reduced, (el) => el.transition("top", { duration: MS.open, easing: "ease-out" }))
+      .w(CARD).max_w_full())
       .p(4).gap(4).rounded(20).bg(t.popover).border(1).border_color(t.border).shadow_lg()
       .child(div().rounded(16).bg(t.surface).border(1).border_color(t.border)
-        .child(this.band(t, { id: "ku-head", tint: t.accent, mark, title: "Abonnements IA", sub, rounded: "all",
-          buttons: [refresh, this.iconBtn(t, "ku-close", I("x"), "Fermer (q)", () => this.dismiss())] })))
+        .child(this.band(t, { id: "ku-head", tint: t.accent, mark, title: tr("title"), sub, rounded: "all",
+          buttons: [refresh, this.iconBtn(t, "ku-close", I("x"), tr("closeTip"), (cx) => this.dismiss(cx))] })))
       // overflow_y_scroll, not _scrollbar: with the scrollbar, scroll_to_item did nothing here (G and
       // tab left the cursor's card off screen); the wheel and trackpad scroll either way.
       .child(v_flex().id("ku-body").max_h(listH).overflow_y_scroll().track_scroll(this.scroll).gap(4).children(body))
       .child(v_flex().rounded(16).bg(t.surface).border(1).border_color(t.border)
         .child(v_flex().px(12).pt(8).pb(6).gap(3)
-          .child(src("Claude", "quota : ~/.claude/cache/statusline/herdr-quota.json, rate_limits du statusLine Claude Code (statusline.ts ; dernier écrivain, sans identifiant de compte) ; Ultra : seven_day seul, five_hour null · sessions, contexte, coût : herdr-<terminal>.json · plan : ~/.claude.json oauthAccount.planDisplayName, via jq (pas lu par herdr-agent-quota)"))
-          .child(src("Codex", `${rollout} : dernier token_count, rate_limits primary / secondary (classées par durée, comme codex.rs) et plan_type ; 256 Kio de fin`))
-          .child(src("Resets", "conseil calculé sur seven_day (plus de 90 % et retour à zéro à plus de 24 h) · nombre disponible non lisible · usage seulement sur claude.ai/settings/usage (support.claude.com/en/articles/17007452)"))
-          .child(src("Autres","présence des fichiers d'identifiants de herdr-agent-quota (jamais lus) et de la CLI (knownAgents) ; OpenCode : jq -e has(\"opencode-go\") sur auth.json")))
+          .child(src("API", tr("src.api")))
+          .child(src("Claude", tr("src.claude")))
+          .child(src("Codex", tr("src.codex", { path: rollout })))
+          .child(src("Resets", tr("src.resets")))
+          .child(src(tr("src.others"), tr("src.othersText"))))
         .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
         .child(h_flex().px(12).py(8).gap(12).items_center().text_size(11).text_color(t.dim)
           .child(mode)
-          .child(hint("j k", "élément"))
-          .child(hint("tab", "carte"))
-          .child(hint("enter", "session, page des resets"))
-          .child(hint("r", "rafraîchir"))
+          .child(hint("j k", tr("hint.item")))
+          .child(hint("tab", tr("hint.card")))
+          .child(hint("enter", tr("hint.enter")))
+          .child(hint("r", tr("hint.refresh")))
           .child(div().flex_1())
-          .child(hint("q esc", "fermer"))));
+          .child(hint("q esc", tr("hint.close")))));
 
-    return div().id("ku-veil").size_full().flex().items_center().justify_center()
-      .bg(veil()).opacity(shown ? 1 : 0)
-      .when(!m.reduced, (el) => el.transition("opacity", { duration: MS.open, easing: "ease-out" }))
+    return s.veil(div().id("ku-veil").size_full().flex().items_center().justify_center().bg(veil()))
       .on_size_change((size, cx) => { this.size = size; cx.notify(); })
-      .on_click(() => this.dismiss())
+      .on_click((_e, cx) => this.dismiss(cx))
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .child(card);
