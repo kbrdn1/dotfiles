@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
-  costOf, cleanLimits, stepLimit, checkSteps, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
+  costOf, cleanLimits, stepLimit, checkSteps, ciCount, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
 
@@ -247,6 +247,11 @@ assert.deepEqual(checkSteps([{ name: "lint", bucket: "pass" }, { name: "e2e", bu
   { name: "build", bucket: "pending" }, { name: "deploy", bucket: "cancel" }, { name: "odd", bucket: "weird" }]).map((s) => [s.label, s.state]),
 [["test", "failed"], ["deploy", "failed"], ["build", "current"], ["lint", "done"], ["e2e", "skipped"], ["odd", "todo"]]);
 assert.deepEqual(checkSteps(null), []);
+// The card's CI from the drawer's checks, counted as /me:report's: passed, failing (cancelled too), running.
+assert.deepEqual(ciCount([{ bucket: "pass" }, { bucket: "pass" }, { bucket: "fail" }, { bucket: "cancel" }, { bucket: "pending" }, { bucket: "skipping" }]),
+  { ok: 2, fail: 2, pending: 1, total: 6 });
+assert.equal(ciCount([]), null);
+assert.equal(ciCount(undefined), null);
 // Snooze, the sidebar's times: an hour; 19:00 tonight (tomorrow's once past); 9:00 tomorrow.
 const noon = new Date(2026, 10, 18, 12, 0).getTime(), late = new Date(2026, 10, 18, 21, 0).getTime();
 assert.equal(wakeAt("hour", noon), noon + 3600e3);
@@ -318,6 +323,9 @@ assert.deepEqual(archivePlan(crossing, { days: 7, now, memo }), { auto: ["tfx-c1
 assert.deepEqual(archivePlan(crossing, { days: 7, now, memo: { since: now - 5 * D, done: {} } }), { auto: ["tfx-c1", "tfx-c2", "tfx-c3"], propose: [] });
 assert.deepEqual(archivePlan(crossing, { days: 0, now, memo }), { auto: [], propose: [] });
 assert.deepEqual(archivePlan(crossing, { days: 7, now, memo: { done: {} } }).auto, []); // no `since`: as the first time
+// The column cost: an option, off by default (the cost belongs to the drawer).
+const colCost = declared.find((x) => x.key === "columnCost");
+assert.deepEqual([colCost.type, colCost.default], ["bool", false]);
 // Its option: mod.json's archiveDays, a number from 0 (never), 7 by default.
 const days = declared.find((x) => x.key === "archiveDays");
 assert.deepEqual([days.type, days.min, days.default], ["number", 0, 7]);

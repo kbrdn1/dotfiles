@@ -27,10 +27,13 @@
 // (1 2 3, 0 wakes), O the PR, I the issue, e Zed (a local checkout). Its PR, issue and diff (threads-io's
 // readPr, readIssue, readDiff) are read as it opens, gh at most as often as the badges, the diff again
 // with the reports (local), all again on r or a git / gh bump.
-// A card: the agent's live logo (companion-logo.js), the title, pinned / snoozed as the sidebar shows
-// them, the age; the project (logo, else its letter on its color) and the branch (a worktree's icon in
-// a linked one); the issue, the PR and its state, the cost (levels.js), the sub-agents k/n;
-// claude-flow's step. It lists every project's threads, whatever the sidebar's scope or filter: its
+// A card, what matters first (Kylian, #31: « pas du tout le coût »): the agent's live logo
+// (companion-logo.js), the title, pinned / snoozed as the sidebar shows them, the age; then what the
+// agent waits on from you when blocked (the sidebar's decisions: decide.js, a copy of kbrdn-toast's;
+// else herdr-bridge's pending), else what it does or answered (the sidebar's live line); then
+// claude-flow's step; then the PR, its CI as icons and counts, the issue, the sub-agents k/n; last the
+// project and the branch. The cost is the drawer's (and, with the columnCost option, off by default, the
+// column heads'). It lists every project's threads, whatever the sidebar's scope or filter: its
 // views decide (GitHub Projects), through the filter typed after `/` (the archived only with
 // is:archived), then the slice. A click or enter: back to the thread, on that agent (agent.focus).
 // Keys (vim.js; kt-keys lists them under Pages): h / l a column, j / k a card (down into the next
@@ -52,7 +55,9 @@ import * as io from "./threads-io.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
   costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
-  FIELDS, draftThread, draftsOf, attach, archivePlan } from "./kanban.js";
+  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount } from "./kanban.js";
+// The sidebar's decisions (a byte-identical copy of kbrdn-toast's decide.js): what a blocked agent waits on.
+import { decide } from "./decide.js";
 import { companion } from "./companion-logo.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the drawer's dither steps (flow, checks).
 import { viz } from "./viz.js";
@@ -151,6 +156,7 @@ export default class Kanban extends View {
     this.drawerLast = null;
     this.snoozing = false;
     this.details = {};
+    this.decisions = {}; // a blocked agent's terminal -> decide.js' { pending, … } (readDecisions)
     this.cur = null; // the keys' cursor: a thread id
     this.at = null; // where it last was, { l, c, i } (kanban.js locate)
     this.board = { keys: [], lanes: [] };
@@ -188,7 +194,11 @@ export default class Kanban extends View {
       this.readReports(cx);
       if (this.drawer) this.loadDetail(cx); // its diff again (local, cheap); gh only once stale
     });
-    cx.timer.every(1500, (cx) => { if (visible()) this.lookup(cx); });
+    cx.timer.every(1500, (cx) => {
+      if (!visible()) return;
+      this.lookup(cx);
+      this.readDecisions(cx);
+    });
     // Auto-archive: only while the page shows (autoArchive returns at once otherwise), gently.
     cx.timer.every(ARCHIVE_EVERY, () => this.autoArchive());
     // `focus` (pane.go) takes the keyboard in NORMAL; `key:<keys>` takes it and types those keys
@@ -263,6 +273,24 @@ export default class Kanban extends View {
       this.readingLive = false;
       const key = JSON.stringify([live, quota]);
       if (key !== this.liveKey) { this.liveKey = key; this.live = live; this.quota = quota; cx.notify(); }
+    });
+  }
+
+  // What each blocked agent waits on (decide.js, as kt-threads reads it: a permission herdr-bridge
+  // publishes, a held message or a question read on its screen), while the page shows; redraws only
+  // when what waits changed.
+  readDecisions(cx) {
+    if (this.readingDecisions) return;
+    this.readingDecisions = true;
+    cx.spawn(async (cx) => {
+      const next = {};
+      for (const p of panes()) {
+        if (!p.terminal || p.terminal.includes("/") || !p.program?.agent || p.status !== "blocked") continue;
+        next[p.terminal] = await decide(p.terminal).catch(() => null);
+      }
+      this.readingDecisions = false;
+      const key = JSON.stringify(Object.entries(next).map(([k, d]) => [k, d?.pending]));
+      if (key !== this.decisionsKey) { this.decisionsKey = key; this.decisions = next; cx.notify(); }
     });
   }
 
@@ -858,9 +886,9 @@ export default class Kanban extends View {
   }
 
   // A column's head: its color's dot, its name, its count rolling, `n / limit` with a soft limit (in the
-  // warning color past it: nothing is blocked), and on the right what its cards cost together (rolling,
-  // in costLevel's color). A click on the count shows the limit's stepper under it (or + / - on the
-  // cursor's column); the limit belongs to the view.
+  // warning color past it: nothing is blocked), and on the right, with mod.json's columnCost option (off
+  // by default), what its cards cost together (rolling, in costLevel's color). A click on the count shows
+  // the limit's stepper under it (or + / - on the cursor's column); the limit belongs to the view.
   // The drafts (in the column a draft lands in) count apart, « +k », outside the limit; that column's head
   // has the « + » of a new draft (n).
   colHead(t, key, cards) {
@@ -895,7 +923,7 @@ export default class Kanban extends View {
           .text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("draft.new"))
           .on_click((_e, cx) => { this.newDraft(cx); cx.notify(); })
           .child(svg(I("plus")).size(13))))
-        .when(cost > 0, (el) => el.child(div().id(`kk-cost-${key}`).flex_none().tooltip(tr("cost.sum"))
+        .when(cost > 0 && shared("kt.opt.kt-kanban.columnCost") === true, (el) => el.child(div().id(`kk-cost-${key}`).flex_none().tooltip(tr("cost.sum"))
           .child(mono(roll(this.m, `kk-cost-n-${key}`, `$${fnum(cost, 2)}`, 14, { snap: 2 })).text_color(levelColor(t, costLevel(cost), { okGreen: true }))))))
       .when(editing, (el) => el.child(h_flex().h(32).px(14).gap(6).items_center()
         .child(div().flex_none().text_size(12).text_color(t.muted).child(tr("limit")))
@@ -924,17 +952,33 @@ export default class Kanban extends View {
       ? h_flex().id(`kk-sn-${key}`).flex_none().gap(3).items_center().text_color(t.working).tooltip(tr("snoozed", { left: model.until(th.snooze.until, now) }))
         .child(svg(I("clock")).size(11)).child(mono(t.working, model.until(th.snooze.until, now).toUpperCase()))
       : mono(t.dim, model.age(th.settled ? th.tab.settled_at ?? th.activity : th.activity, now).toUpperCase());
-    // A draft PR in dim, as kt-flow shows it.
+    // First, what matters (Kylian: « pas du tout le coût »): what the agent waits on from you when it is
+    // blocked (the sidebar's decision: decide.js' dialog, else herdr-bridge's pending, else that it
+    // waits), else what it does now or answered (the sidebar's live line). Two lines at most.
+    const asking = th.status === "blocked" ? this.askOf(th) : null;
+    const upfront = asking
+      ? v_flex().px(8).py(5).gap(2).rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
+        .child(h_flex().gap(6).items_center()
+          .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.blocked).child(asking.title)))
+        .when(Boolean(asking.detail), (el) => el.child(div().max_h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.foreground).child(asking.detail)))
+      : th.line ? div().max_h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(th.status === "working" ? t.muted : t.dim).child(`↳ ${th.line}`)
+        : null;
+    // Then the flow's step, then the PR (its state's color, a draft in dim as kt-flow) and its CI (/me:report's,
+    // else the drawer's checks): passed, failing, running, as icons and counts; the issue, the sub-agents.
     const look = !th.pr ? null : th.pr.state === "OPEN" && (th.pr.draft ?? th.pr.isDraft) ? { ...PR.OPEN, color: "dim" } : PR[th.pr.state] ?? PR.OPEN;
     const subs = th.subagents;
-    // The facts there are: the issue (its number only: the model has no state for it), the PR in its
-    // state's color, the cost by level, the sub-agents ended / all.
+    const ci = th.report?.ci?.total ? th.report.ci : ciCount(this.details[th.id]?.pr?.checks);
+    const count = (icon, color, n) => n > 0 && h_flex().flex_none().gap(2).items_center().text_color(color).child(svg(I(icon)).size(10)).child(mono(color, String(n)));
     const facts = [
-      th.issue && h_flex().flex_none().gap(3).items_center().text_color(t.muted)
-        .child(svg(I("circle-dashed")).size(11)).child(mono(t.muted, `#${th.issue}`)),
       look && h_flex().flex_none().gap(3).items_center().text_color(t[look.color])
         .child(svg(I(look.icon)).size(11)).child(mono(t[look.color], `#${th.pr.number}`)),
-      th.cost != null && mono(levelColor(t, costLevel(th.cost, th.model), { okGreen: true }), `$${fnum(th.cost, 2)}`),
+      ci?.total && h_flex().id(`kk-ci-${key}`).flex_none().gap(5).items_center()
+        .tooltip(tr("ci.tip", { ok: ci.ok, fail: ci.fail, pending: ci.pending }))
+        .child(mono(t.dim, "CI")) // i18n: tech
+        .children([count("check", t.done, ci.ok), count("x", t.ansi1, ci.fail), count("clock", t.ansi3, ci.pending)].filter(Boolean)),
+      th.issue && h_flex().flex_none().gap(3).items_center().text_color(t.muted)
+        .child(svg(I("circle-dashed")).size(11)).child(mono(t.muted, `#${th.issue}`)),
       subs.total > 0 && h_flex().id(`kk-sub-${key}`).flex_none().gap(3).items_center().text_color(t.dim)
         .tooltip(tr("subagents", { done: subs.done, total: subs.total }))
         .child(svg(I("bot")).size(11)).child(mono(t.dim, `${subs.done}/${subs.total}`)),
@@ -955,18 +999,27 @@ export default class Kanban extends View {
           .child(th.title))
         .when(th.pinned, (el) => el.child(svg(I("pin")).size(11).flex_none().text_color(t.dim)))
         .child(corner))
+      .when(Boolean(upfront), (el) => el.child(upfront))
+      .when(Boolean(step), (el) => el.child(h_flex().h(16).gap(6).items_center()
+        // The step's dot breathes while the agent works (an active state: ANIMATIONS.md).
+        .child(div().id(`kk-step-${key}`).size(6).rounded(3).flex_none().bg(t.accent)
+          .when(working && !this.m.reduced, (d) => d.loop("opacity", { from: 0.35, to: 1, period: 1400 })))
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(step))))
+      .when(facts.length > 0, (el) => el.child(h_flex().h(16).gap(10).items_center().overflow_hidden().children(facts)))
+      // Last, where it is: its project, its branch (a worktree's icon in a linked one).
       .child(h_flex().h(16).gap(6).items_center()
         .child(this.mark(t, th.project, 12))
         .child(div().flex_none().max_w(96).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(th.project.name.toUpperCase()))
         .when(Boolean(th.branch), (el) => el
           .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
-          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch))))
-      .when(facts.length > 0, (el) => el.child(h_flex().h(16).gap(10).items_center().overflow_hidden().children(facts)))
-      .when(Boolean(step), (el) => el.child(h_flex().h(16).gap(6).items_center()
-        // The step's dot breathes while the agent works (an active state: ANIMATIONS.md).
-        .child(div().id(`kk-step-${key}`).size(6).rounded(3).flex_none().bg(t.accent)
-          .when(working && !this.m.reduced, (d) => d.loop("opacity", { from: 0.35, to: 1, period: 1400 })))
-        .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(step))));
+          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch))));
+  }
+
+  // What a blocked thread waits on (the sidebar's: decide.js, read for the blocked agents while the page
+  // shows; else herdr-bridge's pending in the model): { title, detail }; nothing known, that it waits.
+  askOf(th) {
+    const p = this.decisions[th.terminal]?.pending ?? th.asks;
+    return { title: p?.title || tr("now.blocked"), detail: p?.detail || null };
   }
 
   // An empty column says why, in clear.
@@ -1143,7 +1196,15 @@ export default class Kanban extends View {
       .when(this.snoozing, (el) => el.child(h_flex().flex_wrap().gap(6)
         .children(SNOOZES.map((c, i) => button(`sn-${c}`, tr(`snooze.${c}`), String(i + 1), () => this.snooze(th, c))))
         .when(th.asleep, (el) => el.child(button("wake", tr("snooze.wake"), "0", () => this.snooze(th, null))))));
+    // First, as on the card: what it waits on from you (whole), else what it does or answered.
+    const asking = th.status === "blocked" ? this.askOf(th) : null;
+    const nowEl = asking
+      ? v_flex().px(10).py(8).gap(4).rounded(10).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
+        .child(div().text_size(12.5).font_medium().text_color(t.blocked).child(asking.title))
+        .when(Boolean(asking.detail), (el) => el.child(div().max_h(120).overflow_hidden().text_size(12).line_height("17px").text_color(t.foreground).child(asking.detail)))
+      : th.line ? div().max_h(120).overflow_hidden().text_size(12).line_height("17px").text_color(t.muted).child(`↳ ${th.line}`) : null;
     const body = v_flex().id(`kk-dr-body-${key}`).flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(18)
+      .when(Boolean(nowEl), (el) => el.child(section(asking ? tr("drawer.asks") : tr("drawer.doing"), nowEl)))
       .child(section(tr("drawer.flow"), flow))
       .when(Boolean(issue), (el) => el.child(section("Issue", issue))) // i18n: tech
       .when(Boolean(prBlock), (el) => el.child(section("Pull request", prBlock))) // i18n: tech

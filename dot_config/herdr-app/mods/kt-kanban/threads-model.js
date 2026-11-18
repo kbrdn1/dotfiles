@@ -63,6 +63,11 @@
 //               not started); phase: the step's PHASES id, null for a step out of the table; at: where
 //               the flow stands, the PHASES id of its current step, else of the last one reached (done
 //               or failed), "other" for a step out of the table, null when none is reached yet.
+//   asks        what its agent waits on from you, as herdr-bridge publishes it while a dialog is up (a
+//               permission, a question): { kind, title, detail } | null. A held message or a plain
+//               "waiting for your reply" is read off the screen by decide.js, not here.
+//   line        the sidebar's live line: a working agent's last action (herdr-bridge's action.what: «
+//               ListAgents », « Run cd … »), a done one's answer; null otherwise or without a bridge.
 //   sl          its agent's statusline facts (Claude only): model, effort, ctx_pct, cost_usd, window...
 //               cost, ctx, model, effort: sl's cost_usd, ctx_pct, model, effort; all null without one.
 //   subagents   { shown, done, total }: shown, the alive ones then those that ended under GONE ago
@@ -313,6 +318,16 @@ export function prOf(lead, space, { repos, reports, prs, defaults }) {
   return { pr, from: pr ? "gh" : null };
 }
 
+// ---------- what it does now ----------
+
+/** The sidebar's live line (kt-threads' liveLine): what a working agent does now (herdr-bridge's
+ *  action.what), what a done one answered, on one line; null otherwise. */
+export function lineOf(status, bridge) {
+  const text = status === "working" ? bridge?.action?.what : status === "done" ? bridge?.answer : null;
+  const one = String(text ?? "").replace(/\s+/g, " ").trim();
+  return one || null;
+}
+
 // ---------- the thread ----------
 
 /** One tab of a space as a thread (the contract above). */
@@ -358,6 +373,8 @@ export function threadOf(space, tab, world) {
     prFrom: from,
     report: reportOf(lead, space, world.repos, world.reports),
     flow: flowOf(bridge?.flow),
+    asks: bridge?.pending?.title ? { kind: bridge.pending.kind ?? null, title: String(bridge.pending.title), detail: bridge.pending.detail ? String(bridge.pending.detail) : null } : null,
+    line: lineOf(tab.status, bridge),
     sl,
     cost: sl?.cost_usd ?? null,
     ctx: sl?.ctx_pct ?? null,

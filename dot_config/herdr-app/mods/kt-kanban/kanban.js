@@ -294,6 +294,13 @@ const CHECK_RANK = { failed: 0, current: 1, done: 2, skipped: 3, todo: 4 };
 export const checkSteps = (checks) => (checks ?? []).map((c, i) => ({ label: c.name ?? "", state: CHECK[c.bucket] ?? "todo", i }))
   .sort((a, b) => CHECK_RANK[a.state] - CHECK_RANK[b.state] || a.i - b.i).map(({ label, state }) => ({ label, state }));
 
+/** A PR's checks counted as /me:report's CI is ({ ok, fail, pending, total }); null with none. */
+export function ciCount(checks) {
+  if (!checks?.length) return null;
+  const n = (s) => checkSteps(checks).filter((c) => c.state === s).length;
+  return { ok: n("done"), fail: n("failed"), pending: n("current"), total: checks.length };
+}
+
 // Snooze (the sidebar's choices): an hour; tonight, 19:00; tomorrow, 9:00 (an hour already past: the next day's).
 export const SNOOZES = ["hour", "tonight", "tomorrow"];
 // `day`'s `hour`, the next day's when that is already past `now` (kt-threads' at()).

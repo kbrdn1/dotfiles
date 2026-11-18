@@ -15,6 +15,7 @@ export const SHARED = { "vim.js": "kt-keys", "motion.js": "kt-keys", "bus.js": "
   "levels.js": "kt-keys", "reread.js": "kt-keys", "ring.js": "kt-threads", "companion-logo.js": "kt-threads", "band.js": "kt-gwm", "select.js": "kt-gwm",
   "threads-model.js": "kt-threads", "threads-io.js": "kt-threads", "thread-filter.js": "kt-threads", "pr-pick.js": "kt-threads",
   "viz.strings.js": "kt-keys", "steps.js": "kt-flow", "steps.strings.js": "kt-flow",
+  "decide.js": "kbrdn-toast", "decide.strings.js": "kbrdn-toast",
   "diffview.js": "kt-diff", "diff.js": "kt-diff", "icons.js": "kt-diff" };
 // A layout's root keys, and the shipped mod each one falls back to when unset.
 export const ROOTS = { toast: "toast", terminal_menu: "menu" };

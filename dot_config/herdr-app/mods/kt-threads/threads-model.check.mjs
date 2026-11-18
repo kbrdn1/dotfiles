@@ -52,6 +52,7 @@ const world = {
   live: {
     fx4: {
       updatedAt: now - 30e3, slAt: now - MIN, sl: { model: "Opus", effort: "high", ctx_pct: 42, cost_usd: 3.21 },
+      action: { tool: "Bash", what: "Run bun test", at: now - 20e3 },
       flow: { workflow: "me:issue-worktree-pr", steps: [{ id: "issue", label: "issue #12", state: "done" }, { id: "implement", label: "implement", state: "current" }, { id: "pr", label: "pr", state: "pending" }] },
       agents: [
         { id: "a1", state: "running", startedAt: now - 2 * MIN },
@@ -63,6 +64,8 @@ const world = {
       ],
     },
     fx6: { updatedAt: now - 40 * MIN, flow: { steps: [{ id: "issue", label: "issue #3", state: "done" }, { id: "report", label: "report", state: "current" }] } },
+    fx2: { pending: { id: "p1", kind: "permission", title: "Autoriser Bash", detail: "rm -rf build", options: [] } },
+    fx8: { answer: "La PR\n  est prête." },
   },
   reports: { "acme|fix/#9-login": { review: null, ci: null, pr: { number: 9, state: "OPEN", url: "u/9" }, at: null } },
   prs: { [M.prKey(null, "/fx/wt/acme/feat-12-x", "feat/#12-x")]: { number: 34, state: "OPEN", url: "u/34" } },
@@ -140,6 +143,16 @@ assert.deepEqual([th["fx-t2"].pr.number, th["fx-t2"].prFrom, th["fx-t2"].issue],
 assert.deepEqual([th["fx-t3"].pr, th["fx-t3"].prFrom], [null, null]); // dev
 assert.equal(beta.issue, "3"); // no branch: the flow's issue step
 assert.deepEqual(M.prOf({ cwd: "/fx/acme", branch: "main" }, spaces[1], { ...world, reports: {}, prs: { [M.prKey(null, "/fx/acme", "main")]: { number: 1 } } }), { pr: null, from: null });
+
+// What it waits on (herdr-bridge's pending) and what it does (the sidebar's live line).
+assert.deepEqual(th["fx-t2"].asks, { kind: "permission", title: "Autoriser Bash", detail: "rm -rf build" });
+assert.equal(wt.asks, null);
+assert.equal(wt.line, "Run bun test"); // working: its last action
+assert.equal(th["fx-t8"].line, "La PR est prête."); // done: its answer, on one line
+assert.equal(th["fx-t2"].line, null); // blocked: none (it asks)
+assert.equal(M.lineOf("idle", { action: { what: "x" } }), null);
+assert.equal(M.lineOf("working", null), null);
+assert.equal(M.lineOf("working", { action: { what: "  " } }), null);
 
 // Cost, context, model: the agent's statusline.
 assert.deepEqual([wt.cost, wt.ctx, wt.model, wt.effort], [3.21, 42, "Opus", "high"]);
