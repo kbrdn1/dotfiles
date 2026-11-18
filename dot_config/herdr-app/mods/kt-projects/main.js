@@ -748,7 +748,8 @@ export default class Projects extends View {
         this.size = size;
         cx.notify();
       })
-      .when(full, (el) => el.bg(veil()).on_click((_e, cx) => this.dismiss(cx)))
+      // A press, not on_click: on the element holding the keyboard, GPUI turns Space and Enter into a click.
+      .when(full, (el) => el.bg(veil()).on_mouse_down("left", (_e, cx) => this.dismiss(cx)))
       .track_focus(this.handle)
       .on_key_down((ev, cx) => {
         if (!this.press(ev, cx)) return; // not ours: ctrl-b, cmd-* go on

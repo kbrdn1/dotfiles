@@ -1180,11 +1180,13 @@ export default class Inbox extends View {
           .border_color(typing ? alpha(t.accent, "99") : t.border).when(typing, (el) => el.bg(alpha(t.accent, "24"))).cursor_text()
           .track_focus(this.handle)
           .on_key_down((e, cx) => this.key(e, cx))
-          .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
+          // A press, not on_click: on the element holding the keyboard, GPUI turns Space and Enter into a click.
+          .on_mouse_down("left", (_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
           .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
             .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : tr("filter")))
           .when(Boolean(this.query), (el) => el.child(div().id("kti-clear").flex_none().text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground))
+            .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.handle.focus(); }) // not the field's press: × keeps the mode
             .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.cur = null; cx.notify(); })
             .child(svg(I("x")).size(13)))))
         .when(focused, (el) => el.child(this.mode(t, typing))))

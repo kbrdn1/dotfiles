@@ -700,7 +700,8 @@ export default class Search extends View {
         this.winH = size.height / (settings().zoom || 1);
         cx.notify();
       })
-      .on_click((_e, cx) => this.dismiss(cx))
+      // A press, not on_click: on the element holding the keyboard, GPUI turns Space and Enter into a click.
+      .on_mouse_down("left", (_e, cx) => this.dismiss(cx))
       // NORMAL's keys land on this handle; the field's keys bubble up here too. Esc is stopped
       // (INSERT: NORMAL; NORMAL: closes), so Herdr's own Esc doesn't close a second dialog under it.
       .track_focus(this.handle)

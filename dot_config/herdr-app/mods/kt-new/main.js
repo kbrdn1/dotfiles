@@ -1069,7 +1069,8 @@ export default class NewThread extends View {
         this.size = size;
         cx.notify();
       })
-      .on_click((_e, cx) => this.dismiss(cx))
+      // A press, not on_click: on the element holding the keyboard, GPUI turns Space and Enter into a click.
+      .on_mouse_down("left", (_e, cx) => this.dismiss(cx))
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .child(card);

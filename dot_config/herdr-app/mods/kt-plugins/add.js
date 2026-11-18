@@ -409,7 +409,8 @@ export class Add {
     return div().id("ktp-add-veil").size_full().overflow_hidden().flex().items_center().justify_center().bg(veil())
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => { this.size = size; cx.notify(); })
-      .on_click(() => this.dismiss())
+      // A press, not on_click: on the element holding the keyboard, GPUI turns Space and Enter into a click.
+      .on_mouse_down("left", () => this.dismiss())
       .child(card);
   }
 
