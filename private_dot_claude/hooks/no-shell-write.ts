@@ -89,7 +89,9 @@ export function resolve(target: string, vars: Record<string, string>): string | 
 
 export function allowed(path: string | null, cwd: string, globs: RegExp[] = []): boolean {
   if (path === null) return false;
-  if (DEVS.test(path) || path.startsWith(GITDIR) || /(^|\/)\.git\//.test(path)) return true;
+  if (DEVS.test(path) || path.startsWith(GITDIR)) return true;
+  // le dossier git sauf ses hooks (du code) et sa config
+  if (/(^|\/)\.git\//.test(path) && !/(^|\/)\.git\/(.*\/)?(hooks\/|config$)/.test(path)) return true;
   const abs = path.startsWith("/") ? path : `${cwd.replace(/\/$/, "")}/${path}`;
   return TMPS.some((p) => abs.startsWith(p)) || globs.some((g) => g.test(abs));
 }

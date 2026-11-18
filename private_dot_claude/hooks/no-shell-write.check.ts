@@ -49,6 +49,9 @@ const cases: [string, boolean][] = [
   [`git diff > "$(git rev-parse --git-path claude-review.diff)"`, false],
   [`echo x > .git/info/exclude`, false],
   [`echo x > src/a.ts # commentaire`, true],
+  [`printf '#!/bin/sh' > .git/hooks/pre-commit`, true],
+  [`echo x >> .git/config`, true],
+  [`echo x > .git/worktrees/w/hooks/post-checkout`, true],
 ];
 let bad = 0;
 for (const [cmd, deny] of cases) {
