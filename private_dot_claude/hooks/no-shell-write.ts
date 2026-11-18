@@ -114,6 +114,8 @@ function words(shell: string): string[] {
   let cur = "", q: string | null = null;
   for (let i = 0; i < shell.length; i++) {
     const c = shell[i];
+    // un \ échappe le caractère suivant hors guillemets et entre guillemets doubles, jamais entre simples
+    if (c === "\\" && q !== "'" && i + 1 < shell.length) { cur += c + shell[++i]; continue; }
     if (q) { cur += c; if (c === q) q = null; continue; }
     if (c === "'" || c === '"') { q = c; cur += c; continue; }
     if (/\s/.test(c)) { if (cur) out.push(cur); cur = ""; continue; }

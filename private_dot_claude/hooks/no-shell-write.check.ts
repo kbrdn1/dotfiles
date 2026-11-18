@@ -58,6 +58,13 @@ const cases: [string, boolean][] = [
   [`echo x > "$(git rev-parse --git-path config)"`, true],
   [`G=$(git rev-parse --git-dir); echo x > "$G/hooks/x"`, true],
   [`G=$(git rev-parse --git-common-dir); echo x > "$G/review.diff"`, false],
+  // un \ hors guillemets échappe le caractère suivant : '\'' ne rouvre pas de chaîne (faux positif vu le 2026-11-18)
+  [`bash -c 'grep -oE "[\\"'\\'']x" f | while read -r r; do echo "a -> $r"; done'`, false],
+  [`bash -c 'x='\\''y'\\''; echo "a -> $r"'`, false],
+  [`echo a\\>b`, false],
+  [`echo "a \\" > b"`, false],
+  [`bash -c 'x='\\''y'\\''; echo "a"' > ~/out.txt`, true],
+  [`echo a \\\\> out.txt`, true],
 ];
 let bad = 0;
 for (const [cmd, deny] of cases) {
