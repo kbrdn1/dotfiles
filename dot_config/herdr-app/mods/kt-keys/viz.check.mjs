@@ -391,4 +391,51 @@ calls.length = 0;
 V.viz(t, frame(motionState(), false), { roll: fakeRoll }).steps(phased, { width: 420, id: "gr" });
 assert.deepEqual(calls, [["gr-n", "9 / 14", 14, false, 0]], "grouped: « n / total » rolls at any width");
 
+// Folded: a step under 2 dither cells, flat or in tiers, and the steps are one progress bar (same id): the
+// front step (after its group's name), « n / total », no tooltip per step, tinted by the worst state.
+// Unfolded, every step gets 2 cells or more, and a width sweep flips once at most.
+const long = Array.from({ length: 24 }, (_, i) => ({ label: `S${i}`, state: i < 10 ? "done" : i === 10 ? "current" : "todo" }));
+const fl = V.viz(t, frame(motionState(), false)).steps(long, { width: 120, id: "fl" });
+assert.deepEqual([texts(fl), tipsOf(fl).length], [["S10", "10 / 24"], 0], "flat, 24 steps at 120 px: one bar");
+assert.ok(find(fl, (n) => n.props?.id?.[0] === "fl" && n.kids[0]?.tr?.includes("width")), "the bar draws in under the steps' id");
+assert.ok(find(fl, (n) => n.kind === "paint" && n.bg === t.accent), "running: the current tint");
+assert.deepEqual(texts(V.viz(t, null).steps(phased, { width: 120, id: "gp" })), ["Livraison · Review", "9 / 14"], "in tiers at 120 px: one bar, the group then the step");
+assert.equal(tipsOf(V.viz(t, null).steps(long, { width: 282 })).length, 24, "282 px: 24 steps of 2 cells, not folded");
+assert.equal(tipsOf(V.viz(t, null).steps(long, { width: 281 })).length, 0, "281 px: folded");
+const KF = { done: "#00ff00", current: "#0000ff", failed: "#ff0000" };
+const tintOf = (list) => find(V.viz(t, null).steps(list, { width: 90, colors: KF }), (n) => n.kind === "paint" && Object.values(KF).includes(n.bg))?.bg;
+assert.equal(tintOf(long.map((s, i) => (i === 3 ? { ...s, state: "failed" } : s))), KF.failed, "failed and running: the failed color");
+assert.equal(tintOf(long), KF.current, "running: the current color");
+assert.equal(tintOf(long.map((s) => ({ ...s, state: "done" }))), KF.done, "all done: the done color");
+assert.equal(tree(V.viz(t, null).steps(long, { width: 120 })), tree(V.viz(t, null, {}).steps(long, { width: 120 })), "folded, no roll: same output");
+calls.length = 0;
+V.viz(t, frame(motionState(), false), { roll: fakeRoll }).steps(phased, { width: 120, id: "gr" });
+assert.deepEqual(calls, [["gr-pct", "9 / 14", 16, false, 0]], "folded: « n / total » rolls in the bar's reel");
+for (const sizes of [null, [4, 3, 4, 3], [6, 6, 6, 6, 6, 6, 4]]) {
+  const states = Array.from({ length: sizes ? sizes.reduce((s, n) => s + n, 0) : 24 }, (_, i) => ST[i % 5]);
+  const list = states.map((state, i) => ({ label: `S${i}`, state, group: sizes ? `P${sizes.findIndex((_, k) => i < sizes.slice(0, k + 1).reduce((s, n) => s + n, 0))}` : undefined }));
+  let flips = 0, was = null;
+  for (let w = 40; w <= 700; w++) {
+    const on = tipsOf(V.viz(t, null).steps(list, { width: w })).length === 0;
+    if (was != null && on !== was) flips++;
+    was = on;
+    if (on) continue;
+    const segs = (sizes ? V.stepGroupsGeometry(states, sizes, w) : V.stepsGeometry(states, w)).segs;
+    assert.ok(Math.min(...segs.map((s) => s[1])) >= 2 * V.CELL, `${sizes ?? "flat"} at ${w} px: a step under 2 cells, not folded`);
+  }
+  assert.equal(flips, 1, `${sizes ?? "flat"}: one flip over the sweep`);
+}
+// Hysteresis, with a motion state: folded at 281 px, still folded up to 12 px past the edge, unfolded
+// beyond; on the way down, unfolded until the edge.
+const hm = motionState();
+const isFolded = (w) => tipsOf(V.viz(t, frame(hm, false)).steps(long, { width: w, id: "hy" })).length === 0;
+assert.deepEqual([281, 282, 293, 294, 282, 281].map(isFolded), [true, true, true, false, false, true]);
+// Without `width` (kt-flow): folded at the measured width, inside the steps' one measured wrapper.
+const fsm = motionState();
+const fprobe = find(V.viz(t, frame(fsm, false)).steps(long, { id: "fm" }), (n) => n.on?.on_size_change && n.props.w_full);
+fprobe.on.on_size_change({ width: 120, height: 10 }, { notify() {} });
+const fdrawn = V.viz(t, frame(fsm, false)).steps(long, { id: "fm" });
+const fids = []; (function walk(n) { if (n?.props?.id) fids.push(n.props.id[0]); n?.kids?.forEach(walk); })(fdrawn);
+assert.deepEqual([texts(fdrawn), fids.filter((i) => i === "fm~w").length, new Set(fids).size], [["S10", "10 / 24"], 1, fids.length], "measured: folded, one wrapper, no id twice");
+
 console.log("viz.js: ok");

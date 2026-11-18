@@ -429,8 +429,8 @@ function stepInk(s, col, row) {
  * edges and 1 cell apart, tiers 2 cells apart. Every step gets the same width, so a tier is as wide as
  * its steps and the ink reads as n / total. Each step's track and ink as in stepsGeometry, on rows 1-3.
  * `segs`: each step's [x, w] in px; `tiers`: each group's. */
-// ponytail: narrower than (gaps + one column per step) cells, the last tiers run past `width` (a
-// 14-step flow in 4 tiers: under ~120 px at 3 px a cell); a fallback if a panel ever gets that narrow.
+// Narrower than (gaps + one column per step) cells, the last tiers would run past `width` (a 14-step
+// flow in 4 tiers: under ~120 px at 3 px a cell): steps() folds into a bar before that (FOLD).
 export function stepGroupsGeometry(states, sizes, width, cell = CELL, hot = -1) {
   const PAD = 1, INNER = 1, TIER = 2;
   const cols = Math.floor(width / cell);
@@ -724,7 +724,8 @@ export function viz(t, m = null, { roll } = {}) {
     ]);
   }
 
-  function progress(name, value, { max = 100, detail, color: token = "accent", width, cell = CELL, id = `viz-p-${slug(name)}` } = {}) {
+  // `figure`: a text in place of the percentage (steps() folded: « n / total »), in its reel (`${id}-pct`).
+  function progress(name, value, { max = 100, detail, color: token = "accent", width, cell = CELL, id = `viz-p-${slug(name)}`, figure } = {}) {
     const ratio = max > 0 && Number.isFinite(value) ? clamp(value / max, 0, 1) : 0;
     const tint = color(t, token);
     const glow = faint(tint, (light ? 0.4 : 1) * 0.3);
@@ -739,7 +740,7 @@ export function viz(t, m = null, { roll } = {}) {
       const cells = div().absolute().left(0).top(B).w(w).h(hpx).children([...g.paths].map(([k, p]) => paint(p, k === "tint" ? tint : faint(tint, 0.14))));
       return reveal(m, id, w, hpx + 2 * B, div().relative().w(w).h(hpx + 2 * B).children([...bloom, cells]));
     };
-    const pct = `${Math.round(ratio * 100)}%`;
+    const pct = figure ?? `${Math.round(ratio * 100)}%`;
     // A rolling figure is a box, not a line of text: centered, as a baseline would not be found in it.
     return (width == null ? div().w_full() : div().w(width)).flex().flex_col().gap(8 - B).children([
       (R ? div().flex().items_center() : div().flex().items_baseline()).gap(8).children([
@@ -761,8 +762,15 @@ export function viz(t, m = null, { roll } = {}) {
   // faint band, the front step's tinted, its steps' cells inside, as wide as its steps. Under it, one
   // line at any width: the front step's group and name, and « n / total ». Tooltips: a cell its step, the
   // strip under a tier its group and each step's state.
+  // Too many steps for the width (a segment or a cell under FOLD dither cells: 24 steps at 120 px, 14 in
+  // 4 tiers under ~155 px), flat or in tiers: one progress bar instead, same id (no second reveal) and
+  // roll; its label the front step (after its group's name), its figure « n / total », its tint the
+  // worst state's (failed, else current, else done). The per-step tooltips go with the steps.
   const STEP_STATES = ["done", "current", "todo", "failed", "skipped"];
   const STEP_MIN = 44;
+  // Folded, the steps come back only HYST px wider than the fold: the bar is taller, so a parent's
+  // scrollbar coming or going at the edge would otherwise flip it at each render.
+  const FOLD = 2, HYST = 12;
   // `words`: the tooltips' state names, by state, to say them otherwise (by default viz.strings.js'
   // step.<state>, in the language shown).
   // `colors`: { done, current, failed } as theme colours, so the bar matches the list it heads (kt-flow
@@ -780,8 +788,21 @@ export function viz(t, m = null, { roll } = {}) {
     // The step in front: the running one, else the one that failed, else the next to do, else the last.
     const front = [states.indexOf("current"), states.indexOf("failed"), states.indexOf("todo"), states.length - 1].find((i) => i >= 0);
     const text = (s) => div().h(LH).truncate().font_family(MONO).text_size(10).line_height(`${LH}px`).text_color(tone[s]);
+    const total = `${passed} / ${states.length}`;
+    const worst = states.includes("failed") ? fill.failed : states.includes("current") ? fill.current : done;
+    // Folded at `w`: its narrowest segment under FOLD cells (at w - HYST once folded); kept per id in m.
+    const folds = (w, geo) => {
+      const was = Boolean(m?.folded?.has(id));
+      const g = geo(was ? Math.max(0, w - HYST) : w);
+      const now = Math.min(...g.segs.map(([, sw]) => sw)) < FOLD * g.cell;
+      if (m) (m.folded ??= new Set())[now ? "add" : "delete"](id);
+      return now;
+    };
+    const folded = (w, name) => progress(name, passed, { max: states.length, figure: total, color: worst, width: w, cell, id });
+    const flat = (w) => memo(`s|${states}|${w}|${cell}`, () => capped((c) => stepsGeometry(states, w, c), cell, w * 3 * cell));
     const draw = (w) => {
-      const g = memo(`s|${states}|${w}|${cell}`, () => capped((c) => stepsGeometry(states, w, c), cell, w * 3 * cell));
+      if (folds(w, flat)) return folded(w, String(list[front].label ?? ""));
+      const g = flat(w);
       const hpx = 3 * g.cell;
       const bar = div().relative().w(w).h(hpx).children([...g.paths].map(([k, p]) => (k === "current" && m
         ? pulse(m, div().absolute().inset_0().child(paint(p, fill[k])), true) : paint(p, fill[k]))));
@@ -806,14 +827,15 @@ export function viz(t, m = null, { roll } = {}) {
     const hot = states[front] === "current" || states[front] === "failed" ? at : -1;
     fill.tier = faint(done, 0.06);
     fill.hot = faint(fill[states[front]] ?? done, 0.12);
-    const total = `${passed} / ${states.length}`;
     const tier = (w) => {
       const sizes = groups.map(([, n]) => n);
-      const g = memo(`sg|${states}|${sizes}|${hot}|${w}|${cell}`, () => capped((c) => stepGroupsGeometry(states, sizes, w, c, hot), cell, w * 5 * cell));
+      const geo = (x) => memo(`sg|${states}|${sizes}|${hot}|${x}|${cell}`, () => capped((c) => stepGroupsGeometry(states, sizes, x, c, hot), cell, x * 5 * cell));
+      const name = groups[at][2];
+      if (folds(w, geo)) return folded(w, `${name != null ? `${name} · ` : ""}${list[front].label ?? ""}`);
+      const g = geo(w);
       const hpx = 5 * g.cell;
       const bar = div().relative().w(w).h(hpx).children([...g.paths].map(([k, p]) => (k === "current" && m
         ? pulse(m, div().absolute().inset_0().child(paint(p, fill[k])), true) : paint(p, fill[k]))));
-      const name = groups[at][2];
       const line = div().flex().w(w).h(LH).gap(5)
         .when(name != null, (el) => el.child(text("done").flex_none().child(String(name))).child(text("todo").flex_none().child("·")))
         .child(text(states[front]).flex_1().min_w(0).child(String(list[front].label ?? "")))
