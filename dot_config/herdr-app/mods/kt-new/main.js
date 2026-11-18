@@ -148,7 +148,9 @@ export default class NewThread extends View {
     this.busy = false; // the gwm command running, shown
     this.error = null; // { title, text, raw }: gwm's last refusal
     this.trust = null; // { file, text, on, repo, changed? }: a .gwm.toml gwm won't run untrusted
-    this.scanned = false; // the spaces' repos are known
+    this.scanned = false; // this computer's spaces' repos are known
+    this.scannedOn = new Set(); // the other machines whose spaces' repos are known (#61)
+    this.scanning = new Set(); // the other machines being looked at now
     this.repos = {}; // folder -> { key, name, main, top } | null
     this.skills = memo.list; // what `/` completes (skills.js invocable)
     this.loading = true; // the skills' scan of this opening is running
@@ -184,17 +186,11 @@ export default class NewThread extends View {
         cx.notify();
       }
     });
+    // #61: each other machine's spaces in their own queue (scanOn), alongside this computer's.
+    for (const m of new Set(spaces().map((s) => s.machine).filter(Boolean))) this.scanOn(m, cx);
+    // This computer's: `scanned`, then the skills, never waiting on another machine.
     cx.spawn(async (cx) => {
-      for (const s of spaces()) {
-        try {
-          const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: s.folder, on: s.machine });
-          const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: s.folder, on: s.machine });
-          if (top.code !== 0 || common.code !== 0) continue;
-          const key = common.stdout.trim();
-          const main = key.endsWith("/.git") ? key.slice(0, -5) : key;
-          this.repos[JSON.stringify([s.machine ?? null, s.folder])] = { key: JSON.stringify([s.machine ?? null, key]), name: main.split("/").pop(), main: main === top.stdout.trim(), top: top.stdout.trim() };
-        } catch {}
-      }
+      for (const s of spaces().filter((x) => !x.machine)) await this.repoOf(s);
       this.scanned = true;
       // "#N" typed before the scan knew the project was a repo.
       this.guessCheckout();
@@ -225,6 +221,37 @@ export default class NewThread extends View {
 
   claude() {
     return AGENTS[this.agent]?.[1]?.[0] === "claude";
+  }
+
+  // A space's repo, into this.repos (nothing when it isn't one, or its machine couldn't answer).
+  async repoOf(s) {
+    try {
+      const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: s.folder, on: s.machine });
+      const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: s.folder, on: s.machine });
+      if (top.code !== 0 || common.code !== 0) return;
+      const key = common.stdout.trim();
+      const main = key.endsWith("/.git") ? key.slice(0, -5) : key;
+      this.repos[JSON.stringify([s.machine ?? null, s.folder])] = { key: JSON.stringify([s.machine ?? null, key]), name: main.split("/").pop(), main: main === top.stdout.trim(), top: top.stdout.trim() };
+    } catch {}
+  }
+
+  // One machine's spaces' repos, in their own queue (#61): never behind this computer's nor another
+  // machine's; not while it's away (back, the render that sees it asks: render), never during a check.
+  scanOn(m, cx) {
+    if (this.scanning.has(m) || this.scannedOn.has(m) || checking() || !reachable(m)) return;
+    this.scanning.add(m);
+    cx.spawn(async (cx) => {
+      for (const s of spaces().filter((x) => x.machine === m)) await this.repoOf(s);
+      this.scanning.delete(m);
+      this.scannedOn.add(m);
+      this.guessCheckout();
+      cx.notify();
+    });
+  }
+
+  // Whether the spaces of `m` (null: this computer) have been looked at for their repo (#61).
+  scannedFor(m) {
+    return m ? this.scannedOn.has(m) : this.scanned;
   }
 
   // The selected project's machine, null for this computer.
@@ -353,7 +380,7 @@ export default class NewThread extends View {
     const r = s ? this.repos[JSON.stringify([s.machine ?? null, s.folder])] : null;
     const i = this.projects().findIndex((x) => x.space.id === this.wantProject || (r && x.key === r.key));
     if (i >= 0) this.project = i;
-    if (this.scanned || !s) {
+    if (this.scannedFor(s?.machine) || !s) {
       this.wantProject = null;
       this.guessCheckout();
     }
@@ -490,6 +517,8 @@ export default class NewThread extends View {
     if (!p) return;
     const [label, argv, prompt] = AGENTS[this.agent];
     const machine = p.space.machine ?? null;
+    // Its machine away: nothing starts there (the state says why: notice).
+    if (machine && !reachable(machine)) return;
     // Checked and not on that machine: said, not started.
     if (installedOn(agentsOn[machine], argv) === false) {
       this.nudge = "agent";
@@ -768,6 +797,9 @@ export default class NewThread extends View {
     if (away) return away;
     if (this.error && !this.error.offline) return this.section(t, mark("circle-alert", t.ansi1), this.error.title, this.error.text, [this.error.raw && this.code(t, "kt-n-raw", [this.error.raw], 120)]);
     if (!p) return this.section(t, mark("folder", t.dim), tr("noProject.title"), tr("noProject.text"));
+    // The project's machine away (#61): its state and what to do, not a branch it couldn't read.
+    const gone = p.space.machine ? notice(t, p.space.machine, { id: "kt-n-away" }) : null;
+    if (gone) return gone;
     const [, argv, prompt] = AGENTS[this.agent];
     const name = this.name.trim();
     // What the agent gets first (the consigne whole, else the name): its first line here.
@@ -790,7 +822,7 @@ export default class NewThread extends View {
       return this.facts(t, [
         [tr("fact.folder"), tilde(p.space.folder) || "—", true],
         // Still detecting the repo: the branch as a bar (skeleton.js), breathing.
-        [tr("fact.branch"), git ? p.space.branch ?? "—" : this.scanned ? tr("branch.notRepo") : this.S.pulse(this.S.line(90, { h: 7, lh: 15 }).id("kt-n-branch-sk")), true, git ? undefined : t.dim],
+        [tr("fact.branch"), git ? p.space.branch ?? "—" : this.scannedFor(p.space.machine) ? tr("branch.notRepo") : this.S.pulse(this.S.line(90, { h: 7, lh: 15 }).id("kt-n-branch-sk")), true, git ? undefined : t.dim],
         [tr("fact.agent"), agent, true],
       ]);
     }
@@ -826,6 +858,8 @@ export default class NewThread extends View {
     }
     // Another machine: its name on the chips and the subtitle; as root, a line under the rows (remote.js).
     const mach = p?.space.machine ?? null;
+    // Its spaces' repos, if not looked at yet (away at the opening, back now): #61.
+    if (mach) this.scanOn(mach, cx);
     const asRoot = Boolean(mach) && isRoot(mach) === true && Boolean(AGENTS[this.agent][1]);
     const rootBadge = (el) => el.child(div().flex_none().px(4).rounded(4).bg(alpha(t.blocked, "24")).text_color(t.blocked).text_size(9.5).child("ROOT")); // i18n: tech
     // A workflow leading the consigne owns the checkout (skills.js checkoutOf); else kt-new's pick.

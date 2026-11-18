@@ -293,6 +293,56 @@ assert.deepEqual(await io.findRepo(J(null, "/fx/acme"), exec), { key: acmeGit, n
 assert.equal(await io.findRepo(J(null, "/fx/beta"), exec), null);
 assert.equal(await io.realOf(J(null, "/fx/beta"), exec), J(null, "/fx/beta"));
 assert.equal(await io.realOf(J(null, "/fx/gone"), exec), null);
+// #61: another machine that couldn't be asked (away: machines.js guard refuses; a timeout) is not an answer:
+// undefined, never kept; this computer's failure stays an answer (null).
+const away = async () => { throw Object.assign(new Error("vps-a: away"), { offline: "vps-a" }); };
+assert.equal(await io.findRepo(J("vps-a", "/srv/acme"), away), undefined);
+assert.equal(await io.realOf(J("vps-a", "/srv/acme"), away), undefined);
+assert.equal(await io.findRepo(J(null, "/fx/acme"), away), null);
+// askable: a machine away isn't asked; back, at once; a place that failed waits 30 s.
+const up = new Set([null]);
+const reach = (m) => up.has(m);
+const tried = {};
+assert.equal(io.askable(J("vps-a", "/srv/acme"), { reachable: reach, tried, now: 1000 }), false);
+up.add("vps-a");
+assert.equal(io.askable(J("vps-a", "/srv/acme"), { reachable: reach, tried, now: 1000 }), true);
+assert.equal(io.askable(J("vps-a", "/srv/acme"), { reachable: reach, tried: { [J("vps-a", "/srv/acme")]: 1000 }, now: 20_000 }), false);
+assert.equal(io.askable(J("vps-a", "/srv/acme"), { reachable: reach, tried: { [J("vps-a", "/srv/acme")]: 1000 }, now: 31_000 }), true);
+// queues: this computer first, then each machine apart, places in their order.
+assert.deepEqual(io.queues([J("vps-b", "/b"), J(null, "/x"), J("vps-a", "/a1"), J(null, "/y"), J("vps-a", "/a2")]),
+  [[null, [J(null, "/x"), J(null, "/y")]], ["vps-a", [J("vps-a", "/a1"), J("vps-a", "/a2")]], ["vps-b", [J("vps-b", "/b")]]]);
+// drain: the machine refuses, then answers once it's back: the project appears, nothing kept meanwhile.
+let back = false;
+const flaky = async (cmd, args, o) => {
+  if (o.on === "vps-a" && !back) throw Object.assign(new Error("vps-a: away"), { offline: "vps-a" });
+  return exec(cmd, args, { ...o, cwd: o.cwd.replace("/srv", "/fx") });
+};
+const found = {}, failedAt = {};
+const placeA = J("vps-a", "/srv/acme");
+await io.drain([placeA], (l) => io.findRepo(l, flaky), found, failedAt, () => 5000);
+assert.equal(placeA in found, false); // not kept as « no repo »
+assert.equal(failedAt[placeA], 5000);
+back = true;
+await io.drain([placeA], (l) => io.findRepo(l, flaky), found, failedAt);
+assert.deepEqual(found[placeA], { key: J("vps-a", "/fx/acme/.git"), name: "acme", linked: false });
+assert.equal(placeA in failedAt, false);
+// A slow machine never holds this computer back: its queue runs apart, the local one answers first.
+const order = [];
+let release;
+const slow = new Promise((r) => { release = r; });
+const timed = async (cmd, args, o) => {
+  if (o.on === "vps-a") await slow;
+  order.push(o.on ?? "local");
+  return exec(cmd, args, { ...o, cwd: o.cwd.replace("/srv", "/fx") });
+};
+const into = {};
+const runs = io.queues([J("vps-a", "/srv/acme"), J(null, "/fx/acme")]).map(([, q]) => io.drain(q, (l) => io.findRepo(l, timed), into, {}));
+await runs[0]; // this computer's queue
+assert.deepEqual(order, ["local", "local"]);
+assert.ok(J(null, "/fx/acme") in into && !(J("vps-a", "/srv/acme") in into));
+release();
+await Promise.all(runs);
+assert.ok(J("vps-a", "/srv/acme") in into);
 calls.length = 0;
 const defaults = {};
 const got = await io.lookupPr(M.prKey(null, "/fx/acme", "feat/#12-x"), { exec, repos, defaults });

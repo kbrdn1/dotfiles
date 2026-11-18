@@ -67,6 +67,8 @@ import { spaces, panes, run, theme, shared, setShared, layout, nextCommand, sett
 import * as fs from "fs/promises";
 import * as model from "./threads-model.js";
 import * as io from "./threads-io.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine away refuses at once (#61).
+import { guard, reachable } from "./machines.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
   costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
@@ -209,6 +211,10 @@ export default class Kanban extends View {
     // The World's reads (threads-model.js, as kt-threads keeps them): asked only while the page shows.
     this.repos = {};
     this.real = {};
+    // #61: places another machine couldn't answer (threads-io askable), the machines whose queue runs.
+    this.triedRepo = {};
+    this.triedReal = {};
+    this.finding = new Set();
     this.homeReal = null;
     this.live = {};
     this.quota = null;
@@ -287,23 +293,28 @@ export default class Kanban extends View {
   }
 
   // New folders only (a folder's repo and real path don't change): the spaces' and the terminals'.
+  // #61: a machine away isn't asked (back, its places are); one queue per machine, this computer's never
+  // behind another's; a place it couldn't ask is not kept as « no repo » (threads-io askable, queues, drain).
   findRepos(cx) {
-    if (this.finding || checking()) return;
+    if (checking()) return;
     const ps = spaces();
     const here = [...ps.map((s) => [s.machine ?? null, s.folder]), ...panes().filter((p) => p.terminal)
       .map((p) => [p.terminal.includes("/") ? p.terminal.split("/")[0] : null, p.cwd])].filter(([, f]) => f).map((l) => JSON.stringify(l));
-    const repos = [...new Set(here.filter((l) => !(l in this.repos)))];
-    const reals = [...new Set(ps.filter((s) => s.folder).map(model.where).filter((l) => !(l in this.real)))];
-    if (!repos.length && !reals.length) return;
-    this.finding = true;
-    cx.spawn(async (cx) => {
-      for (const l of repos) this.repos[l] = await io.findRepo(l, exec);
-      for (const l of reals) this.real[l] = await io.realOf(l, exec);
-      this.finding = false;
-      // /me:report's folders are named after the repos: the ones just found can have one.
-      if (repos.length && visible()) this.readReports(cx);
-      cx.notify();
-    });
+    const repos = [...new Set(here.filter((l) => !(l in this.repos) && io.askable(l, { reachable, tried: this.triedRepo })))];
+    const reals = [...new Set(ps.filter((s) => s.folder).map(model.where).filter((l) => !(l in this.real) && io.askable(l, { reachable, tried: this.triedReal })))];
+    for (const [m, q] of io.queues([...new Set([...repos, ...reals])])) {
+      if (this.finding.has(m)) continue;
+      this.finding.add(m);
+      cx.spawn(async (cx) => {
+        const ask = guard(exec);
+        await io.drain(q.filter((l) => repos.includes(l)), (l) => io.findRepo(l, ask), this.repos, this.triedRepo);
+        await io.drain(q.filter((l) => reals.includes(l)), (l) => io.realOf(l, ask), this.real, this.triedReal);
+        this.finding.delete(m);
+        // /me:report's folders are named after this computer's repos: the ones just found can have one.
+        if (m === null && repos.length && visible()) this.readReports(cx);
+        cx.notify();
+      });
+    }
   }
 
   // herdr-bridge, statusline and claude-flow per agent (threads-io.js); redraws only when it changed.

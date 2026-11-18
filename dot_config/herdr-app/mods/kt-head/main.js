@@ -16,8 +16,11 @@ import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 // Copied byte for byte from mods/kt-threads/halo.js: the halo the brand part draws, kt-threads below.
 import { HALO, haloLayers } from "./halo.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine away refuses at once (#61).
+import { guard, reachable } from "./machines.js";
 
 const tr = makeT(strings);
+const ask = guard(exec);
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const SPIN = "mods/workspace-chrome/spinner.svg";
@@ -177,6 +180,7 @@ function route(c) {
 export default class Head extends View {
   init(_props, cx) {
     this.repos = {}; // folder -> repo name | null
+    this.tried = {}; // #61: folder -> when another machine couldn't answer for it
     this.motion = motionState(); // ANIMATIONS.md: the toggles' ink and the agent's state fade in
     if (checking()) return;
     cx.spawn(async (cx) => {
@@ -189,15 +193,22 @@ export default class Head extends View {
   }
 
   // The repo's main checkout where the thread's terminal is now (null outside git), once per folder.
+  // #61: another machine away isn't asked (back, it is: this render); one that couldn't answer isn't kept
+  // as « no repo », asked again 30 s later. This computer's failure stays an answer (null), as before.
   root(p, cx) {
     const at = drawer().lead?.cwd || p.folder;
     const location = JSON.stringify([p.machine ?? null, at]);
-    if (!(location in this.repos)) {
+    if (!(location in this.repos) && reachable(p.machine) && !(Date.now() - (this.tried[location] ?? -Infinity) < 30e3)) {
       this.repos[location] = undefined;
       cx.spawn(async (cx) => {
-        const r = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: at, on: p.machine }).catch(() => ({ code: 1 }));
-        const key = r.code === 0 ? r.stdout.trim() : null;
-        this.repos[location] = key ? (key.endsWith("/.git") ? key.slice(0, -5) : key) : null;
+        const r = await ask("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: at, on: p.machine }).catch(() => null);
+        if (!r && p.machine) {
+          delete this.repos[location];
+          this.tried[location] = Date.now();
+        } else {
+          const key = r?.code === 0 ? r.stdout.trim() : null;
+          this.repos[location] = key ? (key.endsWith("/.git") ? key.slice(0, -5) : key) : null;
+        }
         cx.notify();
       });
     }

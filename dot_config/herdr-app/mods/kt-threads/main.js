@@ -43,7 +43,7 @@ import { filterOf, filtering, openFirst, moveInGroup } from "./thread-filter.js"
 import * as model from "./threads-model.js";
 import { age, duration, until, label, startOf, endOf, isAlive, FADE, PROJECT_COLORS, assignColors, sortRegistry, where } from "./threads-model.js";
 import * as io from "./threads-io.js";
-import { pollMachines } from "./machines.js";
+import { pollMachines, guard, reachable } from "./machines.js";
 import { Vim, keysOf, step } from "./vim.js";
 // Copied byte for byte from mods/kbrdn-toast/decide.js (a mod can't import from another folder): edit
 // there, then copy.
@@ -67,6 +67,9 @@ import strings from "./strings.js";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder } from "herdr";
 import * as fs from "fs/promises";
+
+// The places' git and real paths go through machines.js' guard: a machine away refuses at once (#61).
+const ask = guard(exec);
 
 // The layout's main stack and its children (kbrdn-threads.json).
 const VIEW = "view";
@@ -255,6 +258,12 @@ export default class Threads extends View {
     this.live = {};
     this.reports = {};
     this.real = {}; // where(space) -> [machine, its folder's real path], null when it can't be resolved
+    // #61: places another machine couldn't answer (threads-io askable: asked again once it's back, or
+    // 30 s later), and the machines whose queue runs (one per machine: threads-io queues).
+    this.triedRepo = {};
+    this.triedReal = {};
+    this.finding = new Set();
+    this.realing = new Set();
     this.seen = new Set(); // spaces whose project color was applied once
     this.homeReal = null; // home()'s real path: its space is "Home", never a project
     this.memos = {}; // terminal -> companion-logo's memo (when done or blocked began, one-shots)
@@ -372,10 +381,23 @@ export default class Threads extends View {
   syncProjects(cx) {
     if (this.syncing) return;
     const ps = spaces().filter((s) => s.folder);
-    const todo = [...new Set(ps.map(where).filter((l) => !(l in this.real)))];
+    const todo = [...new Set(ps.map(where).filter((l) => !(l in this.real) && io.askable(l, { reachable, tried: this.triedReal })))];
+    // Another machine's places in their own queue (#61): a slow one never holds this computer's back;
+    // what they find goes into the registry at the next tick.
+    let local = [];
+    for (const [m, q] of io.queues(todo)) {
+      if (m === null) local = q;
+      else if (!this.realing.has(m)) {
+        this.realing.add(m);
+        cx.spawn(async () => {
+          await io.drain(q, (l) => io.realOf(l, ask), this.real, this.triedReal);
+          this.realing.delete(m);
+        });
+      }
+    }
     this.syncing = true;
     cx.spawn(async (cx) => {
-      for (const l of todo) this.real[l] = await io.realOf(l, exec);
+      await io.drain(local, (l) => io.realOf(l, ask), this.real, this.triedReal);
       this.syncing = false;
       if (this.homeReal === null) return; // which space is Home isn't known yet: next time
       let next = shared("kt.projects") ?? [];
@@ -1081,14 +1103,18 @@ export default class Threads extends View {
   // so a new space shows its project at once.
   findRepos(cx) {
     const here = [...spaces().map((s) => [s.machine ?? null, s.folder]), ...panes().filter((p) => p.terminal).map((p) => [p.terminal.includes("/") ? p.terminal.split("/")[0] : null, p.cwd])].filter(([, cwd]) => cwd).map((at) => JSON.stringify(at));
-    const folders = [...new Set(here.filter((f) => f && !(f in this.repos)))];
-    if (!folders.length || this.finding) return;
-    this.finding = true;
-    cx.spawn(async (cx) => {
-      for (const location of folders) this.repos[location] = await io.findRepo(location, exec);
-      this.finding = false;
-      cx.notify();
-    });
+    // #61: a machine away isn't asked (back, its places are: the render that sees it back); one queue per
+    // machine, this computer's never behind another's; a place it couldn't ask is not kept as « no repo ».
+    const folders = [...new Set(here.filter((f) => f && !(f in this.repos) && io.askable(f, { reachable, tried: this.triedRepo })))];
+    for (const [m, q] of io.queues(folders)) {
+      if (this.finding.has(m)) continue;
+      this.finding.add(m);
+      cx.spawn(async (cx) => {
+        await io.drain(q, (l) => io.findRepo(l, ask), this.repos, this.triedRepo);
+        this.finding.delete(m);
+        cx.notify();
+      });
+    }
   }
 
   // Settling a thread. Settling the last open one of a local worktree offers, in a notification, to

@@ -90,8 +90,15 @@ export async function readReports(panes, repos, { home, readTextFile, readdir })
   return next;
 }
 
+// A failed ask (#61). On this computer it's an answer (no such folder): null, kept, as before. On another
+// machine it's "couldn't ask" (away, a timeout, a lost link; machines.js guard refuses at once): undefined,
+// never kept, asked again once askable(). ponytail: a remote folder really gone is asked again every 30 s;
+// tell it apart (exec's message) if that ever costs.
+const failed = (on) => (on ? undefined : null);
+
 /** A folder's repo (`location`: JSON [machine, folder]): { key: JSON [machine, git common dir], name,
- *  linked: a linked worktree }, null outside git. A folder's repo doesn't change: ask once. */
+ *  linked: a linked worktree }, null outside git, undefined when its machine couldn't be asked. A
+ *  folder's repo doesn't change: ask once. */
 export async function findRepo(location, exec) {
   const [on, f] = JSON.parse(location);
   try {
@@ -103,16 +110,49 @@ export async function findRepo(location, exec) {
       name: (key.endsWith("/.git") ? key.slice(0, -5) : key).split("/").pop(),
       linked: key !== `${top.stdout.trim()}/.git`,
     };
-  } catch { return null; }
+  } catch { return failed(on); }
 }
 
-/** A folder's real path (`pwd -P`) as the World's `real` keeps it: JSON [machine, path], else null. */
+/** A folder's real path (`pwd -P`) as the World's `real` keeps it: JSON [machine, path], else null;
+ *  undefined when its machine couldn't be asked. */
 export async function realOf(location, exec) {
   const [on, folder] = JSON.parse(location);
   try {
     const r = await exec("pwd", ["-P"], { cwd: folder, on });
     return r.code === 0 && r.stdout.trim() ? JSON.stringify([on, r.stdout.trim()]) : null;
-  } catch { return null; }
+  } catch { return failed(on); }
+}
+
+/** Whether a place (JSON [machine, folder]) can be asked now: its machine `reachable` (machines.js), and
+ *  not failed less than `again` ms ago (`tried`: place -> when it last couldn't be asked). A machine away
+ *  is not asked at all; back, its places are asked at once (the render that sees it back). */
+export function askable(location, { reachable, tried = {}, now = Date.now(), again = 30e3 }) {
+  return reachable(JSON.parse(location)[0]) && !(now - (tried[location] ?? -Infinity) < again);
+}
+
+/** Places by machine, this computer first: [[machine, [place, ...]], ...]. One queue per machine, so a
+ *  slow machine never holds this computer's places, nor another machine's, back. */
+export function queues(locations) {
+  const by = new Map();
+  for (const l of locations) {
+    const on = JSON.parse(l)[0];
+    if (!by.has(on)) by.set(on, []);
+    by.get(on).push(l);
+  }
+  return [...by].sort(([a], [b]) => (a === null ? -1 : b === null ? 1 : a.localeCompare(b)));
+}
+
+/** Asks `ask(place)` for each place of one queue, in order: an answer (null included) goes into `into`,
+ *  a place it couldn't ask (undefined) into `tried` with the time, for askable(). */
+export async function drain(queue, ask, into, tried, now = () => Date.now()) {
+  for (const l of queue) {
+    const r = await ask(l);
+    if (r === undefined) tried[l] = now();
+    else {
+      into[l] = r;
+      delete tried[l];
+    }
+  }
 }
 
 const json = (s) => { try { return JSON.parse(s); } catch { return null; } };
