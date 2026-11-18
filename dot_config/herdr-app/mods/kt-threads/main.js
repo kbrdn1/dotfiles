@@ -37,8 +37,12 @@ import { View, div, svg, image } from "gpui-kit";
 import { ring, ctxTokens } from "./ring.js";
 import { costLevel, levelColor } from "./levels.js";
 import { companion } from "./companion-logo.js";
-import { longLived, pickPr } from "./pr-pick.js";
-import { filterOf, filtering, passes, groupOf, GROUPS, byNeed, byProject, openFirst, moveInGroup } from "./thread-filter.js";
+import { longLived } from "./pr-pick.js";
+import { filterOf, filtering, openFirst, moveInGroup } from "./thread-filter.js";
+// The threads' model (pure) and its reads, shared with kt-kanban: a thread's data comes from there.
+import * as model from "./threads-model.js";
+import { age, duration, until, label, startOf, endOf, isAlive, FADE, PROJECT_COLORS, assignColors, sortRegistry, where } from "./threads-model.js";
+import * as io from "./threads-io.js";
 import { Vim, keysOf, step } from "./vim.js";
 // Copied byte for byte from mods/kbrdn-toast/decide.js (a mod can't import from another folder): edit
 // there, then copy.
@@ -71,13 +75,9 @@ function find(node, id) {
 }
 const SPIN = "mods/workspace-chrome/spinner.svg";
 // A sub-agent's branch: 28 px, kbrdn-agents' sub-agent rhythm with room for the 20×16 companion and its
-// corner badge (26 would let the badge touch the next line). An ended one fades after FADE, goes after GONE.
+// corner badge (26 would let the badge touch the next line). An ended one fades after FADE, goes after GONE
+// (threads-model.js).
 const BRANCH_H = 28;
-const FADE = 60e3;
-const GONE = 5 * 60e3;
-const startOf = (a) => a.startedAt ?? a.at ?? 0;
-const endOf = (a) => a.endedAt ?? startOf(a);
-const isAlive = (a) => a.state === "running" || a.state === "background";
 const tr = makeT(strings);
 // The pages under the navigation's Agents group, in order, as the view stack names them: [icon, label].
 // One the layout's stack doesn't have yet (Workflow, kt-workflow) is left out rather than open a blank.
@@ -104,32 +104,6 @@ function twig(t, { h, x, last, color, rest, reach = 0 }) {
 // foreground made translucent, so they read at a glance without shouting, glass mode included.
 const treeLine = (t) => alpha(t.foreground, settings().dark ? "38" : "4d");
 
-// kbrdn-tabs' label(): a name the person gave stays; else the agent's live title
-// (its status glyph dropped), else the program; never a bare tab number.
-const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}\p{Ps}\p{Pi}]+/u, "").replace(/^\[ [!.] \] /, "").trim();
-function label(tab, lead) {
-  const prog = lead?.program?.name;
-  const base = tab.named ? tab.name : prog ?? "Terminal";
-  if (!lead?.program?.agent) return base;
-  const live = clean(lead.title);
-  const path = /^[~/]|^[A-Za-z]:\\/.test((lead.title ?? "").replace(/^[^\p{L}\p{N}~/]+/u, ""));
-  const telling = live && live !== lead.terminal && live !== prog && !path && !live.includes("@") && live.toLowerCase() !== lead.program.key;
-  return (tab.name === prog || !tab.named) && telling ? live : base;
-}
-
-// kbrdn: /me:report facts (~/Reports/<owner>-<repo>/<branch>/data.js, written atomically by collect.py).
-// Blockers are p0+p1+p2 of the last pass; an axis "non exécuté" is never a zero; ci null shows nothing.
-function summarizeReport(d) {
-  const f = d?.facts ?? {};
-  const last = f.review?.passes?.at?.(-1);
-  const ran = (a) => a?.state === "ok";
-  const review = last ? { pass: last.pass, blockers: ran(last.standards) || ran(last.spec) ? (last.p0 ?? 0) + (last.p1 ?? 0) + (last.p2 ?? 0) : null } : null;
-  const ci = f.ci ? { ok: f.ci.ok ?? 0, total: f.ci.total ?? 0, fail: f.ci.fail ?? 0, pending: f.ci.pending ?? 0 } : null;
-  // its PR, which the card's badge takes over gh's: the same source as the rest of the card
-  const pr = f.pr?.number ? { number: f.pr.number, state: f.pr.state ?? "OPEN", url: f.pr.url } : null;
-  return { review, ci, pr, at: d?.generatedAt ?? null };
-}
-
 const MONO = "Monaspace Krypton";
 // PR state -> icon and theme color name.
 const PR = {
@@ -151,53 +125,19 @@ function at(ms, hour) {
   d.setHours(hour, 0, 0, 0);
   return d.getTime() > Date.now() ? d.getTime() : d.getTime() + 86400e3;
 }
-function until(ms) {
-  const m = Math.max(1, Math.round((ms - Date.now()) / 60e3));
-  return m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
-}
 
-// Space colors, kept by space id in shared "space.colors": a theme
-// color name ("ansi6") or a picked #rrggbb. A space seen without one gets
-// the theme color fewest spaces use, once; every mod does the same in the
-// same order, so they agree, and adding or renaming spaces moves nothing.
-const PROJECT_COLORS = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
+// Space colors (shared "space.colors", threads-model.js' assignColors): this list gives a new space
+// its color and writes it back.
 function spaceColors() {
-  const ids = new Set(spaces().map((p) => p.id));
-  const kept = Object.fromEntries(Object.entries(shared("space.colors") ?? {}).filter(([id]) => ids.has(id)));
-  let changed = Object.keys(kept).length !== Object.keys(shared("space.colors") ?? {}).length;
-  for (const p of spaces()) {
-    if (kept[p.id] || p.name === "~") continue;
-    const uses = (c) => Object.values(kept).filter((v) => v === c).length;
-    kept[p.id] = PROJECT_COLORS.reduce((best, c) => (uses(c) < uses(best) ? c : best));
-    changed = true;
-  }
-  if (changed) setShared("space.colors", kept);
-  return kept;
+  const { colors, changed } = assignColors(spaces(), shared("space.colors"));
+  if (changed) setShared("space.colors", colors);
+  return colors;
 }
 function spaceColor(t, p) {
   if (p.name === "~") return t.dim;
   const c = spaceColors()[p.id] ?? PROJECT_COLORS[0];
   return c.startsWith("#") ? c : t[c];
 }
-
-function age(ms) {
-  if (!ms) return "";
-  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (s < 60) return "now";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
-}
-
-function duration(ms) {
-  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
-}
-
-const num = (id) => Number(String(id).replace(/\D/g, "")) || 0;
 
 const clock = (sec) => { const d = new Date(sec * 1000); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
 // A quota window's reset, from its unix seconds: "4d23h", "3h07m", "12m".
@@ -216,19 +156,14 @@ function cacheLeft(s) {
 function windowOf(q, name) {
   const w = q?.[name] ?? q?.rate_limits?.[name];
   return w && w.resets_at * 1000 > Date.now() ? w : null;
-}const STATUSLINE = () => `${home()}/.claude/cache/statusline`;
+}
 
 // The projects registry (shared "kt.projects", kept across restarts): [{ id, name, folder, machine,
 // color, logo, order }], id = [machine, the folder's real path]. kt-projects manages it; the list
 // adds every space it sees, so a project closed stays one click away.
-const registry = () => [...(shared("kt.projects") ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-const where = (s) => JSON.stringify([s.machine ?? null, s.folder]);
-// A project's logo for the appearance now (registry `logos: { light, dark }`, or the older single
-// `logo`): its own, else the other mode's; null for none (then the initial on its color).
-function logoOf(e) {
-  const l = e?.logos ?? { light: e?.logo ?? null, dark: e?.logo ?? null };
-  return (settings().dark ? (l.dark ?? l.light) : (l.light ?? l.dark)) ?? null;
-}
+const registry = () => sortRegistry(shared("kt.projects"));
+// A project's logo for the appearance now (threads-model.js).
+const logoOf = (e) => model.logoOf(e, settings().dark);
 // The theme switch at the bottom (shared "kt.themeMode"), kbrdn.dev's ThemeToggle: light, dark,
 // or blur: frosted glass, a `-glass` copy of the shown layout with `window_blur` and these
 // translucent colors (forces dark). The shown layout's own file is never written.
@@ -418,13 +353,7 @@ export default class Threads extends View {
     const todo = [...new Set(ps.map(where).filter((l) => !(l in this.real)))];
     this.syncing = true;
     cx.spawn(async (cx) => {
-      for (const l of todo) {
-        const [on, folder] = JSON.parse(l);
-        try {
-          const r = await exec("pwd", ["-P"], { cwd: folder, on });
-          this.real[l] = r.code === 0 && r.stdout.trim() ? JSON.stringify([on, r.stdout.trim()]) : null;
-        } catch { this.real[l] = null; }
-      }
+      for (const l of todo) this.real[l] = await io.realOf(l, exec);
       this.syncing = false;
       if (this.homeReal === null) return; // which space is Home isn't known yet: next time
       let next = shared("kt.projects") ?? [];
@@ -463,11 +392,14 @@ export default class Threads extends View {
     });
   }
 
-  // The Home space: its folder is this computer's home (a remote machine's home isn't known here).
-  // Never a project; shown first, with a house.
+  // What threads-model.js reads of this list's places: the repos, real paths and home found so far.
+  places() {
+    return { repos: this.repos, real: this.real, home: home(), homeReal: this.homeReal };
+  }
+
+  // The Home space (threads-model.js): never a project; shown first, with a house.
   isHome(s) {
-    if (s.machine) return false;
-    return s.folder === home() || (this.homeReal !== null && this.real[where(s)] === JSON.stringify([null, this.homeReal]));
+    return model.isHome(s, this.places());
   }
 
   // The halo's color: the accent across every project, neutral at home, else the shown project's (its
@@ -481,13 +413,12 @@ export default class Threads extends View {
 
   // Home's name, its square in the bar and its group's header: "Home" or the name it was given.
   homeLabel(s) {
-    return s.named ? s.name : "Home";
+    return model.homeLabel(s);
   }
 
   // A space's registry entry (by project, else by its folder as written while that's unknown).
   entryOf(s, reg) {
-    const id = this.projectId(s);
-    return reg.find((e) => (id ? e.id === id : e.folder === s.folder && (e.machine ?? null) === (s.machine ?? null))) ?? null;
+    return model.entryOf(s, reg, this.places());
   }
 
   // The project picker under the shown project: a popup (kt-project-picker) the sidebar's width
@@ -610,44 +541,8 @@ export default class Threads extends View {
     if (this.readingLive) return;
     this.readingLive = true;
     cx.spawn(async (cx) => {
-      const next = {};
-      let claude = false;
-      for (const p of panes()) {
-        if (!p.terminal || p.terminal.includes("/") || !p.program?.agent) continue;
-        try {
-          const s = await readTextFile(`${home()}/.claude/cache/herdr/${p.terminal}.json`);
-          if (s) next[p.terminal] = JSON.parse(s);
-        } catch {
-          if (this.live[p.terminal]) next[p.terminal] = this.live[p.terminal]; // a torn read keeps the last one
-        }
-        // Claude's statusline facts (model, context, cache, tokens), for the card's agent rows.
-        if (p.app === "claude-code" || p.program?.key === "claude") {
-          claude = true;
-          try {
-            const sl = JSON.parse(await readTextFile(`${STATUSLINE()}/herdr-${p.terminal}.json`));
-            // its write time (to the minute) dates the thread's activity; the rest feeds the card
-            if (sl) {
-              const slAt = sl.updated_at ? Math.floor(sl.updated_at / 60) * 60e3 : undefined;
-              delete sl.updated_at;
-              next[p.terminal] = { ...(next[p.terminal] ?? {}), sl, slAt };
-            }
-          } catch {
-            if (this.live[p.terminal]?.sl) next[p.terminal] = { ...(next[p.terminal] ?? {}), sl: this.live[p.terminal].sl, slAt: this.live[p.terminal].slAt };
-          }
-        }
-        // claude-flow's timeline (issue, worktree, commits, PR, review, CI, merge), when it publishes one.
-        try {
-          const f = await readTextFile(`${home()}/.claude/cache/herdr/${p.terminal}.flow.json`);
-          if (f) next[p.terminal] = { ...(next[p.terminal] ?? {}), flow: JSON.parse(f) };
-        } catch {
-          if (this.live[p.terminal]?.flow) next[p.terminal] = { ...(next[p.terminal] ?? {}), flow: this.live[p.terminal].flow };
-        }
-      }
-      // The account's 5h / 7d quota: one file, read once a tick when a Claude thread shows it.
-      let quota = null;
-      if (claude) {
-        try { quota = JSON.parse(await readTextFile(`${STATUSLINE()}/herdr-quota.json`)); if (quota) delete quota.updated_at; } catch { quota = this.quota; }
-      }
+      // herdr-bridge, statusline and claude-flow per agent, and the quota (threads-io.js).
+      const { live: next, quota } = await io.readLive(panes(), { home: home(), readTextFile }, { live: this.live, quota: this.quota });
       this.readingLive = false;
       // When each thread was first seen (shared "kt.firstSeen"): the activity date of one with no agent
       // file. Written only when a tab is new; closed tabs drop out then.
@@ -666,28 +561,7 @@ export default class Threads extends View {
     if (this.readingReports) return;
     this.readingReports = true;
     cx.spawn(async (cx) => {
-      const next = {};
-      let owners = [];
-      try { owners = await fs.readdir(`${home()}/Reports`); } catch { }
-      for (const p of panes()) {
-        if (!p.terminal || p.terminal.includes("/") || !p.branch || !p.cwd) continue;
-        const repo = this.repos[JSON.stringify([null, p.cwd])]?.name;
-        const dir = repo && owners.find((o) => o.endsWith(`-${repo}`));
-        const key = `${repo}|${p.branch}`;
-        if (!dir || key in next) continue;
-        // facts.json (the stable contract) first, data.js (the page's own copy) until collect.py writes it.
-        const folder = `${home()}/Reports/${dir}/${p.branch.replace(/[/#]+/g, "-")}`;
-        try {
-          const facts = await readTextFile(`${folder}/facts.json`).catch(() => null);
-          if (facts) {
-            const d = JSON.parse(facts);
-            next[key] = summarizeReport(d.facts ? d : { facts: d, generatedAt: d.generatedAt });
-            continue;
-          }
-          const s = await readTextFile(`${folder}/data.js`);
-          if (s) next[key] = summarizeReport(JSON.parse(s.replace(/^\s*window\.__report\s*=\s*/, "").replace(/;\s*$/, "")));
-        } catch { }
-      }
+      const next = await io.readReports(panes(), this.repos, { home: home(), readTextFile, readdir: (dir) => fs.readdir(dir) });
       this.readingReports = false;
       const k = JSON.stringify(next);
       if (k !== this.reportsKey) { this.reportsKey = k; this.reports = next; cx.notify(); }
@@ -714,9 +588,9 @@ export default class Threads extends View {
   // The decision pills under the keys' cursor stop as their own lines (`dec:<key>:<tab id>`), after
   // their thread's card: enter / o press the one under it.
   pillStops(r, group, fold) {
-    if (r.c.status !== "blocked" || r.c.settled || this.asleep(r.c)) return [];
-    const d = this.decisions[this.leads(r.c).agent?.terminal];
-    return pillKeys(d).map((key) => ({ id: `dec:${key}:${r.c.id}`, group, fold, r, pill: { d, key } }));
+    if (r.tab.status !== "blocked" || r.tab.settled || this.asleep(r.tab)) return [];
+    const d = this.decisions[this.leads(r.tab).agent?.terminal];
+    return pillKeys(d).map((key) => ({ id: `dec:${key}:${r.tab.id}`, group, fold, r, pill: { d, key } }));
   }
 
   // A pill pressed (a click, or enter on it): the cursor back on its thread, a toast when nothing went.
@@ -725,12 +599,6 @@ export default class Threads extends View {
     if (this.cur?.startsWith("dec:")) this.cur = tab;
     this.readDecisions(cx);
     cx.notify();
-  }
-
-  // The thread's /me:report facts, when one exists for its branch.
-  reportOf(lead, w) {
-    const repo = lead?.cwd && this.repos[JSON.stringify([w.machine ?? null, lead.cwd])]?.name;
-    return repo && lead?.branch ? this.reports[`${repo}|${lead.branch}`] ?? null : null;
   }
 
   // CI as a compact mark for a card's second line: ✓, ✗ or … in its color.
@@ -743,7 +611,7 @@ export default class Threads extends View {
 
   // claude-flow's current step: its dot (pulsing while the thread works) and its label.
   flowStep(t, lead, working) {
-    const now = ((lead?.terminal && this.live[lead.terminal]?.flow?.steps) || []).find((s) => s.state === "current");
+    const now = model.flowOf(lead?.terminal ? this.live[lead.terminal]?.flow : null)?.step;
     if (!now?.label) return null;
     return h_flex().h(16).gap(7).items_center()
       .child(div().id(`kt-flow-${lead.terminal}`).size(6).rounded(3).flex_none().bg(t.accent)
@@ -764,20 +632,15 @@ export default class Threads extends View {
     return text ? div().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(`↳ ${text}`) : null;
   }
 
-  // The thread's sub-agents (herdr-bridge's `agents`, the engine's own list) still shown: the alive
-  // ones, then the ended until GONE after they ended; running, background, then the latest ended.
-  // A 0.3.0 bridge's rows have `at` and no `startedAt` / `endedAt`.
+  // The thread's sub-agents (herdr-bridge's `agents`, the engine's own list) still shown
+  // (threads-model.js): the alive ones, then the ended until GONE after they ended.
   shownAgents(terminal) {
-    const list = (terminal && this.live[terminal]?.agents) || [];
-    const now = Date.now();
-    const order = { running: 0, background: 1 };
-    return list.filter((a) => isAlive(a) || now - endOf(a) < GONE)
-      .sort((a, b) => (order[a.state] ?? 2) - (order[b.state] ?? 2) || endOf(b) - endOf(a));
+    return model.shownAgents(terminal && this.live[terminal]?.agents, Date.now());
   }
 
   // What a branch shows of its age ("now", "3m"), "~" once faded: clocks() redraws when it changes.
   agentAge(a) {
-    return isAlive(a) ? age(startOf(a)) : `${age(endOf(a))}${Date.now() - endOf(a) > FADE ? "~" : ""}`;
+    return model.agentAge(a, Date.now());
   }
 
   // The sub-agents as branches, the Parcours of kbrdn.dev's home (Expériences et Formations): the
@@ -856,10 +719,10 @@ export default class Threads extends View {
 
   // The "+N" / "Replier" line of a thread whose sub-agents run past 4: a stop for the keys' cursor too.
   twigStop(r, group, fold) {
-    if (r.c.settled || this.asleep(r.c)) return [];
-    const agent = this.leads(r.c).agent;
+    if (r.tab.settled || this.asleep(r.tab)) return [];
+    const agent = this.leads(r.tab).agent;
     if (this.shownAgents(agent?.terminal).length <= 4) return [];
-    return [{ id: `twigs:${r.c.id}`, group, fold, r, twigs: agent?.terminal ?? r.c.id }];
+    return [{ id: `twigs:${r.tab.id}`, group, fold, r, twigs: agent?.terminal ?? r.tab.id }];
   }
 
   // The shown thread's inner card (radius 8, 4 px inside the card's 12: concentric), dashed on
@@ -926,12 +789,12 @@ export default class Threads extends View {
 
   // The folder's repo of a space (where it was made), or null outside git.
   spaceRepo(s) {
-    return this.repos[JSON.stringify([s.machine ?? null, s.folder])] ?? null;
+    return model.spaceRepo(s, this.repos);
   }
 
   // A project's key: its repo (worktree spaces share it), else the space itself.
   spaceKey(s) {
-    return this.spaceRepo(s)?.key ?? s.id;
+    return model.spaceKey(s, this.repos);
   }
 
   // The Worktrees entry's badge: the shown project's checkouts (its git dir's worktrees/ entries
@@ -957,9 +820,7 @@ export default class Threads extends View {
   // whose terminal moved into a subfolder, belongs to it), else its folder's real path; null
   // while that's being worked out.
   projectId(s) {
-    const r = this.spaceRepo(s);
-    if (r) return JSON.stringify([s.machine ?? null, JSON.parse(r.key)[1].replace(/\/\.git$/, "")]);
-    return r === null ? (this.real[where(s)] ?? null) : null;
+    return model.projectId(s, this.places());
   }
 
   // Spaces grouped by project, one group per project: its first plain checkout on top, then its
@@ -1174,33 +1035,10 @@ export default class Threads extends View {
     if (!folders.length || this.finding) return;
     this.finding = true;
     cx.spawn(async (cx) => {
-      for (const location of folders) {
-        const [on, f] = JSON.parse(location);
-        try {
-          const r = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: f, on });
-          const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: f, on });
-          const key = r.code === 0 ? r.stdout.trim() : null;
-          this.repos[location] = key && {
-            key: JSON.stringify([on, key]),
-            name: (key.endsWith("/.git") ? key.slice(0, -5) : key).split("/").pop(),
-            linked: key !== `${top.stdout.trim()}/.git`,
-          };
-        } catch { this.repos[location] = null; }
-      }
+      for (const location of folders) this.repos[location] = await io.findRepo(location, exec);
       this.finding = false;
       cx.notify();
     });
-  }
-
-  // A thread's project: the repo where its terminal is now (you cd'd there),
-  // else its space's, else the space itself. Colored as the first space of that repo.
-  project(w, c, all) {
-    const mine = all.filter((p) => p.tab === c.id && p.terminal);
-    const where = (mine.find((p) => p.focused) ?? mine.find((p) => p.program?.agent) ?? mine[0])?.cwd;
-    const r = (where && this.repos[JSON.stringify([w.machine ?? null, where])]) || this.repos[JSON.stringify([w.machine ?? null, w.folder])];
-    if (!r) return { key: w.id, name: w.name, first: w, machine: w.machine };
-    const first = spaces().find((s) => this.repos[JSON.stringify([s.machine ?? null, s.folder])]?.key === r.key) ?? w;
-    return { key: r.key, name: r.name, first, machine: w.machine };
   }
 
   // Settling a thread. Settling the last open one of a local worktree offers, in a notification, to
@@ -1218,25 +1056,9 @@ export default class Threads extends View {
     return shared("kt.snoozed") ?? {};
   }
 
-  // When a thread was last active: its agents' herdr-bridge write (updatedAt), their statusline's
-  // (updated_at: the mods can't stat a file's mtime), Herdr's last change of state, else when the
-  // list first saw it (shared "kt.firstSeen").
-  activityOf(c, all, firstSeen, now) {
-    let at = c.changed_at ?? 0;
-    for (const p of all) {
-      if (p.tab !== c.id || !p.terminal) continue;
-      const l = this.live[p.terminal];
-      at = Math.max(at, l?.updatedAt ?? 0, l?.slAt ?? 0);
-    }
-    return at || firstSeen[c.id] || now;
-  }
-
   // Snoozed now: not yet due, and its agent hasn't asked for you since.
   asleep(c) {
-    const s = this.snoozed()[c.id];
-    if (!s || c.settled) return false;
-    if (Date.now() >= s.until) return false;
-    return !((c.status === "blocked" || c.status === "done") && (c.changed_at ?? 0) > s.at);
+    return model.asleep(c, this.snoozed(), Date.now());
   }
 
   snooze(id, wake) {
@@ -1250,14 +1072,14 @@ export default class Threads extends View {
   // None on a long-lived branch, nor on the repo's default branch.
   pr(cwd, branch, on) {
     if (!cwd || !branch || longLived(branch, this.defaults[this.repoOf(on, cwd)])) return null;
-    const key = JSON.stringify([on ?? null, cwd, branch]);
+    const key = model.prKey(on, cwd, branch);
     if (!(Date.now() - (this.asked[key] ?? 0) < PR_EVERY) && !this.queue.includes(key)) this.queue.push(key);
     return this.prs[key] ?? null;
   }
 
   // A folder's repo (its git common dir, as findRepos keys it), else the folder itself.
   repoOf(on, cwd) {
-    return this.repos[JSON.stringify([on ?? null, cwd])]?.key ?? JSON.stringify([on ?? null, cwd]);
+    return model.repoOf(on, cwd, this.repos);
   }
 
   lookup(cx) {
@@ -1266,26 +1088,8 @@ export default class Threads extends View {
     const keys = this.queue.splice(0);
     cx.spawn(async (cx) => {
       for (const key of keys) {
-        const [on, cwd, branch] = JSON.parse(key);
         this.asked[key] = Date.now();
-        const repo = this.repoOf(on, cwd);
-        if (!(repo in this.defaults)) {
-          const d = await exec("gh", ["repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"], { cwd, on }).catch(() => ({ code: 1 }));
-          this.defaults[repo] = d.code === 0 ? d.stdout.trim() || null : null;
-        }
-        if (longLived(branch, this.defaults[repo])) {
-          this.prs[key] = null;
-          continue;
-        }
-        const [r, h] = await Promise.all([
-          exec("gh", ["pr", "list", "--head", branch, "--state", "all", "--limit", "5", "--json", "number,state,url,headRefOid,baseRefName"], { cwd, on }).catch(() => ({ code: 1 })),
-          exec("git", ["rev-parse", "HEAD"], { cwd, on }).catch(() => ({ code: 1 })),
-        ]);
-        let found = null;
-        try {
-          found = r.code === 0 ? pickPr(JSON.parse(r.stdout), branch, h.code === 0 ? h.stdout.trim() : null) : null;
-        } catch {}
-        this.prs[key] = found;
+        this.prs[key] = await io.lookupPr(key, { exec, repos: this.repos, defaults: this.defaults });
       }
       this.looking = false;
       cx.notify();
@@ -1362,44 +1166,22 @@ export default class Threads extends View {
       .when(Boolean(label), (el) => el.child(label));
   }
 
-  // ---------- grouped by project ----------
-
-  // The rows by project: Home's spaces one group, every other by its registry project (a worktree
-  // with its repo), else its space. Each group: its rows in byNeed order, how many need you, where
-  // the registry puts it; the groups in byProject order.
-  projectGroups(rows, pins) {
-    const reg = registry();
-    const map = new Map();
-    for (const r of rows) {
-      const home = this.isHome(r.w);
-      const key = home ? "home" : (this.projectId(r.w) ?? `space:${r.w.id}`);
-      let g = map.get(key);
-      if (!g) map.set(key, (g = { key, home, s: r.w, e: home ? null : this.entryOf(r.w, reg), rows: [] }));
-      g.rows.push(r);
-    }
-    const groups = [...map.values()];
-    for (const g of groups) {
-      g.rows.sort((a, b) => byNeed({ id: a.c.id, status: a.c.status, act: a.act }, { id: b.c.id, status: b.c.status, act: b.act }, pins));
-      g.need = g.rows.filter((r) => r.c.status === "blocked").length;
-      g.at = g.e ? reg.indexOf(g.e) : -1;
-    }
-    return groups.sort(byProject);
-  }
+  // ---------- grouped by project (threads-model.js' projectGroups) ----------
 
   // A project's header, one thin line (no frame, no rule: the space between groups is enough): its
   // 14 px logo (the registry's, for the appearance now), else its initial on its color, Home's
   // house; its name as a mono eyebrow, how many threads, "N te demandent" only when some do; a
   // chevron only once folded (a click, or h on it or one of its threads, folds it).
   groupHead(t, g, i) {
-    const name = g.home ? this.homeLabel(g.s) : g.e?.name ?? g.s.name;
-    const logo = g.home ? null : logoOf(g.e);
+    const name = g.home ? this.homeLabel(g.space) : g.entry?.name ?? g.space.name;
+    const logo = g.home ? null : logoOf(g.entry);
     const cursor = this.keyed && this.cur === `grp:${g.key}`;
     const folded = this.folded.has(g.key);
     const mark = g.home
       ? svg(I("house")).size(12).text_color(t.muted)
       : logo
         ? image(logo).size(14).rounded(3)
-        : div().size(14).rounded(3).bg(paint(t, g.e?.color) ?? spaceColor(t, g.s)).flex().items_center().justify_center()
+        : div().size(14).rounded(3).bg(paint(t, g.entry?.color) ?? spaceColor(t, g.space)).flex().items_center().justify_center()
           .child(div().text_size(8.5).font_semibold().text_color(t.chrome).child([...name][0]?.toUpperCase() ?? "?"));
     return h_flex()
       .id(`kt-grp-${i}`)
@@ -1421,7 +1203,7 @@ export default class Threads extends View {
       })
       .child(div().size(14).flex_none().flex().items_center().justify_center().child(mark))
       .child(div().min_w(0).truncate().font_family(MONO).text_size(10).text_color(cursor ? t.foreground : t.muted).child(name.toUpperCase()))
-      .child(roll(this.m, `kt-g-n-${g.key}`, String(g.rows.length), 13).font_family(MONO).text_size(10).text_color(t.dim))
+      .child(roll(this.m, `kt-g-n-${g.key}`, String(g.threads.length), 13).font_family(MONO).text_size(10).text_color(t.dim))
       .child(div().flex_1())
       .when(g.need > 0, (el) => el.child(h_flex().flex_none().h(16).px(6).items_center().rounded_full().border(1)
         .border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a")).font_family(MONO).text_size(9.5).text_color(t.blocked)
@@ -1457,7 +1239,7 @@ export default class Threads extends View {
     this.handle.focus();
     this.vim.normal();
     if (!this.flat.some((x) => x.id === this.cur)) {
-      const here = this.flat.find((x) => x.r?.w.active && x.r?.c.active);
+      const here = this.flat.find((x) => x.r?.space.active && x.r?.tab.active);
       this.cur = (here ?? this.flat[0])?.id ?? null;
     }
     this.reveal = true;
@@ -1471,9 +1253,7 @@ export default class Threads extends View {
 
   // A thread's terminals: the one it shows first, and its agent's (else the lead).
   leads(c) {
-    const mine = panes().filter((p) => p.tab === c.id && p.terminal);
-    const lead = mine.find((p) => p.focused) ?? mine.find((p) => p.program?.agent) ?? mine[0];
-    return { lead, agent: mine.find((p) => p.program?.agent) ?? lead };
+    return model.leads(c, panes());
   }
 
   // One vim action on the list; false: not one the sidebar has, and the key goes on.
@@ -1487,7 +1267,7 @@ export default class Threads extends View {
     if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
       const j = step(a, i, flat.length, this.vim.count, this.compact ? 14 : 7);
       if (j >= 0) this.cur = flat[j].id;
-      if (this.cur !== x?.id) this.linger(x?.r?.c.id ?? x?.id, cx);
+      if (this.cur !== x?.id) this.linger(x?.r?.tab.id ?? x?.id, cx);
       this.reveal = true;
     } else if (a === "tab-next" || a === "tab-prev") {
       // The next (previous) group's first row: pinned, the date groups, the snoozed shelf.
@@ -1518,7 +1298,7 @@ export default class Threads extends View {
       if (x?.twigs) this.twigsOpen.add(x.twigs);
       // A decision pill: enter / o press it (as a click); l does nothing there.
       else if (x?.pill) {
-        if (a === "open") cx.spawn(async (cx) => this.decided(await press(x.pill.d, x.pill.key), r.c.id, cx));
+        if (a === "open") cx.spawn(async (cx) => this.decided(await press(x.pill.d, x.pill.key), r.tab.id, cx));
       }
       else if (x?.group === "nav") this.nav[x.id]();
       else if (x?.head) {
@@ -1528,8 +1308,8 @@ export default class Threads extends View {
       else if (r) {
         // l shows the thread and keeps the keyboard; enter / o go to its terminal.
         show("thread");
-        run("tab.select", { id: r.c.id });
-        const { lead } = this.leads(r.c);
+        run("tab.select", { id: r.tab.id });
+        const { lead } = this.leads(r.tab);
         if (a === "open" && lead) run("pane.focus", { pane: lead.pane });
         else this.handle.focus();
       }
@@ -1537,15 +1317,15 @@ export default class Threads extends View {
       // Archive (tab.settle, reversible: no confirmation); in the archived view, restore.
       if (r) {
         this.cur = (flat[i + 1] ?? flat[i - 1])?.id ?? null;
-        if (r.c.settled) run("tab.unsettle", { id: r.c.id });
-        else this.settle(r.w, r.c);
+        if (r.tab.settled) run("tab.unsettle", { id: r.tab.id });
+        else this.settle(r.space, r.tab);
       }
     } else if (a === "delete") {
       if (r) openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
-        title: tr("close.title"), detail: tr("close.detail", { name: label(r.c, this.leads(r.c).agent) }),
-        label: tr("close"), danger: true, command: { name: "tab.close", args: { id: r.c.id } } } });
+        title: tr("close.title"), detail: tr("close.detail", { name: label(r.tab, this.leads(r.tab).agent) }),
+        label: tr("close"), danger: true, command: { name: "tab.close", args: { id: r.tab.id } } } });
     } else if (a === "yank") {
-      const at = r ? this.leads(r.c).lead?.cwd ?? r.w.folder : null;
+      const at = r ? this.leads(r.tab).lead?.cwd ?? r.space.folder : null;
       if (at) {
         cx.write_to_clipboard(at);
         notify({ title: tr("copied"), body: at, level: "success", timeout: 2000 });
@@ -1582,23 +1362,24 @@ export default class Threads extends View {
 
   // `gone`: closing (rows() gave it -1), drawn as it was but no longer a target: no hover, click, menu
   // or cursor.
-  row(t, r, all, cx, gone = false) {
-    const { w, c } = r;
-    const mine = all.filter((p) => p.tab === c.id && p.terminal);
-    const lead = mine.find((p) => p.focused) ?? mine.find((p) => p.program?.agent) ?? mine[0];
-    const agent = mine.find((p) => p.program?.agent) ?? lead;
+  row(t, r, cx, gone = false) {
+    const { space: w, tab: c } = r;
+    // The thread as this render sees it (threads-model.js): a closing card keeps the space and tab it
+    // had (rows() hands it its last item), the rest is read now.
+    const th = model.threadOf(w, c, this.world);
+    const { lead, agent } = th;
     const st = this.status(t, c);
-    // The branch's PR: /me:report's when it has one (the card's other facts come from it), else gh's.
-    const reported = lead?.branch && !longLived(lead.branch, this.defaults[this.repoOf(w.machine, lead?.cwd)]) ? this.reportOf(lead, w)?.pr : null;
-    const pr = reported ?? this.pr(lead?.cwd, lead?.branch, w.machine);
+    // The branch's PR: /me:report's when it has one (the card's other facts come from it), else gh's
+    // (this.pr asks gh again when it's due).
+    const pr = th.prFrom === "report" ? th.pr : this.pr(lead?.cwd, lead?.branch, w.machine);
     // The shown thread, unless a page (Inbox, Skills, MCP, Worktrees) covers it.
     const here = w.active && c.active && !this.paged;
     const hovered = !gone && this.hover === c.id;
     // The keys' cursor, while the list has the keyboard: an accent border.
     const cursor = !gone && this.keyed && this.cur === c.id;
-    const pinned = this.pins().includes(c.id);
-    const asleep = this.asleep(c);
-    const pj = this.project(w, c, all);
+    const pinned = th.pinned;
+    const asleep = th.asleep;
+    const pj = th.repo;
     // Quiet rows recede: what needs you (or what you're on) stays bright.
     const recede = !here && !hovered && !cursor && c.status !== "blocked" && c.status !== "done";
     const mono = (color, text) => div().flex_none().font_family(MONO).text_size(11).text_color(color).child(text);
@@ -1632,9 +1413,9 @@ export default class Threads extends View {
             ? h_flex().flex_none().gap(8).items_center().child(st).when(c.status !== "working" && Boolean(ago), (el) => el.child(clockEl(t.dim, "age", ago)))
             : (st ?? clockEl(t.dim, "age", ago));
     const short = c.settled || asleep;
-    const title = label(c, agent);
+    const title = th.title;
     // Line 2: model · effort (statusline) · branch, else the project; its eyebrow only across projects.
-    const sl = agent?.terminal ? this.live[agent.terminal]?.sl : null;
+    const sl = th.sl;
     const facts = [sl?.model, sl?.effort, lead?.branch || (!this.everyProject && pj.name)].filter(Boolean).join(" · ");
     const live = this.liveLine(t, c, lead);
     // What a blocked thread's agent waits on (decide.js): its pills at the end of line 3 (the keys'
@@ -1646,7 +1427,7 @@ export default class Threads extends View {
       onDone: (res, cx) => this.decided(res, c.id, cx),
     }) : null;
     const todos = agent?.terminal ? this.live[agent.terminal]?.todos : null;
-    const report = this.reportOf(lead, w);
+    const report = th.report;
     const ci = this.ciMark(t, report);
     const working = c.status === "working";
     const focus = here && !compact && !short ? this.focusCard(t, { sl, todos, lead, agent, working, report, c }) : null;
@@ -1667,7 +1448,7 @@ export default class Threads extends View {
     const lineH = compact ? 28 : 20;
     const tileW = compact ? 20 : 24;
     const py = compact ? 0 : short ? 2 : 6;
-    const subs = !short && !compact ? this.shownAgents(agent?.terminal) : [];
+    const subs = !short && !compact ? th.subagents.shown : [];
     // Lines 2 to 4 (and, below the card's content, the branches): a compact card opening (the pointer,
     // the keys' cursor) unfolds them on their height; detailed cards just have them.
     // Compact: given the builder, the lines fold back on their height when the card closes too.
@@ -1835,9 +1616,15 @@ export default class Threads extends View {
     const everyProject = (this.everyProject = shared("kt.project") === "*");
     const compact = (this.compact = shared("kt.density") === "compact");
     const shown = ps.find((w) => w.active);
-    const scope = shown && !everyProject ? this.spaceKey(shown) : null;
-    const every = ps.flatMap((w) => w.tabs.map((c) => ({ w, c, pj: this.project(w, c, all) })));
-    const rows = every.filter((r) => !scope || r.w.id === shown.id || this.spaceKey(r.w) === scope);
+    // The threads (threads-model.js, read as of now: row() reads this world too) of the shown
+    // project, or of every one.
+    const now = Date.now();
+    const world = (this.world = {
+      ...this.places(), spaces: ps, panes: all, now, registry: registry(), colors: shared("space.colors") ?? {},
+      live: this.live, reports: this.reports, prs: this.prs, defaults: this.defaults,
+      snoozed: this.snoozed(), pins: this.pins(), firstSeen: shared("kt.firstSeen") ?? {}, dark: Boolean(settings().dark),
+    });
+    const rows = model.scoped(model.threadsOf(world), everyProject ? null : shown, this.repos);
     const page = find(layout(), VIEW)?.active ?? "thread";
     // The page the navigation marks: the one shown, or `nav-page:`'s (tests).
     const navPage = this.navTest ?? page;
@@ -1847,33 +1634,22 @@ export default class Threads extends View {
     // The filter (kt-thread-filter, shared "kt.threadFilter"): the archived view or the active one,
     // then status, period (by activity) and program; none set lets everything through.
     const filter = filterOf(shared("kt.threadFilter"));
-    const now = Date.now();
-    const firstSeen = shared("kt.firstSeen") ?? {};
-    for (const r of rows) {
-      r.act = this.activityOf(r.c, all, firstSeen, now);
-      r.prog = all.find((p) => p.tab === r.c.id && p.program?.agent)?.program?.key ?? null;
-    }
-    const kept = rows.filter((r) => passes(filter, { status: r.c.status, activity: r.act, program: r.prog }, now));
+    const kept = model.filtered(rows, filter, now);
     // A short list (ANIMATIONS.md: not past 12 rows): its cards' ages, durations and +N roll; longer, they stay still.
     this.fewRows = kept.length <= 12;
     const pins = this.pins();
-    const awake = (r) => !r.c.settled && !this.asleep(r.c);
-    const pinned = filter.archived ? [] : pins.map((id) => kept.find((r) => r.c.id === id && awake(r))).filter(Boolean);
-    const active = filter.archived ? [] : kept.filter((r) => awake(r) && !pins.includes(r.c.id));
-    const snoozed = filter.archived ? [] : kept.filter((r) => this.asleep(r.c)).sort((a, b) => this.snoozed()[a.c.id].until - this.snoozed()[b.c.id].until);
-    // Archived (tab.settle): dated by when they were put away.
-    const archived = filter.archived ? kept.filter((r) => r.c.settled).map((r) => ({ ...r, act: r.c.settled_at ?? r.act })) : [];
+    // The pinned, the others awake, the snoozed; or, archived (tab.settle), dated by when they were put away.
+    const { pinned, active, snoozed, archived } = model.sections(kept, filter, pins);
     // Monocode's date groups, newest thread first inside each (a group never reshuffles on activity).
-    const dated = (list) => GROUPS.map((id, i) => [tr(`date.${id}`), list.filter((r) => groupOf(r.act, now) === i).sort((a, b) => num(b.c.id) - num(a.c.id))])
-      .filter(([, l]) => l.length > 0);
+    const dated = (list) => model.datedGroups(list, now).map(([id, l]) => [tr(`date.${id}`), l]);
     // Grouped by project (the default; "Grouper par" in the filter menu, shared "kt.threadFilter"
     // group): one group per project (Home its own), the pinned on top of theirs, then what needs you,
     // done, working, idle (byNeed); Home first, then the projects a thread of which needs you, then the
     // registry's order (byProject). Grouped by date: the pinned on their shelf, then the date groups.
     const byDate = filter.group === "date";
     const listed = byDate ? dated(filter.archived ? archived : active) : [];
-    const projects = byDate ? [] : this.projectGroups(filter.archived ? archived : [...pinned, ...active], pins);
-    const shelf = byDate ? [...pinned].sort((a, b) => byNeed({ id: a.c.id, status: a.c.status, act: a.act }, { id: b.c.id, status: b.c.status, act: b.act }, pins)) : [];
+    const projects = byDate ? [] : model.projectGroups(filter.archived ? archived : [...pinned, ...active], pins, world.registry);
+    const shelf = byDate ? model.sortByNeed(pinned, pins) : [];
     // One project shown ("Projet actif"): its header would only repeat the selector above.
     const heads = projects.length > 1 || everyProject;
     if (!heads) for (const g of projects) this.folded.delete(g.key); // no header to unfold it from
@@ -1899,20 +1675,20 @@ export default class Threads extends View {
       "kt-search": () => run("mod.open", { name: "kt-picker" }),
     };
     // A thread's line, then its decision pills' (pillStops).
-    const stop = (r, group, fold) => [{ id: r.c.id, group, fold, r }, ...this.pillStops(r, group, fold), ...this.twigStop(r, group, fold)];
+    const stop = (r, group, fold) => [{ id: r.tab.id, group, fold, r }, ...this.pillStops(r, group, fold), ...this.twigStop(r, group, fold)];
     this.flat = [
       ...Object.keys(this.nav).map((id) => ({ id, group: "nav", r: null, navChild: AGENT_PAGES.includes(id.slice(3)) })),
       ...shelf.flatMap((r) => stop(r, "pinned")),
       ...listed.flatMap(([name, list]) => list.flatMap((r) => stop(r, name))),
       ...projects.flatMap((g) => [
         ...(heads ? [{ id: `grp:${g.key}`, group: g.key, fold: g.key, head: true, r: null }] : []),
-        ...(this.folded.has(g.key) ? [] : g.rows.flatMap((r) => stop(r, g.key, g.key))),
+        ...(this.folded.has(g.key) ? [] : g.threads.flatMap((r) => stop(r, g.key, g.key))),
       ]),
       ...(snoozed.length ? [{ id: "snoozed", group: "snoozed", r: null }] : []),
-      ...(this.showSnoozed ? snoozed.map((r) => ({ id: r.c.id, group: "snoozed", r })) : []),
+      ...(this.showSnoozed ? snoozed.map((r) => ({ id: r.tab.id, group: "snoozed", r })) : []),
     ];
     // The thread the cursor is in (on its line or one of its pills): its card opens and comes into view.
-    this.curThread = this.flat.find((x) => x.id === this.cur)?.r?.c.id ?? null;
+    this.curThread = this.flat.find((x) => x.id === this.cur)?.r?.tab.id ?? null;
     // The list's children, the cursor's brought into view once after it moved.
     const items = [];
     const put = (id, el) => {
@@ -1936,9 +1712,9 @@ export default class Threads extends View {
     // (its header too) goes at once.
     const group = (gid, rs) => {
       const built = [];
-      const kids = motionRows(this.m, cx, `kt-th-${gid}`, rs, (r) => r.c.id, (r, i) => {
-        built.push(i < 0 ? null : r.c.id);
-        return this.row(t, r, all, cx, i < 0);
+      const kids = motionRows(this.m, cx, `kt-th-${gid}`, rs, (r) => r.tab.id, (r, i) => {
+        built.push(i < 0 ? null : r.tab.id);
+        return this.row(t, r, cx, i < 0);
       });
       kids.forEach((el, j) => (built[j] ? put(built[j], el) : items.push(el)));
     };
@@ -1950,7 +1726,7 @@ export default class Threads extends View {
     }
     projects.forEach((g, i) => {
       if (heads) put(`grp:${g.key}`, this.groupHead(t, g, i));
-      group(`p-${g.key}`, this.folded.has(g.key) ? [] : g.rows);
+      group(`p-${g.key}`, this.folded.has(g.key) ? [] : g.threads);
     });
     if (!pinned.length && !listed.length && !projects.length && !snoozed.length) items.push(div().mx(18).mt(10).text_size(12.5).text_color(t.dim)
       .child(filter.archived ? tr("noArchived") : filtering(filter) ? tr("noFilter") : tr("none")));
