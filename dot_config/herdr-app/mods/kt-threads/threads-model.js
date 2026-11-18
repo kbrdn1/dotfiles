@@ -55,7 +55,7 @@
 //   branch, cwd lead's git branch and live folder, null.
 //   worktree    true in a linked worktree, false in a main checkout, null outside git or not known yet.
 //   issue       "12" from a `<type>/#12-slug` branch, else from claude-flow's `issue #12` step, else null.
-//   pr          { number, state: "OPEN" | "MERGED" | "CLOSED", url } | null: /me:report's, else gh's.
+//   pr          { number, state: "OPEN" | "MERGED" | "CLOSED", url, draft } | null: /me:report's, else gh's.
 //               None on a long-lived branch (pr-pick.js). prFrom: "report" | "gh" | null.
 //   report      summarizeReport() of its branch: { review, ci, pr, at } | null.
 //   flow        claude-flow's timeline of its agent: { workflow, step, phase, at, done, total } | null.
@@ -155,7 +155,7 @@ export function summarizeReport(d) {
   const review = last ? { pass: last.pass, blockers: ran(last.standards) || ran(last.spec) ? (last.p0 ?? 0) + (last.p1 ?? 0) + (last.p2 ?? 0) : null } : null;
   const ci = f.ci ? { ok: f.ci.ok ?? 0, total: f.ci.total ?? 0, fail: f.ci.fail ?? 0, pending: f.ci.pending ?? 0 } : null;
   // its PR, which the card's badge takes over gh's: the same source as the rest of the card
-  const pr = f.pr?.number ? { number: f.pr.number, state: f.pr.state ?? "OPEN", url: f.pr.url } : null;
+  const pr = f.pr?.number ? { number: f.pr.number, state: f.pr.state ?? "OPEN", url: f.pr.url, draft: Boolean(f.pr.isDraft) } : null;
   return { review, ci, pr, at: d?.generatedAt ?? null };
 }
 

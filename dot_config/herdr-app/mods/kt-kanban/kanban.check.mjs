@@ -3,7 +3,8 @@
 // Made-up threads only ("tfx" ids). Not loaded by Herdr.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, matches, locate, move, atCard } from "./kanban.js";
+import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
+  costOf, cleanLimits, stepLimit, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
 
@@ -43,9 +44,18 @@ for (const [key, values] of Object.entries(OPTIONS)) {
   assert.deepEqual([o.type, o.values, o.default, o.labels.length], ["enum", values, values[0], values.length], key);
 }
 
-// What it shows: never an archived thread; the archived view, only those.
+// What it shows: every project's threads but the archived; with is:archived in the filter, those too
+// (the term then keeps only them); -is:archived, as without.
 assert.ok(!show.some((x) => x.settled));
-assert.deepEqual(onBoard(list, true).map((x) => x.id), ["tfx-9"]);
+assert.equal(show.length, list.length - 1);
+assert.equal(onBoard(list, true).length, list.length);
+const arch = (text) => { const pq = parseQuery(text); return onBoard(list, pq.archived).filter((x) => matchQuery(x, pq, { now })).map((x) => x.id); };
+assert.deepEqual(arch("is:archived"), ["tfx-9"]);
+assert.deepEqual(arch("is:archived,pinned"), ["tfx-9"]); // nothing pinned here
+assert.deepEqual(arch("-is:archived").length, show.length);
+assert.deepEqual(arch("is:archived status:idle"), []); // tfx-9 is done
+assert.deepEqual([parseQuery("is:archived").archived, parseQuery("-is:archived").archived, parseQuery("is:snoozed").archived], [true, false, false]);
+assert.deepEqual([parseQuery("project:@current").current, parseQuery("-project:@current").current, parseQuery("project:acme").current], [true, false, false]);
 
 // By status: blocked, done, working, idle, one each even empty; the most recently active first; idle:
 // pinned first, a thread without status in it; the snoozed last, soonest due first.
@@ -98,13 +108,97 @@ assert.deepEqual(sliced(show, "program", "codex").map((x) => x.id), ["tfx-5"]);
 assert.deepEqual(sliced(show, "program", "none").map((x) => x.id), ["tfx-4"]);
 assert.equal(sliced(show, "project", null).length, show.length);
 
-// The text filter: every word, over title, project, branch, program, #issue, #PR; case-insensitive.
+// The filter (`/`). Free words, as before: every one, over title, project, branch, program, #issue, #PR.
+const ctx = { now, current: "p-acme" };
+const q = (text) => show.filter((x) => matchQuery(x, parseQuery(text), ctx)).map((x) => x.id);
 const ring = list.find((x) => x.id === "tfx-10");
-assert.ok(matches(ring, ""));
-assert.ok(matches(ring, "ring BETA feat"));
-assert.ok(matches(ring, "#12") && matches(ring, "#34") && matches(ring, "claude"));
-assert.ok(!matches(ring, "ring acme"));
-assert.ok(!matches(list[0], "#12"));
+const hit = (x, text) => matchQuery(x, parseQuery(text), ctx);
+assert.ok(hit(ring, "") && hit(ring, "ring BETA feat") && hit(ring, "#12") && hit(ring, "#34") && hit(ring, "claude"));
+assert.ok(!hit(ring, "ring acme") && !hit(list[0], "#12"));
+// Tokens: a field outside quotes only, "quotes" keep spaces, a leading - negates.
+assert.deepEqual(tokens('-status:idle project:"my app" "a:b" -word fix-login'), [
+  { neg: true, field: "status", value: "idle", quoted: false }, { neg: false, field: "project", value: "my app", quoted: true },
+  { neg: false, field: null, value: "a:b", quoted: true }, { neg: true, field: null, value: "word", quoted: false },
+  { neg: false, field: null, value: "fix-login", quoted: false }]);
+// Fields: status (the board's columns: no status is idle), several values, negation.
+assert.deepEqual(q("status:blocked"), ["tfx-2", "tfx-6"]);
+assert.deepEqual(q("status:blocked,done"), ["tfx-2", "tfx-5", "tfx-6"]);
+assert.deepEqual(q("-status:idle"), ["tfx-1", "tfx-2", "tfx-5", "tfx-6", "tfx-10"]);
+assert.deepEqual(q("status:idle"), ["tfx-3", "tfx-4", "tfx-7", "tfx-8"]);
+assert.deepEqual(q("phase:ship,close"), ["tfx-2", "tfx-5"]);
+assert.deepEqual(q("phase:none -is:snoozed"), ["tfx-4", "tfx-10"]);
+assert.deepEqual(q("project:BET"), ["tfx-5", "tfx-6", "tfx-10"]); // in its name, any case
+assert.deepEqual(q("project:@current agent:none"), ["tfx-4"]); // the shown project's
+assert.deepEqual(q("agent:codex"), ["tfx-5"]);
+assert.deepEqual(q("agent:claude -project:beta"), ["tfx-1", "tfx-2", "tfx-3", "tfx-7", "tfx-8"]);
+assert.deepEqual(q("branch:feat"), ["tfx-10"]);
+assert.deepEqual(q("branch:none status:working"), ["tfx-1"]);
+// pr: open (a draft too), draft, merged, closed, none.
+const prs = [th("tfx-p1", "idle", 1, { pr: { number: 1, state: "OPEN", draft: true } }), th("tfx-p2", "idle", 1, { pr: { number: 2, state: "OPEN", isDraft: false } }),
+  th("tfx-p3", "idle", 1, { pr: { number: 3, state: "MERGED" } }), th("tfx-p4", "idle", 1)];
+const qp = (text) => prs.filter((x) => matchQuery(x, parseQuery(text), ctx)).map((x) => x.id);
+assert.deepEqual([qp("pr:open"), qp("pr:draft"), qp("pr:merged"), qp("pr:none"), qp("-pr:none"), qp("pr:closed")],
+  [["tfx-p1", "tfx-p2"], ["tfx-p1"], ["tfx-p3"], ["tfx-p4"], ["tfx-p1", "tfx-p2", "tfx-p3"], []]);
+assert.deepEqual(q("is:pinned"), []); // none pinned in this list
+assert.deepEqual(q("is:snoozed"), ["tfx-7", "tfx-8"]);
+// Ranges: cost (an unknown cost never matches, its negation does), age since the last activity.
+assert.deepEqual(q("cost:>5"), ["tfx-2", "tfx-10"]);
+assert.deepEqual(q("cost:>=2 cost:<=9"), ["tfx-1", "tfx-10"]);
+assert.deepEqual(q("cost:2..9"), ["tfx-1", "tfx-10"]);
+assert.deepEqual(q("cost:..2,5"), ["tfx-1"]);
+assert.deepEqual(q("cost:$31"), ["tfx-2"]); // a plain value: that cost
+assert.deepEqual(q("-cost:>5").length, show.length - 2);
+assert.deepEqual(q("age:<4m"), ["tfx-1", "tfx-4", "tfx-5", "tfx-6", "tfx-7"]); // 3, 1, 2, 1, 2 min
+assert.deepEqual(q("age:>20m"), ["tfx-3", "tfx-10"]);
+assert.deepEqual(q("age:5m..10m"), ["tfx-2", "tfx-8"]);
+assert.deepEqual(q("age:<1h").length, show.length);
+assert.deepEqual(q("age:>1j"), []); // j: French days
+// Set aside, the rest still filters: an unknown field, an unreadable value; a value not typed yet is quiet.
+const bad = parseQuery("foo:bar status:blocked status:zz cost:>abc age:3h phase: is:open");
+assert.deepEqual(bad.issues.map((i) => [i.kind, i.field]), [["field", "foo"], ["value", "status"], ["value", "cost"], ["value", "age"], ["value", "is"]]);
+assert.deepEqual(bad.terms.map((t) => t.field), ["status"]);
+assert.deepEqual(q("foo:bar status:blocked"), ["tfx-2", "tfx-6"]);
+assert.deepEqual(parseQuery("http://x.y").issues.map((i) => i.field), ["http"]);
+assert.deepEqual(parseQuery('"http://x.y"').issues, []); // quoted: a word
+
+// The columns' figures: the cost together (to the cent), the soft limits (+ / -).
+assert.equal(costOf(show), 42);
+assert.equal(costOf([{ cost: 0.105 }, { cost: 0.2 }, {}]), 0.31);
+assert.deepEqual(cleanLimits({ idle: 2, done: 0, x: -1, y: 1.5, blocked: 1 }), { blocked: 1, idle: 2 });
+assert.deepEqual(stepLimit({}, "idle", 1, 4), { idle: 4 }); // + sets it to its cards now
+assert.deepEqual(stepLimit({}, "idle", 1, 0), { idle: 1 });
+assert.deepEqual(stepLimit({}, "idle", -1, 4), {});
+assert.deepEqual(stepLimit({ idle: 4 }, "idle", 1), { idle: 5 });
+assert.deepEqual(stepLimit({ idle: 1, done: 2 }, "idle", -1), { done: 2 }); // down to 0: gone
+
+// Saved views: the defaults; checked and complete; the tab's dot; save, add, duplicate, rename, delete.
+const vs = viewsOf(null);
+assert.deepEqual([vs.current, vs.list.map((v) => [v.id, v.name, v.filter])], ["all", [["all", null, ""], ["blocked", null, "status:blocked"], ["project", null, "project:@current"]]]);
+assert.deepEqual(vs.list.map((v) => v.id), DEFAULT_VIEWS.map((v) => v.id));
+assert.deepEqual(settingsOf({ column: "weird", slice: "none", pick: "x", filter: "  a ", limits: { idle: 0 } }),
+  { column: "status", group: "none", slice: "none", pick: null, sort: "activity", filter: "a", limits: {} });
+assert.deepEqual(viewsOf({ current: "gone", list: [{ id: "v1", name: "  " }, { nope: 1 }] }).list.map((v) => [v.id, v.name]), [["v1", null]]);
+assert.equal(viewsOf({ current: "gone", list: [{ id: "v1" }] }).current, "v1");
+assert.equal(viewsOf({ list: [{ nope: 1 }] }).current, "all"); // nothing usable: the defaults
+const live = { column: "phase", group: "none", slice: "project", pick: "p-acme", sort: "cost", filter: "status:blocked", limits: { ship: 2 } };
+assert.ok(!dirty(currentView(vs), { filter: " " })); // the same settings, written otherwise
+assert.ok(dirty(currentView(vs), live));
+assert.ok(dirty(currentView(vs), { limits: { idle: 3 } })); // a limit changed too
+const saved = saveView(vs, live);
+assert.ok(!dirty(currentView(saved), live));
+assert.deepEqual(currentView(saved).name, null); // its name kept
+const added = addView(vs, live, "tfx-v1", "Vue 4");
+assert.deepEqual([added.current, added.list.map((v) => v.id)], ["tfx-v1", ["all", "tfx-v1", "blocked", "project"]]); // after the current one
+assert.ok(!dirty(currentView(added), live));
+const dup = duplicateView(vs, "blocked", "tfx-v2", "Bloqués (copie)");
+assert.deepEqual([dup.current, dup.list.map((v) => v.id), currentView(dup).filter], ["tfx-v2", ["all", "blocked", "tfx-v2", "project"], "status:blocked"]);
+assert.deepEqual(renameView(vs, "blocked", "  À voir ").list[1].name, "À voir");
+assert.equal(renameView(vs, "blocked", "  "), vs); // empty: nothing
+assert.deepEqual(deleteView(vs, "all"), { current: "blocked", list: vs.list.slice(1) }); // the current one: the next
+assert.equal(deleteView({ current: "blocked", list: vs.list }, "project").current, "blocked");
+assert.equal(deleteView({ current: "project", list: vs.list }, "project").current, "blocked"); // the last: the one before
+assert.equal(deleteView(viewsOf({ list: [{ id: "solo" }] }), "solo").list.length, 1); // the last view stays
+assert.deepEqual([stepView(vs, 1), stepView(vs, -1), stepView({ ...vs, current: "project" }, 1)], ["blocked", "project", "all"]);
 
 // The cursor, one lane: where its thread is now (it follows a card into another column).
 const one = (threads) => board(threads, { pins: ["tfx-3"] });

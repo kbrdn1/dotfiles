@@ -125,10 +125,11 @@ export async function lookupPr(key, { exec, repos, defaults }) {
   }
   if (longLived(branch, defaults[repo])) return null;
   const [r, h] = await Promise.all([
-    exec("gh", ["pr", "list", "--head", branch, "--state", "all", "--limit", "5", "--json", "number,state,url,headRefOid,baseRefName"], { cwd, on }).catch(() => ({ code: 1 })),
+    exec("gh", ["pr", "list", "--head", branch, "--state", "all", "--limit", "5", "--json", "number,state,url,headRefOid,baseRefName,isDraft"], { cwd, on }).catch(() => ({ code: 1 })),
     exec("git", ["rev-parse", "HEAD"], { cwd, on }).catch(() => ({ code: 1 })),
   ]);
   try {
-    return r.code === 0 ? pickPr(JSON.parse(r.stdout), branch, h.code === 0 ? h.stdout.trim() : null) : null;
+    const pr = r.code === 0 ? pickPr(JSON.parse(r.stdout), branch, h.code === 0 ? h.stdout.trim() : null) : null;
+    return pr && { ...pr, draft: Boolean(pr.isDraft) }; // as /me:report's: draft
   } catch { return null; }
 }

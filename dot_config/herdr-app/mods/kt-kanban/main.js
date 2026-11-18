@@ -10,16 +10,24 @@
 // step through them. Sort (t): by need and activity, the thread's age, its cost or its name. The four
 // are mod.json's options (kt.opt.kt-kanban.*, the kt-mods console shows them); the slice picked is
 // shared "kt.kanban.slicePick".
+// Saved views (GitHub Projects' views), tabs over the toolbar, shared "kt.kanban.views": each keeps the
+// four choices, the slice picked, the filter and the columns' limits; Tout, Bloqués and Ce projet by
+// default. What shows is the current view until something changes (a dot on its tab, Enregistrer or
+// Annuler), + makes one from what shows, ⋯ renames, duplicates or deletes (kt-confirm); gt / gT go from
+// tab to tab. A column's head says `n / limit` with a soft limit (WIP: past it, in the warning color,
+// nothing blocked; a click on the count, or + / -), and what its cards cost together (costLevel).
+// The filter (`/`) reads GitHub's syntax: words and field:value terms (kanban.js parseQuery); a term it
+// can't read is set aside and said before the field.
 // A card: the agent's live logo (companion-logo.js), the title, pinned / snoozed as the sidebar shows
 // them, the age; the project (logo, else its letter on its color) and the branch (a worktree's icon in
 // a linked one); the issue, the PR and its state, the cost (levels.js), the sub-agents k/n;
-// claude-flow's step. It lists what the sidebar lists: the shown project or every one (shared
-// "kt.project"), through the sidebar's filter (shared "kt.threadFilter": status, period, program; its
-// archived view shows the archived), then the text typed after `/`, then the slice. A click or enter:
-// back to the thread, on that agent (agent.focus).
+// claude-flow's step. It lists every project's threads, whatever the sidebar's scope or filter: its
+// views decide (GitHub Projects), through the filter typed after `/` (the archived only with
+// is:archived), then the slice. A click or enter: back to the thread, on that agent (agent.focus).
 // Keys (vim.js; kt-keys lists them under Pages): h / l a column, j / k a card (down into the next
 // lane), gg / G, ctrl-d / u, / the filter (INSERT, esc: NORMAL), enter / o go, c b s t the header's
-// buttons, [ ] the slice, esc clears the filter, then back to the thread (as q), ? the keys. Arriving on
+// buttons, [ ] the slice, gt / gT the views, + / - the column's limit, esc clears the filter, then back
+// to the thread (as q), ? the keys. Arriving on
 // the page takes the keyboard (NORMAL); ctrl-b h / l (pane.go, "focus") or `kt-kanban.key:<keys>` too.
 // The "kanban" page of the layout's "view" stack. Its data: threads-model.js and threads-io.js (with
 // thread-filter.js, pr-pick.js), byte-identical copies of kt-threads' (cmp), read only while the page
@@ -32,9 +40,9 @@ import { spaces, panes, run, theme, shared, setShared, layout, nextCommand, sett
 import * as fs from "fs/promises";
 import * as model from "./threads-model.js";
 import * as io from "./threads-io.js";
-import { filterOf } from "./thread-filter.js";
 import { longLived } from "./pr-pick.js";
-import { OPTIONS, COLUMN_KEYS, choice, nextChoice, board, slices, sliced, onBoard, matches, locate, move, atCard } from "./kanban.js";
+import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
+  costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { companion } from "./companion-logo.js";
 import { costLevel, levelColor } from "./levels.js";
 import { Vim, keysOf, keyOf } from "./vim.js";
@@ -78,6 +86,8 @@ const OPT_SHARED = { column: "kt.opt.kt-kanban.column", group: "kt.opt.kt-kanban
 const OPT_ICON = { column: K("columns-3"), group: K("rows-3"), slice: I("panel-left"), sort: K("arrow-down-wide-narrow") };
 const KEY_OF = { column: "c", group: "b", slice: "s", sort: "t" };
 const PICKS = "kt.kanban.slicePick"; // { project: key | null, program: key | null }
+const VIEWS = "kt.kanban.views"; // { current, list }: the saved views (kanban.js viewsOf)
+const WAIT = 600; // vim.js' time between the two keys of gt / gT
 
 // The board's choices as stored (the key strings in full: kt-mods finds who reads them by a grep).
 function opts() {
@@ -107,7 +117,15 @@ export default class Kanban extends View {
     this.handle = cx.focus_handle();
     this.vim = new Vim({ field: true });
     this.motion = motionState();
-    this.query = "";
+    // What shows starts as the current view saved: its filter and limits here, its choices in shared.
+    const saved = currentView(viewsOf(shared(VIEWS)));
+    this.query = saved.filter;
+    this.limits = { ...saved.limits }; // column key -> its soft limit (WIP)
+    this.renaming = null; // the view whose tab is a field (its name being typed: this.draft)
+    this.draft = "";
+    this.viewMenu = false; // the current view's actions shown in the tab row
+    this.limitEdit = null; // the column whose head shows its limit's stepper
+    this.pending = null; // the view kt-confirm asks about deleting
     this.cur = null; // the keys' cursor: a thread id
     this.at = null; // where it last was, { l, c, i } (kanban.js locate)
     this.board = { keys: [], lanes: [] };
@@ -152,6 +170,13 @@ export default class Kanban extends View {
           this.focusIn();
           for (const k of keysOf(c.slice(4))) this.press(k, cx);
         } else if (c === "refresh") this.refresh(cx);
+        // kt-confirm's yes on deleting a view (command `kt-kanban.confirmed`, this copy shows behind it).
+        else if (c === "confirmed" && this.pending) {
+          const views = deleteView(viewsOf(shared(VIEWS)), this.pending);
+          this.pending = null;
+          this.setViews(views);
+          this.applyView(currentView(views));
+        }
         cx.notify();
       }
     });
@@ -277,6 +302,83 @@ export default class Kanban extends View {
     this.reveal = true;
   }
 
+  // ---------- saved views (kanban.js; the tabs over the board) ----------
+
+  // What shows, as a view's settings: the choices, the slice picked, the filter, the limits.
+  shownView() {
+    const o = opts();
+    return { ...o, pick: o.slice === "none" ? null : (shared(PICKS) ?? {})[o.slice] ?? null, filter: this.query, limits: this.limits };
+  }
+
+  setViews(views) {
+    setShared(VIEWS, views);
+  }
+
+  // A view's settings shown: its choices (the defaults stored as null), its slice picked, its filter and limits.
+  applyView(v) {
+    for (const k of Object.keys(OPTIONS)) setShared(OPT_SHARED[k], v[k] === OPTIONS[k][0] ? null : v[k]);
+    if (v.slice !== "none") setShared(PICKS, { ...(shared(PICKS) ?? {}), [v.slice]: v.pick });
+    this.query = v.filter;
+    this.limits = { ...v.limits };
+    this.limitEdit = null;
+    this.renaming = null; // another tab, a copy, a discard, a delete: no tab stays a field
+    this.reveal = true;
+  }
+
+  // Another tab: its view as saved (what showed unsaved on the other one goes).
+  selectView(id) {
+    const views = viewsOf(shared(VIEWS));
+    if (id === views.current) return;
+    const next = { ...views, current: id };
+    this.setViews(next);
+    this.applyView(currentView(next));
+  }
+
+  // A view's name as the tab says it: its own, else the default one's in the language shown.
+  viewName(v) {
+    return v.name ?? (DEFAULT_VIEWS.some((d) => d.id === v.id) ? tr(`view.${v.id}`) : v.id);
+  }
+
+  newView() {
+    const views = viewsOf(shared(VIEWS));
+    const id = `v${Date.now().toString(36)}`;
+    this.setViews(addView(views, this.shownView(), id, tr("view.new", { n: views.list.length + 1 })));
+    this.startRename(id, ""); // typed from empty; enter on nothing keeps « Vue N »
+  }
+
+  duplicate() {
+    const views = viewsOf(shared(VIEWS));
+    const next = duplicateView(views, views.current, `v${Date.now().toString(36)}`, tr("view.copy", { name: this.viewName(currentView(views)) }));
+    this.setViews(next);
+    this.applyView(currentView(next));
+  }
+
+  // The tab becomes a field: the page types its name (enter keeps it, esc leaves it as it was).
+  startRename(id, name) {
+    this.renaming = id;
+    this.draft = name;
+    this.viewMenu = false;
+    this.handle.focus();
+    this.vim.normal();
+  }
+
+  commitRename() {
+    this.setViews(renameView(viewsOf(shared(VIEWS)), this.renaming, this.draft));
+    this.renaming = null;
+  }
+
+  // Deleting asks kt-confirm first (its yes comes back as `confirmed`); the last view has no delete.
+  askDelete() {
+    const views = viewsOf(shared(VIEWS));
+    if (views.list.length < 2) return;
+    const v = currentView(views);
+    this.pending = v.id;
+    this.viewMenu = false;
+    openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
+      title: tr("view.del.title", { name: this.viewName(v) }), detail: tr("view.del.detail"), label: tr("view.delete"), danger: true,
+      command: { name: "kt-kanban.confirmed" } } });
+  }
+
   // ---------- keys (vim.js; kt-keys lists them) ----------
 
   focusIn() {
@@ -306,13 +408,36 @@ export default class Kanban extends View {
     cx.notify();
   }
 
-  // One key, from the keyboard or `key:`. In NORMAL, c b s t first: the header's buttons (vim has no use
-  // for them); then vim's.
+  // One key, from the keyboard or `key:`. A tab being renamed takes them all (enter keeps, esc leaves).
+  // In NORMAL, before vim: gt / gT the next / previous view (g is vim's pending gg: t or T after it), c
+  // b s t the header's buttons, + / - the cursor's column's limit (vim has no use for them).
   press(e, cx) {
-    const opt = this.vim.insert ? null : OPT_KEYS[keyOf(e).name];
-    if (opt) {
+    const { name, char } = keyOf(e);
+    if (this.renaming) {
+      if (name === "enter") this.commitRename();
+      else if (name === "escape") this.renaming = null;
+      else if (name === "backspace") this.draft = this.draft.slice(0, -1);
+      else if (char && !/^(ctrl|cmd)-/.test(name)) this.draft += char;
+      else return false;
+      return true;
+    }
+    if (this.vim.insert) return this.act(this.vim.handle(e), cx);
+    if ((name === "t" || name === "T") && this.vim.pending === "g" && Date.now() - this.vim.at <= WAIT) {
+      this.vim.normal();
+      const views = viewsOf(shared(VIEWS));
+      this.selectView(stepView(views, name === "t" ? 1 : -1));
+      return true;
+    }
+    if (OPT_KEYS[name]) {
       this.vim.normal(); // a pending g or d, or a count, is dropped
-      this.cycle(opt);
+      this.cycle(OPT_KEYS[name]);
+      return true;
+    }
+    if (name === "+" || name === "-") {
+      this.vim.normal();
+      const key = this.board.keys[this.at?.c ?? 0];
+      const n = this.board.lanes.reduce((s, lane) => s + (lane.cols[this.at?.c ?? 0]?.threads.length ?? 0), 0);
+      if (key) this.limits = stepLimit(this.limits, key, name === "+" ? 1 : -1, n);
       return true;
     }
     return this.act(this.vim.handle(e), cx);
@@ -387,6 +512,49 @@ export default class Kanban extends View {
       .child(enter(this.m, div().whitespace_nowrap().child(tr(`opt.${opt}.${value}`)), `kk-opt-${opt}-${value}`, { dy: 0 }));
   }
 
+  // The saved views as tabs (GitHub Projects' views): the current one in the ink, with a dot while what
+  // shows isn't what it saved; + a new view from what shows (its name typed at once); then, the current
+  // one changed, Enregistrer and Annuler; ⋯ its actions: rename, duplicate, delete (kt-confirm; the last
+  // view has none). gt / gT go from tab to tab.
+  tabs(t) {
+    const views = viewsOf(shared(VIEWS));
+    const changed = dirty(currentView(views), this.shownView());
+    const chip = (id, label, onClick, color = t.muted) => h_flex().id(`kk-va-${id}`).flex_none().h(24).px(9).items_center().rounded_full().border(1)
+      .border_color(t.border).text_size(12).text_color(color).cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => { onClick(); cx.notify(); })
+      .child(label);
+    const tab = (v) => {
+      const on = v.id === views.current;
+      // Renaming: the name typed and a caret; nothing typed yet, its name now, faded.
+      if (this.renaming === v.id) return h_flex().id(`kk-tab-${v.id}`).flex_none().h(28).px(12).items_center().rounded_full().border(1)
+        .border_color(alpha(t.accent, "99")).bg(alpha(t.accent, "24")).text_size(12.5).text_color(this.draft ? t.foreground : t.dim)
+        .child(`${this.draft || this.viewName(v)}▏`);
+      return h_flex().id(`kk-tab-${v.id}`).flex_none().h(28).px(12).gap(6).items_center().rounded_full().border(1)
+        .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00")).when(on, (el) => el.bg(alpha(t.accent, "24")))
+        .text_size(12.5).text_color(on ? t.foreground : t.muted).cursor_pointer()
+        .when(!on, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
+        .on_click((_e, cx) => { this.selectView(v.id); cx.notify(); })
+        .child(div().whitespace_nowrap().child(this.viewName(v)))
+        .when(on && changed, (el) => el.child(div().id("kk-dirty").size(6).rounded(3).flex_none().bg(t.blocked).tooltip(tr("view.dirty"))));
+    };
+    const icon = (id, path, tip, onClick) => h_flex().id(id).flex_none().size(26).items_center().justify_center().rounded_full()
+      .text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+      .on_click((_e, cx) => { onClick(); cx.notify(); })
+      .child(svg(path).size(13));
+    return h_flex().id("kk-tabs").flex_none().h(40).px(10).gap(4).items_center().overflow_x_scroll()
+      .children(views.list.map(tab))
+      .child(icon("kk-view-add", I("plus"), tr("view.add"), () => this.newView()))
+      .child(div().flex_1().min_w(8))
+      .when(changed, (el) => el
+        .child(chip("save", tr("view.save"), () => this.setViews(saveView(views, this.shownView())), t.foreground))
+        .child(chip("discard", tr("view.discard"), () => this.applyView(currentView(views)))))
+      .when(this.viewMenu, (el) => el
+        .child(chip("rename", tr("view.rename"), () => this.startRename(views.current, this.viewName(currentView(views)))))
+        .child(chip("duplicate", tr("view.duplicate"), () => { this.viewMenu = false; this.duplicate(); }))
+        .when(views.list.length > 1, (el) => el.child(chip("delete", tr("view.delete"), () => this.askDelete(), t.ansi1))))
+      .child(icon("kk-view-more", this.viewMenu ? I("x") : K("ellipsis"), tr("view.more"), () => { this.viewMenu = !this.viewMenu; }));
+  }
+
   // The project's mark at `size`: Home's house, its registry logo, else its initial on its color.
   mark(t, p, size) {
     if (!p) return div().size(size).flex_none().rounded(3).bg(t.dim);
@@ -401,13 +569,43 @@ export default class Kanban extends View {
     return PHASES.find((p) => p.id === key)?.label ?? tr(`col.${key}`);
   }
 
-  // A column's head: its color's dot, its name, its count rolling.
-  colHead(t, key, n) {
-    return h_flex().flex_none().h(40).px(14).gap(8).items_center()
-      .child(div().size(8).rounded(4).flex_none().bg(t[TINT[key]] ?? t.dim))
-      .child(div().flex_none().text_size(13).font_medium().text_color(t.foreground).child(this.colName(key)))
-      .child(roll(this.m, `kk-n-${key}`, String(n), 14).font_family(MONO).text_size(11).text_color(t.dim))
-      .child(div().flex_1());
+  // A column's head: its color's dot, its name, its count rolling, `n / limit` with a soft limit (in the
+  // warning color past it: nothing is blocked), and on the right what its cards cost together (rolling,
+  // in costLevel's color). A click on the count shows the limit's stepper under it (or + / - on the
+  // cursor's column); the limit belongs to the view.
+  colHead(t, key, list) {
+    const n = list.length;
+    const lim = this.limits[key];
+    const over = Boolean(lim) && n > lim;
+    const cost = costOf(list);
+    const editing = this.limitEdit === key;
+    const mono = (el) => el.font_family(MONO).text_size(11);
+    const step = (id, label, onClick) => h_flex().id(`kk-lim-${id}-${key}`).flex_none().h(22).px(8).items_center().justify_center().rounded(6).border(1)
+      .border_color(t.border).bg(t.background).text_size(12).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .on_click((_e, cx) => { onClick(); cx.notify(); })
+      .child(label);
+    return v_flex().flex_none()
+      .child(h_flex().h(40).px(14).gap(8).items_center()
+        .child(div().size(8).rounded(4).flex_none().bg(t[TINT[key]] ?? t.dim))
+        .child(div().flex_none().text_size(13).font_medium().text_color(t.foreground).child(this.colName(key)))
+        .child(h_flex().id(`kk-wip-${key}`).flex_none().h(20).px(6).gap(3).items_center().rounded(6).border(1)
+          .border_color(over ? alpha(t.blocked, "66") : editing ? t.border : alpha(t.border, "00"))
+          .when(over, (el) => el.bg(alpha(t.blocked, "24")))
+          .text_color(over ? t.blocked : t.dim).cursor_pointer().hover((s) => s.bg(t.hover))
+          .tooltip(over ? tr("limit.over", { n, lim }) : tr("limit.tip"))
+          .on_click((_e, cx) => { this.limitEdit = editing ? null : key; cx.notify(); })
+          .child(mono(roll(this.m, `kk-n-${key}`, String(n), 14)))
+          .when(Boolean(lim), (el) => el.child(mono(div()).child(`/ ${lim}`))))
+        .child(div().flex_1())
+        .when(cost > 0, (el) => el.child(div().id(`kk-cost-${key}`).flex_none().tooltip(tr("cost.sum"))
+          .child(mono(roll(this.m, `kk-cost-n-${key}`, `$${fnum(cost, 2)}`, 14, { snap: 2 })).text_color(levelColor(t, costLevel(cost), { okGreen: true }))))))
+      .when(editing, (el) => el.child(h_flex().h(32).px(14).gap(6).items_center()
+        .child(div().flex_none().text_size(12).text_color(t.muted).child(tr("limit")))
+        .child(step("minus", "−", () => { this.limits = stepLimit(this.limits, key, -1, n); }))
+        .child(mono(div()).flex_none().w(28).text_center().text_color(lim ? t.foreground : t.dim).child(lim ? String(lim) : "—"))
+        .child(step("plus", "+", () => { this.limits = stepLimit(this.limits, key, 1, n); }))
+        .child(div().flex_1())
+        .when(Boolean(lim), (el) => el.child(step("none", tr("limit.none"), () => { this.limits = stepLimit(this.limits, key, -lim, n); })))));
   }
 
   // One card, ~240 px wide. `col` goes into every id: a card changing column is drawn twice for a moment
@@ -427,7 +625,8 @@ export default class Kanban extends View {
       ? h_flex().id(`kk-sn-${key}`).flex_none().gap(3).items_center().text_color(t.working).tooltip(tr("snoozed", { left: model.until(th.snooze.until, now) }))
         .child(svg(I("clock")).size(11)).child(mono(t.working, model.until(th.snooze.until, now).toUpperCase()))
       : mono(t.dim, model.age(th.settled ? th.tab.settled_at ?? th.activity : th.activity, now).toUpperCase());
-    const look = th.pr ? PR[th.pr.state] ?? PR.OPEN : null;
+    // A draft PR in dim, as kt-flow shows it.
+    const look = !th.pr ? null : th.pr.state === "OPEN" && (th.pr.draft ?? th.pr.isDraft) ? { ...PR.OPEN, color: "dim" } : PR[th.pr.state] ?? PR.OPEN;
     const subs = th.subagents;
     // The facts there are: the issue (its number only: the model has no state for it), the PR in its
     // state's color, the cost by level, the sub-agents ended / all.
@@ -491,7 +690,7 @@ export default class Kanban extends View {
       return div().w_full().pb(6).child(this.card(t, th, col.key, i >= 0 && th.id === cur, i < 0, now, cx));
     });
     return v_flex().id(`kk-lane-${col.key}`).flex_1().min_w(COL_W).h_full().rounded(16).border(1).border_color(t.border).bg(t.chrome)
-      .child(this.colHead(t, col.key, col.threads.length))
+      .child(this.colHead(t, col.key, col.threads))
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(t[TINT[col.key]] ?? t.dim, "4d")))
       .child(v_flex().id(`kk-list-${col.key}`).flex_1().min_h(0).overflow_y_scrollbar().when(Boolean(scroll), (el) => el.track_scroll(scroll)).p(6)
         .when(!cards.length, (el) => el.child(div().p(8).text_size(12.5).line_height("18px").text_color(t.dim).child(this.emptyText(col.key))))
@@ -507,7 +706,8 @@ export default class Kanban extends View {
     const n = b.keys.length;
     const w = Math.max(COL_W, Math.floor(((this.lanesW ?? 0) - 12 - 4 * (n - 1)) / n));
     const total = n * w + 4 * (n - 1);
-    const counts = b.keys.map((_k, c) => b.lanes.reduce((s, lane) => s + lane.cols[c].threads.length, 0));
+    // A column's cards in every lane: its head's count, limit and cost are the whole column's.
+    const all = b.keys.map((_k, c) => b.lanes.flatMap((lane) => lane.cols[c].threads));
     if (this.reveal && this.at && atCard(b, this.at)) {
       this.laneScroll.scroll_to_item(this.at.l + 1); // after the heads' row
       this.reveal = false;
@@ -538,7 +738,7 @@ export default class Kanban extends View {
         cx.notify();
       })
       .child(h_flex().w(total).flex_none().gap(4).children(b.keys.map((k, c) =>
-        v_flex().w(w).flex_none().rounded(12).border(1).border_color(t.border).bg(t.chrome).child(this.colHead(t, k, counts[c])))))
+        v_flex().w(w).flex_none().rounded(12).border(1).border_color(t.border).bg(t.chrome).child(this.colHead(t, k, all[c])))))
       .children(b.lanes.map(lane))
       .when(!b.lanes.length, (el) => el.child(div().p(12).text_size(12.5).text_color(t.dim).child(tr("noMatch"))));
   }
@@ -600,32 +800,39 @@ export default class Kanban extends View {
     const now = Date.now();
     const world = this.world(now);
     const o = opts();
-    // What the sidebar lists (threads-model.js): the shown project or every one, its filter; then `/`'s
-    // text, then the slice picked.
-    const every = shared("kt.project") === "*";
+    // Every project's threads (threads-model.js): the views decide, not the sidebar's scope or filter
+    // (GitHub Projects: a view stands alone); the archived only for an is:archived. Then `/`'s query
+    // (kanban.js parseQuery: words and field:value terms; project:@current is the shown space's
+    // project), then the slice picked.
     const shown = world.spaces.find((s) => s.active);
-    const filter = filterOf(shared("kt.threadFilter"));
-    const listed = onBoard(model.filtered(model.scoped(model.threadsOf(world), every ? null : shown, world.repos), filter, now), filter.archived);
-    const kept = listed.filter((th) => matches(th, this.query.trim()));
+    const query = parseQuery(this.query);
+    const listed = onBoard(model.threadsOf(world), query.archived);
+    const current = !shown ? null : model.isHome(shown, world) ? "home" : model.projectId(shown, world) ?? `space:${shown.id}`;
+    const kept = listed.filter((th) => matchQuery(th, query, { now, current }));
     const pick = (this.pick = o.slice === "none" ? null : (shared(PICKS) ?? {})[o.slice] ?? null);
     const values = (this.sliceList = o.slice === "none" ? [] : slices(kept, o.slice, pick));
     const onIt = sliced(kept, o.slice, pick);
     if (vis && !checking()) for (const th of onIt) this.wantPr(th);
     const b = (this.board = board(onIt, { field: o.column, group: o.group, sort: o.sort, pins: world.pins, firstSeen: world.firstSeen, registry: world.registry, folded: this.folded }));
-    const focused = (this.keyed = this.handle.is_focused());
+    const focused = this.handle.is_focused();
+    // The keyboard gone (a terminal clicked, ctrl-b t) while a tab was being renamed: the name stays as it
+    // was. Only on that change, so the render right after startRename() doesn't end it before focus lands.
+    if (this.renaming && this.keyed && !focused) this.renaming = null;
+    this.keyed = focused;
     const typing = focused && this.vim.insert;
     this.at = locate(b, this.cur, this.at);
     this.cur = atCard(b, this.at)?.id ?? null;
     const cur = focused ? this.cur : null;
 
-    // The head: the scope (the shown project's color and name, Home muted, every project the accent).
+    // The head: the current view's name and how many threads it shows; the accent, or the shown project's
+    // color (Home muted) when the view filters on it (project:@current).
     const home = shown && model.isHome(shown, world);
     const entry = shown && !home ? model.entryOf(shown, world.registry, world) : null;
-    const tint = every || !shown ? t.accent : home ? t.muted
+    const tint = !query.current || !shown ? t.accent : home ? t.muted
       : paint(t, entry?.color) ?? paint(t, model.spaceColorOf(shown, world.colors)) ?? t.accent;
-    const scope = filter.archived ? tr("archived") : every || !shown ? tr("every") : home ? model.homeLabel(shown) : entry?.name ?? shown.name;
+    const view = currentView(viewsOf(shared(VIEWS)));
     const count = onIt.length < listed.length ? tr("shownOf", { n: onIt.length, total: listed.length }) : tr("threads", { n: listed.length });
-    const sub = rollText(m, `kk-head-n-${every ? "*" : shown?.id ?? ""}`, `${scope} · ${count}`, 14).font_family(MONO).text_size(10.5).text_color(t.muted);
+    const sub = rollText(m, `kk-head-n-${view.id}`, `${this.viewName(view)} · ${count}`, 14).font_family(MONO).text_size(10.5).text_color(t.muted);
     const field = h_flex().id("kk-filter").w(220).flex_none().h(28).px(12).gap(8).items_center().rounded_full().border(1)
       .border_color(typing ? alpha(t.accent, "99") : t.border).bg(typing ? alpha(t.accent, "24") : t.background).cursor_text()
       .on_click((_e, cx) => { this.handle.focus(); this.vim.edit(); cx.notify(); })
@@ -639,15 +846,25 @@ export default class Kanban extends View {
     const mode = focused && div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
       .border_color(typing ? alpha(t.accent, "66") : t.border).bg(typing ? alpha(t.accent, "24") : t.background)
       .font_family(MONO).text_size(9).text_color(typing ? t.accent : t.muted).child(this.vim.label);
-    // The toolbar under the band: the four choices, then the text filter. One line that scrolls sideways
-    // on a narrow page (FILTERS.md).
+    // What the query set aside (an unknown field, a value it can't read), said quietly before the field:
+    // the rest still filters.
+    const ignored = query.issues.map((i) => (i.kind === "field" ? `${i.field}:` : `${i.field}:${i.value}`)).join(" ");
+    const notice = ignored && h_flex().id("kk-ignored").flex_none().max_w(260).gap(5).items_center().text_color(t.blocked)
+      .tooltip(tr("filter.help"))
+      .child(svg(I("circle-alert")).size(12).flex_none())
+      .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).child(tr("filter.ignored", { list: ignored })));
+    // The toolbar under the tabs: the four choices, then the filter. One line that scrolls sideways on a
+    // narrow page (FILTERS.md).
     const tools = h_flex().id("kk-tools").flex_none().h(44).px(10).gap(6).items_center().overflow_x_scroll()
       .children(["column", "group", "slice", "sort"].map((k) => this.choiceButton(t, k, o[k])))
       .child(div().flex_1().min_w(8))
+      .when(Boolean(notice), (el) => el.child(notice))
       .child(field);
     const head = v_flex().flex_none().rounded(16).border(1).border_color(t.border).bg(t.background)
       .child(this.band(t, tint, "Kanban", sub, [mode].filter(Boolean))) // i18n: tech
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(tint, "4d")))
+      .child(this.tabs(t))
+      .child(div().flex_none().mx(10).h(0).border_t(1).border_dashed().border_color(t.border))
       .child(tools);
     // The board: no group, the columns side by side (scrolling sideways once narrower than their 240 px
     // each; the cursor's column comes into view, its card then in column()); by project, the lanes. The

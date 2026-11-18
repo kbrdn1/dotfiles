@@ -258,6 +258,8 @@ read.length = 0;
 const reps = await io.readReports([pane("fx-t2", "fx2", claude, { cwd: "/fx/acme/src", branch: "fix/#9-login" }), pane("fx-t3", "fx3", claude, { cwd: "/fx/acme", branch: "dev" })],
   repos, { home: HOME, readTextFile, readdir: async () => ["fx-other", "fx-acme"] });
 assert.equal(reps["acme|fix/#9-login"].pr.number, 9); // data.js while facts.json is missing
+assert.equal(reps["acme|fix/#9-login"].pr.draft, false);
+assert.equal(M.summarizeReport({ facts: { pr: { number: 3, state: "OPEN", isDraft: true } } }).pr.draft, true); // a draft PR
 assert.deepEqual([reps["acme|dev"].ci.ok, reps["acme|dev"].at], [1, "f"]); // facts.json first
 assert.ok(!read.includes(`${HOME}/Reports/fx-acme/dev/data.js`));
 assert.deepEqual(await io.readReports([], repos, { home: HOME, readTextFile, readdir: async () => { throw new Error("no Reports"); } }), {});
@@ -269,7 +271,7 @@ const exec = async (cmd, args, { cwd }) => {
   if (cmd === "git" && args[1] === "--show-toplevel") return { code: 0, stdout: cwd.startsWith("/fx/wt") ? "/fx/wt/acme/feat-12-x\n" : "/fx/acme\n" };
   if (cmd === "git" && args[0] === "rev-parse") return { code: 0, stdout: "abc\n" };
   if (cmd === "gh" && args[0] === "repo") return { code: 0, stdout: "main\n" };
-  if (cmd === "gh" && args[0] === "pr") return { code: 0, stdout: JSON.stringify([{ number: 34, state: "OPEN", url: "u", headRefOid: "abc", baseRefName: "main" }]) };
+  if (cmd === "gh" && args[0] === "pr") return { code: 0, stdout: JSON.stringify([{ number: 34, state: "OPEN", url: "u", headRefOid: "abc", baseRefName: "main", isDraft: true }]) };
   if (cmd === "pwd") { if (cwd === "/fx/gone") throw new Error("no such folder"); return { code: 0, stdout: `${cwd}\n` }; }
   throw new Error(cmd);
 };
@@ -280,7 +282,8 @@ assert.equal(await io.realOf(J(null, "/fx/beta"), exec), J(null, "/fx/beta"));
 assert.equal(await io.realOf(J(null, "/fx/gone"), exec), null);
 calls.length = 0;
 const defaults = {};
-assert.equal((await io.lookupPr(M.prKey(null, "/fx/acme", "feat/#12-x"), { exec, repos, defaults })).number, 34);
+const got = await io.lookupPr(M.prKey(null, "/fx/acme", "feat/#12-x"), { exec, repos, defaults });
+assert.deepEqual([got.number, got.draft], [34, true]); // gh's isDraft, as /me:report's draft
 assert.deepEqual(calls, ["gh repo view @/fx/acme", "gh pr list @/fx/acme", "git rev-parse HEAD @/fx/acme"]);
 assert.deepEqual(defaults, { [acmeGit]: "main" });
 calls.length = 0;
