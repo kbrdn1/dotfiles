@@ -49,6 +49,7 @@ import { AddMenu, AddForm, menuSize } from "./form.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
+import { skeleton, still } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
@@ -611,7 +612,9 @@ export default class Skills extends View {
       .children([dither(this.headW, 60, 16, t.ansi4)].filter(Boolean))
       .child(bandRow(t, { m: this.m, color: t.ansi4, icon: I("sparkles"), title: "Skills", // i18n: tech
         // Filtering or not in the id: « shown / total » and « N skills · N commandes » don't roll into each other.
-        sub: [rollText(this.m, `kts-head-n-${filtered ? "f" : "a"}`, count, 14), tr("sources")],
+        // Before the first scan, the count as a bar (skeleton.js), breathing.
+        sub: [!this.scanned && !this.error ? ((S) => S.pulse(S.line(110, { h: 7, lh: 14 }).id("kts-count-sk")))(skeleton(t, this.m))
+          : rollText(this.m, `kts-head-n-${filtered ? "f" : "a"}`, count, 14), tr("sources")],
         buttons: [
           iconBtn(t, "kts-b-add", I("plus"), tr("addTip"), () => this.openAdd()),
           iconBtn(t, "kts-b-refresh", I("refresh-cw"), this.busy ? tr("analysingTip") : tr("refreshTip"), (cx) => { if (!checking()) this.scan(cx); }),
@@ -723,6 +726,11 @@ export default class Skills extends View {
 
   list(t, shown, cx) {
     const card = this.card(t).flex_1().min_w(0).h_full();
+    // Before the first scan: cards in the shape of the skills' rows (skeleton.js), breathing; then the
+    // list fades in over them, its rows at rest (still(): no opening from 0 under the fade).
+    const S = skeleton(t, this.m);
+    if (!this.scanned && !this.error) return card.child(S.swap("kts-list", false, null, () => v_flex().p(4).gap(4)
+      .children([0, 1, 2, 3, 4, 5].map((k) => S.block(null, 84).child(S.row({ h: 82, icon: 14, lines: [0.35, 0.8], k }))))));
     if (!shown.length) {
       const text = this.error ?? (!this.scanned || this.busy ? tr("analysingSkills") : this.items.length ? tr("noMatch") : tr("none"));
       return card.child(this.empty(t, text, this.error ? t.ansi1 : t.dim));
@@ -748,17 +756,20 @@ export default class Skills extends View {
     // their height, in order. The page is in the id: another page replaces this one at once and its
     // rows open. `at` counts the rows as rows() builds them, the closing ones included: they are the
     // list's direct children, which scroll_to_item reveals.
-    const rows = [];
-    for (const g of [...new Set(slice.map((e) => e.glabel))]) {
-      rows.push(this.groupRow(t, g, per[g], rows.length === 0));
-      let at = rows.length;
-      rows.push(...rowsOf(this.m, cx, `kts-rows-${page}-${g}`, slice.filter((e) => e.glabel === g), idOf, (e, i) => {
-        if (i >= 0 && idOf(e) === this.reveal) { this.scroll.scroll_to_item(at); this.reveal = null; }
-        at++;
-        const c = i >= 0 && idOf(e) === cur ? (typing ? "mark" : "ring") : null;
-        return e.x ? this.row(t, e.x, c, i < 0) : this.foldRow(t, e, c, i < 0);
-      }));
-    }
+    const rowsAt = (mm) => {
+      const rows = [];
+      for (const g of [...new Set(slice.map((e) => e.glabel))]) {
+        rows.push(this.groupRow(t, g, per[g], rows.length === 0));
+        let at = rows.length;
+        rows.push(...rowsOf(mm, cx, `kts-rows-${page}-${g}`, slice.filter((e) => e.glabel === g), idOf, (e, i) => {
+          if (i >= 0 && idOf(e) === this.reveal) { this.scroll.scroll_to_item(at); this.reveal = null; }
+          at++;
+          const c = i >= 0 && idOf(e) === cur ? (typing ? "mark" : "ring") : null;
+          return e.x ? this.row(t, e.x, c, i < 0) : this.foldRow(t, e, c, i < 0);
+        }));
+      }
+      return rows;
+    };
     const go = (p) => (_e, cx) => { this.page = p; this.cur = null; this.scroll.scroll_to_item(0); cx.notify(); };
     // The pager sits 4 px inside the card (16): its buttons are 12.
     const step = (id, label, to, ok) => h_flex().id(id).h(30).px(11).items_center().rounded(12).border(1).border_color(t.border)
@@ -769,10 +780,10 @@ export default class Skills extends View {
     const bar = this.bulk(t);
     // The bulk bar floats over the rows' foot: room under the last row so it never hides it.
     return card
-      .child(v_flex().flex_1().min_h(0).relative()
+      .child(S.swap("kts-list", true, (first) => v_flex().flex_1().min_h(0).relative()
         .child(v_flex().id("kts-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).gap(4)
-          .when(Boolean(bar), (el) => el.pb(64)).children(rows))
-        .when(Boolean(bar), (el) => el.child(bar)))
+          .when(Boolean(bar), (el) => el.pb(64)).children(rowsAt(first ? still(this.m) : this.m)))
+        .when(Boolean(bar), (el) => el.child(bar)), null, { grow: true }))
       .when(pages > 1, (el) => el.child(this.dashed(t)).child(h_flex().flex_none().p(4).gap(4).items_center()
         .child(this.eyebrow(t, tr("paging", { from: from + 1, to: from + slice.length, n: entries.length })).px(10).flex_1())
         .child(step("kts-prev", tr("prev"), page - 1, page > 0))
@@ -830,13 +841,17 @@ export default class Skills extends View {
   // The file, rendered: its prose by TextView.markdown (headings, lists, emphasis, inline code,
   // quotes, tables, in the theme's colors), its fenced code as blocks of our own; a ~80-character
   // column with airy lines.
+  // While it is read: two paragraphs and a code block as bars (skeleton.js), in the same column, then
+  // the file fades in over them.
   body(t, x, d) {
-    if (!d?.segs) return this.empty(t, tr("loading"));
-    return v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14)
+    const S = skeleton(t, this.m);
+    const para = (n) => v_flex().children(Array.from({ length: n }, (_, i) => S.line(i === n - 1 ? 0.55 : 0.95, { h: 9, lh: 22 })));
+    return S.swap(`kts-body-${d?.path}`, Boolean(d?.segs), () => v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14)
       .text_size(13.5).line_height("22px").text_color(t.foreground)
       .children(d.segs.map((s, i) => (s.kind === "code" ? this.codeBlock(t, `${d.path}#${i}`, s)
         : TextView.markdown(`kts-md-${d.path}#${i}`, s.text ?? tr(s.key)).selectable(true)
-          .on_link_click((url, cx) => { this.link(x, url, cx); cx.notify(); }))));
+          .on_link_click((url, cx) => { this.link(x, url, cx); cx.notify(); })))),
+    () => v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14).child(para(3)).child(S.block(null, 72, { r: 10 })).child(para(2)));
   }
 
   // A fenced block: t.raised, radius 12 (inner boxes here sit 4 px in the 16 cards), Monaspace Neon,

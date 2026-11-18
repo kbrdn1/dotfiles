@@ -34,6 +34,7 @@ import { motionState, frame, enter, pulse, sheet, leave, sharpen, MS } from "./m
 // kt-keys' roll.js (a byte-identical copy): the head's counts roll to their new digits.
 import { rollText } from "./roll.js";
 import { ditherBand, TOP, ALL } from "./dither.js";
+import { skeleton } from "./skeleton.js";
 import { filterState, filterRow, nextKey } from "./filters.js";
 import { search } from "./fuzzy.js";
 import {
@@ -908,7 +909,10 @@ export default class Mods extends View {
     const counts = d ? GROUPS.map(([g]) => `${all.filter((x) => x.group === g).length} ${tr(`count.${g}`)}`).join(" · ") : "";
     const alerts = d ? all.filter((x) => x.alert).length + all.filter((x) => x.state === "error").length : 0;
     // The counts roll (rollText: the read time, touching ":", stays text).
-    const sub = this.busy && !d ? tr("reading") : d ? rollText(m, "km-head-n", tr("head", { n: all.length, counts, alerts: alerts ? tr("alertsCount", { n: alerts }) : "", time: clock(d.at) }), 14) : this.error ?? tr("notRead");
+    // Before the first read: bars in the shape of what is coming (skeleton.js), breathing.
+    const S = skeleton(t, m);
+    const sub = d ? rollText(m, "km-head-n", tr("head", { n: all.length, counts, alerts: alerts ? tr("alertsCount", { n: alerts }) : "", time: clock(d.at) }), 14)
+      : this.error ?? S.pulse(S.line(220, { h: 7, lh: 14 }).id("km-sub-sk"));
     const refresh = this.iconBtn(t, "km-refresh", I("refresh-cw"), tr("refreshTip"), (cx) => this.refresh(cx));
     const head = div().flex_none().rounded(16).bg(t.surface).border(1).border_color(t.border)
       .child(this.band(t, { id: "km-head", tint: t.accent, mark: this.mark(t, I("blocks"), t.accent), title: "Mods", sub, rounded: "all", // i18n: tech
@@ -950,13 +954,19 @@ export default class Mods extends View {
     const empty = d && !list.length ? [div().p(16).text_size(12).text_color(t.dim).child(this.query ? tr("noMatch", { query: this.query }) : tr("noFilter"))] : [];
     const left = v_flex().w(Math.min(560, Math.max(380, (W - 96) * 0.46))).flex_none().min_h(0).p(8).gap(8).rounded(16).bg(t.surface).border(1).border_color(t.border)
       .child(field).child(filters)
-      .child(v_flex().id("km-list").flex_1().min_h(0).overflow_y_scroll().track_scroll(this.listScroll).gap(2)
+      // Rows in the shape of the mods' (34 px: state dot, name, description) until the first read, then
+      // the list fades in over them (the list keeps its id and scroll: swap boxes it).
+      .child(S.swap("km-list", Boolean(d || this.error), () => v_flex().id("km-list").flex_1().min_h(0).overflow_y_scroll().track_scroll(this.listScroll).gap(2)
         .children(d ? [...kids, ...empty] : [pulse(m, div().id("km-loading").p(16).text_size(13).text_color(t.dim)
-          .child(this.error ? tr("readFailed", { error: this.error }) : tr("readingMods")), this.busy)]));
+          .child(tr("readFailed", { error: this.error })), this.busy)]),
+      () => S.list(8, { h: 34, icon: 7, round: true, lines: [0.6], gap_y: 2 }), { grow: true }));
 
-    // Right: the selected mod.
+    // Right: the selected mod; before the first read, its title and a few lines as bars.
     const right = v_flex().id("km-detail").flex_1().min_w(0).min_h(0).overflow_y_scroll().track_scroll(this.detailScroll)
-      .child(detail ? enter(m, v_flex().child(detail.el), `km-in-${sel?.name}`, { dy: 0 }) : div());
+      .child(detail ? enter(m, v_flex().child(detail.el), `km-in-${sel?.name}`, { dy: 0 })
+        : !d && !this.error ? S.pulse(v_flex().id("km-detail-sk").p(12).gap(10)
+          .child(S.line(0.3, { h: 10, lh: 19 })).child(S.line(0.7)).child(S.line(0.55)).child(S.block(null, 120)))
+          : div());
 
     const hint = (k, what) => h_flex().gap(5).items_center()
       .child(div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k))

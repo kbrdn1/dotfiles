@@ -42,6 +42,7 @@ import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { viz } from "./viz.js";
 // kt-keys' roll.js (a byte-identical copy): viz's figures, the head's and the sections' counts roll.
 import { roll, rollText } from "./roll.js";
@@ -594,6 +595,13 @@ export default class Automation extends View {
       .children(paras.map((p) => div().text_size(12.5).line_height("19px").text_color(t.muted).child(p)));
   }
 
+  // block()'s shape while its text is read: three mono lines (18 px) as bars (skeleton.js), breathing.
+  blockSkeleton(t, id) {
+    const S = skeleton(t, this.m);
+    return S.pulse(v_flex().id(id).flex_none().rounded(12).border(1).border_color(t.border).bg(t.raised).px(12).py(10)
+      .children([0.5, 0.8, 0.35].map((w) => S.line(w, { h: 7, lh: 18 }))));
+  }
+
   block(t, text, color) {
     return v_flex().flex_none().rounded(12).border(1).border_color(t.border).bg(t.raised).px(12).py(10)
       .font_family(MONO).text_size(11.5).line_height("18px").text_color(color ?? t.foreground)
@@ -624,7 +632,8 @@ export default class Automation extends View {
       .children([dither(this.headW, 60, 16, t.ansi5)].filter(Boolean))
       .child(bandRow(t, { m: this.m, color: t.ansi5, icon: OWN("repeat"), title: tr("title"),
         dot: live.some((r) => r.status === "working") ? t.working : live.length ? t.done : null,
-        sub: [!d ? "…" : rollText(this.m, "kta-head-n", `${tr("loops", { n: d.loops.length })} · ${tr("automations", { n: d.scripts.length })}`, 14),
+        // Before the first scan, the counts as a bar (skeleton.js), breathing.
+        sub: [!d ? ((S) => S.pulse(S.line(150, { h: 7, lh: 14 }).id("kta-head-sk")))(skeleton(t, this.m)) : rollText(this.m, "kta-head-n", `${tr("loops", { n: d.loops.length })} · ${tr("automations", { n: d.scripts.length })}`, 14),
           live.length ? rollText(this.m, "kta-head-run", tr("running", { n: live.length }), 14) : null, tr("readOnly"), s ? tr("sessionOpen", { name: NAME }) : null],
         buttons: [
           iconBtn(t, "kta-b-loop", I("plus"), tr("createLoopTip"), () => this.create("loop")),
@@ -780,7 +789,10 @@ export default class Automation extends View {
         .border_color(alpha(t.ansi1, "66")).bg(alpha(t.ansi1, "14"))
         .child(svg(I("circle-alert")).size(12).flex_none().mt(2).text_color(t.ansi1))
         .child(div().flex_1().min_w(0).text_size(12).line_height("17px").text_color(t.foreground).child(st.error))))
-      .when(!st.wts, (el) => el.child(pulse(this.m, div().px(12).py(6).font_family(MONO).text_size(11).text_color(t.dim).child("gwm list…"), true)))
+      // While gwm lists them: what runs, then worktree rows as bars (skeleton.js), breathing.
+      .when(!st.wts, (el) => el.child(((S) => S.pulse(v_flex().id("kta-wts-sk")
+        .child(div().px(12).py(6).font_family(MONO).text_size(11).text_color(t.dim).child("gwm list…")) // i18n: tech
+        .child(S.list(3, { h: 38, icon: 13, lines: [0.4], px: 16, gap_y: 2 }))))(skeleton(t, this.m))))
       .children(rows);
   }
 
@@ -799,7 +811,9 @@ export default class Automation extends View {
           .child(this.eyebrow(t, "sheprd-automate status", d.status?.ok ? t.dim : t.ansi1).flex_1()) // i18n: tech
           .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(tilde(d.bin, home())))
           .child(this.icon(t, "kta-runs", I("list"), tr("runsTip"), (cx) => this.automate("Runs · sheprd-automate runs", ["runs"], cx)))) // i18n: tech
-        .child(div().id("kta-status").overflow_x_scrollbar().child(this.block(t, d.status?.text ?? "…", d.status?.ok ? t.foreground : t.ansi1))));
+        // Not read yet: its lines as bars in the block's place (skeleton.js), breathing.
+        .child(div().id("kta-status").overflow_x_scrollbar().child(d.status ? this.block(t, d.status.text ?? "…", d.status.ok ? t.foreground : t.ansi1)
+          : this.blockSkeleton(t, "kta-status-sk"))));
     }
     if (this.out) this.put(kids, this.outPanel(t), "out");
     if (!d.scripts.length) {
@@ -848,7 +862,8 @@ export default class Automation extends View {
         .child(this.eyebrow(t, o.title, o.ok ? t.muted : t.ansi1).flex_1().min_w(0).truncate())
         .when(o.busy, (el) => el.child(pulse(this.m, div().font_family(MONO).text_size(11).text_color(t.dim).child(tr("inProgress")), true)))
         .child(this.icon(t, "kta-out-x", I("x"), tr("closeEsc"), () => { this.out = null; })))
-      .child(div().id("kta-out-text").max_h(360).overflow_y_scrollbar().child(div().id("kta-out-x-scroll").overflow_x_scrollbar().child(this.block(t, o.busy ? "…" : o.text, o.ok ? t.foreground : t.ansi1))));
+      .child(div().id("kta-out-text").max_h(360).overflow_y_scrollbar().child(div().id("kta-out-x-scroll").overflow_x_scrollbar()
+        .child(o.busy ? this.blockSkeleton(t, "kta-out-sk") : this.block(t, o.text, o.ok ? t.foreground : t.ansi1))));
   }
 
   // ---------- C. Claude Code schedules ----------
@@ -880,7 +895,12 @@ export default class Automation extends View {
     this.idx = {}; // item id (or "launch", "out") -> its scroll child's index
     this.mark = 0;
     if (!this.d) {
-      kids.push(div().p(16).text_size(13).text_color(this.error ? t.ansi1 : t.dim).child(this.error ?? tr("scanningAll")));
+      // Before the first scan: a section's head and rows as bars (skeleton.js), breathing; its rows open
+      // in order when the scan lands, as they do.
+      const S = skeleton(t, this.m);
+      kids.push(this.error ? div().p(16).text_size(13).text_color(t.ansi1).child(this.error)
+        : S.pulse(v_flex().id("kta-body-sk").child(div().px(8).pt(6).pb(6).child(S.line(120, { h: 7, lh: 16 })))
+          .child(S.list(5, { h: 44, icon: 14, lines: [0.35, 0.6], px: 16, gap_y: 2 }))));
     } else {
       const want = (k) => this.sec === "all" || this.sec === k;
       if (want("loops")) this.loops(t, kids, live, cx);

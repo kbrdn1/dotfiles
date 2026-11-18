@@ -41,6 +41,7 @@ import { claudeWindows, codexReading, codexWindows, dayCost, resetLabel, ago, cl
 import { makeT, num } from "./i18n.js";
 import strings from "./strings.js";
 import { ditherBand, TOP, ALL } from "./dither.js"; // the shared band (DESIGN-REFERENCE.md), tinted per provider
+import { skeleton } from "./skeleton.js";
 import { usageSummary } from "./summary.js";
 
 const tr = makeT(strings);
@@ -461,6 +462,28 @@ export default class Usage extends View {
     return h_flex().gap(12).items_center().child(empty(w.missing ? "—" : "?")).child(v_flex().flex_1().min_w(0).gap(2).children(lines));
   }
 
+  // A provider card's shape while the first read runs (skeleton.js bars, no loop of its own: the body
+  // around them breathes): its band (the dither in t.dim, the tile, name and plan as bars), the dashed
+  // rule, then a limit's ring and a few lines.
+  skelCard(t, S, k) {
+    const id = `ku-sk-band-${k}`;
+    const layer = ditherBand(this.bw[id], 60, 15, alpha(t.dim, settings().dark ? "6b" : "4d"), TOP);
+    return v_flex().rounded(16).bg(t.surface).border(1).border_color(t.border)
+      .child(div().id(id).relative().flex_none().h(60).overflow_hidden().rounded_t(15)
+        .on_size_change((size, cx) => { if (this.bw[id] !== size.width) { this.bw[id] = size.width; cx.notify(); } })
+        .when(Boolean(layer), (e) => e.child(layer))
+        .child(h_flex().size_full().px(12).gap(10).items_center()
+          .child(div().flex_none().size(32).rounded(10).bg(t.border))
+          .child(v_flex().flex_1().min_w(0).gap(2).child(S.line(k ? 70 : 110, { h: 10, lh: 19 })).child(S.line(180, { h: 7, lh: 14 })))))
+      .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
+      .child(v_flex().p(12).gap(10)
+        .child(S.line(90, { h: 7, lh: 18 }))
+        .child(h_flex().gap(16).items_center()
+          .child(S.circle(132, { ring: 16 }))
+          .child(v_flex().flex_1().min_w(0).gap(4).child(S.line(0.4, { lh: 15 })).child(S.line(0.6, { h: 7, lh: 16 }))))
+        .child(S.line(0.7)).child(S.line(0.45)));
+  }
+
   // A provider card: the dither band in its tint (tile, name, plan · last update, refresh), a dashed
   // rule in that tint, then the body. The cursor on it draws its border accent.
   card(t, i, { key, name, sub, body }) {
@@ -586,10 +609,18 @@ export default class Usage extends View {
       // 7 sessions: 5 interrupted in 10 with it in the first, 0 without). A new id per step: its
       // on_size_change reports each one's first layout.
       const at = this.costsAt;
+      const S0 = skeleton(t, null);
       cumul.push(div().id(`ku-d-claude-sessions~at${at}`).px(10)
         .on_size_change((_size, cx) => { if (this.costsAt === at && at < 2) { this.costsAt = at + 1; cx.notify(); } })
         .child(at >= 2 ? this.V.donut(slices, { label: tr("cumul.caption"), size: 132, id: "ku-d-claude-sessions",
-          value: usd(costs.reduce((sum, s) => sum + s.value, 0)) }) : div().h(132)));
+          value: usd(costs.reduce((sum, s) => sum + s.value, 0)) })
+          // Until then, its shape (skeleton.js): the ring's track and a legend line per slice, laid out
+          // as viz lays the donut, so neither its width nor its height jumps. Still: two layouts long,
+          // and the donut fades in by itself.
+          : div().flex().flex_wrap().items_center().gap(24)
+            .child(div().flex_none().size(132).p(6).child(S0.circle(120, { ring: 21 })))
+            .child(v_flex().flex_1().min_w(140).max_w(320).gap(8)
+              .children(slices.map((_s, i) => S0.line(i % 2 ? 0.5 : 0.75, { lh: 16 }))))));
       cumul.push(div().px(10).text_size(11).text_color(t.dim).child(tr("cumul.about")));
     }
 
@@ -747,14 +778,18 @@ export default class Usage extends View {
       .child(tr("refresh"));
     const mark = div().flex_none().size(32).rounded(10).border(1).border_color(alpha(t.accent, "4d")).bg(alpha(t.accent, "1a"))
       .flex().items_center().justify_center().child(svg(I("gauge")).size(18).text_color(t.accent));
-    const sub = this.busy && !d ? tr("reading") : d ? tr("refreshed", { time: clock(d.at) }) : tr("notRead");
+    // Before the first read: the time it was read as a bar (skeleton.js), breathing; a failed read says so.
+    const S = skeleton(t, m);
+    const sub = d ? tr("refreshed", { time: clock(d.at) }) : this.error ? tr("notRead") : S.pulse(S.line(200, { h: 7, lh: 14 }).id("ku-sub-sk"));
 
     // The cards come in with a short cascade (ANIMATIONS.md 6: 30 ms apart), once: their ids stay
-    // across refreshes. The body scrolls, so it clips the 6 px rise.
+    // across refreshes. The body scrolls, so it clips the 6 px rise. Before the first read, two cards'
+    // shapes in their place (skeleton.js), breathing; the real ones come in over them as they do.
     const body = d
       ? cards.map((c, i) => enter(m, v_flex().child(c.el), `ku-in-${c.part}`, { delay: stagger(i, cards.length) }))
-      : [pulse(m, div().id("ku-loading").p(16).text_size(13).text_color(t.dim)
-        .child(this.error ? tr("readFailed", { error: this.error }) : tr("readingSources")), this.busy)];
+      : this.error ? [pulse(m, div().id("ku-loading").p(16).text_size(13).text_color(t.dim)
+        .child(tr("readFailed", { error: this.error })), this.busy)]
+        : [S.pulse(v_flex().id("ku-skel").gap(4).child(this.skelCard(t, S, 0)).child(this.skelCard(t, S, 1)))];
 
     const src = (label, text) => h_flex().gap(8).items_start()
       .child(div().w(52).flex_none().font_family(MONO).text_size(9.5).text_color(t.muted).child(label))

@@ -56,6 +56,7 @@ import { Select, partition, lines } from "./select.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
+import { skeleton, still } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the head's, the selection's and a worktree's ahead / behind
 // counts roll to their new digits.
 import { roll, rollText } from "./roll.js";
@@ -1243,6 +1244,11 @@ export default class Worktrees extends View {
     const typing = this.keyed && this.vim.insert;
     const stops = this.keyed ? this.stops() : [];
     const cur = (stops.find((s) => s.id === this.cur) ?? stops[0])?.id;
+    // Before a repo's first read (or the scope's): cards in the shape of the worktrees' (skeleton.js),
+    // breathing; then the list fades in over them, its cards at rest (still(): no opening from 0).
+    const S = skeleton(t, this.m);
+    const waiting = sc.kind === "wait" || groups.some((r) => !this.data[r.common]);
+    const mm = S.arriving("kg-list") ? still(this.m) : this.m;
     const list = [];
     let shown = 0;
     for (const r of groups) {
@@ -1257,7 +1263,7 @@ export default class Worktrees extends View {
       // list's index, counts the cards as rows() builds them, the closing ones included.
       const put = (id, ws) => {
         let at = list.length;
-        list.push(...rowsOf(this.m, cx, id, ws, (w) => w.path, (w, i) => {
+        list.push(...rowsOf(mm, cx, id, ws, (w) => w.path, (w, i) => {
           if (i >= 0 && this.reveal && w.path === cur) {
             this.scroll.scroll_to_item(at);
             this.reveal = false;
@@ -1319,10 +1325,12 @@ export default class Worktrees extends View {
     // Rows gone (removed, another repo shown) leave the selection, once every repo has its rows.
     if (groups.every((r) => this.data[r.common])) this.multi.keep(this.stops(true).map((s) => s.id));
     const bar = this.bulk(t);
-    const body = v_flex().id("kg-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(4)
+    const body = S.swap("kg-list", !(waiting && !total), v_flex().id("kg-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(4)
       .when(Boolean(none), (el) => el.child(this.box(t).child(this.empty(t, none))))
       .when(Boolean(bar), (el) => el.pb(64)) // room under the last card for the floating bar
-      .children(list);
+      .children(list),
+    () => v_flex().gap(4).children([0, 1, 2, 3, 4].map((k) => S.block(null, 76, { r: 16 }).child(S.row({ h: 74, icon: 16, lines: [0.4, 0.6], k })))),
+    { grow: true });
     const page = v_flex().size_full().gap(4).text_color(t.foreground).child(head)
       .child(v_flex().flex_1().min_h(0).relative().child(body).when(Boolean(bar), (el) => el.child(bar)));
     // The head's ⋯, last in the page so that it draws over the list.
@@ -1422,7 +1430,9 @@ export default class Worktrees extends View {
       .child(v_flex().gap(6)
         .child(this.eyebrow(t, tr("prefixTitle")))
         .child(h_flex().gap(8).items_center()
-          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(prefix ? t.foreground : t.dim).child(prefix ?? (prefix === null ? "—" : "…")))
+          // Not read yet: a bar (skeleton.js), breathing.
+          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(prefix ? t.foreground : t.dim)
+            .child(prefix === undefined ? ((S) => S.pulse(S.line(150, { h: 7, lh: 16 }).id("kg-sk-prefix")))(skeleton(t, this.m)) : prefix ?? "—"))
           .when(Boolean(prefix), (el) => el.child(this.iconButton(t, "kg-p-prefix", G("copy"), (cx) => {
             cx.write_to_clipboard(`${prefix} `);
             notify({ title: tr("prefixCopied"), body: prefix, level: "success", timeout: 2500 });
@@ -1455,11 +1465,14 @@ export default class Worktrees extends View {
     const bad = (doc?.checks ?? []).filter((x) => x.status !== "ok");
     const failed = bad.filter((x) => x.status === "failed").length;
     // Both counts when both: the bar names every check that isn't ok under it.
-    const doctor = !info ? ["…", t.dim] : !doc ? [tr("unavailable"), t.dim]
+    // Not read yet: each fact as a bar (skeleton.js), breathing.
+    const S = skeleton(t, this.m);
+    const sk = (id, w) => S.pulse(S.line(w, { h: 7, lh: 16 }).id(id));
+    const doctor = !info ? [sk("kg-sk-doc", 70), t.dim] : !doc ? [tr("unavailable"), t.dim]
       : failed ? [[tr("failures", { n: failed }), bad.length > failed && tr("warnings", { n: bad.length - failed })].filter(Boolean).join(" · "), t.ansi1]
       : bad.length ? [tr("warnings", { n: bad.length }), t.ansi3] : ["OK", t.done];
     const TRUST_COLOR = { trusted: t.done, drift: t.ansi3, untrusted: t.ansi3, absent: t.dim, unknown: t.dim };
-    const trust = TRUST_COLOR[info?.trust] ? [tr(`trust.${info.trust}`), TRUST_COLOR[info.trust]] : ["…", t.dim];
+    const trust = TRUST_COLOR[info?.trust] ? [tr(`trust.${info.trust}`), TRUST_COLOR[info.trust]] : [info ? "…" : sk("kg-sk-trust", 60), t.dim];
     const sock = d.sock ? d.sock.split("/").pop() : null;
     return this.panelBox(t, repo).child(v_flex().id("kg-p-repo").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(16).gap(12)
       .child(this.head(t, I("folder"), tr("repo"), d, cx))
@@ -1470,7 +1483,7 @@ export default class Worktrees extends View {
         .child(this.meta(t, tr("meta.branch"), h_flex().min_w(0).gap(8).items_center().font_family(MONO).text_size(12)
           .child(div().min_w(0).truncate().text_color(t.accent).child(w?.branch ?? "—"))
           .children(this.marks(t, w ?? {}, false, `kg-r-mk-${w?.path ?? repo.name}`))))
-        .child(this.meta(t, tr("meta.default"), info ? info.def ?? "—" : "…", t.foreground))
+        .child(this.meta(t, tr("meta.default"), info ? info.def ?? "—" : sk("kg-sk-def", 90), t.foreground))
         .child(this.meta(t, "Daemon", d.source === "daemon" ? tr("daemonOn", { sock }) : tr("daemonOff"), d.source === "daemon" ? t.done : t.ansi3)) // i18n: tech
         // Read: viz.js' bar, the checks that pass over all of them, tinted by the worst, the others named
         // under it; its id per repo (its label changes with the state). Not read yet or none: in words.
@@ -1511,10 +1524,17 @@ export default class Worktrees extends View {
         .child(svg(I("git-branch")).size(18).text_color(t.dim)))
       .child(div().text_size(14).font_medium().text_color(t.foreground).child(title))
       .when(Boolean(detail), (el) => el.child(div().max_w(320).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(detail))));
-    if (sc.kind === "wait") return blank("…", null);
+    // Before the first read: the panel's shape (skeleton.js), breathing: its head, the name, the facts.
+    // The card that comes has its own entry (the name's sharpen): it lands as it does.
+    const S = skeleton(t, this.m);
+    const skel = () => root.child(this.box(t).flex_1().p(16).child(S.pulse(v_flex().id("kg-p-sk").gap(12)
+      .child(S.line(120, { h: 8, lh: 22 })).child(S.line(160, { h: 12, lh: 24 }))
+      .child(v_flex().gap(4).children([90, 140, 110, 70, 120].map((w) => h_flex().min_h(22).gap(10).items_center()
+        .child(div().w(118).flex_none().child(S.line(70, { h: 6, lh: 14 }))).child(S.line(w, { h: 7, lh: 16 }))))))));
+    if (sc.kind === "wait") return skel();
     if (sc.kind === "none") return blank(tr("outsideRepo"), sc.cwd ? tilde(sc.cwd) : tr("noTerminal"));
     const d = this.data[sc.repo.common];
-    if (!d) return blank(tr("loading"), sc.repo.name);
+    if (!d) return skel();
     if (d.error && !d.rows.length) return blank(tr("listFailed"), d.error);
     const w = enclosing(d.rows, sc.cwd);
     // The keys' cursor, while the panel has the keyboard. Its rows sit in the card's fifth child

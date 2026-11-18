@@ -50,6 +50,7 @@ import { Vim, keyOf, keysOf, step } from "./vim.js";
 // Where the issue, PR, checks and branch buttons and gi gI gp gP go (pure: links.check.mjs).
 import { target, checksOf, stepKind, stepUrl, inHerdr, toBrowser, toPage, toTab, gLink } from "./links.js";
 import { motionState, frame, enter, collapse, stagger } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { refreshOn } from "./bus.js";
 // kt-threads' reads (threads-io.js with threads-model.js, pr-pick.js, thread-filter.js: byte-identical
 // copies): the followed agent's herdr-bridge json, for its todos, its live line and its sub-agents.
@@ -1004,7 +1005,9 @@ export default class Flow extends View {
     const box = (rows) => [enter(this.motion, v_flex().ml(13).pl(10).pb(4).gap(2).border_l(1).border_color(t.border), "kf-ci", { dy: 0 }).children(rows)];
     const note = (text, color) => div().px(6).py(6).font_family(MONO).text_size(10.5).line_height("15px").text_color(color ?? t.dim).child(text);
     const ci = this.ci?.key === this.ciKey() ? this.ci : null;
-    if (!ci) return box([note(tr("readingChecks", { key: this.ciKey() }))]);
+    // While the checks are read: commit rows (28 px) as bars (skeleton.js), breathing, what is read under them.
+    const S = skeleton(t, this.motion);
+    if (!ci) return box([S.pulse(S.list(3, { h: 28, icon: 11, lines: [0.55], px: 6, gap: 7, gap_y: 2 }).id("kf-ci-sk")), note(tr("readingChecks", { key: this.ciKey() }))]);
     if (ci.error) return box([note(ci.error, c.err)]);
     const pushed = this.pushed();
     const last = pushed.at(-1)?.sha;
@@ -1056,7 +1059,13 @@ export default class Flow extends View {
             .on_click((_e, cx) => { cx.stop_propagation(); this.openRun(r); })
             .child(svg(I("external-link")).size(12)))));
         if (!logs) continue;
-        if (!logs.lines) { rows.push(div().ml(18).child(note(logs.loading ? tr("readingLogs") : logs.error, logs.loading ? t.dim : c.err))); continue; }
+        // While the logs are read: the log block's lines as bars (skeleton.js), breathing, what is read under them.
+        if (!logs.lines) {
+          if (logs.loading) rows.push(div().ml(18).mb(4).child(S.pulse(v_flex().id(`kf-logs-sk-${id}`).p(10).gap(1).rounded(8).border(1).border_color(t.border).bg(t.raised)
+            .children([0.7, 0.9, 0.5, 0.8].map((w) => S.line(w, { h: 6, lh: 15 }))))));
+          rows.push(div().ml(18).child(note(logs.loading ? tr("readingLogs") : logs.error, logs.loading ? t.dim : c.err)));
+          continue;
+        }
         if (this.logReveal) { this.logScroll.scroll_to_item(logs.lines.length); this.logReveal = false; }
         // overflow_y_scroll + a Scrollbar of the same id: scroll_to_item does nothing on overflow_y_scrollbar.
         rows.push(div().relative().ml(18).mb(4)

@@ -26,6 +26,7 @@ import { ICON_MAP } from "./icons.js";
 import { fileItems, sectionHead, action, zed, firstLine, palette, alpha, MONO, IMAGE, loadPreview, cleanPreviews, colorize, cleanTokens } from "./diffview.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { shouldRead } from "./reread.js";
 import { makeT } from "./i18n.js";
@@ -564,6 +565,7 @@ export default class Changes extends View {
     if (vis) refreshOn(this, cx, "git", [...gitTopics(this.root), ...(sp ? [`agent:${sp}`] : [])], async (cx) => { this.key = null; this.refresh(cx); });
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
+    const S = skeleton(t, m);
     this.keyed = this.handle.is_focused();
     const p = palette(t);
     const hasMsg = Boolean(this.message.trim());
@@ -574,7 +576,9 @@ export default class Changes extends View {
     const commitZone = card().flex_none().p(12).gap(8)
       .child(h_flex().h(22).gap(8).items_center()
         .child(svg(I("git-branch")).size(14).flex_none().text_color(t.muted))
-        .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(this.branch === "" ? tr("detached") : this.branch ?? "…"))
+        // Not read yet: the branch as a bar (skeleton.js), breathing.
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground)
+          .child(this.branch === "" ? tr("detached") : this.branch ?? S.pulse(S.line(110, { h: 7, lh: 16 }).id("cg-branch-sk"))))
         .child(div().flex_1())
         .when(add + del > 0, (el) => el.child(h_flex().flex_none().gap(6).font_family(MONO).text_size(11)
           // Their ids carry the repo: another repo's totals show at once, not rolling.
@@ -617,7 +621,10 @@ export default class Changes extends View {
         action(t, `${id}:refresh`, I("refresh-cw"), tr("refresh"), (cx) => { this.key = null; this.refresh(cx); }),
       ];
     };
-    const empty = this.root === null ? tr("noRepo") : this.root === undefined ? "…" : tr("clean");
+    // Not read yet: file rows (28 px, skeleton.js), breathing, in place of the « clean » line.
+    // A read that failed before the repo was known says so (no skeleton for ever).
+    const empty = this.root === null ? tr("noRepo") : this.root === undefined ? this.error : tr("clean");
+    const unread = this.root === undefined && !this.error;
     // cg-list's children, flat (6 px between the sections, 1 inside), the cursor's brought into
     // view once after it moved; the message is the cursor's first stop, above the list.
     const flat = [{ id: "message" }];
@@ -636,7 +643,9 @@ export default class Changes extends View {
       .child(div().relative().flex_1().min_h(0)
         .child(v_flex().id("cg-list").size_full().overflow_y_scroll().track_scroll(this.listScroll).p(4).gap(1)
           .children(items)
-          .when(!this.staged.length && !this.changes.length, (el) => el.child(div().mt(5).px(12).py(6).text_size(12.5).text_color(t.dim).child(empty))))
+          .when(!this.staged.length && !this.changes.length, (el) => el.child(unread
+            ? S.pulse(S.list(4, { h: 28, icon: 14, lines: [0.5], px: 8, gap: 8, gap_y: 1 }).mt(5).id("cg-list-sk"))
+            : div().mt(5).px(12).py(6).text_size(12.5).text_color(t.dim).child(empty))))
         .child(Scrollbar.vertical("cg-list").absolute().inset_0()));
     // The keyboard stays on the root; the content fades in each time the tab is shown.
     return v_flex().id("kt-diff").size_full().text_color(t.foreground)

@@ -89,7 +89,6 @@ export default {
     noSection: "Pas de section « {section} » dans WORKFLOW.md.",
     conventions: "Conventions",
     ideas: "Idées / à faire",
-    scanningWorkflow: "Analyse du workflow…",
     lastFailed: "Dernière analyse en échec : {error}",
   },
   en: {
@@ -179,7 +178,6 @@ export default {
     noSection: "No “{section}” section in WORKFLOW.md.",
     conventions: "Conventions",
     ideas: "Ideas / to do",
-    scanningWorkflow: "Scanning the workflow…",
     lastFailed: "Last scan failed: {error}",
   },
 };

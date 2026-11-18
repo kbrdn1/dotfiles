@@ -18,6 +18,7 @@ import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, props, closeOverlay, shared, setShared, exec, openOverlay, nextCommand, appHome, checking, settings, readTextFile, home } from "herdr";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -393,6 +394,8 @@ export default class Projects extends View {
   render(cx) {
     this.resolve(cx);
     const t = theme();
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    const S = skeleton(t, m);
     const reg = registry();
     const e = this.current();
     if (e) {
@@ -425,7 +428,7 @@ export default class Projects extends View {
       .when(Boolean(right), (el) => el.child(div().flex_none().text_color(t.dim).child(right)));
     // A short state said in a line (looking, nothing found): its icon, then the words.
     const say = (icon, text, color = t.dim) => h_flex().min_w(0).gap(8).items_start()
-      .child(icon === "spinner" ? svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().mt(4).spin(900).text_color(t.working) : svg(I(icon)).size(12).flex_none().mt(4).text_color(color))
+      .child(svg(I(icon)).size(12).flex_none().mt(4).text_color(color))
       .child(div().min_w(0).text_size(13).line_height("20px").text_color(t.muted).child(text));
     const tile = (x, size) => {
       const color = paint(t, x.color) ?? paint(t, (shared("space.colors") ?? {})[this.spaceOf(x)?.id]) ?? t.dim;
@@ -587,15 +590,21 @@ export default class Projects extends View {
             div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(all ? `${shown.length}${all.length >= MAX_FILES ? "+" : ""}` : "…"),
             () => { this.typing = "filter"; }))
           .child(toggle()))
+        // While the folder is read: what is read, then rows in the shape of the images' (skeleton.js),
+        // breathing; the images fade in over them.
         .child(v_flex().id("kp-files").flex_1().min_h(0).p(4).gap(1).rounded(10).border(1).border_color(t.border).bg(t.surface).overflow_y_scrollbar()
-          .when(!all, (el) => el.child(div().p(8).child(say("spinner", tr("reading")))))
-          .when(Boolean(all) && !shown.length, (el) => el.child(div().p(8).child(all.length
-            ? say("list-filter", tr("noImageMatch", { q: this.filter }))
-            : say("file", tr("noImage")))))
-          .children(shown.map(fileRow)));
+          .child(S.swap("kp-files", Boolean(all), () => v_flex().gap(1)
+            .when(!shown.length, (el) => el.child(div().p(8).child(all.length
+              ? say("list-filter", tr("noImageMatch", { q: this.filter }))
+              : say("file", tr("noImage")))))
+            .children(shown.map(fileRow)),
+          () => v_flex().gap(1).child(div().px(8).py(6).font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("reading")))
+            .child(S.list(6, { h: 30, icon: 18, lines: [0.5], px: 8, gap_y: 1 })))));
       // The logo candidates of the folder: looking, the ones found (and an evident light/dark pair), none.
       const candidates = h_flex().id("kp-cands").px(12).pt(8).pb(10).min_h(48).gap(8).items_center()
-        .child(logos === null ? say("spinner", tr("searching"))
+        // While they are looked for: three thumbs as dots and what is looked for (skeleton.js), breathing.
+        .child(logos === null ? S.pulse(h_flex().id("kp-cands-sk").gap(8).items_center().children([0, 1, 2].map(() => S.circle(30)))
+            .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("searching"))))
           : logos?.length ? segmented("kp-logos", logos.map(thumb))
           : pair ? div() : say("circle-dashed", tr("noLogo")))
         .when(Boolean(pairChip), (el) => el.child(pairChip))
@@ -663,7 +672,6 @@ export default class Projects extends View {
     const full = !this.size || this.size.width > CARD_W + 40 || this.size.height > CARD_H + 40;
     // The modals' motion (motion.js sheet): the veil fades in and the card rises 6 px, once, on the
     // first size report, and the reverse on dismiss; reduced motion: there at once, gone at once.
-    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const s = sheet(m, "kp", Boolean(this.size));
     // The head, Crosstalk's: a 60 px band over the pixel dither, tinted by the picked project's color
     // (else its space's, else accent); the mark, the title (14 semibold) and a mono subtitle.

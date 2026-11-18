@@ -25,6 +25,7 @@ import { ICON_MAP } from "./icons.js";
 import { fileItems, palette, alpha, action, MONO, IMAGE, loadPreview, cleanPreviews, viewImages, colorize, cleanTokens } from "./diffview.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { gitTopics, refreshOn } from "./bus.js";
 import { makeT, date } from "./i18n.js";
 import strings from "./strings.js";
@@ -533,7 +534,8 @@ export default class History extends View {
       // overflow_y_scroll + a Scrollbar of the same id: scroll_to_item does nothing on overflow_y_scrollbar.
       .child(div().relative().flex_1().min_h(0)
         .child(v_flex().id("hi-files").size_full().overflow_y_scroll().track_scroll(this.filesScroll).p(4).gap(2)
-          .when(d.loading, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child(tr("loading"))))
+          // While the commit is read: its file rows as bars (skeleton.js), breathing.
+          .when(d.loading, (el) => el.child(this.S.pulse(this.S.list(4, { h: 28, icon: 14, lines: [0.5], px: 8, gap: 8, gap_y: 2 }).id("hi-files-sk"))))
           .when(Boolean(d.error), (el) => el.child(div().p(12).font_family(MONO).text_size(11.5).text_color(p.err).child(d.error)))
           .when(!d.loading && !d.error && !d.files.length, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child(tr("noFiles"))))
           .children(items))
@@ -558,6 +560,7 @@ export default class History extends View {
     if (!checking()) this.watchGit(cx);
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const t = theme();
+    const S = (this.S = skeleton(t, m)); // details() too
     this.keyed = this.handle.is_focused();
     if (!this.detail) this.zone = "commits";
     const colors = this.laneColors(t);
@@ -591,15 +594,20 @@ export default class History extends View {
       .when(Boolean(band), (el) => el.child(band))
       .child(h_flex().h(40).px(14).gap(8).items_center()
         .child(svg(I("git-branch")).size(14).flex_none().text_color(t.muted))
-        .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(this.branch === "" ? tr("detached") : this.branch ?? "…"))
+        // Not read yet: the branch as a bar (skeleton.js), breathing.
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground)
+          .child(this.branch === "" ? tr("detached") : this.branch ?? S.pulse(S.line(110, { h: 7, lh: 16 }).id("hi-branch-sk"))))
         .child(div().flex_1())
         .when(this.keyed, (el) => el.child(modePill(t, this.vim)))
         .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(n ? `${n}${n >= COUNT ? "+" : ""} commits` : "")) // i18n: tech
         .child(action(t, "hi-refresh", I("refresh-cw"), tr("refresh"), (cx) => this.refresh(cx, true))))
       .when(Boolean(activity), (el) => el.child(activity));
-    const empty = this.root === null ? tr("noRepo") : this.error ?? (this.root === undefined ? "…" : tr("noCommits"));
+    // Not read yet: commit rows (ROW px: graph dot, subject, author · time) as bars (skeleton.js), breathing.
+    const unread = this.root === undefined && !this.error;
+    const empty = this.root === null ? tr("noRepo") : this.error ?? tr("noCommits");
     const list = v_flex().flex_1().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background).p(4)
-      .when(!n, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child(empty)))
+      .when(!n, (el) => el.child(unread ? S.pulse(S.list(6, { h: ROW, icon: 10, round: true, lines: [0.6, 0.3] }).id("hi-list-sk"))
+        : div().p(12).text_size(13).text_color(t.dim).child(empty)))
       .when(n > 0, (el) => el.child(div().flex_1().min_h(0).relative()
         .child(v_virtual_list("hi-list", n, ROW, (i) => this.commits[i].hash,
           (range) => {

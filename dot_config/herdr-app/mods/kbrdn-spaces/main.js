@@ -7,6 +7,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
 import { motionState, frame, fade, rows as motionRows } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { refreshOn } from "./bus.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
@@ -368,7 +369,10 @@ export default class Spaces extends View {
       return layout === "loading" || (!layout && this.machines.some(k => k.name === m && k.state === "connected"))
         || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
-    const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : tr("loading"));
+    // A machine whose spaces aren't read yet: a space row's shape (skeleton.js), breathing.
+    const S = skeleton(t, m);
+    const loadingRow = m => S.pulse(h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).gap(8).items_center().when(collapsed, el => el.justify_center())
+      .child(S.circle(collapsed ? 14 : 10)).when(!collapsed, el => el.child(S.line(0.55, { h: 7, lh: 16 }))));
     if (!remote.length) {
       if (loading(null) && !rows.length) return [loadingRow(null)];
       const { kids, active } = listOf("local", rows);

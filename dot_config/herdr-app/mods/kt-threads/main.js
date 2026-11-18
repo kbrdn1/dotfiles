@@ -49,6 +49,7 @@ import { Vim, keysOf, step } from "./vim.js";
 import { decide, decisionButtons, pillKeys, press } from "./decide.js";
 // Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
 import { motionState, frame, enter, collapse, ink, fade, sheet, leave, leaving, rows as motionRows } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the nav's counts, the group heads', the focus card's figures,
 // and (12 threads or fewer listed) the cards' ages and durations roll to their new digits.
 import { roll, rollText } from "./roll.js";
@@ -813,7 +814,10 @@ export default class Threads extends View {
     this.m.folded ??= new Set();
     const V = viz(t, working ? this.m : { ...this.m, reduced: true }, { roll });
     const rows = [
-      rings.length > 0 && h_flex().gap(8).items_center().children(rings),
+      // Before the first read of the agents' files: two rings' shapes (skeleton.js), breathing.
+      rings.length > 0 ? h_flex().gap(8).items_center().children(rings) : this.liveKey === undefined && ((S) => S.pulse(h_flex().id(`kt-rings-sk-${c.id}`).gap(8).items_center()
+        .children([0, 1].map(() => h_flex().flex_1().min_w(0).gap(8).items_center().child(S.circle(32, { ring: 3 }))
+          .child(v_flex().min_w(0).gap(1).child(S.line(36, { h: 6, lh: 13 })).child(S.line(72, { h: 6, lh: 13 })))))))(skeleton(t, this.m)),
       numbers.length > 0 && h_flex().min_h(16).gap_x(8).gap_y(4).items_center().flex_wrap()
         .children(numbers.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
       this.flowSteps(t, V, lead, c.id),
@@ -852,7 +856,7 @@ export default class Threads extends View {
         if (changed) cx.notify();
       });
     }
-    return this.wt?.dir === dir ? this.wt.n : null;
+    return this.wt?.dir === dir ? this.wt.n : undefined; // undefined: still counted (its badge a skeleton); null: none
   }
 
   // A space's project, as the registry ids it: its repo's main checkout (a worktree, or a space
@@ -1782,7 +1786,8 @@ export default class Threads extends View {
     // What others change: a commit, a branch, a PR made elsewhere (or by an agent that just stopped)
     // asks the PR badges again; a worktree made or removed, the project's count; the quota, the rings.
     refreshOn(this, cx, "prs", ["git", "gh", "agents"], async (cx) => { this.asked = {}; cx.notify(); });
-    refreshOn(this, cx, "worktrees", ["gwm", "git"], async (cx) => { this.wt = null; cx.notify(); });
+    // Stale, not gone: the badge keeps its count while it is read again (DATA-SYNC.md, no skeleton flash).
+    refreshOn(this, cx, "worktrees", ["gwm", "git"], async (cx) => { if (this.wt) this.wt.at = 0; cx.notify(); });
     refreshOn(this, cx, "usage", ["usage"], async (cx) => this.readLive(cx));
     // The project filter (shared "kt.project"): "*" lists every project; anything else
     // follows the shown space, with its repo's worktree spaces.
@@ -2043,7 +2048,9 @@ export default class Threads extends View {
         .child(tool("kt-agents", "bot", "Agents", () => setShared("kt.nav.agents", !shared("kt.nav.agents")),
           svg(I(agentsOpen ? "chevron-down" : "chevron-right")).size(13).flex_none().text_color(t.dim), false, { trunk: agentsOpen }))
         .when(Boolean(agentsFold), (el) => el.child(agentsFold))
-        .child(tool("kt-gwm", "git-branch", "Worktrees", () => show("gwm"), worktrees == null ? null
+        // Still counted: the badge's pill as a bar (skeleton.js), breathing; none to count: no badge.
+        .child(tool("kt-gwm", "git-branch", "Worktrees", () => show("gwm"), worktrees === undefined ? ((S) => S.pulse(S.block(30, 18, { r: 9 }).id("kt-nav-gwm-sk")))(skeleton(t, m))
+          : worktrees == null ? null
           : div().flex_none().h(18).px(7).flex().items_center().rounded_full().border(1).border_color(t.border)
             .font_family(MONO).text_size(10.5).text_color(navPage === "gwm" ? t.foreground : t.muted).child(roll(m, "kt-nav-gwm-n", String(worktrees), 14)), navPage === "gwm"))
         // file-text until kt-notes gives its own icon.

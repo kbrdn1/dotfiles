@@ -35,6 +35,7 @@ import { randomUUID } from "crypto";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, ink, rows as motionRows } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the segments' counts and « N sur M » roll to their new digits.
 import { roll, rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
@@ -312,7 +313,11 @@ export default class Crosstalk extends View {
         Object.assign(this, { src, raw: text, pub, box: parse(boxText), boxRaw: boxText, terms });
         this.sync(cx);
         cx.notify();
-      } finally { this.reading = false; }
+      } finally {
+        this.reading = false;
+        // A first answer, even unchanged or failed: the skeleton gives way to what is there.
+        if (!this.readOnce) { this.readOnce = true; cx.notify(); }
+      }
     });
   }
 
@@ -861,7 +866,11 @@ export default class Crosstalk extends View {
     return v_flex().rounded(16).border(1).border_color(t.border).bg(t.background).overflow_hidden()
       .child(head)
       .child(div().mx(12).flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
-      .child(this.pubOk() ? this.list(t, R, cx) : this.emptyState(t))
+      // Until the first read answers: conversation rows as bars (skeleton.js), breathing, rather than
+      // « none » before the answer. Later reads (every 10 s) keep what is shown.
+      .child(this.pubOk() ? this.list(t, R, cx) : !this.readOnce && !checking()
+        ? ((S) => S.pulse(v_flex().id("xt-list-sk").flex_1().min_h(0).p(4).child(S.list(5, { h: 52, icon: 0, lines: [0.4, 0.75], gap_y: 2 }))))(skeleton(t, this.m))
+        : this.emptyState(t))
       .when(this.keyed && this.pubOk(), (el) => el.child(div().flex_none().px(14).py(7).border_t(1).border_dashed().border_color(t.border)
         .font_family(MONO).text_size(10).text_color(t.dim).child(hint)));
   }

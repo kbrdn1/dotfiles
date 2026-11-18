@@ -23,6 +23,7 @@ import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
 import { agents, focused, panes, spaces, theme, props, run, closeOverlay, openOverlay, setShared, exec, home, appHome, readTextFile, checking, nextCommand, settings, shared } from "herdr";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, sheet, leave, leaving } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { ditherBand, TOP } from "./dither.js";
 import { refreshOn, gitTopics } from "./bus.js";
 import { makeT, relative } from "./i18n.js";
@@ -255,6 +256,7 @@ export default class Branches extends View {
 
   render(cx) {
     const t = theme();
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     // Another mod (Changes, kt-composer's switch, kt-new, an agent's turn) moved this repo while the
     // popup is open: read it again (DATA-SYNC.md). The rows stay as they are until the new read lands.
     refreshOn(this, cx, "branches", gitTopics(this.top), async () => { await this.read(); });
@@ -323,18 +325,16 @@ export default class Branches extends View {
       treeRows.forEach((r, k) => { this.slots.push(kids.length); kids.push(worktreeRow(r, branchRows.length + k)); });
     }
     const q = this.input.value().trim();
-    // Nothing to list, said plainly: reading, git's refusal, the filter's miss, a repo without commits.
+    // Nothing to list, said plainly: git's refusal, the filter's miss, a repo without commits.
     const state = (icon, color, title, text, detail) => v_flex().id("kb-state").flex_none().px(8).py(12).gap(4)
       .child(h_flex().gap(8).items_center()
-        .child(icon === "spinner" ? svg("mods/workspace-chrome/spinner.svg").size(14).flex_none().spin(900).text_color(color) : svg(ICON(icon)).size(14).flex_none().text_color(color))
+        .child(svg(ICON(icon)).size(14).flex_none().text_color(color))
         .child(div().min_w(0).truncate().text_size(15).font_medium().text_color(t.foreground).child(title)))
       .child(div().pl(22).max_w(340).text_size(13).line_height("20px").text_color(t.muted).child(text))
       .when(Boolean(detail), (el) => el.child(div().pl(22).pt(2).max_w(340).font_family(MONO).text_size(10.5).line_height("16px").text_color(t.dim).child(detail)));
     // git's own words, in English or French (« … n'est un dépôt git »), and ours ("Pas un dépôt git.").
     const notRepo = /not a git repository|un dépôt git/i.test(this.error);
-    const empty = this.branches === null
-      ? state("spinner", t.working, tr("reading.title"), tr("reading.text"), this.tilde(this.at.cwd))
-      : this.error && !this.at.cwd
+    const empty = this.error && !this.at.cwd
         ? state("circle-alert", t.ansi1, tr("noFolder.title"), tr("noFolder.text"))
         : this.error
           ? state("circle-alert", t.ansi1, notRepo ? tr("notRepo.title") : tr("failed.title"),
@@ -390,7 +390,7 @@ export default class Branches extends View {
     // The popups' motion (motion.js sheet): the card fades in, once, on its first size report, and out
     // on dismiss; no rise (only veil(), on the card): the card fills the overlay's box, a rise would
     // be clipped. Reduced motion: at once.
-    const s = sheet(frame(this.motion, Boolean(shared("kt.reducedMotion"))), "kb", Boolean(this.size));
+    const s = sheet(m, "kb", Boolean(this.size));
     // The card (radius 20, 4 px around), its inner card (16) with the head flush on top, then 4 px
     // around the field and rows (12).
     // A popup takes its content's height: the full height is set here (as kt-composer anchors it).
@@ -432,7 +432,11 @@ export default class Branches extends View {
               .child(Input.new(this.input).flex_1().h_full().font_family(MONO).text_size(12).text_color(t.foreground))
               .when(this.loading && this.branches !== null, (el) => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().spin(900).text_color(t.dim))),
           )
-          .child(v_flex().id("kb-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).children(kids.length ? kids : [empty]))
+          // While the repo is read: a section and rows in the shape of the branches' (skeleton.js),
+          // breathing; then the list fades in over them.
+          .child(((S) => S.swap("kb-list", this.branches !== null, () => v_flex().id("kb-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).children(kids.length ? kids : [empty]),
+            () => v_flex().child(h_flex().px(10).pt(10).pb(4).gap(8).items_center().child(S.line(70, { h: 6, lh: 14 })).child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border)))
+              .child(S.list(6, { h: 34, icon: 14, lines: [0.45] })), { grow: true }))(skeleton(t, m)))
           .when(Boolean(message), (el) => el.child(band))
           // The foot, under a dashed rule.
           .child(div().flex_none().mx(6).h(0).border_t(1).border_dashed().border_color(t.border))

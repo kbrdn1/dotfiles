@@ -18,6 +18,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { props, closeOverlay, theme, openOverlay, nextCommand, checking, exec, appHome, shared } from "herdr";
 import { Vim, keyOf, keysOf } from "./vim.js";
 import { motionState, frame, sheet, leave } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { makeT, num } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -220,17 +221,16 @@ export default class Viewer extends View {
       .when(n === 2 && !this.compare, (el) => el.child(this.arrow(t, "kv-next", "right", 1))));
   }
 
-  // An image that can't be drawn, said plainly in a card: looking for its file, the file gone, or
-  // nothing given at all. `compact`: inside a compare half `k` (its id carries it: both halves can be
-  // in the same state at once).
+  // An image that can't be drawn, said plainly in a card: the file gone, or nothing given at all.
+  // `compact`: inside a compare half `k` (its id carries it: both halves can be in the same state at once).
   notice(t, x, kind, compact = false, k = 0) {
-    const [icon, color] = { loading: ["spinner", t.working], missing: ["circle-alert", t.blocked], none: ["file", t.dim] }[kind];
+    const [icon, color] = { missing: ["circle-alert", t.blocked], none: ["file", t.dim] }[kind];
     const [title, text] = [tr(`${kind}.title`), tr(`${kind}.text`)];
     return v_flex().id(`kv-notice-${kind}-${k}`).max_w(compact ? 300 : 380).gap(6).p(compact ? 14 : 18).rounded(16).border(1).border_color(t.border).bg(alpha(t.popover, "e6"))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .child(h_flex().gap(10).items_center()
         .child(h_flex().size(32).flex_none().rounded(10).items_center().justify_center().border(1).border_color(alpha(color, "4d")).bg(t.surface)
-          .child(icon === "spinner" ? svg("mods/workspace-chrome/spinner.svg").size(16).spin(900).text_color(color) : svg(`mods/kt-threads/${icon}.svg`).size(16).text_color(color)))
+          .child(svg(`mods/kt-threads/${icon}.svg`).size(16).text_color(color)))
         .child(div().min_w(0).truncate().text_size(15).font_medium().text_color(t.foreground).child(title)))
       .child(div().text_size(13).line_height("20px").text_color(t.muted).child(text))
       .when(Boolean(x?.path), (el) => el.child(div().font_family(MONO).text_size(10.5).line_height("16px").text_color(t.dim).child(x.path)));
@@ -261,12 +261,17 @@ export default class Viewer extends View {
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(String(i.label ?? i.name ?? "").toUpperCase()))
       .child(div().flex_1().min_h(0).rounded(12).border(1).border_color(t.border).bg(t.background).p(8)
         .when(st === "ok", (el) => el.child(image(i.path).size_full()))
-        .when(st !== "ok", (el) => el.flex().items_center().justify_center().child(this.notice(t, i, st, true, k))))
+        // While its file is looked for: the frame it will fill (skeleton.js), breathing.
+        .when(st === "loading", (el) => el.child(this.S.pulse(this.S.block(null, 0, { r: 6 }).size_full().id(`kv-half-sk-${k}`))))
+        .when(st !== "ok" && st !== "loading", (el) => el.flex().items_center().justify_center().child(this.notice(t, i, st, true, k))))
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(`${i.w && i.h ? `${i.w}×${i.h} · ` : ""}${i.size ? kb(i.size) : ""}`));
   }
 
   render() {
     const t = theme();
+    const still = Boolean(shared("kt.reducedMotion"));
+    const m = frame(this.motion, still);
+    this.S = skeleton(t, m);
     const list = this.images();
     const i = this.img();
     const st = this.status(this.images()[this.index]);
@@ -302,15 +307,16 @@ export default class Viewer extends View {
       })
       .when(st === "ok", (el) => el.child(image(i.path).absolute().left(o.x).top(o.y).w(i.w * z).h(i.h * z)
         .when(Boolean(this.drag?.inside), (e) => e.cursor_grabbing()).when(!this.drag?.inside, (e) => e.cursor_grab())))
+      // While its file is looked for: the image's own box, at its place and size (skeleton.js), breathing.
+      .when(st === "loading", (el) => el.child(this.S.pulse(this.S.block(i.w * z, i.h * z, { r: 6 }).absolute().left(o.x).top(o.y).id("kv-img-sk"))))
       // Not drawable: the reason, in the middle of the stage above the bar.
-      .when(st !== "ok", (el) => el.child(div().absolute().top(0).left(0).right(0).bottom(RESERVE).px(16).flex().items_center().justify_center()
+      .when(st !== "ok" && st !== "loading", (el) => el.child(div().absolute().top(0).left(0).right(0).bottom(RESERVE).px(16).flex().items_center().justify_center()
         .child(this.notice(t, this.images()[this.index], st))));
     // The modals' motion (ANIMATIONS.md, kt-confirm's motif): the veil fades in and the bar rises
     // 6 px, 180 ms, once, on the root's first size report (the stage isn't drawn in compare), and
     // both go back out on dismiss (motion.js sheet); reduced motion: there at once.
-    const still = Boolean(shared("kt.reducedMotion"));
     const shown = still || Boolean(this.size);
-    const s = sheet(frame(this.motion, still), "kv", shown);
+    const s = sheet(m, "kv", shown);
     return s.veil(div().id("kv-root").size_full().relative().bg(alpha(t.canvas, "eb")).text_color(t.foreground))
       .on_size_change((size, cx) => {
         this.size = size;

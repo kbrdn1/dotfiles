@@ -40,6 +40,7 @@ import { v_flex, h_flex, ScrollHandle, TextView, Editor, EditorState } from "gpu
 import { exec, theme, spaces, panes, run, layout, openOverlay, notify, nextCommand, props, shared, setShared, home, watchFolder, checking, settings, readTextFile, writeTextFile } from "herdr";import { filterRow, filterState, nextKey } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse, rows as motionRows } from "./motion.js";
+import { skeleton, still } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the head's counts roll to their new digits.
 import { rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
@@ -768,15 +769,19 @@ export default class Notes extends View {
       const tasks = segs.filter((s) => s.kind === "task");
       if (this.task >= tasks.length) this.task = Math.max(0, tasks.length - 1);
       const curLine = keyed && this.zone === "note" ? tasks[this.task]?.line : null;
-      body = segs.length
+      // While it is read: its lines as bars (skeleton.js), breathing, in the reader's place.
+      const S = skeleton(t, this.m);
+      body = d.loading && !segs.length ? S.pulse(v_flex().id(`kn-reader-sk-${d.id}`).flex_1().px(18).pt(4).gap(6)
+          .children([0.4, 0.95, 0.9, 0.7, 0.85, 0.5].map((w) => S.line(w, { h: 8, lh: 18 }))))
+        : segs.length
         ? v_flex().id(`kn-reader-${d.id}`).flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.readScroll).px(18).pt(4).pb(18).gap(6)
           .children(segs.map((s, i) => (s.kind === "md"
             ? div().text_size(13).text_color(t.foreground).child(TextView.markdown(`kn-md-${d.id}-${i}`, s.text).selectable(true))
             : this.taskRow(t, d, s, s.line === curLine))))
         : v_flex().flex_1().items_center().justify_center().gap(8).p(24)
           .child(svg(PEN).size(20).text_color(t.dim))
-          .child(div().text_size(13.5).font_medium().text_color(t.foreground).child(d.loading ? tr("reading") : d.kind === "project" ? tr("noProjectNote") : tr("noNoteYet")))
-          .child(div().max_w(420).text_size(12).text_color(t.dim).child(d.loading ? "" : d.readonly ? says(d.readonly)
+          .child(div().text_size(13.5).font_medium().text_color(t.foreground).child(d.kind === "project" ? tr("noProjectNote") : tr("noNoteYet")))
+          .child(div().max_w(420).text_size(12).text_color(t.dim).child(d.readonly ? says(d.readonly)
             : d.kind === "project" ? tr("howto.project")
             : tr("howto.wt", { path: relativePath(d.branch) ?? "" })));
     }
@@ -826,6 +831,7 @@ export default class Notes extends View {
     const color = this.colorOf(t, e);
     const d = this.data[repo.id];
     const all = this.rowsOf(repo);
+    const S = skeleton(t, this.m);
     // kt-notes.open's worktree, once its row exists.
     if (this.want && d?.wts) {
       const it = all.find((x) => x.kind === "wt" && x.w.path === this.want);
@@ -844,7 +850,9 @@ export default class Notes extends View {
     ];
     const head = this.head(t, { color, mark: this.mark(t, e, repo.name, 32), title: tr("title", { name: e?.name ?? repo.name }),
       // The count rolls; its id (and the filter row's scope) carry the project: another one's shows at once.
-      sub: [d ? rollText(this.m, `kn-head-n-${repo.id}`, tr("notes", { n: notes.length }), 14) : "…", last ? tr("modified", { ago: ago(last) }) : d ? tr("none") : null, tilde(repo.main ?? repo.common)],
+      // Before the first read, the count as a bar (skeleton.js), breathing.
+      sub: [d ? rollText(this.m, `kn-head-n-${repo.id}`, tr("notes", { n: notes.length }), 14) : S.pulse(S.line(70, { h: 7, lh: 14 }).id("kn-head-sk")),
+        last ? tr("modified", { ago: ago(last) }) : d ? tr("none") : null, tilde(repo.main ?? repo.common)],
       buttons: [
         iconBtn(t, "kn-all", I("layers"), tr("allProjects"), () => this.toAll()),
         pulse(this.m, iconBtn(t, "kn-refresh", I("refresh-cw"), tr("reread"), (cx) => this.reload(cx, true)), Boolean(this.inflight[`l:${repo.id}:1`])),
@@ -860,6 +868,9 @@ export default class Notes extends View {
     // repo is in the id: another repo replaces this list at once). A kind gone whole (eyebrow too) goes
     // at once. `at` counts the rows as rows() builds them, the closing ones included: they are the
     // list's direct children, which scroll_to_item reveals.
+    // Before the first read: rows in the shape of the notes' (skeleton.js), then the list fades in over
+    // them, its rows at rest (still(): no opening from 0 under the fade).
+    const mm = S.arriving(`kn-list-${repo.id}`) ? still(this.m) : this.m;
     const list = [];
     for (const kind of [...new Set(shown.map((it) => it.kind))]) {
       if (kind !== "project") {
@@ -868,18 +879,19 @@ export default class Notes extends View {
           : tr("orphans", { n: all.filter((x) => x.kind === "orphan").length }))));
       }
       let at = list.length;
-      list.push(...motionRows(this.m, cx, `kn-rows-${repo.id}-${kind}`, shown.filter((it) => it.kind === kind), (it) => it.id, (it, i) => {
+      list.push(...motionRows(mm, cx, `kn-rows-${repo.id}-${kind}`, shown.filter((it) => it.kind === kind), (it) => it.id, (it, i) => {
         if (i >= 0 && this.reveal && it.id === cur) { this.scroll.scroll_to_item(at); this.reveal = false; }
         at++;
         return this.row(t, it, i >= 0 && it.id === cur, this.doc?.id === it.id, i < 0);
       }));
     }
-    const none = !d ? tr("readingNotes") : !shown.length ? tr("noMatch") : null;
+    const none = !shown.length ? tr("noMatch") : null;
     const listCard = this.box(t).w(340).flex_none()
-      .child(v_flex().id("kn-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(6).gap(2)
+      .child(S.swap(`kn-list-${repo.id}`, Boolean(d), () => v_flex().id("kn-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(6).gap(2)
         .when(Boolean(none), (el) => el.child(div().px(10).py(12).text_size(12.5).text_color(t.dim).child(none)))
         .children(list)
-        .when(Boolean(d?.listError), (el) => el.child(div().px(10).py(8).text_size(12).text_color(t.ansi3).child(`gwm list : ${d.listError}`))));
+        .when(Boolean(d?.listError), (el) => el.child(div().px(10).py(8).text_size(12).text_color(t.ansi3).child(`gwm list : ${d.listError}`))),
+      () => div().p(6).child(S.list(6, { h: 54, icon: 28, lines: [0.45, 0.75], gap_y: 2 })), { grow: true }));
     const doc = this.doc && this.doc.repo.id === repo.id ? this.doc : null;
     const noteCard = this.box(t).flex_1().min_w(0)
       .child(doc ? enter(this.m, v_flex().size_full(), `kn-doc-${doc.id}`, { dy: 0 }).child(this.note(t, doc, keyed)) : div());
@@ -907,7 +919,8 @@ export default class Notes extends View {
           .child(h_flex().gap(8).items_center()
             .child(div().flex_none().text_size(13.5).font_medium().text_color(t.foreground).child(p.e.name))
             .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim)
-              .child(!p.repo ? (p.repo === null ? tr("outsideGit") : "…") : [p.text ? tr("projectNoteShort") : null, p.n ? tr("wtNotes", { n: p.n }) : null].filter(Boolean).join(" · ") || tr("none"))))
+              // Its repo not resolved yet: a bar (skeleton.js), still (one per line: no loop each).
+              .child(!p.repo ? (p.repo === null ? tr("outsideGit") : skeleton(t, null).line(60, { h: 6, lh: 13 })) : [p.text ? tr("projectNoteShort") : null, p.n ? tr("wtNotes", { n: p.n }) : null].filter(Boolean).join(" · ") || tr("none"))))
           .child(div().truncate().text_size(12).text_color(p.text ? t.muted : t.dim).child(preview(p.text) || tilde(p.e.folder))))
         .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(p.mtime ? ago(p.mtime) : ""));
     // The projects with a note, then « Sans note » and the others: each part's lines open and close on
@@ -968,6 +981,8 @@ export default class Notes extends View {
     const root = v_flex().id("kn-root").size_full().text_color(t.foreground).track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx));
     if (sc.kind === "repo") return root.child(this.repoView(t, sc, cx));
     if (sc.kind === "all") return root.child(this.everyView(t, sc, cx));
-    return root.child(this.head(t, { color: t.ansi3, mark: null, title: "Notes", sub: ["…"], buttons: [] })); // i18n: tech
+    // The scope not known yet: the head with its subtitle as a bar (skeleton.js), breathing.
+    const S = skeleton(t, this.m);
+    return root.child(this.head(t, { color: t.ansi3, mark: null, title: "Notes", sub: [S.pulse(S.line(160, { h: 7, lh: 14 }).id("kn-root-sk"))], buttons: [] })); // i18n: tech
   }
 }

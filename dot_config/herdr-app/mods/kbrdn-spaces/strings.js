@@ -2,7 +2,6 @@
 // shown as it comes.
 export default {
   fr: {
-    loading: "Chargement…",
     loginTip: "{m} doit se connecter : lancer {login}. Clic pour copier.",
     thisComputer: "Cet ordinateur",
     logoutTip: "Les agents s'arrêtent à la déconnexion. Clic pour le correctif.",
@@ -19,7 +18,6 @@ export default {
     spaces: "ESPACES",
   },
   en: {
-    loading: "Loading…",
     loginTip: "{m} needs a login: run {login}. Click for Copy.",
     thisComputer: "This computer",
     logoutTip: "Agents stop when you disconnect. Click for the fix.",

@@ -48,6 +48,7 @@ import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, run, theme, props, closeOverlay, shared, setShared, exec, settings, openOverlay, nextCommand, checking, home, readTextFile } from "herdr";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { issueOf, firstMessage, firstTask, startCommand, plan, retry, TRUST, where, explain } from "./gwm.js";
 import { ditherBand, TOP } from "./dither.js";
 import { bump, gitTopics } from "./bus.js";
@@ -708,7 +709,8 @@ export default class NewThread extends View {
     if (!tree) {
       return this.facts(t, [
         [tr("fact.folder"), tilde(p.space.folder) || "—", true],
-        [tr("fact.branch"), git ? p.space.branch ?? "—" : this.scanned ? tr("branch.notRepo") : tr("branch.scanning"), true, git ? undefined : t.dim],
+        // Still detecting the repo: the branch as a bar (skeleton.js), breathing.
+        [tr("fact.branch"), git ? p.space.branch ?? "—" : this.scanned ? tr("branch.notRepo") : this.S.pulse(this.S.line(90, { h: 7, lh: 15 }).id("kt-n-branch-sk")), true, git ? undefined : t.dim],
         [tr("fact.agent"), agent, true],
       ]);
     }
@@ -729,6 +731,9 @@ export default class NewThread extends View {
 
   render() {
     const t = theme();
+    const still = Boolean(shared("kt.reducedMotion"));
+    const m = frame(this.motion, still);
+    const S = (this.S = skeleton(t, m)); // state() too
     this.pickWanted();
     const ps = this.projects();
     this.project = Math.min(this.project, Math.max(0, ps.length - 1));
@@ -843,13 +848,17 @@ export default class NewThread extends View {
             .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(e.description))
             .child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(tr(`src.${e.source}`))))))
         .child(div().px(14).py(6).border_t(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.dim).child(tr("complete.keys")))
+      // While the skills are read: what is read, then rows in the shape of the suggestions' (30 px,
+      // skeleton.js), breathing.
+      : comp.note === "loading" ? S.pulse(v_flex().id("kt-n-complete-sk").p(4).gap(1)
+        .child(div().px(10).py(6).font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("complete.loading")))
+        .child(S.list(3, { h: 30, icon: 0, lines: [0.6], gap_y: 1 })))
       : div().px(14).py(10).text_size(12).text_color(t.muted).child(tr(`complete.${comp.note}`, { q: comp.q, agent: AGENTS[this.agent][0] })));
     // The modals' motion (ANIMATIONS.md, kt-confirm's): the veil fades in and the card rises 6 px,
     // MS.open, once, on the first size report, and goes back out on dismiss (motion.js sheet);
     // reduced motion: there at once.
-    const still = Boolean(shared("kt.reducedMotion"));
     const shown = still || Boolean(this.size);
-    const s = sheet(frame(this.motion, still), "kn", shown);
+    const s = sheet(m, "kn", shown);
     // The head, Crosstalk's: a 60 px band over the pixel dither tinted by the project, the mark (the
     // new thread's pen, accent, on a soft square), the title (14 semibold) and a mono subtitle.
     const head = div()

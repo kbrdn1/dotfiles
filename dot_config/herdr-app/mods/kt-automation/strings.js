@@ -128,7 +128,6 @@ export default {
     "sched.1": "Les routines de /schedule sont des agents planifiés dans le cloud d'Anthropic : elles se listent et se gèrent depuis une session Claude (/schedule) ou sur claude.ai, pas depuis un fichier de cette machine.",
     "sched.2": "Les crons de session (/loop, CronCreate) vivent dans la session qui les a posés et s'arrêtent avec elle : aucun registre à lire sur le disque.",
     "sched.3": "Les loops me:loop:* ne sont pas des planifications : ils itèrent jusqu'à leur condition de sortie, dans une session, une fois lancés. Les automatisations Herdr, elles, ont un planning (herdr.at, every, cron).",
-    scanningAll: "Analyse des automatisations…",
     // add.js
     "add.live": "# la session {name} vit ({space}) : l'intention y est tapée entre deux tours",
     "add.firstTask": "# sa première tâche :",
@@ -282,7 +281,6 @@ export default {
     "sched.1": "/schedule's routines are agents scheduled in Anthropic's cloud: they are listed and managed from a Claude session (/schedule) or on claude.ai, not from a file of this machine.",
     "sched.2": "Session crons (/loop, CronCreate) live in the session that set them and stop with it: no registry to read on the disk.",
     "sched.3": "The me:loop:* loops aren't schedules: they iterate until their exit condition, in a session, once launched. Herdr automations do have a schedule (herdr.at, every, cron).",
-    scanningAll: "Scanning the automations…",
     "add.live": "# the {name} session lives ({space}): the intention is typed into it between two turns",
     "add.firstTask": "# its first task:",
     send: "Send",

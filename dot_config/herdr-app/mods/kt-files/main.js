@@ -19,6 +19,7 @@ import { spaces, panes, exec, readTextFile, settings, theme, layout, home, appHo
 import { ICON_MAP, catIcon } from "./icons.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { gitTopics, refreshOn } from "./bus.js";
 import { shouldRead } from "./reread.js";
 import { makeT } from "./i18n.js";
@@ -250,6 +251,7 @@ export default class Files extends View {
       } catch { this.paths = []; this.marks = {}; }
       finally {
         this.busy = false;
+        this.listed = true; // a first answer, even a failed one: no skeleton after it
         cx.notify();
         if (this.again) { this.again = false; this.refresh(cx); }
       }
@@ -425,7 +427,11 @@ export default class Files extends View {
             .overflow_y_scroll()
             .track_scroll(this.listScroll)
             .children(list)
-            .when(this.paths.length === 0, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.note ? tr(`note.${this.note}`) : this.root ? tr("noFiles") : tr("noFolder")))),
+            // Until the first listing answers, a folder being there: file rows (24 px) as bars
+            // (skeleton.js), breathing, rather than « no files » before the answer. A later read keeps
+            // what it had (DATA-SYNC.md).
+            .when(this.paths.length === 0 && !this.listed && Boolean(folder()), (el) => el.child(((S) => S.pulse(S.list(8, { h: 24, icon: 13, lines: [0.45], px: 6, gap: 6 }).id("tf-list-sk")))(skeleton(t, m))))
+            .when(this.paths.length === 0 && (this.listed || !folder()), (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.note ? tr(`note.${this.note}`) : this.root ? tr("noFiles") : tr("noFolder")))),
         )
         .child(Scrollbar.vertical("tf-list").absolute().inset_0()));
     // The content fades in each time the tab is shown (the root keeps the keyboard), an opened file too.

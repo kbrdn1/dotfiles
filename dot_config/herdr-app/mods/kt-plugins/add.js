@@ -32,6 +32,7 @@ import { MONO, I, OWN, SPIN, alpha, veil, tilde, eyebrow, dashed, empty, tag, mo
 import { bump } from "./bus.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, ink, pulse } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -455,12 +456,14 @@ export class Add {
       .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || tr("noDescription")))
       .child(div().font_family(MONO).text_size(11.5).text_color(t.muted).child(x.dir ? tilde(x.dir) : srcLabel(x.entry?.source ?? tr("unknown"))))
       .child(warning(t, risky.length ? tr("riskyThird", { list: risky.map((k) => tr(`risky.${k}`, { n: parts[k].length })).join(", "), third: THIRD() }) : THIRD()))
-      .child(pv === "…" ? empty(t, tr("readingPlugin")).p(0)
-        : v_flex().gap(10).children(PARTS.filter((k) => parts?.[k]?.length).map((k) => v_flex().gap(6)
+      // While the plugin is read: a part's eyebrow and its chips as bars (skeleton.js), then the parts fade in.
+      .child(((S) => S.swap(`ktp-pv-${x.id}`, pv !== "…", () => v_flex().gap(10).children(PARTS.filter((k) => parts?.[k]?.length).map((k) => v_flex().gap(6)
           .child(eyebrow(t, `${tr(`part.${k}`)} · ${parts[k].length}`, RISKY.includes(k) ? t.blocked : t.muted))
           .child(h_flex().flex_wrap().gap(6).children(parts[k].map((c) => chip(t, `ktp-pv-${x.id}-${k}-${c}`, c, false, null))))))
         .when(!comps(parts), (el) => el.child(div().text_size(12.5).text_color(t.dim)
-          .child(x.remote ? tr("compsRemote") : tr("noPartsFolder")))))
+          .child(x.remote ? tr("compsRemote") : tr("noPartsFolder")))),
+      () => v_flex().gap(6).child(S.line(90, { h: 7, lh: 14 }))
+        .child(h_flex().flex_wrap().gap(6).children([64, 92, 76, 54].map((w) => S.block(w, 24, { r: 12 }))))))(skeleton(t, this.m)))
       .child(v_flex().gap(6)
         .child(eyebrow(t, pv?.pjText ? "plugin.json" : tr("catalogEntryInstall")))
         .child(codeBlock(t, `pv-${x.id}`, "json", pv?.pjText ? pretty(pv.pjText) : JSON.stringify(x.entry ?? {}, null, 2))));
@@ -505,8 +508,12 @@ export class Add {
         active: this.market ?? "*",
         onPick: (key) => { this.market = key === "*" || key === this.market ? null : key; this.hl = 0; },
       })))
-      .child(v_flex().id("ktp-av-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(4)
-        .children(kids.length ? kids : [empty(t, this.items === null ? tr("readingCatalogsCap") : all.length ? tr("noPluginMatch") : tr("allInstalled"))]))
+      // While the catalogs are read: what is read, then cards in the shape of the catalog's (skeleton.js),
+      // breathing; the list fades in over them.
+      .child(((S) => S.swap("ktp-av", this.items !== null, () => v_flex().id("ktp-av-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).gap(4)
+        .children(kids.length ? kids : [empty(t, all.length ? tr("noPluginMatch") : tr("allInstalled"))]),
+      () => v_flex().gap(4).child(div().px(8).py(4).font_family(MONO).text_size(11).text_color(t.dim).child(tr("readingCatalogsCap")))
+        .children([0, 1, 2, 3, 4, 5].map((k) => S.block(null, 52).child(S.row({ h: 50, icon: 0, lines: [0.4, 0.75], k })))), { grow: true }))(skeleton(t, this.m)))
       .when(rows.length > PAGE, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim)
         .child(tr("paging", { from: page * PAGE + 1, to: page * PAGE + slice.length, n: rows.length }))))
       .when(this.errors.length > 0, (el) => el.child(div().flex_none().text_size(11.5).text_color(t.dim)

@@ -16,6 +16,7 @@ import { roll } from "./roll.js";
 // kt-keys' motion.js (a byte-identical copy): the card fades in, the repo's block comes in, the message
 // field opens and closes on its height (ANIMATIONS.md).
 import { motionState, frame, enter, collapse } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 
 const tr = makeT(strings);
 
@@ -234,6 +235,12 @@ export default class Details extends View {
       })
       .child(this.row(t, "td-where", "folder", tilde(g?.root ?? cwd), null, null))
       .when(!on && Boolean(g?.root ?? cwd), (el) => el.child(this.row(t, "td-open", "external-link", tr("openIn", { app: EDITOR_NAME }), null, (_e, cx) => this.openEditor(cx, g?.root ?? cwd))))
+      // Before the first read: the repo's block as bars (skeleton.js), breathing: the rule, the branch
+      // and changes rows (32 px), the buttons (26 px).
+      .when(this.git === null && !this.note && Boolean(cwd), (el) => el.child(((S) => S.pulse(v_flex().id("td-git-sk").gap(2)
+        .child(div().mx(4).my(4).h(1).bg(t.border))
+        .child(S.list(2, { h: 32, icon: 15, lines: [0.4] }))
+        .child(div().flex().px(4).pt(6).pb(2).gap(6).children([64, 48, 96].map((w) => S.block(w, 26, { r: 8 }))))))(skeleton(t, m))))
       // The repo's block comes in once read (again for another repo); inside, the message field opens and
       // closes on its height (collapse with a builder), the one height level of the card.
       .when(Boolean(g?.root), (el) => el.child(enter(m, v_flex()

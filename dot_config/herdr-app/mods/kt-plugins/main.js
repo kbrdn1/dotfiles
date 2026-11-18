@@ -46,6 +46,7 @@ import { MONO, I, OWN, alpha, tilde, ago, card, eyebrow, dashed, empty, tag, mod
   band, bandRule, markTile, iconBtn, moreMenu, marketTint } from "./ui.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
+import { skeleton, still } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { rollText } from "./roll.js";
 import { makeT } from "./i18n.js";
@@ -489,7 +490,8 @@ export default class Plugins extends View {
     // « shown / total », there only while filtering, rolls apart: coming, it moves no other count's reels.
     const counts = [tr("installed", { n: this.items.length }), tr("active", { n: on }), tr("updates", { n: ups })].join(" · ");
     const tail = this.running ? `${this.running}…` : this.busy ? tr("rereading") : this.error ? tr("readFailed", { ago: ago(this.readAt) }) : "claude plugin";
-    const sub = !this.scanned ? tr("reading")
+    // Before the first read, the counts as a bar (skeleton.js), breathing.
+    const sub = !this.scanned ? ((S) => S.pulse(S.line(240, { h: 7, lh: 14 }).id("ktp-head-sk")))(skeleton(t, m))
       : h_flex().min_w(0).h(14).line_height("14px")
         .when(Boolean(filtered), (el) => el.child(rollText(m, "ktp-head-f", `${shown} / ${this.items.length} · `, 14).flex_none()))
         .child(rollText(m, "ktp-head-n", counts, 14).flex_none()).child(div().min_w(0).truncate().child(` · ${tail}`));
@@ -647,11 +649,17 @@ export default class Plugins extends View {
 
   list(t, shown, cx) {
     const box = card(t).flex_1().min_w(0).h_full();
+    // Before the first read: what is read, then cards in the shape of the plugins' rows (skeleton.js),
+    // breathing; the list fades in over them, its rows at rest (still(): no opening from 0 under it).
+    const S = skeleton(t, this.m);
+    if (!this.scanned && !this.error) return box.child(S.swap("ktp-list", false, null, () => v_flex().p(4).gap(4)
+      .child(div().px(8).py(4).font_family(MONO).text_size(11).text_color(t.dim).child(tr("readingList")))
+      .children([0, 1, 2, 3, 4, 5].map((k) => S.block(null, 84).child(S.row({ h: 82, icon: 14, lines: [0.35, 0.8], k }))))));
     if (!shown.length) {
-      const text = this.error ?? (!this.scanned || this.busy ? tr("readingList") : this.items.length ? tr("noMatch") : tr("none"));
+      const text = this.error ?? (this.busy ? tr("readingList") : this.items.length ? tr("noMatch") : tr("none"));
       return box.child(empty(t, text, this.error ? t.ansi1 : t.dim));
     }
-    const m = this.m;
+    const m = S.arriving("ktp-list") ? still(this.m) : this.m;
     const typing = this.keyed && this.vim.insert;
     const cur = this.keyed ? this.at(shown.filter((x) => !this.folded.has(x.market)))?.key : null;
     // One rows() per marketplace (motion.js): a fold, an unfold or a filter closes and opens its rows on
@@ -671,10 +679,10 @@ export default class Plugins extends View {
     }
     const bar = this.bulk(t);
     return box
-      .child(v_flex().flex_1().min_h(0).relative().overflow_hidden()
+      .child(S.swap("ktp-list", true, v_flex().flex_1().min_h(0).relative().overflow_hidden()
         .child(v_flex().id("ktp-list").size_full().overflow_y_scrollbar().track_scroll(this.scroll).p(4).gap(4)
           .when(Boolean(bar), (el) => el.pb(64)).children(rows))
-        .when(Boolean(bar), (el) => el.child(bar)))
+        .when(Boolean(bar), (el) => el.child(bar)), null, { grow: true }))
       .child(dashed(t))
       .child(h_flex().flex_none().px(14).py(8).gap(8).items_center()
         .child(svg(I("circle-alert")).size(12).flex_none().text_color(t.dim))
@@ -753,14 +761,18 @@ export default class Plugins extends View {
         .child(tr("skillsNotLinked"))));
   }
 
+  // While it is read: two paragraphs and a code block as bars (skeleton.js), in the README's column,
+  // then the README fades in over them.
   readme(t, x, d) {
-    if (!d || d.segs === null && d.readme === undefined) return empty(t, tr("loading"));
-    if (!d.readme) return empty(t, tr("noReadme"));
-    return v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14)
-      .text_size(13.5).line_height("22px").text_color(t.foreground)
-      .children(d.segs.map((s, i) => (s.kind === "code" ? codeBlock(t, `${x.key}#${i}`, s.lang, s.text)
-        : TextView.markdown(`ktp-md-${x.key}#${i}`, s.text).selectable(true) // i18n: tech
-          .on_link_click((url) => { if (/^https?:/i.test(url)) exec("open", [url]).catch(() => {}); }))));
+    const S = skeleton(t, this.m);
+    const para = (n) => v_flex().children(Array.from({ length: n }, (_, i) => S.line(i === n - 1 ? 0.55 : 0.95, { h: 9, lh: 22 })));
+    return S.swap(`ktp-readme-${x.key}`, !(!d || d.segs === null && d.readme === undefined), () => (!d.readme ? empty(t, tr("noReadme"))
+      : v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14)
+        .text_size(13.5).line_height("22px").text_color(t.foreground)
+        .children(d.segs.map((s, i) => (s.kind === "code" ? codeBlock(t, `${x.key}#${i}`, s.lang, s.text)
+          : TextView.markdown(`ktp-md-${x.key}#${i}`, s.text).selectable(true) // i18n: tech
+            .on_link_click((url) => { if (/^https?:/i.test(url)) exec("open", [url]).catch(() => {}); }))))),
+    () => v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14).child(para(3)).child(S.block(null, 72, { r: 10 })).child(para(2)));
   }
 
   render(cx) {

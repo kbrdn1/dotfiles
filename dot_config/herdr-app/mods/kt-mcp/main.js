@@ -52,6 +52,7 @@ import { AddMenu, AddForm, menuSize } from "./form.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
+import { skeleton, still } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { roll, rollText } from "./roll.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the bulk Vérifier's progress as a dithered bar.
@@ -717,7 +718,9 @@ export default class Mcp extends View {
       .child(bandRow(t, { m: this.m, color: t.accent, icon: I("plug"), title: "MCP",
         // The count rolls; its id carries the project (another one's shows at once) and the filtering
         // (« shown / total » and « N serveurs » don't roll into each other).
-        sub: [rollText(this.m, `ktm-head-n-${proj?.root ?? "global"}-${filtered ? "f" : "a"}`, count, 14), proj ? tilde(proj.root) : "Global", "Claude Code, Codex, Cursor, OpenCode"], // i18n: tech
+        // Before the first read, the count as a bar (skeleton.js), breathing.
+        sub: [!this.read ? ((S) => S.pulse(S.line(80, { h: 7, lh: 14 }).id("ktm-count-sk")))(skeleton(t, this.m))
+          : rollText(this.m, `ktm-head-n-${proj?.root ?? "global"}-${filtered ? "f" : "a"}`, count, 14), proj ? tilde(proj.root) : "Global", "Claude Code, Codex, Cursor, OpenCode"], // i18n: tech
         buttons: [
           iconBtn(t, "ktm-b-add", I("plus"), tr("addTip"), () => this.openAdd()),
           pulse(this.m, iconBtn(t, "ktm-b-verify", I("circle-check"), this.verifying ? tr("verifyingTip") : tr("verifyTip"), (cx) => this.verify(cx), this.verifying), this.verifying),
@@ -805,9 +808,14 @@ export default class Mcp extends View {
 
   list(t, shown, cx) {
     const card = this.card(t).flex_1().min_w(0).h_full();
+    // Before the first read: rows in the shape of the servers' (38 px, skeleton.js), breathing; then the
+    // list fades in over them, its rows at rest (still(): no opening from 0 under the fade).
+    const S = skeleton(t, this.m);
+    if (!this.read) return card.child(S.swap("ktm-list", false, null, () => div().p(4).child(S.list(8, { h: 38, icon: 16, lines: [0.45], gap_y: 2 }))));
+    const mm = S.arriving("ktm-list") ? still(this.m) : this.m;
     const errors = Object.entries(this.errors).map(([k, e]) => this.empty(t, tr("line", { name: LABEL[k], why: e }), t.ansi1).py(6));
     const rows = [...errors];
-    if (!shown.length) rows.push(this.empty(t, !this.read || this.busy ? tr("readingConfigs") : this.items.length ? tr("noMatch") : tr("noServer")));
+    if (!shown.length) rows.push(this.empty(t, this.busy ? tr("readingConfigs") : this.items.length ? tr("noMatch") : tr("noServer")));
     // The keys' cursor, while the page has the keyboard: its row, brought into view once after it moved.
     const typing = this.keyed && this.vim.insert;
     const cur = this.keyed ? this.at(shown)?.key : null;
@@ -821,7 +829,7 @@ export default class Mcp extends View {
       rows.push(this.groupRow(t, p, xs.length, first));
       first = false;
       let at = rows.length;
-      rows.push(...rowsOf(this.m, cx, `ktm-rows-${p}`, xs, (x) => x.key, (x, i) => {
+      rows.push(...rowsOf(mm, cx, `ktm-rows-${p}`, xs, (x) => x.key, (x, i) => {
         if (i >= 0 && this.reveal && x.key === cur) {
           this.listScroll.scroll_to_item(at);
           this.reveal = false;
@@ -833,10 +841,10 @@ export default class Mcp extends View {
     const bar = this.bulk(t);
     // The bulk bar floats over the rows' foot: room under the last row so it never hides it.
     return card
-      .child(v_flex().flex_1().min_h(0).relative()
+      .child(S.swap("ktm-list", true, v_flex().flex_1().min_h(0).relative()
         .child(v_flex().id("ktm-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.listScroll).p(4).gap(2)
           .when(Boolean(bar), (el) => el.pb(64)).children(rows))
-        .when(Boolean(bar), (el) => el.child(bar)))
+        .when(Boolean(bar), (el) => el.child(bar)), null, { grow: true }))
       .child(this.dashed(t))
       .child(h_flex().flex_none().px(14).py(8).gap(8).items_center()
         .child(svg(I("circle-alert")).size(12).flex_none().text_color(t.dim))

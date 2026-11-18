@@ -55,7 +55,6 @@ export default {
     openZedO: "Ouvrir dans Zed (O)",
     close: "Fermer",
     "path.file": "Fichier",
-    loading: "Chargement…",
     // add.js
     badName: "Nom : lettres, chiffres, . _ -, sans espace ni /, 64 au plus.",
     noFrontmatter: "(pas de frontmatter)",
@@ -190,7 +189,6 @@ export default {
     openZedO: "Open in Zed (O)",
     close: "Close",
     "path.file": "File",
-    loading: "Loading…",
     badName: "Name: letters, digits, . _ -, no spaces or /, 64 at most.",
     noFrontmatter: "(no frontmatter)",
     "scope.personal": "personal · ~/.claude/skills",

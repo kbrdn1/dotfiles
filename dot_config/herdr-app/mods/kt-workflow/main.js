@@ -35,6 +35,7 @@ import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse } from "./motion.js";
+import { skeleton } from "./skeleton.js";
 import { refreshOn } from "./bus.js";
 
 const tr = makeT(strings);
@@ -423,7 +424,10 @@ export default class Workflow extends View {
   header(t) {
     const d = this.d;
     const chez = d?.chez;
-    const chezText = !d ? "…" : chez.error ? tr("chezError", { error: chez.error }) : chez.n ? tr("drift", { n: chez.n }) : tr("upToDate");
+    // Before the first scan, each fact's value as a bar (skeleton.js), breathing.
+    const S = skeleton(t, this.m);
+    const bar = (id, w) => S.pulse(S.line(w, { h: 7, lh: 15 }).id(id));
+    const chezText = !d ? bar("ktw-f-chez-sk", 110) : chez.error ? tr("chezError", { error: chez.error }) : chez.n ? tr("drift", { n: chez.n }) : tr("upToDate");
     const chezColor = !d ? t.dim : chez.error ? t.ansi1 : chez.n ? t.ansi3 : t.done;
     const fact = (id, label, value, color, tip) => v_flex().id(id).flex_1().min_w(0).gap(2).px(10).py(6)
       .when(Boolean(tip), (el) => el.tooltip(tip))
@@ -451,11 +455,11 @@ export default class Workflow extends View {
           configure] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi3, "4d")))
       .child(h_flex().flex_none().gap(4).items_center()
-        .child(fact("ktw-f-md", "WORKFLOW.md", !d ? "…" : d.md == null ? tr("notFound")
+        .child(fact("ktw-f-md", "WORKFLOW.md", !d ? bar("ktw-f-md-sk", 150) : d.md == null ? tr("notFound")
           : [d.updated ? tr("updated", { date: d.updated }) : null, d.mdTime ? tr("modified", { ago: ago(d.mdTime * 1000) }) : null].filter(Boolean).join(" · "),
           d && d.md == null ? t.ansi1 : null))
         .child(fact("ktw-f-chez", "chezmoi · ~/.claude", chezText, chezColor, chez?.lines?.length ? chez.lines.join("\n") : null)) // i18n: tech
-        .child(fact("ktw-f-git", "dotfiles", !d ? "…" : d.commit ?? tr("noSource"), d && !d.commit ? t.dim : null, d?.commit))
+        .child(fact("ktw-f-git", "dotfiles", !d ? bar("ktw-f-git-sk", 70) : d.commit ?? tr("noSource"), d && !d.commit ? t.dim : null, d?.commit))
         .when(this.busy, (el) => el.child(pulse(this.m, div().px(8).font_family(MONO).text_size(11).text_color(t.dim).child(tr("scanning")), true))))
       .when(Boolean(this.notice), (el) => el.child(this.noticeRow(t)))
       .child(div().px(4).pb(2).child(seg));
@@ -709,7 +713,11 @@ export default class Workflow extends View {
     const kids = [];
     this.items = [];
     if (!this.d) {
-      kids.push(div().p(16).text_size(13).text_color(this.error ? t.ansi1 : t.dim).child(this.error ?? tr("scanningWorkflow")));
+      // Before the first scan: a section's head and its cards as bars (skeleton.js), breathing.
+      const S = skeleton(t, this.m);
+      kids.push(this.error ? div().p(16).text_size(13).text_color(t.ansi1).child(this.error)
+        : S.pulse(v_flex().id("ktw-body-sk").gap(6).child(div().px(8).pt(6).pb(2).child(S.line(110, { h: 7, lh: 16 })))
+          .children([96, 72, 120].map((h) => S.block(null, h).mx(4)))));
     } else {
       for (const [k, fn] of [["cycle", this.cycle], ["workflows", this.workflows], ["loops", this.loops], ["tools", this.tools], ["guards", this.guards], ["notes", this.notes]])
         if (this.sec === "all" || this.sec === k) fn.call(this, t, kids);
