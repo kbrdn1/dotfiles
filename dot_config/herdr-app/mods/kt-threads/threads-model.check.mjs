@@ -289,4 +289,28 @@ assert.deepEqual(defaults, { [acmeGit]: "main" });
 calls.length = 0;
 assert.equal(await io.lookupPr(M.prKey(null, "/fx/acme", "main"), { exec, repos, defaults }), null); // the default branch
 assert.deepEqual(calls, []); // default known, long-lived: no gh at all
+// A card's drawer (kt-kanban): its PR and checks, its issue, its diff, on a fake exec (no gh, no git).
+const asked = [];
+const fx = async (cmd, args, { cwd, on }) => {
+  asked.push([cmd, args[0], args[1], args[2], cwd, on]);
+  if (cmd === "gh" && args[1] === "view" && args[0] === "pr") return { code: 0, stdout: JSON.stringify({ number: 34, title: "Ring", state: "OPEN", isDraft: true, url: "u/34", baseRefName: "dev" }) };
+  if (cmd === "gh" && args[1] === "checks") return { code: 8, stdout: JSON.stringify([{ name: "test", bucket: "fail" }]) }; // non-zero: a failing check
+  if (cmd === "gh" && args[0] === "issue") return args[2] === "12" ? { code: 0, stdout: JSON.stringify({ number: 12, title: "Anneau", state: "CLOSED", url: "u/12" }) } : { code: 1, stdout: "" };
+  if (cmd === "git" && args[2] === "dev...HEAD") return { code: 128, stdout: "" }; // no local dev
+  if (cmd === "git" && args[2] === "origin/dev...HEAD") return { code: 0, stdout: " 3 files changed, 42 insertions(+), 7 deletions(-)\n" };
+  return { code: 1, stdout: "" };
+};
+const where = { exec: fx, cwd: "/fx/acme", on: "vps" };
+assert.deepEqual(await io.readPr(34, where), { number: 34, title: "Ring", state: "OPEN", draft: true, url: "u/34", base: "dev", checks: [{ name: "test", bucket: "fail" }] });
+assert.ok(asked.every(([, , , , cwd, on]) => cwd === "/fx/acme" && on === "vps")); // run where the thread is
+assert.equal(await io.readPr(35, { ...where, exec: async () => ({ code: 1, stdout: "" }) }), null);
+assert.deepEqual((await io.readPr(36, { ...where, exec: async (c, a) => (a[1] === "view" ? { code: 0, stdout: '{"number":36}' } : { code: 1, stdout: "no checks" }) })).checks, []);
+assert.deepEqual(await io.readIssue(12, where), { number: 12, title: "Anneau", state: "CLOSED", url: "u/12" });
+assert.equal(await io.readIssue(13, where), null);
+assert.deepEqual(await io.readDiff("dev", where), { files: 3, added: 42, removed: 7 }); // origin/dev after dev
+assert.equal(await io.readDiff("nope", where), null);
+assert.deepEqual(io.shortstat(" 1 file changed, 1 insertion(+)"), { files: 1, added: 1, removed: 0 });
+assert.deepEqual(io.shortstat(" 2 files changed, 5 deletions(-)"), { files: 2, added: 0, removed: 5 });
+assert.deepEqual(io.shortstat(""), { files: 0, added: 0, removed: 0 });
+assert.equal(io.shortstat("fatal: bad revision"), null);
 console.log("threads-model: ok");

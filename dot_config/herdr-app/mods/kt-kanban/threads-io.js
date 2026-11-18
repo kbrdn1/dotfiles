@@ -1,5 +1,6 @@
 // The threads' reads, for threads-model.js' World: herdr-bridge, statusline and claude-flow's caches
-// (live), /me:report (reports), git (repos, real), gh (prs, defaults). The host's functions come in
+// (live), /me:report (reports), git (repos, real), gh (prs, defaults); and for one card's drawer
+// (kt-kanban): its PR with its checks, its issue, its diff against its base. The host's functions come in
 // as parameters (exec, readTextFile, readdir): no herdr import, so another mod runs them as
 // kt-threads does, and a Bun check runs them on fakes. When to read is the mod's call (kt-threads:
 // live every 3 s, reports every 15 s, a PR at most every 3 min). Copied byte for byte with
@@ -112,6 +113,49 @@ export async function realOf(location, exec) {
     const r = await exec("pwd", ["-P"], { cwd: folder, on });
     return r.code === 0 && r.stdout.trim() ? JSON.stringify([on, r.stdout.trim()]) : null;
   } catch { return null; }
+}
+
+const json = (s) => { try { return JSON.parse(s); } catch { return null; } };
+
+/** A PR as a card's drawer (kt-kanban) shows it: { number, title, state, draft, url, base, checks }, else
+ *  null. checks: gh pr checks' [{ name, state, link, bucket }]. `at`: { exec, cwd, on } (on: a space's
+ *  machine). Asked when the drawer opens, then at most as often as the PR badges (the mod's call). */
+export async function readPr(number, { exec, cwd, on }) {
+  const [v, c] = await Promise.all([
+    exec("gh", ["pr", "view", String(number), "--json", "number,title,state,isDraft,url,baseRefName"], { cwd, on }).catch(() => ({ code: 1 })),
+    exec("gh", ["pr", "checks", String(number), "--json", "name,state,link,bucket"], { cwd, on }).catch(() => ({ code: 1 })),
+  ]);
+  const d = v.code === 0 ? json(v.stdout) : null;
+  if (!d?.number) return null;
+  // gh pr checks exits non-zero on a failing or pending check, and when there is none: its stdout counts.
+  const checks = json(c.stdout ?? "");
+  return { number: d.number, title: d.title ?? "", state: d.state ?? "OPEN", draft: Boolean(d.isDraft), url: d.url ?? null,
+    base: d.baseRefName ?? null, checks: Array.isArray(checks) ? checks : [] };
+}
+
+/** An issue as the drawer shows it: { number, title, state, url }, else null. */
+export async function readIssue(number, { exec, cwd, on }) {
+  const v = await exec("gh", ["issue", "view", String(number), "--json", "number,title,state,url"], { cwd, on }).catch(() => ({ code: 1 }));
+  const d = v.code === 0 ? json(v.stdout) : null;
+  return d?.number ? { number: d.number, title: d.title ?? "", state: d.state ?? "OPEN", url: d.url ?? null } : null;
+}
+
+/** `git diff --shortstat`'s line read: { files, added, removed } (no change: zeros), null when it isn't one. */
+export function shortstat(text) {
+  const s = String(text ?? "").trim();
+  if (!s) return { files: 0, added: 0, removed: 0 };
+  const n = (re) => Number(s.match(re)?.[1] ?? 0);
+  return /files? changed/.test(s) ? { files: n(/(\d+) files? changed/), added: n(/(\d+) insertions?\(\+\)/), removed: n(/(\d+) deletions?\(-\)/) } : null;
+}
+
+/** A branch against its base (`git diff --shortstat <base>...HEAD`, else against origin/<base>):
+ *  shortstat()'s, else null (no such base). */
+export async function readDiff(base, { exec, cwd, on }) {
+  for (const ref of [base, `origin/${base}`]) {
+    const r = await exec("git", ["diff", "--shortstat", `${ref}...HEAD`], { cwd, on }).catch(() => ({ code: 1 }));
+    if (r.code === 0) return shortstat(r.stdout);
+  }
+  return null;
 }
 
 /** The PR of a branch (`key`: threads-model's prKey) as pr-pick.js chooses it, else null. Asks gh for

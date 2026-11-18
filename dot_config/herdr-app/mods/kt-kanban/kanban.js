@@ -1,6 +1,7 @@
 // kanban.js: the Kanban's board, pure (no herdr, no gpui): which threads it shows, sliced, grouped in
 // lanes, in which column and order, the filter (`field:value` terms and words), the columns' cost and
-// soft limits, the saved views, and the keys' cursor across columns and lanes.
+// soft limits, the saved views, the drawer's checks and snooze times, and the keys' cursor across
+// columns and lanes.
 // The threads are threads-model.js' (a byte-identical copy of kt-threads'); the flow's phases, kt-flow's
 // steps.js (a byte-identical copy). Its check: bun mods/kt-kanban/kanban.check.mjs.
 import { STATUSES, sortByNeed, projectGroups } from "./threads-model.js";
@@ -225,6 +226,27 @@ export function matchQuery(th, q, ctx = {}) {
     .filter(Boolean).join(" ").toLowerCase();
   return q.words.every((w) => hay.includes(w.text) !== w.neg);
 }
+
+// ---------- a card's drawer ----------
+
+// gh pr checks' bucket -> viz.js steps' state (kt-inbox's), and the order the bar shows them in: what
+// failed first, then what runs, what passed, what was skipped (then gh's order).
+const CHECK = { pass: "done", fail: "failed", cancel: "failed", pending: "current", skipping: "skipped" }; // i18n: tech
+const CHECK_RANK = { failed: 0, current: 1, done: 2, skipped: 3, todo: 4 };
+/** A PR's checks as viz.js steps: [{ label, state }]. */
+export const checkSteps = (checks) => (checks ?? []).map((c, i) => ({ label: c.name ?? "", state: CHECK[c.bucket] ?? "todo", i }))
+  .sort((a, b) => CHECK_RANK[a.state] - CHECK_RANK[b.state] || a.i - b.i).map(({ label, state }) => ({ label, state }));
+
+// Snooze (the sidebar's choices): an hour; tonight, 19:00; tomorrow, 9:00 (an hour already past: the next day's).
+export const SNOOZES = ["hour", "tonight", "tomorrow"];
+// `day`'s `hour`, the next day's when that is already past `now` (kt-threads' at()).
+const hourOf = (day, hour, now) => {
+  const d = new Date(day);
+  d.setHours(hour, 0, 0, 0);
+  return d.getTime() > now ? d.getTime() : d.getTime() + 86400e3;
+};
+/** When a snooze wakes, from `now`. */
+export const wakeAt = (choice, now) => (choice === "hour" ? now + 3600e3 : choice === "tonight" ? hourOf(now, 19, now) : hourOf(now + 86400e3, 9, now));
 
 // ---------- the columns' figures: the cost, the soft limit (WIP) ----------
 

@@ -18,6 +18,15 @@
 // nothing blocked; a click on the count, or + / -), and what its cards cost together (costLevel).
 // The filter (`/`) reads GitHub's syntax: words and field:value terms (kanban.js parseQuery); a term it
 // can't read is set aside and said before the field.
+// The drawer (GitHub Projects' item panel): a card's side panel, DRAWER_W, right of the board, which
+// narrows as it opens on its width (and widens as it folds). Space or o on the cursor's card, or a click
+// on a card's title, opens it (it then follows the cursor); esc or q shuts it; enter still goes to the
+// agent. In it: the head (the agent's live logo, title, project, branch, age), the flow in kt-flow's
+// tiers (viz.js steps by phase), the issue, the PR and its checks in dither steps, the diff against the
+// base, cost, context and sub-agents; its actions, each with its key: enter the agent, p pin, z snooze
+// (1 2 3, 0 wakes), O the PR, I the issue, e Zed (a local checkout). Its PR, issue and diff (threads-io's
+// readPr, readIssue, readDiff) are read as it opens, gh at most as often as the badges, the diff again
+// with the reports (local), all again on r or a git / gh bump.
 // A card: the agent's live logo (companion-logo.js), the title, pinned / snoozed as the sidebar shows
 // them, the age; the project (logo, else its letter on its color) and the branch (a worktree's icon in
 // a linked one); the issue, the PR and its state, the cost (levels.js), the sub-agents k/n;
@@ -36,24 +45,26 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, theme, shared, setShared, layout, nextCommand, settings, exec, home, readTextFile, openOverlay, checking } from "herdr";
+import { spaces, panes, run, theme, shared, setShared, layout, nextCommand, settings, exec, home, readTextFile, openOverlay, checking, window as win } from "herdr";
 import * as fs from "fs/promises";
 import * as model from "./threads-model.js";
 import * as io from "./threads-io.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
-  costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
+  costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt } from "./kanban.js";
 import { companion } from "./companion-logo.js";
-import { costLevel, levelColor } from "./levels.js";
+// kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the drawer's dither steps (flow, checks).
+import { viz } from "./viz.js";
+import { costLevel, ctxLevel, levelColor } from "./levels.js";
 import { Vim, keysOf, keyOf } from "./vim.js";
-import { motionState, frame, enter, sharpen, rows, collapse } from "./motion.js";
+import { motionState, frame, enter, sharpen, rows, collapse, MS } from "./motion.js";
 import { roll, rollText } from "./roll.js";
 import { refreshOn } from "./bus.js";
 import { ditherBand, TOP } from "./dither.js";
 import { makeT, num as fnum } from "./i18n.js";
 import strings from "./strings.js";
-// kt-flow's phases (a byte-identical copy): the phase columns' names are Flow's.
-import { PHASES, speak } from "./steps.js";
+// kt-flow's phases (a byte-identical copy): the phase columns' names are Flow's, and the drawer's flow.
+import { PHASES, speak, phasesOf, nameOf } from "./steps.js";
 
 const tr = makeT(strings);
 speak(makeT); // steps.js' phase names follow kt.lang too
@@ -75,6 +86,7 @@ const PR_EVERY = 180e3; // a branch's PR, asked of gh at most this often (kt-thr
 const STALE = 10e3; // back on the page, what was read longer ago is read again (DATA-SYNC.md)
 const PAGE_ROWS = 8; // the cards a column shows: ctrl-d / ctrl-u move half of it
 const COL_W = 240; // a column's least width: a card stays readable
+const DRAWER_W = 360; // the drawer's width (the board narrows beside it)
 // A column's color, a theme name: the status' own; a phase's along the way (delivery green, wrap-up done).
 const TINT = {
   blocked: "blocked", done: "done", working: "working", idle: "idle",
@@ -126,6 +138,13 @@ export default class Kanban extends View {
     this.viewMenu = false; // the current view's actions shown in the tab row
     this.limitEdit = null; // the column whose head shows its limit's stepper
     this.pending = null; // the view kt-confirm asks about deleting
+    // The drawer (a card's side panel): the thread it shows (null: shut), the last one (drawn while it
+    // closes), whether its snooze choices show; its PR, issue and diff by thread id ({ at, pr, issue,
+    // diff, diffAt, loading }), read when it opens.
+    this.drawer = null;
+    this.drawerLast = null;
+    this.snoozing = false;
+    this.details = {};
     this.cur = null; // the keys' cursor: a thread id
     this.at = null; // where it last was, { l, c, i } (kanban.js locate)
     this.board = { keys: [], lanes: [] };
@@ -158,7 +177,11 @@ export default class Kanban extends View {
     // Hidden, every timer returns at once: nothing is read, nothing redraws.
     cx.timer.every(1000, (cx) => this.tick(cx));
     cx.timer.every(3000, (cx) => { if (visible()) this.readLive(cx); });
-    cx.timer.every(15000, (cx) => { if (visible()) this.readReports(cx); });
+    cx.timer.every(15000, (cx) => {
+      if (!visible()) return;
+      this.readReports(cx);
+      if (this.drawer) this.loadDetail(cx); // its diff again (local, cheap); gh only once stale
+    });
     cx.timer.every(1500, (cx) => { if (visible()) this.lookup(cx); });
     // `focus` (pane.go) takes the keyboard in NORMAL; `key:<keys>` takes it and types those keys
     // ("l", "g g", "/ f i x", "c"), for tests; `refresh` reads again.
@@ -440,7 +463,107 @@ export default class Kanban extends View {
       if (key) this.limits = stepLimit(this.limits, key, name === "+" ? 1 : -1, n);
       return true;
     }
+    // The drawer: space or o opens it on the cursor's card (again: shuts it); enter keeps going to the agent.
+    if (name === "space" || name === "o") {
+      this.vim.normal();
+      const id = atCard(this.board, this.at ?? { l: 0, c: 0, i: -1 })?.id;
+      if (this.drawer && this.drawer === id) this.closeDrawer(cx);
+      else if (id) this.openDrawer(id, cx);
+      return true;
+    }
+    // Its actions, while it shows (kt-keys lists them): p pin, z snooze (then 1 2 3 the choices, 0 wakes),
+    // O the PR, I the issue, e Zed.
+    const th = this.drawer ? this.byId?.get(this.drawer) : null;
+    if (th) {
+      const d = this.details[th.id] ?? {};
+      const pick = this.snoozing ? { 1: "hour", 2: "tonight", 3: "tomorrow" }[name] ?? (name === "0" ? null : undefined) : undefined;
+      const act = pick !== undefined ? () => this.snooze(th, pick)
+        : { p: () => this.pin(th), z: () => { this.snoozing = !this.snoozing; }, O: () => this.browse(d.pr?.url ?? th.pr?.url),
+          I: () => this.browse(d.issue?.url), e: () => this.zed(th) }[name];
+      if (act) {
+        this.vim.normal();
+        act();
+        return true;
+      }
+    }
     return this.act(this.vim.handle(e), cx);
+  }
+
+  // ---------- the drawer (a card's side panel, GitHub Projects' item panel) ----------
+
+  openDrawer(id, cx) {
+    this.drawer = id;
+    this.drawerLast = id;
+    this.snoozing = false;
+    this.cur = id;
+    this.reveal = true;
+    this.loadDetail(cx);
+  }
+
+  // Its exit: it folds to 0 (the board widens beside it), then ONE timer lets its content go.
+  closeDrawer(cx) {
+    if (!this.drawer) return;
+    this.drawer = null;
+    this.snoozing = false;
+    if (this.m?.reduced) this.drawerLast = null;
+    else cx.timer.after(MS.panel + 40, (cx) => {
+      if (this.drawer) return;
+      this.drawerLast = null;
+      cx.notify();
+    });
+  }
+
+  // Its thread's PR (with its checks) and issue from gh, at most every PR_EVERY (as the badges) unless
+  // forced (r, a gh bump); its diff against its base (the PR's, else the repo's default) each time, a
+  // remote one only with the gh reads. Never in a check.
+  loadDetail(cx, force = false) {
+    const th = this.byId?.get(this.drawer);
+    if (!th?.lead?.cwd || checking()) return;
+    const d = (this.details[th.id] ??= { at: 0, diffAt: 0 });
+    if (d.loading) return;
+    // Stale, or the card knows another PR or issue than the one read (its badge found it since).
+    const gh = force || Date.now() - d.at > PR_EVERY || (th.pr?.number ?? null) !== (d.prN ?? null) || (th.issue ?? null) !== (d.issueN ?? null);
+    if (!gh && th.space.machine) return;
+    d.loading = true;
+    const { lead, space } = th;
+    const where = { exec, cwd: lead.cwd, on: space.machine ?? null };
+    cx.spawn(async (cx) => {
+      if (gh) {
+        const [pr, issue] = await Promise.all([th.pr ? io.readPr(th.pr.number, where) : null, th.issue ? io.readIssue(th.issue, where) : null]);
+        Object.assign(d, { pr, issue, at: Date.now(), prN: th.pr?.number ?? null, issueN: th.issue ?? null });
+      }
+      const base = d.pr?.base ?? this.defaults[model.repoOf(space.machine, lead.cwd, this.repos)] ?? null;
+      d.diff = lead.branch && base && lead.branch !== base ? await io.readDiff(base, where) : null;
+      d.diffAt = Date.now();
+      d.loading = false;
+      cx.notify();
+    });
+  }
+
+  pin(th) {
+    const pins = shared("kt.pins") ?? [];
+    setShared("kt.pins", pins.includes(th.id) ? pins.filter((p) => p !== th.id) : [...pins, th.id]);
+  }
+
+  // The sidebar's snooze (shared "kt.snoozed": { until, at }); null wakes it.
+  snooze(th, choice) {
+    const all = { ...(shared("kt.snoozed") ?? {}) };
+    if (choice) all[th.id] = { until: wakeAt(choice, Date.now()), at: Date.now() };
+    else delete all[th.id];
+    setShared("kt.snoozed", all);
+    this.snoozing = false;
+  }
+
+  browse(url) {
+    if (!url) return;
+    const p = win()?.platform;
+    exec(p === "windows" ? "explorer.exe" : p === "macos" ? "open" : "xdg-open", [url]).catch(() => {});
+  }
+
+  // A local checkout only (Zed opens a folder of this computer).
+  zed(th) {
+    if (!th.cwd || th.space.machine) return;
+    exec("zed", [th.cwd]).catch(() => exec("open", [`zed://file${th.cwd}`]).catch(() => {}));
   }
 
   // One vim action on the board; false: not one it has, and the key goes on.
@@ -454,6 +577,13 @@ export default class Kanban extends View {
       this.at = move(b, at, a, this.vim.count, PAGE_ROWS);
       this.cur = atCard(b, this.at)?.id ?? null;
       this.reveal = true;
+      // An open drawer follows the cursor (j / k browse the cards in it).
+      if (this.drawer && this.cur && this.cur !== this.drawer) this.openDrawer(this.cur, cx);
+    } else if (a === "open-alt") {
+      // O: the drawer's PR in the browser (while it shows).
+      const th = this.drawer ? this.byId?.get(this.drawer) : null;
+      if (!th) return false;
+      this.browse(this.details[th.id]?.pr?.url ?? th.pr?.url);
     } else if (a === "open" || a === "submit") {
       const th = atCard(b, at);
       if (th) this.open(th);
@@ -464,11 +594,17 @@ export default class Kanban extends View {
       const keys = [null, ...(this.sliceList ?? []).map((v) => v.key)];
       const j = keys.indexOf(this.pick ?? null);
       this.pickSlice(field, keys[(j + (a === "panel-next" ? 1 : keys.length - 1)) % keys.length]);
-    } else if (a === "escape" && this.query) this.query = "";
+    } else if ((a === "escape" || a === "quit") && this.snoozing) this.snoozing = false;
+    // Esc / q: the drawer shuts first; then esc empties the filter; then back to the thread.
+    else if ((a === "escape" || a === "quit") && this.drawer) this.closeDrawer(cx);
+    else if (a === "escape" && this.query) this.query = "";
     else if (a === "escape" || a === "quit") {
       show("thread");
       this.toTerminal();
-    } else if (a === "refresh") this.refresh(cx);
+    } else if (a === "refresh") {
+      this.refresh(cx);
+      if (this.drawer) this.loadDetail(cx, true);
+    }
     else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } });
     else return false;
     return true;
@@ -613,7 +749,7 @@ export default class Kanban extends View {
   card(t, th, col, cursor, gone, now, cx) {
     const key = `${col}-${th.id}`;
     const muted = th.settled || th.asleep;
-    const bridge = th.terminal ? this.live[th.terminal] : null;
+    const bridge = th.terminal ? this.shownLive[th.terminal] : null;
     const pet = companion({
       program: th.program, state: th.agent?.status ?? th.status ?? "idle", id: `kk-c-${key}`, cx, size: 20, height: 16,
       action: bridge?.state ? (bridge.action ?? null) : undefined, since: bridge?.state ? bridge.since : undefined,
@@ -650,7 +786,10 @@ export default class Kanban extends View {
       .when(!gone, (el) => el.cursor_pointer().on_click(() => this.open(th)))
       .child(h_flex().h(20).gap(8).items_center()
         .child(pet)
-        .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(muted ? t.muted : t.foreground).child(th.title))
+        // The title opens the card's drawer (the rest of the card goes to the agent, as enter).
+        .child(div().id(`kk-tt-${key}`).flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(muted ? t.muted : t.foreground)
+          .when(!gone, (el) => el.hover((s) => s.text_color(t.accent)).on_click((_e, cx) => { cx.stop_propagation(); this.openDrawer(th.id, cx); cx.notify(); }))
+          .child(th.title))
         .when(th.pinned, (el) => el.child(svg(I("pin")).size(11).flex_none().text_color(t.dim)))
         .child(corner))
       .child(h_flex().h(16).gap(6).items_center()
@@ -743,6 +882,114 @@ export default class Kanban extends View {
       .when(!b.lanes.length, (el) => el.child(div().p(12).text_size(12.5).text_color(t.dim).child(tr("noMatch"))));
   }
 
+  // The drawer's content, DRAWER_W wide: its head over the dither of the card's project (the agent's live
+  // logo, the title coming into focus, project · branch or worktree · age, a close), then its sections:
+  // the flow in kt-flow's tiers (viz.js steps by phase), the issue, the PR with its checks in dither steps
+  // (kt-inbox's), the diff against the base, the cost, context and sub-agents, then its actions, each with
+  // its key. It fades in at each card it shows (its id carries the thread).
+  drawerPanel(t, th, now, cx) {
+    const d = this.details[th.id] ?? {};
+    const V = viz(t, this.m, { roll });
+    const key = th.id;
+    const mono = (color, text) => div().flex_none().font_family(MONO).text_size(11).text_color(color).child(text);
+    const eyebrow = (text) => div().font_family(MONO).text_size(10).text_color(t.muted).child(String(text).toUpperCase());
+    const dim = (text) => div().text_size(12).line_height("18px").text_color(t.dim).child(text);
+    const section = (title, ...kids) => v_flex().gap(8).child(eyebrow(title)).children(kids.filter(Boolean));
+    const tag = (color, text) => h_flex().flex_none().h(18).px(7).items_center().rounded_full().border(1).border_color(alpha(color, "4d"))
+      .bg(alpha(color, "1a")).font_family(MONO).text_size(9.5).text_color(color).child(String(text).toUpperCase());
+    const loading = d.loading && !d.at;
+    const bridge = th.terminal ? this.shownLive[th.terminal] : null;
+    const tint = th.project.home ? t.muted : paint(t, th.project.color) ?? t.accent;
+    // The head (DESIGN-REFERENCE.md: a detail pane's band), 64 px.
+    const head = div().relative().flex_none().h(64).overflow_hidden().rounded_t(15)
+      .child(ditherBand(DRAWER_W - 2, 64, 15, alpha(tint, settings().dark ? "6b" : "4d"), TOP))
+      .child(h_flex().size_full().px(12).gap(10).items_center()
+        .child(h_flex().size(36).flex_none().rounded(10).items_center().justify_center().border(1).border_color(alpha(tint, "4d")).bg(alpha(t.background, "e6"))
+          .child(companion({ program: th.program, state: th.agent?.status ?? th.status ?? "idle", id: `kk-dr-c-${key}`, cx, size: 24, height: 20,
+            action: bridge?.state ? (bridge.action ?? null) : undefined, since: bridge?.state ? bridge.since : undefined,
+            memo: (this.memos[`drawer:${th.terminal ?? key}`] ??= {}) })))
+        .child(v_flex().flex_1().min_w(0).gap(3)
+          .child(sharpen(this.m, `kk-dr-title:${key}`, () => div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(th.title)))
+          .child(h_flex().min_w(0).gap(6).items_center()
+            .child(this.mark(t, th.project, 12))
+            .child(div().flex_none().max_w(110).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(th.project.name.toUpperCase()))
+            .when(Boolean(th.branch), (el) => el
+              .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
+              .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch)))
+            .child(mono(t.dim, model.age(th.activity, now).toUpperCase()))))
+        .child(h_flex().id("kk-dr-close").size(26).flex_none().items_center().justify_center().rounded_full().text_color(t.dim)
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("drawer.close"))
+          .on_click((_e, cx) => { this.closeDrawer(cx); cx.notify(); })
+          .child(svg(I("x")).size(13))));
+    // The flow: claude-flow's whole timeline, a tier per phase (kt-flow's colours).
+    const steps = (bridge?.flow?.steps ?? []).filter((s) => s?.id);
+    const failed = settings().dark !== false ? t.ansi9 : t.ansi1;
+    const flow = steps.length
+      ? V.steps(phasesOf(steps).flatMap((p) => p.steps.map((s) => ({ label: nameOf(s.id), state: s.state, group: p.label }))),
+        { id: `kk-dr-flow-${key}`, width: DRAWER_W - 30, colors: { done: t.done, current: t.accent, failed } })
+      : dim(tr("drawer.noFlow"));
+    // The issue and the PR: their number, title and state (gh's words); the PR's checks in dither steps.
+    const issue = th.issue && (d.issue
+      ? h_flex().gap(7).items_center().child(svg(I(d.issue.state === "CLOSED" ? "circle-check" : "circle-dashed")).size(13).flex_none().text_color(d.issue.state === "CLOSED" ? t.ansi5 : t.ansi2))
+        .child(mono(t.muted, `#${th.issue}`)).child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(d.issue.title))
+        .child(tag(d.issue.state === "CLOSED" ? t.ansi5 : t.ansi2, d.issue.state === "CLOSED" ? "closed" : "open")) // i18n: tech
+      : h_flex().gap(7).items_center().child(mono(t.muted, `#${th.issue}`)).child(dim(loading ? tr("drawer.reading") : tr("drawer.unread"))));
+    const pr = d.pr ?? (th.pr ? { ...th.pr, title: null, checks: null } : null);
+    const prLook = !pr ? null : pr.state === "OPEN" && pr.draft ? ["git-pull-request", t.dim, "draft"] : pr.state === "MERGED" ? ["git-merge", t.ansi5, "merged"]
+      : pr.state === "CLOSED" ? ["git-pull-request-closed", t.ansi1, "closed"] : ["git-pull-request", t.ansi2, "open"]; // i18n: tech
+    const checks = pr?.checks ? checkSteps(pr.checks) : null;
+    const prBlock = pr && v_flex().gap(8)
+      .child(h_flex().gap(7).items_center().child(svg(I(prLook[0])).size(13).flex_none().text_color(prLook[1]))
+        .child(mono(prLook[1], `#${pr.number}`)).child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(pr.title ? t.foreground : t.dim).child(pr.title ?? (loading ? tr("drawer.reading") : "")))
+        .child(tag(prLook[1], prLook[2])))
+      .child(checks == null ? dim(loading ? tr("drawer.reading") : tr("drawer.unread"))
+        : checks.length ? V.steps(checks, { id: `kk-dr-ck-${key}`, width: DRAWER_W - 30, colors: { done: t.done, current: t.ansi3, failed: t.ansi1 },
+          words: { done: tr("ck.done"), current: tr("ck.current"), failed: tr("ck.failed"), skipped: tr("ck.skipped") } })
+          : dim(tr("drawer.noChecks")));
+    // The diff against the base: its files, +N −M.
+    const diff = d.diff
+      ? h_flex().gap(10).items_center().child(div().text_size(12.5).text_color(t.foreground).child(tr("drawer.files", { n: d.diff.files })))
+        .child(mono(t.ansi2, `+${d.diff.added}`)).child(mono(t.ansi1, `−${d.diff.removed}`))
+      : dim(d.diffAt ? tr("drawer.noDiff") : tr("drawer.reading"));
+    // Cost, context, sub-agents (k ended / n, the ones still shown).
+    const subs = th.subagents;
+    const figures = h_flex().flex_wrap().gap_x(14).gap_y(6).items_center()
+      .when(th.cost != null, (el) => el.child(mono(levelColor(t, costLevel(th.cost, th.model), { okGreen: true }), `$${fnum(th.cost, 2)}`)))
+      .when(th.ctx != null, (el) => el.child(mono(levelColor(t, ctxLevel(th.ctx, th.sl?.window)), tr("drawer.ctx", { n: Math.round(th.ctx) }))))
+      .when(subs.total > 0, (el) => el.child(h_flex().gap(4).items_center().text_color(t.dim).child(svg(I("bot")).size(12)).child(mono(t.dim, `${subs.done}/${subs.total}`))));
+    const agents = subs.shown.slice(0, 4).map((a, i) => h_flex().id(`kk-dr-sa-${key}-${a.id ?? i}`).h(20).gap(8).items_center()
+      .child(div().size(6).rounded(3).flex_none().bg(model.isAlive(a) ? t.working : a.state === "error" ? t.ansi1 : t.dim))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(model.isAlive(a) ? t.foreground : t.muted).child(a.what || a.name || "agent")) // i18n: tech
+      .child(mono(t.dim, model.agentAge(a, now))));
+    // The actions, each with its key (in the drawer): enter, p, z (1 2 3, 0), O, I, e.
+    const pinned = th.pinned;
+    const button = (id, label, k, onClick, on = true) => h_flex().id(`kk-dr-${id}`).flex_none().h(28).px(10).gap(8).items_center().rounded_full().border(1)
+      .border_color(t.border).bg(t.background).text_size(12).text_color(on ? t.foreground : t.dim)
+      .when(on, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { onClick(); cx.notify(); }))
+      .child(label).child(div().flex_none().px(5).rounded(4).bg(t.raised).font_family(MONO).text_size(9.5).text_color(t.muted).child(k));
+    const zedHere = Boolean(th.cwd) && !th.space.machine;
+    const actions = v_flex().gap(8)
+      .child(h_flex().flex_wrap().gap(6)
+        .child(button("go", tr("drawer.go"), "↵", () => this.open(th)))
+        .child(button("pin", pinned ? tr("drawer.unpin") : tr("drawer.pin"), "p", () => this.pin(th)))
+        .child(button("snooze", th.asleep ? tr("drawer.snoozed", { left: model.until(th.snooze.until, now) }) : tr("drawer.snooze"), "z", () => { this.snoozing = !this.snoozing; }))
+        .child(button("pr", tr("drawer.openPr"), "O", () => this.browse(d.pr?.url ?? th.pr?.url), Boolean(d.pr?.url ?? th.pr?.url)))
+        .child(button("issue", tr("drawer.openIssue"), "I", () => this.browse(d.issue?.url), Boolean(d.issue?.url)))
+        .child(button("zed", tr("drawer.zed"), "e", () => this.zed(th), zedHere)))
+      .when(this.snoozing, (el) => el.child(h_flex().flex_wrap().gap(6)
+        .children(SNOOZES.map((c, i) => button(`sn-${c}`, tr(`snooze.${c}`), String(i + 1), () => this.snooze(th, c))))
+        .when(th.asleep, (el) => el.child(button("wake", tr("snooze.wake"), "0", () => this.snooze(th, null))))));
+    const body = v_flex().id(`kk-dr-body-${key}`).flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(18)
+      .child(section(tr("drawer.flow"), flow))
+      .when(Boolean(issue), (el) => el.child(section("Issue", issue))) // i18n: tech
+      .when(Boolean(prBlock), (el) => el.child(section("Pull request", prBlock))) // i18n: tech
+      .when(Boolean(th.branch), (el) => el.child(section("Diff", diff))) // i18n: tech
+      .child(section(tr("drawer.figures"), figures, ...agents))
+      .child(section(tr("drawer.actions"), actions));
+    return enter(this.m, v_flex().w(DRAWER_W).h_full().rounded(16).border(1).border_color(t.border).bg(t.background)
+      .child(head).child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(tint, "4d"))).child(body), `kk-dr-${key}`, { dy: 0 });
+  }
+
   // Slice by: the panel on the left, its field's values with their counts, « Tout » first; a click picks
   // one (again: lets it go). Its field: the header's button (s), its close button sets it back to none.
   slicePanel(t, field, values, total) {
@@ -781,7 +1028,12 @@ export default class Kanban extends View {
     const m = (this.m = frame(this.motion, Boolean(shared("kt.reducedMotion"))));
     // What others change (DATA-SYNC.md): a commit, a branch, a PR made elsewhere, an agent that just
     // stopped (kt-threads' `agents`) asks the PR badges again. The first render records.
-    if (!checking()) refreshOn(this, cx, "prs", ["git", "gh", "agents"], async (cx) => { this.asked = {}; cx.notify(); });
+    // The drawer's PR, issue and diff too.
+    if (!checking()) refreshOn(this, cx, "prs", ["git", "gh", "agents"], async (cx) => {
+      this.asked = {};
+      if (this.drawer) this.loadDetail(cx, true);
+      cx.notify();
+    });
     if (vis && !this.shown) {
       this.arrivals++;
       if (!checking()) {
@@ -799,6 +1051,7 @@ export default class Kanban extends View {
 
     const now = Date.now();
     const world = this.world(now);
+    this.shownLive = world.live; // what the cards and the drawer read of the agents (this.live, as read)
     const o = opts();
     // Every project's threads (threads-model.js): the views decide, not the sidebar's scope or filter
     // (GitHub Projects: a view stands alone); the archived only for an is:archived. Then `/`'s query
@@ -806,7 +1059,11 @@ export default class Kanban extends View {
     // project), then the slice picked.
     const shown = world.spaces.find((s) => s.active);
     const query = parseQuery(this.query);
-    const listed = onBoard(model.threadsOf(world), query.archived);
+    const all = model.threadsOf(world);
+    // Every thread by id: the drawer's (it may be out of the board's filter), the keys' actions on it.
+    this.byId = new Map(all.map((th) => [th.id, th]));
+    if (this.drawer && !this.byId.has(this.drawer)) this.drawer = this.drawerLast = null; // its tab closed
+    const listed = onBoard(all, query.archived);
     const current = !shown ? null : model.isHome(shown, world) ? "home" : model.projectId(shown, world) ?? `space:${shown.id}`;
     const kept = listed.filter((th) => matchQuery(th, query, { now, current }));
     const pick = (this.pick = o.slice === "none" ? null : (shared(PICKS) ?? {})[o.slice] ?? null);
@@ -874,9 +1131,17 @@ export default class Kanban extends View {
       ? this.lanes(t, b, cur, now, cx)
       : h_flex().id("kk-board").flex_1().min_w(0).h_full().gap(4).items_start().overflow_x_scroll().track_scroll(this.boardScroll)
         .children((b.lanes[0]?.cols ?? []).map((col, c) => this.column(t, col, c === this.at.c ? cur : null, now, cx)));
-    const main = h_flex().flex_1().min_h(0).gap(4).items_start()
-      .when(o.slice !== "none", (el) => el.child(this.slicePanel(t, o.slice, values, kept.length)))
-      .child(area);
+    // The drawer on the right: its box opens to DRAWER_W (plus the gap) and folds back to 0 on its width,
+    // the board narrowing and widening beside it; its content stays drawn while it folds (closeDrawer's
+    // one timer). Reduced motion: at once.
+    const dr = this.drawerLast ? this.byId.get(this.drawerLast) : null;
+    const drawer = div().id("kk-drawer").flex_none().h_full().overflow_hidden().w(this.drawer && dr ? DRAWER_W + 4 : 0)
+      .when(!m.reduced, (el) => el.transition("width", { duration: MS.panel, easing: "ease-out" }))
+      .when(Boolean(dr), (el) => el.child(div().pl(4).h_full().child(this.drawerPanel(t, dr, now, cx))));
+    const main = h_flex().flex_1().min_h(0).items_start()
+      .when(o.slice !== "none", (el) => el.child(this.slicePanel(t, o.slice, values, kept.length).mr(4)))
+      .child(area)
+      .child(drawer);
     // No frame of its own: the work card around it paints the background. Each arrival fades it in.
     return enter(m, v_flex().size_full().gap(4).text_color(t.foreground).child(head).child(main), `kk-page-${this.arrivals}`, { dy: 0 })
       .track_focus(this.handle)

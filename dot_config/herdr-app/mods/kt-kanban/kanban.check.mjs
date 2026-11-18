@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
-  costOf, cleanLimits, stepLimit, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
+  costOf, cleanLimits, stepLimit, checkSteps, SNOOZES, wakeAt, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
 
@@ -242,4 +242,17 @@ assert.deepEqual(move(two, { l: 0, c: 0, i: 0 }, "right"), { l: 0, c: 2, i: 0 })
 const shut = board(show, { group: "project", pins: ["tfx-3"], folded: new Set(["p-beta"]) });
 assert.deepEqual(locate(shut, "tfx-6", { l: 1, c: 0, i: 0 }), { l: 0, c: 0, i: 0 }); // folded: out of reach
 assert.deepEqual(move(shut, { l: 0, c: 0, i: 0 }, "down"), { l: 0, c: 0, i: 0 });
+// The drawer: a PR's checks as steps, what failed first, then running, passed, skipped (gh's order inside).
+assert.deepEqual(checkSteps([{ name: "lint", bucket: "pass" }, { name: "e2e", bucket: "skipping" }, { name: "test", bucket: "fail" },
+  { name: "build", bucket: "pending" }, { name: "deploy", bucket: "cancel" }, { name: "odd", bucket: "weird" }]).map((s) => [s.label, s.state]),
+[["test", "failed"], ["deploy", "failed"], ["build", "current"], ["lint", "done"], ["e2e", "skipped"], ["odd", "todo"]]);
+assert.deepEqual(checkSteps(null), []);
+// Snooze, the sidebar's times: an hour; 19:00 tonight (tomorrow's once past); 9:00 tomorrow.
+const noon = new Date(2026, 10, 18, 12, 0).getTime(), late = new Date(2026, 10, 18, 21, 0).getTime();
+assert.equal(wakeAt("hour", noon), noon + 3600e3);
+assert.equal(wakeAt("tonight", noon), new Date(2026, 10, 18, 19, 0).getTime());
+assert.equal(wakeAt("tonight", late), new Date(2026, 10, 19, 19, 0).getTime());
+assert.equal(wakeAt("tomorrow", noon), new Date(2026, 10, 19, 9, 0).getTime());
+assert.equal(wakeAt("tomorrow", late), new Date(2026, 10, 19, 9, 0).getTime());
+assert.deepEqual(SNOOZES, ["hour", "tonight", "tomorrow"]);
 console.log("kanban: ok");
