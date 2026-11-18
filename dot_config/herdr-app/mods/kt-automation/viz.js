@@ -37,6 +37,7 @@
 //           V.donut([{ label: "Diff", value: 14 }, …], { label: "Heures", size: 184 })
 //           V.progress("Quota 5 h", 62, { detail: "reset dans 1 h 40", width: 320 })
 //           V.steps([{ label: "Issue", state: "done" }, { label: "Review", state: "current" }, …], { id: "kf-steps" })
+//           V.steps([{ label: "Issue", state: "done", group: "Préparation" }, …], { id: "kf-steps" })   // a tier per group
 //           V.chart("bar" | "line" | "area", [{ label, values: [..], color }], { labels, width, height })
 //           V.heatmap(values /* rows of numbers */, { rows: ["Lun", …], columns: ["nov", …], width })
 //           V.stat("Coût du mois", "$412", { detail: "+12.4% vs oct.", trend: [..], better: "lower" })
@@ -411,14 +412,53 @@ export function stepsGeometry(states, width, cell = CELL, gap = 2) {
   const cuts = states.map((_, i) => [Math.round((i * (cols + gap)) / n), Math.max(Math.round(((i + 1) * (cols + gap)) / n) - gap, Math.round((i * (cols + gap)) / n))]);
   const of = new Int16Array(cols).fill(-1);
   cuts.forEach(([a, b], i) => { for (let c = a; c < b && c < cols; c++) of[c] = i; });
-  const ink = (col, row) => {
-    const s = states[of[col]];
-    if (s === "done" || s === "failed") return s;
-    if (s === "current") return inked(col, row, 0.5) ? s : null;
-    if (s === "skipped") return (col + row) % 3 === 0 ? s : null;
-    return null;
-  };
+  const ink = (col, row) => stepInk(states[of[col]], col, row);
   return { rects: [...cuts.map(([a, b]) => [a * cell, 0, (b - a) * cell, 3 * cell, "track"]), ...runs(cols, 3, ink, cell)], segs: cuts.map(([a, b]) => [a * cell, (b - a) * cell]), cell };
+}
+
+// A step's cell, by its state: done and failed solid, current half dithered, skipped a light hatch, todo none.
+function stepInk(s, col, row) {
+  if (s === "done" || s === "failed") return s;
+  if (s === "current") return inked(col, row, 0.5) ? s : null;
+  if (s === "skipped") return (col + row) % 3 === 0 ? s : null;
+  return null;
+}
+
+/** The steps in tiers, one per group (`sizes`: each group's count of steps), 5 cells high: a tier is a
+ * faint band (key "tier", or "hot" for the group `hot`) holding its steps' cells 1 cell in from its
+ * edges and 1 cell apart, tiers 2 cells apart. Every step gets the same width, so a tier is as wide as
+ * its steps and the ink reads as n / total. Each step's track and ink as in stepsGeometry, on rows 1-3.
+ * `segs`: each step's [x, w] in px; `tiers`: each group's. */
+// ponytail: narrower than (gaps + one column per step) cells, the last tiers run past `width` (a
+// 14-step flow in 4 tiers: under ~120 px at 3 px a cell); a fallback if a panel ever gets that narrow.
+export function stepGroupsGeometry(states, sizes, width, cell = CELL, hot = -1) {
+  const PAD = 1, INNER = 1, TIER = 2;
+  const cols = Math.floor(width / cell);
+  const gaps = (sizes.length - 1) * TIER + sizes.reduce((s, n) => s + 2 * PAD + (n - 1) * INNER, 0);
+  const each = Math.max(1, (cols - gaps) / Math.max(states.length, 1));
+  const tiers = [], cuts = [];
+  let x = 0;
+  for (const n of sizes) {
+    const a = Math.round(x);
+    x += PAD;
+    for (let k = 0; k < n; k++) {
+      cuts.push([Math.round(x), Math.round(x + each)]);
+      x += each + (k < n - 1 ? INNER : 0);
+    }
+    x += PAD;
+    tiers.push([a, Math.round(x)]);
+    x += TIER;
+  }
+  const of = new Int16Array(cols).fill(-1);
+  cuts.forEach(([a, b], i) => { for (let c = a; c < b && c < cols; c++) of[c] = i; });
+  const ink = (col, row) => (row === 0 || row === 4 ? null : stepInk(states[of[col]], col, row));
+  return {
+    rects: [...tiers.map(([a, b], g) => [a * cell, 0, (b - a) * cell, 5 * cell, g === hot ? "hot" : "tier"]),
+      ...cuts.map(([a, b]) => [a * cell, cell, (b - a) * cell, 3 * cell, "track"]), ...runs(cols, 5, ink, cell)],
+    segs: cuts.map(([a, b]) => [a * cell, (b - a) * cell]),
+    tiers: tiers.map(([a, b]) => [a * cell, (b - a) * cell]),
+    cell,
+  };
 }
 
 // Bars and areas fade from their top edge toward the axis.
@@ -717,6 +757,10 @@ export function viz(t, m = null, { roll } = {}) {
   // hatched, todo the track. Each step's label under its segment, mono and truncated, and its tooltip
   // on the segment; segments narrower than STEP_MIN px: only the step in front and « n / total ».
   // Drawn in from the left once (reveal), as progress.
+  // With a `group` on its steps (kt-flow's phases), a run of one group is a tier (stepGroupsGeometry): a
+  // faint band, the front step's tinted, its steps' cells inside, as wide as its steps. Under it, one
+  // line at any width: the front step's group and name, and « n / total ». Tooltips: a cell its step, the
+  // strip under a tier its group and each step's state.
   const STEP_STATES = ["done", "current", "todo", "failed", "skipped"];
   const STEP_MIN = 44;
   // `words`: the tooltips' state names, by state, to say them otherwise (by default viz.strings.js'
@@ -752,7 +796,41 @@ export function viz(t, m = null, { roll } = {}) {
         .children(g.segs.map(([x, sw], i) => div().id(`${id}-s${i}`).absolute().top(0).left(x).w(sw).h(hpx + 4 + LH)
           .tooltip(`${list[i].label ?? ""} · ${word(states[i])}`)));
     };
-    return fluid(id, width, 3 * cell + 4 + LH, draw);
+    // Runs of one group, in order: [first step, count, group].
+    const groups = list.some((s) => s.group != null)
+      ? list.reduce((out, s, i) => (out.at(-1)?.[2] === s.group ? out.at(-1)[1]++ : out.push([i, 1, s.group]), out), [])
+      : null;
+    if (!groups) return fluid(id, width, 3 * cell + 4 + LH, draw);
+    const at = groups.findIndex(([i, n]) => front < i + n);
+    // The front step's tier is tinted while it runs or failed.
+    const hot = states[front] === "current" || states[front] === "failed" ? at : -1;
+    fill.tier = faint(done, 0.06);
+    fill.hot = faint(fill[states[front]] ?? done, 0.12);
+    const total = `${passed} / ${states.length}`;
+    const tier = (w) => {
+      const sizes = groups.map(([, n]) => n);
+      const g = memo(`sg|${states}|${sizes}|${hot}|${w}|${cell}`, () => capped((c) => stepGroupsGeometry(states, sizes, w, c, hot), cell, w * 5 * cell));
+      const hpx = 5 * g.cell;
+      const bar = div().relative().w(w).h(hpx).children([...g.paths].map(([k, p]) => (k === "current" && m
+        ? pulse(m, div().absolute().inset_0().child(paint(p, fill[k])), true) : paint(p, fill[k]))));
+      const name = groups[at][2];
+      const line = div().flex().w(w).h(LH).gap(5)
+        .when(name != null, (el) => el.child(text("done").flex_none().child(String(name))).child(text("todo").flex_none().child("·")))
+        .child(text(states[front]).flex_1().min_w(0).child(String(list[front].label ?? "")))
+        .child(text("todo").flex_none().child(R ? R(`${id}-n`, total, LH) : total));
+      const said = (i) => tr("steps.item", { label: list[i].label ?? "", state: word(states[i]) });
+      return div().relative().w(w).flex().flex_col().gap(4)
+        .child(reveal(m, id, w, hpx, bar))
+        .child(line)
+        .children(groups.map(([i, n, gname], k) => div().id(`${id}-g${k}`).absolute().top(hpx).left(g.tiers[k][0]).w(g.tiers[k][1]).h(4 + LH)
+          .tooltip(tr("steps.group", {
+            name: gname ?? "", n: states.slice(i, i + n).filter((s) => s === "done" || s === "skipped").length, total: n,
+            steps: Array.from({ length: n }, (_, j) => said(i + j)).join(" · "),
+          }))))
+        .children(g.segs.map(([x, sw], i) => div().id(`${id}-s${i}`).absolute().top(0).left(x).w(sw).h(hpx)
+          .tooltip(`${list[i].label ?? ""} · ${word(states[i])}`)));
+    };
+    return fluid(id, width, 5 * cell + 4 + LH, tier);
   }
 
   function chart(kind, series, { labels = [], height = 220, width, cell = CELL, id = `viz-c-${kind}` } = {}) {

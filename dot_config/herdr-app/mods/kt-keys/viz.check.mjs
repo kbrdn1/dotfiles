@@ -205,6 +205,8 @@ const cases = {
   heatmap: () => viz.heatmap(weeks, { rows: ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"], columns: Array.from({ length: 26 }, (_, i) => ["juin", "juil", "août", "sept", "oct", "nov"][Math.floor(i / 4.4)]), width: 421 }),
   stat: () => viz.stat("Coût du mois", "$412", { detail: "+12.4% vs octobre", trend: [310, 290, 340, 360, 330, 390, 412], better: "lower", width: 220 }),
   steps: () => viz.steps(["Issue", "Worktree", "Implémentation", "PR", "Review", "CI", "Merge"].map((label, i) => ({ label, state: ["done", "done", "skipped", "done", "current", "todo", "todo"][i] })), { width: 420 }),
+  "steps tier": () => viz.steps(Array.from({ length: 14 }, (_, i) => ({ label: `S${i}`, group: `P${[0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3][i]}`,
+    state: i < 9 ? "done" : i === 9 ? "current" : "todo" })), { width: 420, id: "steps-tier" }),
 };
 const report = [];
 let total = 0;
@@ -322,5 +324,71 @@ assert.equal(calls[0][4], 2, "a stat's snap reaches roll");
 calls.length = 0;
 draws.gauge(V.viz(t, null, { roll: fakeRoll }));
 assert.equal(calls[0][3], false, "no motion state: rolls, not reduced");
+
+// steps without groups: the geometry the flat bar had before groups came (frozen), and a `group` left
+// undefined on every step draws the flat bar.
+assert.deepEqual(V.stepsGeometry(["done", "current", "skipped", "todo"], 66).rects, [[0, 0, 12, 9, "track"], [18, 0, 12, 9, "track"], [36, 0, 12, 9, "track"], [54, 0, 12, 9, "track"],
+  [0, 0, 12, 9, "done"], [18, 0, 3, 3, "current"], [24, 0, 3, 3, "current"], [36, 0, 3, 3, "skipped"], [45, 0, 3, 3, "skipped"], [21, 3, 3, 3, "current"], [27, 3, 3, 3, "current"],
+  [42, 3, 3, 3, "skipped"], [18, 6, 3, 3, "current"], [24, 6, 3, 3, "current"], [39, 6, 3, 3, "skipped"]]);
+assert.equal(tree(V.viz(t, null).steps(flow.map((s) => ({ ...s, group: undefined })), { width: 400 })), tree(V.viz(t, null).steps(flow, { width: 400 })), "no group: the flat bar");
+
+// steps with groups (kt-flow's phases, t2z's flow): a tier per run of one group, 5 cells high; its band 1
+// cell around its steps and between them, tiers 2 cells apart, one width for every step (to a cell) so a
+// tier is as wide as its steps; the bands, then the tracks, painted first; the front step's band "hot";
+// the ink on rows 1 to 3, inside the cells, done solid; at the panel's width and narrow.
+const GS = ["done", "done", "done", "done", "done", "done", "todo", "done", "done", "current", "done", "todo", "todo", "todo"];
+const SZ = [4, 3, 4, 3];
+for (const w of [420, 160]) {
+  const gg = V.stepGroupsGeometry(GS, SZ, w, V.CELL, 2);
+  assert.deepEqual([gg.tiers.length, gg.segs.length], [4, 14]);
+  const keys = gg.rects.map((r) => r[4]);
+  assert.deepEqual(keys.slice(0, 4), ["tier", "tier", "hot", "tier"], "the bands first, the front one hot");
+  assert.deepEqual(keys.slice(4, 18), Array(14).fill("track"), "then the tracks");
+  let first = 0;
+  SZ.forEach((n, k) => {
+    const [tx, tw] = gg.tiers[k];
+    const mine = gg.segs.slice(first, first + n);
+    assert.equal(mine[0][0] - tx, V.CELL, `w ${w}, tier ${k}: its first step a cell in`);
+    assert.equal(tx + tw - (mine.at(-1)[0] + mine.at(-1)[1]), V.CELL, `w ${w}, tier ${k}: a cell after its last`);
+    for (let j = 1; j < n; j++) assert.equal(mine[j][0] - (mine[j - 1][0] + mine[j - 1][1]), V.CELL, `w ${w}, tier ${k}: a cell between steps`);
+    if (k) assert.equal(tx - (gg.tiers[k - 1][0] + gg.tiers[k - 1][1]), 2 * V.CELL, `w ${w}: two cells between tiers`);
+    first += n;
+  });
+  const ws = gg.segs.map((x) => x[1]);
+  assert.ok(Math.max(...ws) - Math.min(...ws) <= V.CELL, `w ${w}: one width per step, to a cell`);
+  const end = gg.tiers.at(-1)[0] + gg.tiers.at(-1)[1];
+  assert.ok(end <= w && w - end < V.CELL, `w ${w}: the tiers fill the width (${end})`);
+  for (const [x, y, rw, rh] of gg.rects.slice(18)) {
+    assert.ok(y >= V.CELL && y + rh <= 4 * V.CELL, `w ${w}: ink on rows 1 to 3`);
+    assert.ok(gg.segs.some(([sx, sw]) => x >= sx && x + rw <= sx + sw), `w ${w}: ink inside a cell`);
+  }
+  const doneArea = gg.rects.filter((r) => r[4] === "done").reduce((s, r) => s + r[2] * r[3], 0);
+  assert.equal(doneArea, gg.segs.filter((_, i) => GS[i] === "done").reduce((s, [, sw]) => s + sw * 3 * V.CELL, 0), `w ${w}: done solid`);
+}
+const phased = [["Préparation", ["Issue", "Branche", "Worktree", "Pin"]], ["Implémentation", ["Implémentation", "Commits", "Docs"]],
+  ["Livraison", ["Push", "PR", "Review", "CI"]], ["Clôture", ["Merge", "Issue fermée", "Note"]]]
+  .flatMap(([group, labels]) => labels.map((label) => ({ label, group }))).map((s, i) => ({ ...s, state: GS[i] }));
+const tipsOf = (x) => { const out = []; (function walk(n) { if (n?.props?.tooltip) out.push(n.props.tooltip[0]); n?.kids?.forEach(walk); })(x); return out; };
+const gm = motionState();
+const gw = V.viz(t, frame(gm, false)).steps(phased, { width: 420, id: "gp" });
+assert.deepEqual(texts(gw), ["Livraison", "·", "Review", "9 / 14"], "under the tiers: the front step's group and name, n / total");
+assert.deepEqual(texts(V.viz(t, frame(gm, false)).steps(phased, { width: 160, id: "gp" })), ["Livraison", "·", "Review", "9 / 14"], "the same line narrow");
+const gtips = tipsOf(gw);
+assert.equal(gtips.length, 4 + 14, "a tooltip per tier and per step");
+assert.equal(gtips[0], "Préparation · 4 / 4 — Issue : fait · Branche : fait · Worktree : fait · Pin : fait");
+assert.equal(gtips[2], "Livraison · 3 / 4 — Push : fait · PR : fait · Review : en cours · CI : fait");
+assert.equal(gtips[4 + 9], "Review · en cours");
+assert.ok(find(gw, (n) => n.kind === "paint" && n.bg === V.faint(t.accent, 0.12)), "the front tier tinted in the running color");
+assert.ok(find(gw, (n) => n.props?.loop), "the running step breathes");
+assert.ok(find(gw, (n) => n.tr?.includes("width")), "drawn in from the left");
+const gred = V.viz(t, frame(motionState(), true)).steps(phased, { width: 420, id: "gp" });
+assert.equal(find(gred, (n) => n.props?.loop || n.tr?.length), null, "reduced: still, drawn at once");
+assert.ok(!find(V.viz(t, null).steps(phased.map((s) => ({ ...s, state: s.state === "current" ? "done" : s.state })), { width: 420 }),
+  (n) => n.kind === "paint" && n.bg === V.faint(t.accent, 0.12)), "nothing running: no tier tinted");
+assert.deepEqual(texts(V.viz(t, null).steps([{ label: "A", state: "done", group: "P" }, { label: "B", state: "current" }], { width: 300 })), ["B", "1 / 2"],
+  "a step without a group: its own tier, no name");
+calls.length = 0;
+V.viz(t, frame(motionState(), false), { roll: fakeRoll }).steps(phased, { width: 420, id: "gr" });
+assert.deepEqual(calls, [["gr-n", "9 / 14", 14, false, 0]], "grouped: « n / total » rolls at any width");
 
 console.log("viz.js: ok");

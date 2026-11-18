@@ -8,6 +8,8 @@ export default {
     "step.todo": "à faire",
     "step.failed": "échec",
     "step.skipped": "sauté",
+    "steps.group": "{name} · {n} / {total} — {steps}",
+    "steps.item": "{label} : {state}",
   },
   en: {
     empty: "no data",
@@ -16,5 +18,7 @@ export default {
     "step.todo": "to do",
     "step.failed": "failed",
     "step.skipped": "skipped",
+    "steps.group": "{name} · {n} / {total} — {steps}",
+    "steps.item": "{label}: {state}",
   },
 };

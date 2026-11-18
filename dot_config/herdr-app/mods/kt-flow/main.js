@@ -455,10 +455,10 @@ export default class Flow extends View {
           () => exec("open", [this.page]).catch(() => {}), I("file-text"), tr("reportTip"))))
         .children((this.plans ?? []).map((p, i) => this.pill(t, `kf-plan-${i}`, p.title, t.ansi5,
           () => exec("open", [p.path]).catch(() => {}), I("layers"), `Plan /me:report --plan · ${p.slug}`))))) // i18n: tech
-      // The progress by steps (viz.js steps), a segment per step in the list's order and names, as wide as
-      // the card (viz measures it); too narrow for every name, the running one and n / total.
+      // The progress by steps (viz.js steps), a tier per phase holding a cell per step, in the phase cards'
+      // order and names, as wide as the card (viz measures it); under it the running phase and step, n / total.
       // The list's own state colours (colors()): done green, running accent, failed red.
-      .child(((c) => viz(t, this.motion, { roll }).steps(steps.map((s) => ({ label: nameOf(s.id), state: s.state })),
+      .child(((c) => viz(t, this.motion, { roll }).steps(phasesOf(steps).flatMap((p) => p.steps.map((s) => ({ label: nameOf(s.id), state: s.state, group: p.label }))),
         { id: "kf-progress", colors: { done: c.ok, current: c.accent, failed: c.err } }))(this.colors(t)));
   }
 

@@ -42,9 +42,17 @@ export function bandRow(t, { color, icon, mark, dot, title, sub, buttons = [], m
   const runs = parts.reduce((g, p) => (typeof p === "string" && typeof g.at(-1) === "string" ? g.splice(-1, 1, `${g.at(-1)} · ${p}`) : g.push(p), g), []);
   const subLine = runs.every((p) => typeof p === "string")
     ? div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(runs.join(" · "))
+    // Every part but the last keeps its width (flex_none): only the last one shrinks and truncates, a
+    // text or an element (a rollText truncates its own last piece), so a count before it never gives way.
     : h_flex().min_w(0).h(14).overflow_hidden().line_height("14px").font_family(MONO).text_size(10.5).text_color(t.muted)
-      .children(runs.flatMap((p, i) => (typeof p === "string" ? [div().min_w(0).truncate().child(`${i ? " · " : ""}${p}`)]
-        : [...(i ? [div().flex_none().whitespace_nowrap().child(" · ")] : []), p.flex_none()])));
+      .children(runs.flatMap((p, i) => {
+        const end = i === runs.length - 1;
+        if (typeof p === "string") {
+          const text = div().child(`${i ? " · " : ""}${p}`);
+          return [end ? text.min_w(0).truncate() : text.flex_none().whitespace_nowrap()];
+        }
+        return [...(i ? [div().flex_none().whitespace_nowrap().child(" · ")] : []), end ? p.min_w(0) : p.flex_none()];
+      }));
   return h_flex().flex_none().h(60).px(10).gap(10).items_center()
     .child(div().relative().flex_none().child(tile)
       .when(Boolean(dot), (el) => el.child(div().absolute().right(-2).bottom(-2).size(10).rounded_full().border(2).border_color(t.background).bg(dot))))
