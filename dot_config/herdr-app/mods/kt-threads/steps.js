@@ -18,7 +18,7 @@ export const speak = (makeT) => { tr = makeT(words); };
 const RAW = {
   issue: "issue", branch: "branch", worktree: "worktree", pin: "pin", spec: "spec", plan: "plan", tasks: "tasks",
   implement: "implement", commits: "commits", docs: "docs", push: "push", pr: "pr", review: "review", ci: "ci",
-  merge: "merge", "issue-closed": "issue closed", note: "note", // i18n: tech
+  merge: "merge", "issue-closed": "issue closed", note: "note", report: "report", // i18n: tech
 };
 
 /** A step's shown name (its id when it's not one of claude-flow's). */
@@ -30,7 +30,8 @@ export const PHASES = [
   phase("prep", ["issue", "branch", "worktree", "pin"]),
   phase("spec", ["spec", "plan", "tasks"]),
   phase("impl", ["implement", "commits", "docs"]),
-  phase("ship", ["push", "pr", "review", "ci"]),
+  // report: /me:report, which me:goal runs between pr and review (the live page of the PR under review).
+  phase("ship", ["push", "pr", "report", "review", "ci"]),
   phase("close", ["merge", "issue-closed", "note"]),
 ];
 

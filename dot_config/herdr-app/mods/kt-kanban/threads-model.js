@@ -58,9 +58,11 @@
 //   pr          { number, state: "OPEN" | "MERGED" | "CLOSED", url } | null: /me:report's, else gh's.
 //               None on a long-lived branch (pr-pick.js). prFrom: "report" | "gh" | null.
 //   report      summarizeReport() of its branch: { review, ci, pr, at } | null.
-//   flow        claude-flow's timeline of its agent: { workflow, step, phase, done, total } | null.
+//   flow        claude-flow's timeline of its agent: { workflow, step, phase, at, done, total } | null.
 //               step: the current one ({ id, label, state }), null when none is current (all done, or
-//               not started); phase: the step's PHASES id, null for a step out of the table.
+//               not started); phase: the step's PHASES id, null for a step out of the table; at: where
+//               the flow stands, the PHASES id of its current step, else of the last one reached (done
+//               or failed), "other" for a step out of the table, null when none is reached yet.
 //   sl          its agent's statusline facts (Claude only): model, effort, ctx_pct, cost_usd, window...
 //               cost, ctx, model, effort: sl's cost_usd, ctx_pct, model, effort; all null without one.
 //   subagents   { shown, done, total }: shown, the alive ones then those that ended under GONE ago
@@ -163,21 +165,29 @@ export function reportOf(lead, space, repos, reports) {
   return repo && lead?.branch ? reports[`${repo}|${lead.branch}`] ?? null : null;
 }
 
-// claude-flow's steps by phase: kt-flow's steps.js PHASES, as ids (keep them in step).
+// claude-flow's steps by phase: kt-flow's steps.js PHASES, as ids (keep them in step: kt-kanban's
+// check compares them both ways). `report` (/me:report) is a delivery step: me:goal runs it between pr
+// and review, the live page of the PR under review.
 export const PHASES = {
   issue: "prep", branch: "prep", worktree: "prep", pin: "prep",
   spec: "spec", plan: "spec", tasks: "spec",
   implement: "impl", commits: "impl", docs: "impl",
-  push: "ship", pr: "ship", review: "ship", ci: "ship",
+  push: "ship", pr: "ship", report: "ship", review: "ship", ci: "ship",
   merge: "close", "issue-closed": "close", note: "close", // i18n: tech
 };
 
-/** claude-flow's timeline (`<terminal>.flow.json`): its current step and phase, and how far it is. */
+/** claude-flow's timeline (`<terminal>.flow.json`): its current step and phase, where it stands, and
+ *  how far it is. A step can be skipped (docs pending, push done): where it stands is the furthest. */
 export function flowOf(flow) {
   const steps = Array.isArray(flow?.steps) ? flow.steps : null;
   if (!steps) return null;
   const step = steps.find((s) => s?.state === "current") ?? null;
-  return { workflow: flow.workflow ?? null, step, phase: step && Object.hasOwn(PHASES, step.id) ? PHASES[step.id] : null, done: steps.filter((s) => s?.state === "done").length, total: steps.length };
+  const reached = step ?? [...steps].reverse().find((s) => s?.state === "done" || s?.state === "failed") ?? null;
+  return {
+    workflow: flow.workflow ?? null, step, phase: step && Object.hasOwn(PHASES, step.id) ? PHASES[step.id] : null,
+    at: reached ? (Object.hasOwn(PHASES, reached.id) ? PHASES[reached.id] : "other") : null,
+    done: steps.filter((s) => s?.state === "done").length, total: steps.length,
+  };
 }
 
 /** The issue of a `<type>/#N-slug` branch (kt-flow's issueOf), else null. */

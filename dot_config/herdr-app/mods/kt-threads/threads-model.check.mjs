@@ -145,13 +145,24 @@ assert.deepEqual(M.prOf({ cwd: "/fx/acme", branch: "main" }, spaces[1], { ...wor
 assert.deepEqual([wt.cost, wt.ctx, wt.model, wt.effort], [3.21, 42, "Opus", "high"]);
 assert.deepEqual([beta.cost, beta.ctx], [null, null]);
 
-// Flow phases: the current step's; a step out of the table, none; nothing current, none.
-assert.deepEqual([wt.flow.step.id, wt.flow.phase, wt.flow.done, wt.flow.total, wt.flow.workflow], ["implement", "impl", 1, 3, "me:issue-worktree-pr"]);
-assert.deepEqual([beta.flow.step.id, beta.flow.phase], ["report", null]);
+// Flow phases: the current step's; a step out of the table, none; nothing current, none. report
+// (/me:report, between pr and review) is a delivery step.
+assert.deepEqual([wt.flow.step.id, wt.flow.phase, wt.flow.at, wt.flow.done, wt.flow.total, wt.flow.workflow], ["implement", "impl", "impl", 1, 3, "me:issue-worktree-pr"]);
+assert.deepEqual([beta.flow.step.id, beta.flow.phase, beta.flow.at], ["report", "ship", "ship"]);
 assert.equal(M.flowOf({ steps: [{ id: "merge", state: "done" }, { id: "note", state: "done" }] }).step, null);
 assert.equal(M.flowOf({ steps: [{ id: "merge", state: "done" }] }).phase, null);
-assert.deepEqual(M.flowOf({ steps: [{ id: "issue", state: "pending" }] }), { workflow: null, step: null, phase: null, done: 0, total: 1 });
+assert.deepEqual(M.flowOf({ steps: [{ id: "issue", state: "pending" }] }), { workflow: null, step: null, phase: null, at: null, done: 0, total: 1 });
 assert.equal(M.flowOf({ steps: [{ id: "constructor", state: "current" }] }).phase, null);
+// Where it stands: the current step, else the furthest reached (a skipped step doesn't hold it back,
+// a failed one counts), "other" out of the table, null before anything.
+const at = (states, ids = ["issue", "implement", "docs", "push", "ci", "merge", "note"]) => M.flowOf({ steps: ids.map((id, i) => ({ id, state: states[i] ?? "pending" })) }).at;
+assert.equal(at(["done", "done", "pending", "done", "done"]), "ship"); // waiting on merge, docs skipped
+assert.equal(at(["done", "done", "done", "done", "failed"]), "ship"); // CI failed
+assert.equal(at(["done", "current", "pending", "done"]), "impl"); // the current one wins
+assert.equal(at(["done", "done", "done", "done", "done", "done", "done"]), "close");
+assert.equal(at([]), null);
+assert.equal(at(["done", "done"], ["issue", "constructor"]), "other");
+assert.equal(M.flowOf({ steps: [] }).at, null);
 assert.equal(M.flowOf({ steps: "torn" }), null);
 assert.equal(M.flowOf(null), null);
 for (const [id, phase] of [["pin", "prep"], ["tasks", "spec"], ["docs", "impl"], ["ci", "ship"], ["issue-closed", "close"]])

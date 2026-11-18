@@ -75,6 +75,8 @@ const TABLE = {
     ["ctrl-b i / shift-s / shift-a / a / m / u / shift-o / shift-i", "pg.pages"],
     ["h / l", "pg.kanbanCol", "Kanban"],
     ["enter / o", "pg.kanbanGo", "Kanban"],
+    ["c / b / s / t", "pg.kanbanOpts", "Kanban"],
+    ["[ / ]", "pg.kanbanSlice", "Kanban"],
     ["e / u / dd / +", "pg.plugins", "Plugins"],
     ["h / L / [ / ]", "pg.market", "Plugins"],
     ["[ / ]", "pg.relation", "Inbox"],

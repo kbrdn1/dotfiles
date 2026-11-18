@@ -1,1 +1,14 @@
-{ "place": "none", "title": "Kanban", "focusable": true }
+{ "place": "none", "title": "Kanban", "focusable": true,
+  "options": [
+    { "key": "column", "label": { "fr": "Colonnes", "en": "Columns" }, "type": "enum", "values": ["status", "phase"],
+      "labels": [{ "fr": "Statut de l'agent", "en": "Agent status" }, { "fr": "Phase du flow", "en": "Flow phase" }], "default": "status",
+      "description": { "fr": "Le champ des colonnes du board (c dans la page).", "en": "The board's column field (c on the page)." } },
+    { "key": "group", "label": { "fr": "Grouper par", "en": "Group by" }, "type": "enum", "values": ["none", "project"],
+      "labels": [{ "fr": "Aucun", "en": "None" }, { "fr": "Projet", "en": "Project" }], "default": "none",
+      "description": { "fr": "Des lignes repliables par projet, chacune avec ses colonnes (b dans la page).", "en": "Foldable lanes by project, each with its columns (b on the page)." } },
+    { "key": "slice", "label": { "fr": "Découper par", "en": "Slice by" }, "type": "enum", "values": ["none", "project", "program"],
+      "labels": [{ "fr": "Aucun", "en": "None" }, { "fr": "Projet", "en": "Project" }, { "fr": "Agent", "en": "Agent" }], "default": "none",
+      "description": { "fr": "Le panneau à gauche du board : un clic sur une valeur filtre le board (s dans la page).", "en": "The panel left of the board: a click on a value filters the board (s on the page)." } },
+    { "key": "sort", "label": { "fr": "Tri", "en": "Sort" }, "type": "enum", "values": ["activity", "age", "cost", "name"],
+      "labels": [{ "fr": "Activité", "en": "Activity" }, { "fr": "Âge", "en": "Age" }, { "fr": "Coût", "en": "Cost" }, { "fr": "Nom", "en": "Name" }], "default": "activity",
+      "description": { "fr": "L'ordre des cartes dans une colonne (t dans la page).", "en": "The cards' order in a column (t on the page)." } } ] }

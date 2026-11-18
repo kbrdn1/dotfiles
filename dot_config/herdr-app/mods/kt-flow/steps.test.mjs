@@ -1,6 +1,6 @@
 // node mods/kt-flow/steps.test.mjs: steps.js on labels from real claude-flow flows.
 import assert from "node:assert/strict";
-import { workflowName, issueOf, flowBranch, phasesOf, details, runningLine, findPlans, passOf, decisionOf, locOf, checkState, tally, checkOrder, duration, runIdOf, logTail, ciLine } from "./steps.js";
+import { workflowName, issueOf, flowBranch, phasesOf, nameOf, details, runningLine, findPlans, passOf, decisionOf, locOf, checkState, tally, checkOrder, duration, runIdOf, logTail, ciLine } from "./steps.js";
 
 assert.equal(workflowName("me:issue-worktree-pr"), "Issue → Worktree → PR");
 assert.equal(workflowName("me:spec-issue-worktree-pr"), "Spec · Issue → Worktree → PR");
@@ -62,6 +62,11 @@ const steps = [
 const ph = phasesOf(steps);
 assert.deepEqual(ph.map((p) => [p.id, p.done, p.total, p.current]), [["prep", 4, 4, false], ["impl", 1, 1, false], ["ship", 0, 2, true], ["close", 0, 1, false]]);
 assert.equal(runningLine(steps), "review 4/8 · ci 5/6");
+// report (/me:report, me:goal runs it between pr and review): a delivery step, with its name.
+const goal = phasesOf([{ id: "pr", state: "done" }, { id: "report", state: "current" }, { id: "review", state: "pending" }]);
+assert.deepEqual(goal.map((p) => [p.id, p.steps.map((s) => s.id)]), [["ship", ["pr", "report", "review"]]]);
+assert.equal(nameOf("report"), "Rapport");
+assert.deepEqual(details({ id: "report", label: "report", state: "current" }), []);
 // Review passes: an axis not run never counts as zero; decisions; locations.
 const ok = (p2) => ({ state: "ok", p0: 0, p1: 0, p2, p3: 1 });
 assert.deepEqual(passOf({ standards: ok(0), spec: ok(0) }).clean, true);
