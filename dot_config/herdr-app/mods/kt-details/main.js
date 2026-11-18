@@ -13,6 +13,9 @@ import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 // kt-keys' roll.js (a byte-identical copy): the commits ahead roll to their new count.
 import { roll } from "./roll.js";
+// kt-keys' motion.js (a byte-identical copy): the card fades in, the repo's block comes in, the message
+// field opens and closes on its height (ANIMATIONS.md).
+import { motionState, frame, enter, collapse } from "./motion.js";
 
 const tr = makeT(strings);
 
@@ -42,6 +45,7 @@ export default class Details extends View {
     this.busy = "";
     this.note = "";
     this.handle = cx.focus_handle();
+    this.motion = motionState();
     this.refresh(cx);
     cx.timer.every(4000, (cx) => this.refresh(cx));
   }
@@ -190,12 +194,32 @@ export default class Details extends View {
     // The machine the card's folder is on: the editor only opens folders on this computer.
     const on = g?.on ?? this.machine();
     const changed = Boolean(g?.root) && g.files > 0;
-    return v_flex()
-      .id("kt-details")
-      .w(280)
-      .p(6)
-      .gap(2)
-      .text_color(t.foreground)
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    // The commit message field: a builder, so it folds back too when the tree is clean again.
+    const message = g?.root ? collapse(m, "td-message-fold", changed, () => div()
+      .id("td-message")
+      .mx(4)
+      .mt(4)
+      .px(10)
+      .py(7)
+      .rounded(10)
+      .border(1)
+      .border_color(this.typing ? t.accent : t.border)
+      .bg(t.background)
+      .text_size(12)
+      .cursor_text()
+      .on_click((_e, cx) => {
+        this.typing = true;
+        this.handle.focus();
+        cx.notify();
+      })
+      .child(
+        this.message
+          ? div().text_color(t.foreground).child(this.message + (this.typing ? "▏" : ""))
+          : div().text_color(t.dim).child((this.typing ? "▏" : "") + tr("message")),
+      ), { cx }) : null;
+    // The card fades in where it floats (no rise: Herdr's frame around it would not move with it).
+    return enter(m, v_flex().w(280).p(6).gap(2).text_color(t.foreground), "kt-details", { dy: 0 })
       .track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (!this.typing) return;
@@ -210,8 +234,10 @@ export default class Details extends View {
       })
       .child(this.row(t, "td-where", "folder", tilde(g?.root ?? cwd), null, null))
       .when(!on && Boolean(g?.root ?? cwd), (el) => el.child(this.row(t, "td-open", "external-link", tr("openIn", { app: EDITOR_NAME }), null, (_e, cx) => this.openEditor(cx, g?.root ?? cwd))))
-      .when(Boolean(g?.root), (el) =>
-        el
+      // The repo's block comes in once read (again for another repo); inside, the message field opens and
+      // closes on its height (collapse with a builder), the one height level of the card.
+      .when(Boolean(g?.root), (el) => el.child(enter(m, v_flex()
+          .gap(2)
           .child(div().mx(4).my(4).h(1).bg(t.border))
           .child(
             this.row(
@@ -220,7 +246,7 @@ export default class Details extends View {
               "git-branch",
               g.branch ?? "",
               // Its id carries the repo: another repo's count shows at once, not rolling.
-              g.ahead > 0 ? roll({ reduced: Boolean(shared("kt.reducedMotion")) }, `td-ahead-${g.root}`, `↑${g.ahead}`, 15).font_family(MONO).text_size(11).text_color(t.dim) : null,
+              g.ahead > 0 ? roll(m, `td-ahead-${g.root}`, `↑${g.ahead}`, 15).font_family(MONO).text_size(11).text_color(t.dim) : null,
               null,
             ),
           )
@@ -246,32 +272,7 @@ export default class Details extends View {
                 : null,
             ),
           )
-          .when(changed, (el) =>
-            el.child(
-              div()
-                .id("td-message")
-                .mx(4)
-                .mt(4)
-                .px(10)
-                .py(7)
-                .rounded(10)
-                .border(1)
-                .border_color(this.typing ? t.accent : t.border)
-                .bg(t.background)
-                .text_size(12)
-                .cursor_text()
-                .on_click((_e, cx) => {
-                  this.typing = true;
-                  this.handle.focus();
-                  cx.notify();
-                })
-                .child(
-                  this.message
-                    ? div().text_color(t.foreground).child(this.message + (this.typing ? "▏" : ""))
-                    : div().text_color(t.dim).child((this.typing ? "▏" : "") + tr("message")),
-                ),
-            ),
-          )
+          .when(Boolean(message), (el) => el.child(message))
           .child(
             h_flex()
               .px(4)
@@ -281,8 +282,8 @@ export default class Details extends View {
               .child(this.small(t, "td-commit", "Commit", (_e, cx) => this.commit(cx), changed, true))
               .child(this.small(t, "td-push", "Push", (_e, cx) => this.act(cx, "Push", [["git", ["push", "-u", "origin", "HEAD"]]]), !changed && (g.ahead > 0 || !g.upstream)))
               .child(this.small(t, "td-pr", "Pull request", (_e, cx) => this.act(cx, "Pull request", [["gh", ["pr", "create", "--fill", "--web"]]]), !changed)), // i18n: tech
-          ),
+          ), `td-git-${g.root}`, { dy: 0 })),
       )
-      .when(Boolean(this.note), (el) => el.child(div().px(8).pt(4).text_size(11).text_color(t.ansi1).child(this.note)));
+      .when(Boolean(this.note), (el) => el.child(enter(m, div().px(8).pt(4).text_size(11).text_color(t.ansi1).child(this.note), `td-note-${this.note}`, { dy: 0 })));
   }
 }

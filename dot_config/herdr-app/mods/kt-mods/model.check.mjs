@@ -1,7 +1,7 @@
 // bun ~/.config/herdr-app/mods/kt-mods/model.check.mjs : kt-mods' pure side, on the real layout (read only).
 import { readFileSync } from "fs";
 import { homedir } from "os";
-import { SAFE, groupOf, shippedOf, headerOf, firstSentence, describe, layoutRefs, openersIn, keyRefs, rootChoices, setRootKey, deletePlan } from "./model.js";
+import { SAFE, SHARED, groupOf, shippedOf, headerOf, firstSentence, describe, layoutRefs, openersIn, keyRefs, rootChoices, setRootKey, deletePlan } from "./model.js";
 
 const eq = (got, want, what) => {
   if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(`${what}: ${JSON.stringify(got)} !== ${JSON.stringify(want)}`);
@@ -62,4 +62,11 @@ eq(setRootKey("{ nope", "toast", "y"), null, "broken JSON refused");
 eq(deletePlan("/m/zz", ["/m/zz/a.js", "/m/zz/d/b.svg"], ["/m/zz/d"]), { files: ["/m/zz/d/b.svg", "/m/zz/a.js"], dirs: ["/m/zz/d", "/m/zz"] }, "delete order");
 eq(deletePlan("/m/zz", ["/m/zz/../kt-keys/vim.js"], []), null, "escape refused");
 eq(deletePlan("/m/zz", ["/m/zzz/a.js"], []), null, "sibling refused");
+// SHARED watches every shared module, each with its reference mod, and that reference holds the file.
+const MODS = `${homedir()}/.config/herdr-app/mods`;
+for (const f of ["ring.js", "levels.js", "band.js", "select.js", "diffview.js", "diff.js", "reread.js", "icons.js", "companion-logo.js"]) {
+  eq(typeof SHARED[f], "string", `${f} watched`);
+  eq(readFileSync(`${MODS}/${SHARED[f]}/${f}`, "utf8").length > 0, true, `${f}: its reference ${SHARED[f]} holds it`);
+}
+
 console.log("model: ok");

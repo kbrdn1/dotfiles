@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec, shared } from "herdr";
 // Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
-import { motionState, frame, sheet, leave, leaving } from "./motion.js";
+import { motionState, frame, sheet, leave, leaving, rows } from "./motion.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -167,8 +167,10 @@ export default class Menu extends View {
         cx.stop_propagation(); // Herdr's own Esc would close the popup at once, cutting the exit short
         cx.notify();
       })
+      // The items open in order from the top as the menu comes in (motion.js rows(), keyed by rank: the
+      // list doesn't change while the menu is open; 12 items at most, else at once).
       .children(
-        list.map((it, i) =>
+        rows(m, cx, "km-items", list, (it) => String(list.indexOf(it)), (it, i) =>
           v_flex()
             .when(i > 0 && (it[1].endsWith(".close") || it[1] === "app.help" || (it[1] === "app.theme" && list[i - 1][1] !== "app.theme")), el => el.child(div().mx(7).my(4).h(1).bg(t.border)))
             .child(h_flex()

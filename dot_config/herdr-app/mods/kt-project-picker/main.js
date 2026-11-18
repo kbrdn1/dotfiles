@@ -17,7 +17,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, run, theme, shared, setShared, openOverlay, closeOverlay, props, home, checking, nextCommand, settings } from "herdr";
 import { Vim, keysOf, step } from "./vim.js";
-import { motionState, frame, sheet, leave, leaving } from "./motion.js";
+import { motionState, frame, sheet, leave, leaving, rows } from "./motion.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -304,18 +304,20 @@ export default class ProjectPicker extends View {
     // The list as shown, filtered line by line: { head } an eyebrow, else a line the cursor stops
     // on ({ draw(cursor), open, on, drag: its registry id when it drags }).
     const list = [];
-    for (const s of homes) if (hit(this.homeLabel(s), s.branch)) list.push({ on: s.active, open: (cx) => this.select(s, cx), draw: (c) => this.homeLine(t, s, c) });
+    // `key`: each entry's, stable, for rows() (motion.js): lines open and close on their height as the
+    // filter changes.
+    for (const s of homes) if (hit(this.homeLabel(s), s.branch)) list.push({ key: `home:${s.id}`, on: s.active, open: (cx) => this.select(s, cx), draw: (c) => this.homeLine(t, s, c) });
     groups.forEach((m, gi) => {
       const shown = trees[gi].flatMap(({ s, kids }) => [
         ...(hit(s.name, s.branch, s.machine) ? [{ s, kid: false, e: this.entryOf(s, reg) }] : []),
         ...kids.filter((k) => hit(k.name, k.branch, k.machine)).map((k) => ({ s: k, kid: true, e: null })),
       ]);
-      if (shown.length && groups.length > 1) list.push({ head: (m ?? tr("thisComputer")).toUpperCase(), n: shown.length });
-      for (const x of shown) list.push({ on: x.s.active, drag: x.kid ? null : x.e?.id, open: (cx) => this.select(x.s, cx), draw: (c) => this.projectLine(t, x.s, x.kid, x.e, c) });
+      if (shown.length && groups.length > 1) list.push({ key: `head:${m ?? ""}`, head: (m ?? tr("thisComputer")).toUpperCase(), n: shown.length });
+      for (const x of shown) list.push({ key: `space:${x.s.id}`, on: x.s.active, drag: x.kid ? null : x.e?.id, open: (cx) => this.select(x.s, cx), draw: (c) => this.projectLine(t, x.s, x.kid, x.e, c) });
     });
     const gone = closed.map((e, i) => ({ e, i })).filter(({ e }) => hit(e.name, e.machine));
-    if (gone.length) list.push({ head: tr("closedGroup"), n: gone.length });
-    for (const { e, i } of gone) list.push({ drag: e.id, open: (cx) => this.reopen(e, cx), draw: (c) => this.closedLine(t, e, i, c) });
+    if (gone.length) list.push({ key: "head:closed", head: tr("closedGroup"), n: gone.length });
+    for (const { e, i } of gone) list.push({ key: `closed:${e.id}`, drag: e.id, open: (cx) => this.reopen(e, cx), draw: (c) => this.closedLine(t, e, i, c) });
     // The draggable lines in the order shown, for the drop bar's side.
     this.pickOrder = list.map((x) => x.drag);
     // Under a dashed rule, always there whatever the filter: New project, Manage projects.
@@ -338,7 +340,7 @@ export default class ProjectPicker extends View {
     return { list, foot, lines, q };
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const keyed = (this.keyed = this.handle.is_focused());
     const typing = this.vim.insert;
@@ -359,13 +361,22 @@ export default class ProjectPicker extends View {
     // The popups' motion (motion.js sheet): the card fades in, once, on its first size report, and out
     // on dismiss; no rise (only veil(), on the card): the card fills the overlay's box, a rise would
     // be clipped. Reduced motion: at once.
-    const s = sheet(frame(this.motion, Boolean(shared("kt.reducedMotion"))), "pp", Boolean(this.size));
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    const s = sheet(m, "pp", Boolean(this.size));
+    // The cursor's line rank (lines only, eyebrows skipped) by the entry's place in the list.
+    const lineOf = new Map();
     let k = 0;
-    const items = list.map((x, slot) => {
+    list.forEach((x, slot) => { if (x.open) lineOf.set(slot, k++); });
+    // The lines open and close on their height, in order, as the filter changes (motion.js rows(): 12
+    // entries at most, else at once). rows() builds them in the order of its children, a closing line
+    // included: `child` is a line's index among them, for scroll_to_item.
+    let child = 0;
+    const items = rows(m, cx, "pp-items", list, (x) => x.key, (x, slot) => {
+      const at = child++;
       if (!x.open) return eyebrow(x.head, x.n);
-      const i = k++;
+      const i = slot < 0 ? -1 : lineOf.get(slot);
       // The cursor's line comes into view once after it moved.
-      if (this.reveal && i === this.cur) this.scroll.scroll_to_item(slot);
+      if (this.reveal && i === this.cur) this.scroll.scroll_to_item(at);
       return x.draw(keyed && i === this.cur);
     });
     this.reveal = false;

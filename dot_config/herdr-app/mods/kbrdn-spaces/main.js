@@ -6,7 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
-import { motionState, frame, fade } from "./motion.js";
+import { motionState, frame, fade, rows as motionRows } from "./motion.js";
 import { refreshOn } from "./bus.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
@@ -343,9 +343,21 @@ export default class Spaces extends View {
   }
 
   // The rows, under a header per machine once one isn't this computer.
-  grouped(t, collapsed) {
+  grouped(t, collapsed, m, cx) {
     const rows = this.ordered();
     const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
+    // A machine's spaces open and close on their height, in order (motion.js rows(), keyed by space): a
+    // new space comes in, a closed one or a folded machine's go out; 12 at most, else at once. rows()
+    // builds them in the order of its children (a closing one included): the active one's index among
+    // them is counted there. Without a render's cx: plain rows.
+    const listOf = (key, list) => {
+      let child = 0;
+      let active = -1;
+      const kids = m && cx
+        ? motionRows(m, cx, `sp-${key}`, list, (r) => r.w.id, (r, i) => { const at = child++; if (i >= 0 && r.w.active) active = at; return draw(r); })
+        : list.map((r, i) => { if (r.w.active) active = i; return draw(r); });
+      return { kids, active };
+    };
     // Where the active space's row lands among the children this returns: the list scrolls by its direct
     // children, and machine headers, login notes and loading rows count too.
     this.activeAt = -1;
@@ -359,8 +371,9 @@ export default class Spaces extends View {
     const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : tr("loading"));
     if (!remote.length) {
       if (loading(null) && !rows.length) return [loadingRow(null)];
-      this.activeAt = rows.findIndex(r => r.w.active);
-      return rows.map(draw);
+      const { kids, active } = listOf("local", rows);
+      this.activeAt = active;
+      return kids;
     }
     const machineNames = [null, ...remote];
     return machineNames.flatMap((m) => {
@@ -417,9 +430,10 @@ export default class Spaces extends View {
             .text_size(11).text_color(t.foreground).bg(t.raised).cursor_pointer().hover(s => s.bg(t.hover))
             .on_click((_e, cx) => { cx.stop_propagation(); cx.write_to_clipboard(login); this.copiedLogin = login; cx.notify(); })
             .child(this.copiedLogin === login ? tr("copied") : tr("copy"))))] : [];
-      const items = [cell(head), ...guidance, ...(folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
-      const first = folded ? -1 : mine.findIndex(r => r.w.active);
-      if (first >= 0) this.activeAt = before + 1 + guidance.length + first;
+      // Folded: no rows, so they close; none at all (not folded): the empty or loading row, at once.
+      const listed = folded || mine.length ? listOf(m ?? "local", folded ? [] : mine) : { kids: [loading(m) ? loadingRow(m) : cell(empty)], active: -1 };
+      const items = [cell(head), ...guidance, ...listed.kids];
+      if (listed.active >= 0) this.activeAt = before + 1 + guidance.length + listed.active;
       before += items.length;
       return items;
     });
@@ -528,7 +542,7 @@ export default class Spaces extends View {
 
   render(cx) {
     const t = theme();
-    frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     // DATA-SYNC.md: a commit, a switch or a worktree made by another mod: every known place looks again
     // (its own watches and the end of an agent's turn already cover what happens outside Herdr).
     if (cx) refreshOn(this, cx, "git", ["git", "gwm"], async (cx) => {
@@ -548,7 +562,7 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
-    const list = this.grouped(t, collapsed);
+    const list = this.grouped(t, collapsed, m, cx);
     // Bring the active space into view when it, or its place in the list, changes; a row already in view stays put.
     const active = sp.find(p => p.active)?.id;
     if (active !== this.revealed || this.activeAt !== this.revealedAt) {
