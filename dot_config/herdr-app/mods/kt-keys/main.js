@@ -32,7 +32,7 @@ const groupName = (id) => tr(`group.${id}`);
 const ORDER = ["pane.go:left", "pane.go:right", "pane.go:down", "pane.go:up", "pane.split:right", "pane.split:down", "pane.zoom",
   "kt-head.close-pane", "mod.open:kt-new", "tab.next", "tab.prev", "tab.select", "tab.rename", "kt-head.close-tab", "space.new",
   "space.next", "space.prev", "space.rename", "kt-head.picker:2", "kt-head.picker:0", "kt-head.worktree", "agent.next", "agent.prev",
-  "kt-head.attention", "layout.select:thread", "layout.select:inbox", "layout.select:skills", "layout.select:mcp", "layout.select:plugins",
+  "kt-head.attention", "layout.select:thread", "layout.select:inbox", "layout.select:kanban", "layout.select:skills", "layout.select:mcp", "layout.select:plugins",
   "layout.select:workflow", "layout.select:gwm", "layout.select:notes", "layout.toggle:side", "layout.toggle:panel", "kt-head.panel:files",
   "kt-head.panel:diff", "kt-head.panel:history", "kt-head.panel:flow", "kt-head.panel:crosstalk", "mod.open:kt-keys", "mod.open:kt-mods",
   "app.settings", "send"];
@@ -72,7 +72,9 @@ const TABLE = {
     ["?", "sb.help"],
   ],
   pages: [
-    ["ctrl-b i / shift-a / a / m / u / shift-o / shift-i", "pg.pages"],
+    ["ctrl-b i / shift-s / shift-a / a / m / u / shift-o / shift-i", "pg.pages"],
+    ["h / l", "pg.kanbanCol", "Kanban"],
+    ["enter / o", "pg.kanbanGo", "Kanban"],
     ["e / u / dd / +", "pg.plugins", "Plugins"],
     ["h / L / [ / ]", "pg.market", "Plugins"],
     ["[ / ]", "pg.relation", "Inbox"],

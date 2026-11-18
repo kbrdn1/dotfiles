@@ -25,6 +25,8 @@ const SPIN = "mods/workspace-chrome/spinner.svg";
 // Skills, MCP and Plugins sit in the sidebar's « Agents » group: their crumb reads « Agents › Skills ».
 const PAGES = {
   inbox: ["Inbox", "layers"],
+  // kt-kanban, under Inbox in the sidebar.
+  kanban: ["Kanban", "square-kanban"],
   workflow: ["Workflow", "workflow", "Agents"],
   skills: ["Skills", "sparkles", "Agents"],
   mcp: ["MCP", "plug", "Agents"],

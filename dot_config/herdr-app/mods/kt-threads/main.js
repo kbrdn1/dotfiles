@@ -1691,11 +1691,14 @@ export default class Threads extends View {
     const agentPages = AGENT_PAGES.filter((p) => stack.some((c) => c.id === p));
     // Notes (kt-notes: the project's and its gwm worktrees' notes), under Worktrees, once the stack has it.
     const hasNotes = (this.hasNotes = stack.some((c) => c.id === "notes"));
+    // Kanban (kt-kanban: the threads as a board by status), under Inbox, once the stack has it.
+    const hasKanban = (this.hasKanban = stack.some((c) => c.id === "kanban"));
     const agentsOpen = (this.agentsOpen = Boolean(shared("kt.nav.agents")) || agentPages.includes(navPage));
     this.nav = {
       "kt-project": () => this.openProjects(),
       "kt-new": () => { show("thread"); run("mod.open", { name: "kt-new" }); },
       "kt-inbox": () => show("inbox"),
+      ...(hasKanban ? { "kt-kanban": () => show("kanban") } : {}),
       "kt-agents": () => setShared("kt.nav.agents", true),
       ...(agentsOpen ? Object.fromEntries(agentPages.map((p) => [`kt-${p}`, () => show(p)])) : {}),
       "kt-gwm": () => show("gwm"),
@@ -1811,7 +1814,7 @@ export default class Threads extends View {
 
     // The ink under the page's line, the lines counted as drawn (the Agents pages only while the group
     // is open): it glides to the next page's, and fades out on the thread (no page), staying where it was.
-    const navRows = ["new", "inbox", "agents", ...(agentsOpen ? agentPages : []), "gwm", ...(this.hasNotes ? ["notes"] : []), "search"];
+    const navRows = ["new", "inbox", ...(this.hasKanban ? ["kanban"] : []), "agents", ...(agentsOpen ? agentPages : []), "gwm", ...(this.hasNotes ? ["notes"] : []), "search"];
     const navAt = navPage === "thread" ? -1 : navRows.indexOf(navPage);
     if (navAt >= 0) this.navAt = navAt;
     // Under a page of the Agents group it starts where that page's box does, after its branch's bend.
@@ -1891,6 +1894,7 @@ export default class Threads extends View {
           }, div().font_family(MONO).text_size(10.5).text_color(t.dim).child("⌘T")),
         )
         .child(tool("kt-inbox", "layers", "Inbox", () => show("inbox"), inboxOn ? null : div().size(6).rounded(3).bg(t.accent), inboxOn))
+        .when(this.hasKanban, (el) => el.child(tool("kt-kanban", "square-kanban", "Kanban", () => show("kanban"), null, navPage === "kanban"))) // i18n: tech
         .child(tool("kt-agents", "bot", "Agents", () => setShared("kt.nav.agents", !shared("kt.nav.agents")),
           svg(I(agentsOpen ? "chevron-down" : "chevron-right")).size(13).flex_none().text_color(t.dim), false, { trunk: agentsOpen }))
         .when(Boolean(agentsFold), (el) => el.child(agentsFold))

@@ -92,6 +92,7 @@
                   ]
                 },
                 { "id": "inbox", "type": "block", "content": { "mod": "kt-inbox" } },
+                { "id": "kanban", "type": "block", "content": { "mod": "kt-kanban" } },
                 { "id": "workflow", "type": "block", "content": { "mod": "kt-workflow" } },
                 { "id": "skills", "type": "block", "content": { "mod": "kt-skills" } },
                 { "id": "mcp", "type": "block", "content": { "mod": "kt-mcp" } },
