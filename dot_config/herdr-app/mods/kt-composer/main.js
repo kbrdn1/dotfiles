@@ -16,7 +16,9 @@ import { h_flex } from "gpui-base";
 import { ring, ringColor } from "./ring.js";
 import { costLevel, levelColor } from "./levels.js";
 import { agents, focused, theme, panes, spaces, home, readTextFile, exec, checking, openOverlay, notify, nextCommand, shared, setShared } from "herdr";
-import { motionState, frame, enter } from "./motion.js";
+import { motionState, frame, enter, MS } from "./motion.js";
+// kt-keys' skeleton.js (a byte-identical copy): the focused agent's figures as bars while they are read.
+import { skeleton, readyFor } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the figures that change roll to their new digits.
 import { roll, rollText } from "./roll.js";
 // kt-threads' companion-logo.js (a byte-identical copy): the focused agent's tile, alive.
@@ -166,29 +168,37 @@ export default class SessionLine extends View {
     const a = this.agent();
     const pane = this.pane(a);
     cx.spawn(async (cx) => {
-      // undefined: unreadable now, keep what we had; null: not there.
-      const json = async (path) => { try { const s = await readTextFile(path); return s ? JSON.parse(s) : null; } catch { return undefined; } };
-      const local = Boolean(a) && !a.address.includes("/");
-      const sl = `${home()}/.claude/cache/statusline`;
-      const hd = `${home()}/.claude/cache/herdr`;
-      const next = {
-        line: local ? await json(`${sl}/herdr-${a.address}.json`) : null,
-        quota: await json(`${sl}/herdr-quota.json`),
-        live: local ? await json(`${hd}/${a.address}.json`) : null,
-        flow: local ? await json(`${hd}/${a.address}.flow.json`) : null,
-        report: local ? await this.report(a.address, pane) : null,
-      };
-      // Another agent than last time: what can't be read now is not carried over from the previous one.
-      const same = (a?.address ?? null) === this.dataFor;
-      for (const [k, v] of Object.entries(next)) {
-        if (v !== undefined) this.data[k] = v;
-        else if (!same && k !== "quota") this.data[k] = null;
+      try {
+        // undefined: unreadable now, keep what we had; null: not there.
+        const json = async (path) => { try { const s = await readTextFile(path); return s ? JSON.parse(s) : null; } catch { return undefined; } };
+        const local = Boolean(a) && !a.address.includes("/");
+        const sl = `${home()}/.claude/cache/statusline`;
+        const hd = `${home()}/.claude/cache/herdr`;
+        const next = {
+          line: local ? await json(`${sl}/herdr-${a.address}.json`) : null,
+          quota: await json(`${sl}/herdr-quota.json`),
+          live: local ? await json(`${hd}/${a.address}.json`) : null,
+          flow: local ? await json(`${hd}/${a.address}.flow.json`) : null,
+          report: local ? await this.report(a.address, pane) : null,
+        };
+        // Another agent than last time: what can't be read now is not carried over from the previous one.
+        const same = (a?.address ?? null) === this.dataFor;
+        for (const [k, v] of Object.entries(next)) {
+          if (v !== undefined) this.data[k] = v;
+          else if (!same && k !== "quota") this.data[k] = null;
+        }
+        this.dataFor = a?.address ?? null;
+        // What is shown, times rounded as drawn: a redraw only when a shown string changes.
+        const key = JSON.stringify([a?.address, this.items(a, pane).map((i) => i.parts)]);
+        if (key !== this.key) { this.key = key; cx.notify(); }
+      } finally {
+        // Always, a failed read too: a reading flag left up would freeze the line on the previous agent.
+        this.reading = false;
       }
-      this.dataFor = a?.address ?? null;
-      this.reading = false;
-      // What is shown, times rounded as drawn: a redraw only when a shown string changes.
-      const key = JSON.stringify([a?.address, this.items(a, pane).map((i) => i.parts)]);
-      if (key !== this.key) { this.key = key; cx.notify(); }
+      // The focus moved while this read ran (that read was dropped): read the agent shown now. Once, and
+      // only after an answer (a read that threw doesn't loop: the 4 s tick tries again).
+      const was = a?.address ?? null;
+      if (this.dataFor === was && (this.agent()?.address ?? null) !== was) this.read(cx);
     });
   }
 
@@ -351,10 +361,23 @@ export default class SessionLine extends View {
     const shown = SessionLine.fit(this.items(a, this.pane(a)), this.width);
     const L = shown.filter((i) => i.side === "left");
     const R = shown.filter((i) => i.side === "right");
+    const left = L.flatMap((i, k) => (k ? [sep(), item(i)] : [item(i)]));
+    // Not read yet for the focused agent (readyFor on dataFor): where its figures come, after its name,
+    // the context ring with its label and value, the cost and the duration as bars (skeleton.js),
+    // breathing. They fade in only past MS.open: a read that answers at once (local files, the usual)
+    // shows no flash at each focus change, one that lags (git asked for a new folder) shows them.
+    // Reduced motion: no delay to be had, so none (the figures come as before).
+    if (!m.reduced && L.length && !readyFor(this.dataFor, a?.address ?? null)) {
+      const S = skeleton(t, m);
+      left.splice(1, 0, sep(), enter(m, h_flex().flex_none().items_center().child(S.pulse(h_flex().id("sl-sk").gap(GAP).items_center()
+        .child(h_flex().gap(7).items_center().child(S.line(22, { h: 6, lh: 14 })).child(S.circle(RING)).child(S.line(26, { h: 7, lh: 16 })))
+        .child(S.line(40, { h: 7, lh: 16 }))
+        .child(S.line(48, { h: 7, lh: 16 })))), "sl-sk-in", { dy: 0, delay: MS.open }));
+    }
     return h_flex().id("session-line").size_full().px(PAD).gap(GAP).items_center().overflow_hidden().whitespace_nowrap()
       .rounded(16).bg(t.background).border(1).border_color(t.border)
       .on_size_change((size, cx) => this.measured(size, cx))
-      .children(L.flatMap((i, k) => (k ? [sep(), item(i)] : [item(i)])))
+      .children(left)
       .child(div().flex_1())
       .children(R.map(item));
   }
