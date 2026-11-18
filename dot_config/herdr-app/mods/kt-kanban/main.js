@@ -41,7 +41,9 @@
 // limits: a column's width (auto, or 200 to 420 px: < / > on the cursor's column, = back to auto, or its
 // head's selector), its columns hidden (the head's selector; a reminder at the board's end shows them
 // again, with their counts), the cards' density (D, the header's fifth button: normal, compact, the
-// title and status only, or detailed). The cost is the drawer's (and, with the columnCost option, off by default, the
+// title and status only, or detailed). A card the pointer rests on, or the keys' cursor, unfolds its
+// session as the sidebar's focus card shows it (#38: model · effort, context and quota rings, cost, run
+// time, lines, the cache's TTL and hit; compact: everything), always shown in detailed. The cost is the drawer's (and, with the columnCost option, off by default, the
 // column heads'). It lists every project's threads, whatever the sidebar's scope or filter: its
 // views decide (GitHub Projects), through the filter typed after `/` (the archived only with
 // is:archived), then the slice. A click or enter: back to the thread, on that agent (agent.focus).
@@ -64,7 +66,7 @@ import * as io from "./threads-io.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
   costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
-  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart, takesFocus, WIDTH, stepWidth, laneWidths, toggleHidden } from "./kanban.js";
+  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart, takesFocus, sessionOf, ttlText, WIDTH, stepWidth, laneWidths, toggleHidden } from "./kanban.js";
 // The sidebar's decisions (a byte-identical copy of kbrdn-toast's decide.js): what a blocked agent waits
 // on, its pills, and its answer (press, the sidebar's and the toast's path).
 import { decide, decisionButtons, press as answer } from "./decide.js";
@@ -75,6 +77,8 @@ import { costLevel, ctxLevel, levelColor } from "./levels.js";
 import { Vim, keysOf, keyOf } from "./vim.js";
 import { motionState, frame, enter, sharpen, rows, collapse, sheet, leave, leaving, MS } from "./motion.js";
 import { roll, rollText } from "./roll.js";
+// kt-threads' ring.js (a byte-identical copy, with ring.strings.js; levels.js its colours): a card's session.
+import { ring, ctxTokens } from "./ring.js";
 import { refreshOn } from "./bus.js";
 import { ditherBand, TOP } from "./dither.js";
 import { makeT, num as fnum } from "./i18n.js";
@@ -120,6 +124,9 @@ const LAUNCHED = "kt.kanban.launched"; // kt-new's record of a draft launched: {
 const ARCHIVE_EVERY = 600e3; // auto-archive looks every 10 minutes (and on arrival)
 const AUTO_ARCHIVED = "kt.kanban.autoArchived"; // { since, done: { tab id: when } }: auto-archive's memo (archivePlan)
 const WAIT = 600; // vim.js' time between the two keys of gt / gT
+const HOVER_IN = 200; // #38: the pointer resting on a card this long unfolds it (passing over doesn't)
+const HOVER_OUT = 150; // and it folds back this long after the pointer left (the sidebar's linger)
+const toks = (n) => (n < 1000 ? String(n) : n < 1e6 ? `${Math.floor(n / 1000)}k` : `${(n / 1e6).toFixed(1)}M`); // the sidebar's
 
 // The board's choices as stored (the key strings in full: kt-mods finds who reads them by a grep).
 function opts() {
@@ -190,6 +197,11 @@ export default class Kanban extends View {
     this.homeReal = null;
     this.live = {};
     this.quota = null;
+    // #38: the card under the pointer (unfolded, hovering()), the one it just left (folding back soon),
+    // the one it rests on (not yet: HOVER_IN).
+    this.hover = null;
+    this.keep = null;
+    this.entering = null;
     this.reports = {};
     this.prs = {};
     this.asked = {};
@@ -359,6 +371,7 @@ export default class Kanban extends View {
       if (this.shown) {
         this.shown = false;
         this.menu = null; // a card's menu doesn't wait for the page to come back
+        this.hover = this.keep = this.entering = null; // nor a card unfolded under the pointer (#38)
         // Left for another page or the thread with the keyboard still here: back to the thread's terminal.
         if (this.handle.is_focused()) this.toTerminal();
       }
@@ -1100,8 +1113,14 @@ export default class Kanban extends View {
     // waits), else what it does now or answered (the sidebar's live line). Two lines at most.
     // The density (#34, the view's): compact, the title row only (its status: the agent's logo, the
     // column), except a blocked card, which keeps what it asks on one line with its pills (Kylian: what
-    // the agent waits on is what matters); detailed, what it asks or does on four lines and its model,
-    // context and cost besides.
+    // the agent waits on is what matters); detailed, what it asks or does on four lines and its session
+    // (sessionBlock) besides.
+    // #38: the pointer resting on it (hovering(): a short delay in, a short linger out) or the keys'
+    // cursor unfolds it, as the sidebar's compact cards: compact, everything; normal, its session (model
+    // · effort, context, quota, cost, run time, lines, TTL, cache); detailed shows it already.
+    // Its menu open (#33), it stays as it is under it: the anchored menu doesn't move.
+    const open = !gone && (cursor || this.hover === th.id || this.keep === th.id || this.menu?.id === th.id);
+    const ses = sessionOf(th, this.quota, now);
     const full = this.density !== "compact";
     const clamp = this.density === "detailed" ? 64 : 32;
     const asking = th.status === "blocked" ? this.askOf(th) : null;
@@ -1113,34 +1132,31 @@ export default class Kanban extends View {
       if (res?.ok && !d.pending.options?.length) this.open(th);
       this.decided(res, cx);
     } }) : null;
-    const upfront = asking && !full
-      ? h_flex().id(`kk-ask1-${key}`).h(26).px(8).gap(6).items_center().rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
-        .tooltip(asking.detail ? `${asking.title} · ${asking.detail}` : asking.title)
-        .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
-        .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.blocked).child(asking.title))
-        .when(Boolean(pills), (el) => el.child(pills))
-      : asking
+    // Compact, a blocked card: what it asks on one line, then its pills.
+    const one = asking && !full ? h_flex().id(`kk-ask1-${key}`).h(26).px(8).gap(6).items_center().rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
+      .tooltip(asking.detail ? `${asking.title} · ${asking.detail}` : asking.title)
+      .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.blocked).child(asking.title))
+      .when(Boolean(pills), (el) => el.child(pills)) : null;
+    // The rows below the title are builders: a fold closing builds them once more (motion.js collapse).
+    // What it asks (whole, with its pills), else what it does or answered. `fold`: inside a compact card's
+    // fold, under its one line (which keeps the pills: drawn once), the title whole instead of truncated.
+    const callout = (fold = false) => (asking
       ? v_flex().px(8).py(5).gap(2).rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
         .child(h_flex().gap(6).items_center()
           .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
-          .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.blocked).child(asking.title)))
-        .when(Boolean(asking.detail), (el) => el.child(div().max_h(clamp).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.foreground).child(asking.detail)))
-        .when(Boolean(pills), (el) => el.child(h_flex().pt(3).child(pills)))
-      : full && th.line ? div().max_h(clamp).overflow_hidden().text_size(11.5).line_height("16px").text_color(th.status === "working" ? t.muted : t.dim).child(`↳ ${th.line}`)
-        : null;
-    // Detailed: the model (and its effort), the context, the cost, in their levels' colors.
-    const figures = this.density === "detailed" && [
-      th.model && mono(t.muted, [th.model, th.effort].filter(Boolean).join(" · ")),
-      th.ctx != null && mono(levelColor(t, ctxLevel(th.ctx, th.sl?.window)), tr("drawer.ctx", { n: Math.round(th.ctx) })),
-      th.cost != null && mono(levelColor(t, costLevel(th.cost, th.model), { okGreen: true }), `$${fnum(th.cost, 2)}`),
-    ].filter(Boolean);
+          .child(div().flex_1().min_w(0).when(!fold, (el) => el.truncate()).text_size(12).font_medium().text_color(t.blocked).child(asking.title)))
+        .when(Boolean(asking.detail), (el) => el.child(div().max_h(fold ? 64 : clamp).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.foreground).child(asking.detail)))
+        .when(!fold && Boolean(pills), (el) => el.child(h_flex().pt(3).child(pills)))
+      : th.line ? div().max_h(clamp).overflow_hidden().text_size(11.5).line_height("16px").text_color(th.status === "working" ? t.muted : t.dim).child(`↳ ${th.line}`)
+        : null);
     // Then the flow's step, then the PR (its state's color, a draft in dim as kt-flow) and its CI (/me:report's,
     // else the drawer's checks): passed, failing, running, as icons and counts; the issue, the sub-agents.
     const look = !th.pr ? null : th.pr.state === "OPEN" && (th.pr.draft ?? th.pr.isDraft) ? { ...PR.OPEN, color: "dim" } : PR[th.pr.state] ?? PR.OPEN;
     const subs = th.subagents;
     const ci = th.report?.ci?.total ? th.report.ci : ciCount(this.details[th.id]?.pr?.checks);
     const count = (icon, color, n) => n > 0 && h_flex().flex_none().gap(2).items_center().text_color(color).child(svg(I(icon)).size(10)).child(mono(color, String(n)));
-    const facts = [
+    const facts = () => [
       look && h_flex().flex_none().gap(3).items_center().text_color(t[look.color])
         .child(svg(I(look.icon)).size(11)).child(mono(t[look.color], `#${th.pr.number}`)),
       ci?.total && h_flex().id(`kk-ci-${key}`).flex_none().gap(5).items_center()
@@ -1155,12 +1171,35 @@ export default class Kanban extends View {
     ].filter(Boolean);
     const step = th.flow?.step?.label;
     const working = th.status === "working";
+    const rest = () => { const f = facts(); return [
+      step && h_flex().h(16).gap(6).items_center()
+        // The step's dot breathes while the agent works (an active state: ANIMATIONS.md).
+        .child(div().id(`kk-step-${key}`).size(6).rounded(3).flex_none().bg(t.accent)
+          .when(working && !this.m.reduced, (d) => d.loop("opacity", { from: 0.35, to: 1, period: 1400 })))
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(step)),
+      f.length > 0 && h_flex().h(16).gap(10).items_center().overflow_hidden().children(f),
+      // Last, where it is: its project, its branch (a worktree's icon in a linked one).
+      h_flex().h(16).gap(6).items_center()
+        .child(this.mark(t, th.project, 12))
+        .child(div().flex_none().max_w(96).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(th.project.name.toUpperCase()))
+        .when(Boolean(th.branch), (el) => el
+          .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
+          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch))),
+    ].filter(Boolean); };
+    const session = () => (ses ? this.sessionBlock(t, th, ses, key, now) : null);
+    // Unfolding: in a column, on its height (collapse, a builder: it folds back on its height too); by
+    // project, at once (the lane's fold is the only height level there: ANIMATIONS.md).
+    const unfold = (id, on, build) => (this.inLanes ? (on ? build() : null) : collapse(this.m, id, on, build, { cx }));
+    const below = !full
+      ? [one, unfold(`kk-more-${key}`, open, () => v_flex().gap(4).children([callout(true), ...rest(), session()].filter(Boolean)))]
+      : this.density === "detailed" ? [callout(), ...rest(), session()]
+        : [callout(), ...rest(), ses && unfold(`kk-ses-${key}`, open, session)];
     return this.withMenu(t, th, key, gone, v_flex().id(`kk-card-${key}`).p(8).gap(4).rounded(12).border(1)
       .border_color(cursor ? alpha(t.accent, "99") : th.shown ? alpha(t.accent, "66") : t.border)
       .bg(cursor || th.shown ? alpha(t.accent, "24") : t.background)
       .when(muted, (el) => el.opacity(0.62))
       .when(!gone && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
-      .when(!gone, (el) => el.cursor_pointer().on_click(() => this.open(th)))
+      .when(!gone, (el) => el.cursor_pointer().on_click(() => this.open(th)).on_hover((h, cx) => this.hovering(th.id, h, cx)))
       .child(h_flex().h(20).gap(8).items_center()
         .child(pet)
         // The title opens the card's drawer (the rest of the card goes to the agent, as enter).
@@ -1169,21 +1208,77 @@ export default class Kanban extends View {
           .child(th.title))
         .when(th.pinned, (el) => el.child(svg(I("pin")).size(11).flex_none().text_color(t.dim)))
         .child(corner))
-      .when(Boolean(upfront), (el) => el.child(upfront))
-      .when(full && Boolean(step), (el) => el.child(h_flex().h(16).gap(6).items_center()
-        // The step's dot breathes while the agent works (an active state: ANIMATIONS.md).
-        .child(div().id(`kk-step-${key}`).size(6).rounded(3).flex_none().bg(t.accent)
-          .when(working && !this.m.reduced, (d) => d.loop("opacity", { from: 0.35, to: 1, period: 1400 })))
-        .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(step))))
-      .when(full && facts.length > 0, (el) => el.child(h_flex().h(16).gap(10).items_center().overflow_hidden().children(facts)))
-      .when(Boolean(figures?.length), (el) => el.child(h_flex().id(`kk-fig-${key}`).h(16).gap(10).items_center().overflow_hidden().children(figures)))
-      // Last, where it is: its project, its branch (a worktree's icon in a linked one).
-      .when(full, (el) => el.child(h_flex().h(16).gap(6).items_center()
-        .child(this.mark(t, th.project, 12))
-        .child(div().flex_none().max_w(96).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(th.project.name.toUpperCase()))
-        .when(Boolean(th.branch), (el) => el
-          .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
-          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch))))));
+      .children(below.filter(Boolean)));
+  }
+
+  // #38: the pointer on a card unfolds it after HOVER_IN (passing over doesn't), and it folds back
+  // HOVER_OUT after the pointer left (going from card to card doesn't flicker; back on it before then, it
+  // simply stays open). Never takes the keyboard.
+  hovering(id, h, cx) {
+    if (h && this.keep === id) {
+      this.keep = null;
+      this.keepTok = (this.keepTok ?? 0) + 1; // its fold back is called off
+      this.hover = id;
+      return;
+    }
+    if (h) {
+      const tok = (this.hoverTok = (this.hoverTok ?? 0) + 1);
+      this.entering = { id, tok };
+      cx.timer.after(HOVER_IN, (cx) => {
+        if (this.entering?.tok !== tok) return;
+        this.entering = null;
+        this.hover = id;
+        this.keep = null;
+        cx.notify();
+      });
+      return;
+    }
+    if (this.entering?.id === id) this.entering = null;
+    if (this.hover !== id) return;
+    this.hover = null;
+    this.keep = id;
+    const tok = (this.keepTok = (this.keepTok ?? 0) + 1);
+    cx.timer.after(HOVER_OUT, (cx) => {
+      if (this.keepTok !== tok) return;
+      this.keep = null;
+      cx.notify();
+    });
+    cx.notify();
+  }
+
+  // #38, a card's session (kanban.js sessionOf), the sidebar's focus card's: model · effort; the context
+  // ring (tokens / window beside it) and the 5 h window's, else the 7 d one's (its reset); then cost ·
+  // run time · lines · the cache's TTL · its hit under 85 %. The ids carry the card's key (column).
+  sessionBlock(t, th, s, key, now) {
+    const eyebrow = (text) => div().font_family(MONO).text_size(9.5).text_color(t.muted).child(text);
+    const beside = (text) => div().min_w(0).truncate().font_family(MONO).text_size(9.5).text_color(t.dim).child(text);
+    const mono = (color, text) => div().flex_none().font_family(MONO).text_size(10.5).text_color(color).child(text);
+    const cell = (id, label, pct, sub, kind) => h_flex().flex_1().min_w(0).gap(6).items_center()
+      .child(ring(t, id, pct, 28, { kind, window: s.window ?? undefined, roll, m: this.m }))
+      .child(v_flex().min_w(0).gap(1).child(eyebrow(label)).when(Boolean(sub), (el) => el.child(beside(sub))));
+    const tokens = ctxTokens(th.sl);
+    const reset = (q) => {
+      if (q.kind === "5h") { const d = new Date(q.resets * 1000); return tr("ses.resetAt", { time: `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}` }); }
+      const h = (q.resets * 1000 - now) / 3600e3;
+      return h >= 24 ? tr("ses.resetD", { n: Math.ceil(h / 24) }) : tr("ses.resetH", { n: Math.max(1, Math.ceil(h)) });
+    };
+    const rings = [
+      s.ctx != null && cell(`kk-ring-cx-${key}`, tr("ses.context"), s.ctx, s.window && tokens > 0 ? `${toks(tokens)} / ${toks(s.window)}` : null, "ctx"),
+      s.quota && cell(`kk-ring-q-${key}`, s.quota.kind === "5h" ? "5H" : tr("ses.week"), s.quota.pct, reset(s.quota), "quota"), // i18n: tech
+    ].filter(Boolean);
+    const ttl = ttlText(s.ttl);
+    const numbers = [
+      s.cost != null && mono(levelColor(t, costLevel(s.cost, th.model), { okGreen: true }), `$${fnum(s.cost, 2)}`),
+      s.ran != null && mono(t.muted, model.duration(now - s.ran, now)),
+      (s.added > 0 || s.removed > 0) && h_flex().flex_none().gap(4).child(mono(t.ansi2, `+${s.added}`)).child(mono(t.ansi1, `−${s.removed}`)),
+      s.ttl != null && (ttl ? mono(t.dim, ttl) : mono(t.ansi1, tr("ses.ttlGone"))),
+      s.hit != null && mono(s.hit < 60 ? t.ansi1 : t.blocked, `cache ${Math.round(s.hit)}%`), // i18n: tech
+    ].filter(Boolean);
+    return v_flex().id(`kk-ses-in-${key}`).gap(6).pt(6).border_t(1).border_dashed().border_color(t.border)
+      .when(Boolean(s.model), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(s.model)))
+      .when(rings.length > 0, (el) => el.child(h_flex().gap(8).items_center().children(rings)))
+      .when(numbers.length > 0, (el) => el.child(h_flex().min_h(16).gap_x(6).gap_y(4).items_center().flex_wrap()
+        .children(numbers.flatMap((n, i) => (i ? [div().text_size(10.5).text_color(t.border).child("·"), n] : [n])))));
   }
 
   // A right-click opens the card's menu; while it shows, gpui-base's Popup anchors it under the card
@@ -1740,6 +1835,7 @@ export default class Kanban extends View {
     if (this.reveal && o.group !== "project") this.boardScroll.scroll_to_item(this.at.c);
     this.menuDrawn = false;
     this.density = o.density; // the cards' (card(), draftCard())
+    this.inLanes = o.group === "project"; // a card unfolds at once there (card())
     const area = o.group === "project"
       ? this.lanes(t, b, cur, now, cx)
       : h_flex().id("kk-board").flex_1().min_w(0).h_full().gap(4).items_start().overflow_x_scroll().track_scroll(this.boardScroll)

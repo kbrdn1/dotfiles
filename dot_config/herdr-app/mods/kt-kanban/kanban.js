@@ -371,6 +371,39 @@ export function stepLimit(limits, key, delta, count = 0) {
   return cleanLimits({ ...limits, [key]: next });
 }
 
+// ---------- a card's session (#38): what it unfolds on hover, as the sidebar's focus card ----------
+
+/** The session's facts (statusline's `sl`, the quota's windows), at `now`: model · effort, the context
+ *  (pct, its window), the 5 h window, else the 7 d one (pct, resets_at in s), the cost, how long it has
+ *  run (ms), the lines +/−, the prompt cache's time left (s) and its hit when under 85 %. null without
+ *  a statusline. */
+export function sessionOf(th, quota, now) {
+  const s = th?.sl;
+  if (!s) return null;
+  const win = (name) => {
+    const w = quota?.[name] ?? quota?.rate_limits?.[name];
+    return w && w.resets_at * 1000 > now ? w : null;
+  };
+  const five = win("five_hour");
+  const week = five ? null : win("seven_day");
+  const q = five ?? week;
+  return {
+    model: [s.model, s.effort].filter(Boolean).join(" · ") || null,
+    ctx: s.ctx_pct ?? null,
+    window: s.window ?? null,
+    quota: q ? { kind: five ? "5h" : "7d", pct: q.used_percentage, resets: q.resets_at } : null,
+    cost: s.cost_usd ?? null,
+    ran: s.duration_ms > 0 ? s.duration_ms : null,
+    added: s.lines_added ?? 0,
+    removed: s.lines_removed ?? 0,
+    ttl: s.cache_at && s.cache_ttl ? s.cache_at / 1000 + s.cache_ttl - now / 1000 : null,
+    hit: s.hit_pct != null && s.hit_pct < 85 ? s.hit_pct : null,
+  };
+}
+
+/** The cache's time left as the sidebar says it: "TTL 1h05", "TTL 12m"; spent: null. */
+export const ttlText = (sec) => (!(sec > 0) ? null : `TTL ${sec >= 3600 ? `${Math.floor(sec / 3600)}h${String(Math.floor((sec % 3600) / 60)).padStart(2, "0")}` : `${Math.ceil(sec / 60)}m`}`);
+
 // ---------- the board's look (#34): column widths, hidden columns ----------
 
 /** A column's width: auto (it shares the board, `auto` px at least) or set, `min` to `max`, by `step`. */

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
-  costOf, cleanLimits, stepLimit, WIDTH, cleanWidths, stepWidth, laneWidths, cleanHidden, toggleHidden, checkSteps, ciCount, cardMenu, menuStart, takesFocus, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
+  costOf, cleanLimits, stepLimit, sessionOf, ttlText, WIDTH, cleanWidths, stepWidth, laneWidths, cleanHidden, toggleHidden, checkSteps, ciCount, cardMenu, menuStart, takesFocus, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
 
@@ -170,6 +170,21 @@ assert.deepEqual(stepLimit({}, "idle", 1, 0), { idle: 1 });
 assert.deepEqual(stepLimit({}, "idle", -1, 4), {});
 assert.deepEqual(stepLimit({ idle: 4 }, "idle", 1), { idle: 5 });
 assert.deepEqual(stepLimit({ idle: 1, done: 2 }, "idle", -1), { done: 2 }); // down to 0: gone
+
+// #38, a card's session: model · effort, context, the 5 h window else the 7 d one (only while it
+// runs), cost, run time, lines, the cache's TTL from `now`, its hit only under 85 %; none: null.
+const sl = { model: "Opus", effort: "high", ctx_pct: 42, window: 200000, cost_usd: 3.21, duration_ms: 1000, lines_added: 12, lines_removed: 3,
+  cache_at: now - 120e3, cache_ttl: 300, hit_pct: 70 };
+const later = (h) => Math.floor(now / 1000) + h * 3600;
+const ses = sessionOf({ sl }, { seven_day: { used_percentage: 31, resets_at: later(50) } }, now);
+assert.deepEqual(ses, { model: "Opus · high", ctx: 42, window: 200000, quota: { kind: "7d", pct: 31, resets: later(50) }, cost: 3.21, ran: 1000,
+  added: 12, removed: 3, ttl: 180, hit: 70 });
+assert.equal(sessionOf({ sl }, { five_hour: { used_percentage: 8, resets_at: later(2) }, seven_day: { used_percentage: 31, resets_at: later(50) } }, now).quota.kind, "5h");
+assert.equal(sessionOf({ sl }, { rate_limits: { five_hour: { used_percentage: 8, resets_at: later(-1) } } }, now).quota, null); // reset: gone
+assert.equal(sessionOf({ sl: { ...sl, hit_pct: 90 } }, null, now).hit, null);
+assert.equal(sessionOf({ sl: {} }, null, now).model, null);
+assert.equal(sessionOf({ sl: null }, null, now), null);
+assert.deepEqual([ttlText(180), ttlText(59), ttlText(3900), ttlText(0), ttlText(null)], ["TTL 3m", "TTL 1m", "TTL 1h05", null, null]);
 
 // #34, a column's width: from auto's 240, 20 px a step, 200 to 420; = back to auto; several at once.
 assert.deepEqual(stepWidth({}, "idle", 1), { idle: 260 });
