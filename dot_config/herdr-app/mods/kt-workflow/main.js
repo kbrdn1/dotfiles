@@ -20,11 +20,13 @@
 // on a timer. A file is re-read only when its mtime moved.
 // Keys (vim.js): j/k gg/G ctrl-d/u move over the steps, branches, workflows and loops; enter/o/l open
 // the skill, O Zed, y copies the command, e « Modifier avec Claude », C « Configurer avec Claude »,
-// tab / shift-tab the sections, r refresh, ? kt-keys, q / esc back to the thread.
+// tab / shift-tab the sections, r refresh, p the notes' Aperçu / Brut (markdown.js: Conventions and
+// Idées rendered, or their source in Zed's colors), ? kt-keys, q / esc back to the thread.
 // Mod commands: kt-workflow.focus, key:<keys>, refresh, configure[:<intention>] (tests).
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import { mdState, mdBudget, docOf, view, tabs as mdTabs } from "./markdown.js";
 import { exec, hc, readTextFile, theme, spaces, panes, run, layout, home, notify, checking, nextCommand, openOverlay, shared, settings, watchFolder } from "herdr";
 import { session, showSession, dedicated, intention } from "./session.js";
 import { frontmatter } from "./frontmatter.js";
@@ -140,6 +142,7 @@ export default class Workflow extends View {
     this.scroll = ScrollHandle.new();
     this.sec = "all";
     this.d = null; // the last scan (load())
+    this.md = mdState(); // Conventions and Idées: Aperçu / Brut, their colors and parses
     this.cache = new Map(); // relative path -> { mtime, text }
     this.busy = false;
     this.again = false;
@@ -345,6 +348,7 @@ export default class Workflow extends View {
     const x = this.items.find((i) => i.id === this.cur) ?? this.items[0] ?? null;
     if (name === "e") { if (x?.intent) this.configure(x.intent, cx); return true; }
     if (name === "C") { this.configure(null, cx); return true; }
+    if (name === "p") { this.vim.normal(); this.md.raw = !this.md.raw; return true; }
     const a = this.vim.handle(k);
     if (!a) return false;
     if (a === "pending" || a === "count") return true;
@@ -691,12 +695,15 @@ export default class Workflow extends View {
           : div().text_size(12).text_color(t.dim).child(tr("emptyTemplates"))));
   }
 
-  notes(t, kids) {
+  // Conventions and Idées by markdown.js: Aperçu or Brut (this.md.raw, the chips in each head, or p);
+  // Aperçu at most 820 px wide, Brut as wide as the page (it soft-wraps).
+  notes(t, kids, cx) {
+    const budget = mdBudget(); // one for both sections: a render has ~50 ms (markdown.js)
     // `section`: WORKFLOW.md's heading, as the file writes it.
     const md = (id, section, text, intent) => {
-      kids.push(this.head(t, id, tr(id), null, intent, kids.length === 0));
-      kids.push(div().px(12).pb(8).max_w(820).text_size(13).line_height("21px").text_color(t.foreground)
-        .child(text ? TextView.markdown(`ktw-md-${id}`, text).selectable(true)
+      kids.push(this.head(t, id, tr(id), null, intent, kids.length === 0, text ? mdTabs(t, `ktw-md-tabs-${id}`, this.md) : null));
+      kids.push(div().px(12).pb(8).when(!this.md.raw, (el) => el.max_w(820)).text_size(13).line_height("21px").text_color(t.foreground)
+        .child(text ? view(t, this.m, cx, this.md, { id: `ktw-md-${id}`, mod: "kt-workflow", doc: docOf(this.md, text), budget })
           : div().text_color(t.dim).child(tr("noSection", { section }))));
     };
     md("conventions", "Conventions", this.d.conventions, "les conventions transverses (WORKFLOW.md)"); // i18n: agent
@@ -709,7 +716,7 @@ export default class Workflow extends View {
     this.items.push({ ...x, child: kids.length });
   }
 
-  body(t) {
+  body(t, cx) {
     const kids = [];
     this.items = [];
     if (!this.d) {
@@ -720,7 +727,7 @@ export default class Workflow extends View {
           .children([96, 72, 120].map((h) => S.block(null, h).mx(4)))));
     } else {
       for (const [k, fn] of [["cycle", this.cycle], ["workflows", this.workflows], ["loops", this.loops], ["tools", this.tools], ["guards", this.guards], ["notes", this.notes]])
-        if (this.sec === "all" || this.sec === k) fn.call(this, t, kids);
+        if (this.sec === "all" || this.sec === k) fn.call(this, t, kids, cx);
       if (this.error) kids.push(div().px(12).py(8).text_size(12).text_color(t.ansi1).child(tr("lastFailed", { error: this.error })));
     }
     const to = this.reveal && this.items.find((x) => x.id === this.reveal);
@@ -759,6 +766,6 @@ export default class Workflow extends View {
       .on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t))
-      .child(this.card(t).flex_1().min_h(0).overflow_hidden().child(this.body(t)));
+      .child(this.card(t).flex_1().min_h(0).overflow_hidden().child(this.body(t, cx)));
   }
 }

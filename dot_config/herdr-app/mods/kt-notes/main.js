@@ -14,8 +14,11 @@
 // A project picked there, or one sent by shared "kt-notes.open" ({ root, worktree, at }: root any
 // folder of the repo, worktree a worktree's path or null; taken once, under a minute old), stays until
 // the space or the project filter changes.
-// Reading: the markdown (TextView.markdown), its `- [ ]` / `- [x]` boxes drawn one by one and ticked
-// on a click or x (the TUI's toggle, notes.js). Editing: EditorState (markdown, no vim mode in it),
+// Three tabs (issue #43, Kylian's pick): Aperçu, Brut, Édition. Aperçu: the markdown (markdown.js:
+// fenced code in Zed's colors, alerts, a frontmatter at the top as fields), its `- [ ]` / `- [x]` boxes
+// drawn one by one and ticked on a click or x (the TUI's toggle, notes.js). Brut: the source in Zed's
+// colors, read only (no box ticks), soft-wrapped, as wide as the card; p switches Aperçu / Brut (kept
+// from one note to the next). Édition: EditorState (markdown, no vim mode in it),
 // saved with ctrl-s / cmd-s and 1.5 s after the last change, through writeTextFile's compare-and-swap:
 // a file changed elsewhere since it was read is never overwritten, the note says « modifiée ailleurs »
 // and offers Recharger or Garder la mienne. A blank note is written empty (gwm reads blank as no
@@ -28,8 +31,9 @@
 // gg/G, ctrl-d/u move, enter/o/l open the note, i opens it to edit, / searches the notes (INSERT), tab
 // / shift-tab the section filter (Tout, Projet, Worktrees, Orphelines), y copies the note's path, r
 // rereads, h back to every project (when one was picked), esc clears the search, then back to the
-// thread, q back to the thread, ? kt-keys. Note: j/k move over its boxes, x or space ticks one, i edits,
-// h or esc back to the list. Editing: the editor types; ctrl-s saves, esc back to reading.
+// thread, q back to the thread, ? kt-keys. Note: j/k move over its boxes, x or space ticks one (Aperçu),
+// p Aperçu / Brut, i edits, h or esc back to the list. Editing: the editor types; ctrl-s saves, esc back
+// to reading (Aperçu or Brut, as it was).
 // For tests: `kt-notes.key:<keys>` types keys, `kt-notes.select:<row id>` opens a row,
 // `kt-notes.type:<text>` replaces the open note as typing would (autosave armed), `kt-notes.write:<text>`
 // does and saves at once, `kt-notes.save`, `kt-notes.resolve:keep|reload` (the conflict's buttons),
@@ -41,6 +45,7 @@ import { exec, theme, spaces, panes, run, layout, openOverlay, notify, nextComma
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse, rows as motionRows } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
+import { mdState, mdBudget, docOf, view, preview as mdPreview } from "./markdown.js";
 // kt-keys' roll.js (a byte-identical copy): the head's counts roll to their new digits.
 import { rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
@@ -107,6 +112,7 @@ export default class Notes extends View {
     this.zone = "list"; // where NORMAL's keys go: the list, or the open note
     this.cur = null; // the list's cursor (a row id)
     this.task = 0; // the open note's box under the cursor
+    this.md = mdState(); // reading: Aperçu or Brut (md.raw, kept from one note to the next), colors, parses
     this.repos = {}; // "machine|folder" -> repo | null (outside git)
     this.data = {}; // repo.id -> { at, notes, project, branches, wts, listError }
     this.inflight = {};
@@ -415,6 +421,12 @@ export default class Notes extends View {
     this.vim.normal();
   }
 
+  // Aperçu (false) or Brut (true): a reading face, from the editor too (it goes back to reading first).
+  face(raw, cx) {
+    if (this.doc?.mode === "edit") this.read(cx);
+    this.md.raw = raw;
+  }
+
   // A change typed in the editor: saved 1.5 s after the last one (a newer change makes it moot).
   changed(d, cx) {
     const g = ++d.gen;
@@ -594,7 +606,10 @@ export default class Notes extends View {
         else this.edit(cx);
         return true;
       }
-      if (this.zone === "note" && (name === "x" || name === "space")) {
+      // p: Aperçu <-> Brut; from the editor (shown, the keyboard elsewhere), back to reading as it was.
+      if (name === "p" && d) { this.face(d.mode === "edit" ? this.md.raw : !this.md.raw, cx); return true; }
+      // Brut is read only: its boxes are source, never ticked.
+      if (this.zone === "note" && !this.md.raw && (name === "x" || name === "space")) {
         const tasks = this.tasks();
         if (tasks[this.task]) this.toggle(tasks[this.task].line, cx);
         return true;
@@ -734,9 +749,10 @@ export default class Notes extends View {
       .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(it.mtime ? ago(it.mtime) : ""));
   }
 
-  // The open note: its head (title, where it lives, its state, Lire / Éditer), a conflict or a reason
-  // to read only, then the reader or the editor.
-  note(t, d, keyed) {
+  // The open note: its head (title, where it lives, its state, Aperçu / Brut / Édition), a conflict or
+  // a reason to read only, then the reader (Aperçu: markdown.js' preview between the boxes; Brut: the
+  // source in Zed's colors, read only, as wide as the card) or the editor (Édition, not on a read-only note).
+  note(t, d, keyed, cx) {
     const reading = d.mode !== "edit" || !d.ed;
     const state = d.loading ? tr("st.reading") : d.saving ? tr("st.saving") : d.error ? tr("st.failed", { error: d.error }) : d.conflict ? tr("st.conflict")
       : d.mark ? tr("st.dirty") : d.savedAt ? tr("st.saved", { ago: ago(d.savedAt / 1000) }) : d.readonly ? tr("st.readonly") : "";
@@ -747,9 +763,10 @@ export default class Notes extends View {
         .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(d.kind === "project" ? tr("projectNote") : d.title))
         .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child([d.branch, rel].filter(Boolean).join(" · "))))
       .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(stateColor).child(state))
-      .when(!d.readonly, (el) => el.child(h_flex().flex_none().gap(4)
-        .child(this.pill(t, "kn-read", tr("read"), "mods/kt-skills/eye.svg", reading, tr("readTip"), (cx) => this.read(cx)))
-        .child(this.pill(t, "kn-edit", tr("edit"), I("square-pen"), !reading, tr("editTip"), (cx) => this.edit(cx)))))
+      .child(h_flex().flex_none().gap(4)
+        .child(this.pill(t, "kn-preview", tr("preview"), "mods/kt-skills/eye.svg", reading && !this.md.raw, tr("previewTip"), (cx) => this.face(false, cx)))
+        .child(this.pill(t, "kn-raw", tr("raw"), I("file-text"), reading && this.md.raw, tr("rawTip"), (cx) => this.face(true, cx)))
+        .when(!d.readonly, (el) => el.child(this.pill(t, "kn-edit", tr("edit"), I("square-pen"), !reading, tr("editTip"), (cx) => this.edit(cx)))))
       .child(iconBtn(t, "kn-copy", "mods/kt-gwm/copy.svg", tr("copyPath"), (cx) => this.copy(cx)));
     const banner = d.conflict && h_flex().flex_none().mx(12).mb(8).px(12).py(8).gap(10).items_center().rounded(12).border(1)
       .border_color(alpha(t.ansi3, "66")).bg(alpha(t.ansi3, "1a"))
@@ -765,7 +782,9 @@ export default class Notes extends View {
     if (!reading) {
       body = v_flex().flex_1().min_h(0).px(10).pb(10).child(Editor.new(d.ed).flex_1().min_h(0));
     } else {
-      const segs = segments(this.text(d));
+      const text = this.text(d);
+      const segs = segments(text);
+      const budget = mdBudget(); // one for the note's blocks: a render has ~50 ms (markdown.js)
       const tasks = segs.filter((s) => s.kind === "task");
       if (this.task >= tasks.length) this.task = Math.max(0, tasks.length - 1);
       const curLine = keyed && this.zone === "note" ? tasks[this.task]?.line : null;
@@ -775,9 +794,12 @@ export default class Notes extends View {
           .children([0.4, 0.95, 0.9, 0.7, 0.85, 0.5].map((w) => S.line(w, { h: 8, lh: 18 }))))
         : segs.length
         ? v_flex().id(`kn-reader-${d.id}`).flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.readScroll).px(18).pt(4).pb(18).gap(6)
-          .children(segs.map((s, i) => (s.kind === "md"
-            ? div().text_size(13).text_color(t.foreground).child(TextView.markdown(`kn-md-${d.id}-${i}`, s.text).selectable(true))
-            : this.taskRow(t, d, s, s.line === curLine))))
+          .children(this.md.raw
+            ? [div().text_size(13).text_color(t.foreground).child(view(t, this.m, cx, this.md, { id: `kn-raw-${d.id}`, mod: "kt-notes", doc: docOf(this.md, text), budget }))]
+            // The boxes stay ours (ticked here); the markdown between them by markdown.js, a frontmatter only at the top.
+            : segs.map((s, i) => (s.kind === "md"
+              ? div().text_size(13).text_color(t.foreground).child(mdPreview(t, cx, this.md, { id: `kn-md-${d.id}-${i}`, mod: "kt-notes", doc: docOf(this.md, s.text, { meta: i === 0 }), budget }))
+              : this.taskRow(t, d, s, s.line === curLine))))
         : v_flex().flex_1().items_center().justify_center().gap(8).p(24)
           .child(svg(PEN).size(20).text_color(t.dim))
           .child(div().text_size(13.5).font_medium().text_color(t.foreground).child(d.kind === "project" ? tr("noProjectNote") : tr("noNoteYet")))
@@ -894,7 +916,7 @@ export default class Notes extends View {
       () => div().p(6).child(S.list(6, { h: 54, icon: 28, lines: [0.45, 0.75], gap_y: 2 })), { grow: true }));
     const doc = this.doc && this.doc.repo.id === repo.id ? this.doc : null;
     const noteCard = this.box(t).flex_1().min_w(0)
-      .child(doc ? enter(this.m, v_flex().size_full(), `kn-doc-${doc.id}`, { dy: 0 }).child(this.note(t, doc, keyed)) : div());
+      .child(doc ? enter(this.m, v_flex().size_full(), `kn-doc-${doc.id}`, { dy: 0 }).child(this.note(t, doc, keyed, cx)) : div());
     // h_flex centres its children: the two cards stretch to the page's height instead.
     return v_flex().size_full().gap(4).child(head).child(h_flex().flex_1().min_h(0).items_stretch().gap(4).child(listCard).child(noteCard));
   }

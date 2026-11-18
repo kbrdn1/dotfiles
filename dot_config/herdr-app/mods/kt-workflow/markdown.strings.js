@@ -1,0 +1,38 @@
+// markdown.js' own words (I18N.md), copied with it byte for byte into the mods that draw with it
+// (kt-keys, kt-skills, kt-plugins, kt-inbox, kt-workflow, kt-notes).
+export default {
+  fr: {
+    "md.preview": "Aperçu",
+    "md.raw": "Brut",
+    "md.previewTip": "Le document rendu (p)",
+    "md.rawTip": "Le source markdown, aux couleurs de Zed (p)",
+    "md.mono": "Sans couleurs : zed-tokens n'a pas répondu (bun absent, délai dépassé).",
+    "md.codeMore": { one: "… {n} ligne de plus : le Brut la montre (p).", other: "… {n} lignes de plus : le Brut les montre (p)." },
+    "md.codeCut": { one: "… {n} ligne de plus, trop pour un seul affichage.", other: "… {n} lignes de plus, trop pour un seul affichage." },
+    "md.lines": "lignes {from}–{to} sur {n}",
+    "md.prev": "‹ Précédentes",
+    "md.next": "Suivantes ›",
+    "md.alert.note": "Remarque",
+    "md.alert.tip": "Conseil",
+    "md.alert.important": "Important",
+    "md.alert.warning": "Avertissement",
+    "md.alert.caution": "Attention",
+  },
+  en: {
+    "md.preview": "Preview",
+    "md.raw": "Raw",
+    "md.previewTip": "The rendered document (p)",
+    "md.rawTip": "The markdown source, in Zed's colors (p)",
+    "md.mono": "No colors: zed-tokens didn't answer (no bun, or it timed out).",
+    "md.codeMore": { one: "… {n} more line: Raw shows it (p).", other: "… {n} more lines: Raw shows them (p)." },
+    "md.codeCut": { one: "… {n} more line, too many for one view.", other: "… {n} more lines, too many for one view." },
+    "md.lines": "lines {from}–{to} of {n}",
+    "md.prev": "‹ Previous",
+    "md.next": "Next ›",
+    "md.alert.note": "Note",
+    "md.alert.tip": "Tip",
+    "md.alert.important": "Important",
+    "md.alert.warning": "Warning",
+    "md.alert.caution": "Caution",
+  },
+};

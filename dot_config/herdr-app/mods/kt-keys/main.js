@@ -97,6 +97,7 @@ const TABLE = {
     ["f", "pg.kanbanFilterBy", "Kanban"],
     ["e / u / dd / +", "pg.plugins", "Plugins"],
     ["h / L / [ / ]", "pg.market", "Plugins"],
+    ["p", "pg.mdRaw", "Skills, Plugins, Inbox, Workflow, Notes"], // i18n: tech
     ["[ / ]", "pg.relation", "Inbox"],
     ["j / k", "r.line"],
     ["gg / G", "r.ends"],

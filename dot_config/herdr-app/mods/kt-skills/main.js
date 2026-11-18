@@ -13,10 +13,11 @@
 // Top: title, counter, filter, refresh, source segments. Then one card-row per
 // skill (name, description, path; source and harness; on hover preview, copy,
 // open), grouped by source, 80 to a page. A row opens the detail on the right:
-// description and frontmatter in a card, then SKILL.md rendered (TextView.markdown, its fenced
-// code drawn here: t.raised, Monaspace Neon), ~80 characters a line, scrolling; a relative link
-// to another .md of the skill opens it in the same pane (SKILL.md › file, back on SKILL.md),
-// anything else of it in Zed, the web in the browser. Copy / Zed (the file shown) / Finder.
+// description and frontmatter in a card, then SKILL.md (markdown.js: Aperçu, its fenced code in
+// Zed's colors, or Brut, its source in Zed's colors; p or the two chips switch), ~80 characters a
+// line, scrolling; a relative link to another .md of the skill opens it in the same pane (SKILL.md ›
+// file, its frontmatter as fields, back on SKILL.md), anything else of it in Zed, the web in the
+// browser. Copy / Zed (the file shown) / Finder.
 // Scans when the page shows, when the shown space changes while it shows, and
 // on Rafraîchir; never on a timer. Files are re-read only when their mtime moved.
 // Selection (select.js): ⌘-click toggles a row, ⇧-click selects from the anchor, the box left of a
@@ -34,15 +35,16 @@
 // NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N move the cursor over the rows and the "Fragments et
 // templates" folds, across pages (k on the first row: the filter, INSERT); / the filter, tab /
 // shift-tab the source segments, enter/o/l open the detail (a click; on a fold: unfold), h folds,
-// O Zed, y copies /skill, r refresh, a + Ajouter, ? kt-keys, q back to the thread (a dialog closes); x or space
+// O Zed, y copies /skill, r refresh, a + Ajouter, p Aperçu / Brut of the open file, ? kt-keys, q back
+// to the thread (a dialog closes); x or space
 // toggle the row's selection, V a visual range (j/k extend it, esc ends it), ctrl-a selects every
 // listed row; esc ends the range, then empties the selection, then clears the filter, then as q.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, readTextFile, theme, spaces, panes, run, layout, props, home, notify, checking, nextCommand, openOverlay, closeOverlay, shared, watchFolder } from "herdr";
 import { frontmatter } from "./frontmatter.js";
-import { blocks } from "./markdown.js";
+import { parse as mdParse, mdState, view, tabs, target } from "./markdown.js";
 import { Select } from "./select.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { AddMenu, AddForm, menuSize } from "./form.js";
@@ -60,7 +62,6 @@ import strings from "./strings.js";
 const tr = makeT(strings);
 
 const MONO = "Monaspace Krypton";
-const CODE = "Monaspace Neon"; // the viewer's code blocks
 const MEASURE = 620; // the viewer's text column, padding included: ~80 characters of 13.5 px Inter
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const OWN = (name) => `mods/kt-skills/${name}.svg`;
@@ -83,8 +84,6 @@ const LIST = `while [ $# -gt 1 ]; do g=$1; d=$2; shift 2; [ -d "$d" ] && rg --fi
 
 const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
 const dirOf = (p) => p.slice(0, p.lastIndexOf("/"));
-// "/a/b/../c/./d" -> "/a/c/d".
-const norm = (p) => p.split("/").reduce((a, s) => (s === ".." ? a.slice(0, -1) : s === "." || (s === "" && a.length) ? a : [...a, s]), []).join("/") || "/";
 const tilde = (p) => (p.startsWith(home() + "/") ? `~${p.slice(home().length)}` : p);
 const fmt = (v) => (Array.isArray(v) ? v.join(", ")
   : v && typeof v === "object" ? Object.entries(v).map(([k, s]) => `${k}: ${s}`).join(" · ")
@@ -139,7 +138,8 @@ export default class Skills extends View {
     this.items = [];
     this.cache = new Map(); // "path\treal" -> { mtime, item }
     this.sel = null; // the open item's key
-    this.doc = null; // the file its viewer shows: { key, path, segs } (segs: blocks(), null while read)
+    this.doc = null; // the file its viewer shows: { key, path, md, note } (md: markdown.js' parse, null while read)
+    this.md = mdState(); // Aperçu / Brut (kept from one file to the next) and the colors asked
     this.docScroll = ScrollHandle.new();
     this.multi = new Select(); // the rows selected for the bulk bar (keys)
     this.hot = null; // the hovered row's key
@@ -356,15 +356,16 @@ export default class Skills extends View {
     this.loadDoc(x, x.path, cx);
   }
 
-  // A file of the open skill for the viewer, cut by blocks() (in a task, never in render): SKILL.md
-  // without its frontmatter (the card above shows it), or a .md one of its links points to.
+  // A file of the open skill for the viewer, parsed by markdown.js (in a task, never in render): SKILL.md
+  // without its frontmatter's fields (the card above shows them), or a .md one of its links points to.
   loadDoc(x, path, cx) {
-    this.doc = { key: x.key, path, segs: null };
+    this.doc = { key: x.key, path, md: null, note: null };
     cx.spawn(async (cx) => {
       const text = await readTextFile(path).catch(() => null);
       if (this.doc?.key !== x.key || this.doc.path !== path) return;
-      const segs = text == null ? [] : blocks(path === x.path ? frontmatter(text).body : text);
-      this.doc.segs = segs.length ? segs : [{ kind: "md", key: text == null ? "unreadableMd" : "emptyMd" }];
+      const md = mdParse(text ?? "", { fields: path !== x.path });
+      this.doc.md = md;
+      this.doc.note = text == null ? "unreadableMd" : md.segs.length || md.fields.length ? null : "emptyMd";
       this.docScroll.scroll_to_item(0);
       cx.notify();
     });
@@ -373,11 +374,10 @@ export default class Skills extends View {
   // A link in the viewer: the web in the browser; a .md of the skill (relative, or absolute) in this
   // pane when it reads, else in Zed, as any other file; an anchor alone does nothing.
   link(x, url, cx) {
-    if (/^(https?|mailto):/i.test(url)) return void exec("open", [url]).catch(() => {});
-    let raw = url.replace(/^file:\/\//i, "").replace(/[?#].*$/, "");
-    try { raw = decodeURI(raw); } catch { /* as written */ }
-    if (!raw || /^[a-z][\w+.-]*:/i.test(raw)) return;
-    const path = norm(raw.startsWith("/") ? raw : `${dirOf(this.doc?.path ?? x.path)}/${raw}`);
+    const to = target(url, dirOf(this.doc?.path ?? x.path));
+    if (to?.web) return void exec("open", [to.web]).catch(() => {});
+    if (!to) return;
+    const path = to.path;
     if (!/\.(md|markdown)$/i.test(path)) return this.zed([path]);
     cx.spawn(async (cx) => {
       if ((await readTextFile(path).catch(() => null)) == null) return this.zed([path]);
@@ -527,11 +527,17 @@ export default class Skills extends View {
   }
 
   // One key (an event, or a name from `kt-skills.key:`): the selection's first (select.js, NORMAL
-  // only: x space V ctrl-a esc), then vim's; a visual range then follows the cursor.
+  // only: x space V ctrl-a esc), then p (Aperçu / Brut of the open file), then vim's; a visual range
+  // then follows the cursor.
   press(k, cx) {
     const cur = () => { const e = this.at(this.entries(this.listed())); return e ? idOf(e) : null; };
     if (!this.vim.insert && this.multi.key(keyOf(k).name, cur(), this.order())) {
       this.vim.normal(); // a `d` or a count typed before it is dropped
+      return true;
+    }
+    if (!this.vim.insert && keyOf(k).name === "p" && this.doc) {
+      this.vim.normal();
+      this.md.raw = !this.md.raw;
       return true;
     }
     if (!this.keyAct(this.vim.handle(k), cx)) return false;
@@ -792,7 +798,7 @@ export default class Skills extends View {
 
   // ---------- detail ----------
 
-  detail(t, x, w) {
+  detail(t, x, w, cx) {
     const meta = Object.entries(x.meta).filter(([k]) => k !== "description");
     const pair = (k, v) => h_flex().gap(10).items_start()
       .child(this.eyebrow(t, k).w(150).flex_none().pt(1))
@@ -810,7 +816,9 @@ export default class Skills extends View {
           .on_click((_e, cx) => { this.loadDoc(x, x.path, cx); cx.notify(); }).child(x.path.split("/").pop().toUpperCase())
         : this.eyebrow(t, x.real.split("/").pop()))
       .when(Boolean(sub), (el) => el.child(this.eyebrow(t, "›", t.dim))
-        .child(this.eyebrow(t, sub?.startsWith(dirOf(x.path) + "/") ? sub.slice(dirOf(x.path).length + 1) : tilde(sub ?? ""), t.foreground).min_w(0).truncate()));
+        .child(this.eyebrow(t, sub?.startsWith(dirOf(x.path) + "/") ? sub.slice(dirOf(x.path).length + 1) : tilde(sub ?? ""), t.foreground).min_w(0).truncate()))
+      .child(div().flex_1())
+      .when(Boolean(d?.md) && d?.note !== "unreadableMd", (el) => el.child(tabs(t, "kts-md-tabs", this.md)));
     // The card (16): DESIGN-REFERENCE.md's band on the page's dither (its width is known: w), the
     // actions as icon buttons with their key; it fades in and rises when a skill opens (motion.js).
     const card = this.card(t).w(w).flex_none().h_full().relative().px(4).pb(4).overflow_hidden()
@@ -834,34 +842,25 @@ export default class Skills extends View {
           .when(meta.length > 0, (el) => el.child(v_flex().gap(6).children(meta.map(([k, v]) => pair(k, fmt(v)))))))
         .child(this.dashed(t))
         .child(crumb)
-        .child(this.body(t, x, d)));
+        .child(this.body(t, x, d, cx)));
     return enter(this.m, card, `kts-detail-${x.key}`);
   }
 
-  // The file, rendered: its prose by TextView.markdown (headings, lists, emphasis, inline code,
-  // quotes, tables, in the theme's colors), its fenced code as blocks of our own; a ~80-character
-  // column with airy lines.
+  // The file, by markdown.js: Aperçu in a ~80-character column with airy lines, Brut as wide as the
+  // card (it soft-wraps; Kylian, 2026-11-18: « attention à la droite, c'est pas dynamique »).
   // While it is read: two paragraphs and a code block as bars (skeleton.js), in the same column, then
-  // the file fades in over them.
-  body(t, x, d) {
+  // the file fades in over them. Unreadable, or empty in Aperçu: said in the column.
+  body(t, x, d, cx) {
     const S = skeleton(t, this.m);
     const para = (n) => v_flex().children(Array.from({ length: n }, (_, i) => S.line(i === n - 1 ? 0.55 : 0.95, { h: 9, lh: 22 })));
-    return S.swap(`kts-body-${d?.path}`, Boolean(d?.segs), () => v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14)
-      .text_size(13.5).line_height("22px").text_color(t.foreground)
-      .children(d.segs.map((s, i) => (s.kind === "code" ? this.codeBlock(t, `${d.path}#${i}`, s)
-        : TextView.markdown(`kts-md-${d.path}#${i}`, s.text ?? tr(s.key)).selectable(true)
-          .on_link_click((url, cx) => { this.link(x, url, cx); cx.notify(); })))),
-    () => v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14).child(para(3)).child(S.block(null, 72, { r: 10 })).child(para(2)));
-  }
-
-  // A fenced block: t.raised, radius 12 (inner boxes here sit 4 px in the 16 cards), Monaspace Neon,
-  // one line per row as written; its language as an eyebrow; a long line scrolls sideways.
-  codeBlock(t, id, s) {
-    return v_flex().flex_none().rounded(12).border(1).border_color(t.border).bg(t.raised).overflow_hidden()
-      .when(Boolean(s.lang), (el) => el.child(div().px(14).pt(9).font_family(MONO).text_size(10).text_color(t.dim).child(s.lang.toUpperCase())))
-      .child(div().id(`kts-code-${id}`).overflow_x_scrollbar().px(14).pt(s.lang ? 6 : 12).pb(12)
-        .child(v_flex().flex_none().font_family(CODE).text_size(12).line_height("19px").text_color(t.foreground)
-          .children(s.text.split("\n").map((l) => div().flex_none().whitespace_nowrap().child(l || " ")))));
+    const col = () => v_flex().flex_none().px(18).pt(2).pb(28).gap(14).when(!this.md.raw, (el) => el.max_w(MEASURE)).when(this.md.raw, (el) => el.w_full());
+    return S.swap(`kts-body-${d?.path}`, Boolean(d?.md), () => col().text_size(13.5).line_height("22px").text_color(t.foreground)
+      .child(d.note === "unreadableMd" || (d.note && !this.md.raw) ? div().text_color(t.dim).child(tr(d.note))
+        : view(t, this.m, cx, this.md, { id: `kts-md-${d.path}`, mod: "kt-skills", doc: d.md,
+          onLink: (url, cx) => { this.link(x, url, cx); cx.notify(); },
+          // Another page of Brut: back to its top, the crumb (the doc scroll's 3rd child).
+          onPage: () => this.docScroll.scroll_to_item(2) })),
+    () => col().child(para(3)).child(S.block(null, 72, { r: 10 })).child(para(2)));
   }
 
   render(cx) {
@@ -925,7 +924,7 @@ export default class Skills extends View {
       .child(this.header(t, q, shown.length))
       .child(h_flex().flex_1().min_h(0).gap(4)
         .child(this.list(t, shown, cx))
-        .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45)))))
+        .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45), cx))))
       // The head's ⋯, last so that it draws over the list.
       .when(this.more, (el) => el.relative().child(moreMenu(t, "kts-more", props()?.overlay ? 60 : 56, this.moreItems(), () => { this.more = false; })));
   }

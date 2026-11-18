@@ -9,7 +9,9 @@
 // scope), refresh, and the list (latest activity first, a dot when it moved
 // since I last opened it). Right: the selected item's key figures, meta and
 // actions, then for a PR Summary / Code / Checks, for an issue its body and
-// last 20 comments. Every change (merge, draft, ready, close, reopen) asks
+// last 20 comments. The body (an issue's, a PR's Summary) by markdown.js: Aperçu (its fenced code
+// in Zed's colors, its alerts, no HTML comments) or Brut (its source in Zed's colors), the two
+// chips above it or p; the comments in Aperçu only. Every change (merge, draft, ready, close, reopen) asks
 // first through the `kt-confirm` dialog, which calls back
 // `kt-inbox.confirmed` (a mod command: it reaches this copy while the page shows).
 // Data: `gh`, cached in localStorage by scope (list 2 min, detail 1 min); the
@@ -25,8 +27,8 @@
 // INSERT: type to filter, ctrl-n/ctrl-p, ctrl-j/ctrl-k, ↓ ↑ move the cursor, enter opens it, esc:
 // NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N move the cursor (k on the first row: the filter, INSERT),
 // / the filter, tab / shift-tab the type pills, [ ] the relation pills, enter/o/l open (a click), O
-// GitHub, y copy the link, r refresh, dd close it (kt-confirm, open ones), ? kt-keys, q back to the
-// thread, esc empties the selection, else clears the filter, then back to the thread.
+// GitHub, y copy the link, r refresh, dd close it (kt-confirm, open ones), p the body's Aperçu / Brut,
+// ? kt-keys, q back to the thread, esc empties the selection, else clears the filter, then back to the thread.
 // Selection (select.js): x / space pick the cursor's row, V a range, ctrl-a every listed row,
 // ⌘-click / ⇧-click; a bar then acts on them (bulk.js): open, copy the links, gwm review (PRs with a
 // local checkout, never bootstrapped), close (open ones only, each listed in a danger confirm).
@@ -40,7 +42,7 @@
 // and [ ] do nothing there (nothing to discard on a PR).
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, TextView, ScrollHandle, Scrollbar } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle, Scrollbar } from "gpui-base";
 import { exec, theme, spaces, panes, run, layout, openOverlay, notify, nextCommand, settings, readTextFile, appHome, checking, shared, setShared, knownAgents, home } from "herdr";
 import { parsePatch } from "./diff.js";
 import { ICON_MAP } from "./icons.js";
@@ -51,6 +53,7 @@ import { planClose, planReview, describe, fitAsked } from "./bulk.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
+import { mdState, mdBudget, docOf, view, preview, tabs as mdTabs } from "./markdown.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { roll, rollText } from "./roll.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): a PR's checks as steps, a bulk run's progress.
@@ -174,6 +177,7 @@ export default class Inbox extends View {
     this.diffs = {}; // "owner/repo#n" -> { at, files } | { at, error } (memory only: can be big)
     this.openFiles = new Set(); // "owner/repo#n:path" unfolded in the Code tab
     this.tokens = {}; // "owner/repo#n:path" -> colorize's { mode, label, old, new }, made when a file unfolds
+    this.md = mdState(); // the body's Aperçu / Brut (kept from one item to the next), its colors and parses
     this.previews = {}; // "owner/repo#n:path" -> { before, after } | { error } | null (loading), made when an image unfolds
     this.hotFile = null;
     // The Code tab's keys: the zone they go to ("list", or "code": the open PR's files), its cursor ("h":
@@ -897,8 +901,14 @@ export default class Inbox extends View {
     return v_flex().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background);
   }
 
-  markdown(t, id, text) {
-    return div().text_size(13).text_color(t.foreground).child(TextView.markdown(id, text?.trim() || tr("noDescription")).selectable(true));
+  // A body or a comment by markdown.js, 13 px: the body (`body`) in Aperçu or Brut (this.md.raw), a
+  // comment in Aperçu only (noRaw: no Brut to send its cut lines to). `budget`: the render's
+  // (mdBudget()), shared by the body and its comments. Empty: said, dimmed.
+  markdown(t, id, text, cx, { body = false, budget } = {}) {
+    const box = div().text_size(13).text_color(t.foreground);
+    if (!text?.trim()) return box.text_color(t.dim).child(tr("noDescription"));
+    const o = { id, mod: "kt-inbox", doc: docOf(this.md, text), budget, noRaw: !body };
+    return box.child(body ? view(t, this.m, cx, this.md, o) : preview(t, cx, this.md, o));
   }
 
   // ---------- left ----------
@@ -996,12 +1006,17 @@ export default class Inbox extends View {
 
   // One key, from the keyboard or `key:`: in NORMAL the selection's first (select.js: x / space
   // toggle the cursor's row, V a visual range, ctrl-a every listed row, esc empties), then vim's
-  // (dd still closes the cursor's item). A move in a visual range extends it.
+  // (dd still closes the cursor's item), p the body's Aperçu / Brut. A move in a visual range extends it.
   press(e, cx) {
     // The Code zone takes the keys first: x, space or dd there never pick nor close the list's items.
     if (this.zone === "code" && !this.vim.insert && this.tab === "code" && this.sel?.kind === "pr") return this.codeKey(this.vim.handle(e), cx);
     const order = this.filtered().map((x) => x.key);
     if (!this.vim.insert && this.multi.key(keyOf(e).name, this.at(this.filtered())?.key, order)) return true;
+    if (!this.vim.insert && keyOf(e).name === "p" && this.sel) {
+      this.vim.normal();
+      this.md.raw = !this.md.raw;
+      return true;
+    }
     const taken = this.keyAct(this.vim.handle(e), cx);
     if (taken && this.multi.visual) this.multi.follow(this.at(this.filtered())?.key, order);
     return taken;
@@ -1396,25 +1411,31 @@ export default class Inbox extends View {
     if (!data && d?.error) return card.child(this.empty(t, d.error, t.ansi1));
     if (!data) return card.child(this.bodySkeleton(t, `kti-body-sk-${x.key}`));
     const scroll = (id) => v_flex().id(id).flex_1().min_h(0).overflow_y_scrollbar();
+    // The body's Aperçu / Brut (markdown.js), right of the PR's tabs; an issue's in a row of its own.
+    const md = Boolean(data.body?.trim()) && mdTabs(t, "kti-md-tabs", this.md);
     if (x.kind === "issue") {
       const comments = data.comments ?? [];
-      return card.child(scroll("kti-issue").p(18).gap(14)
-        .child(this.markdown(t, `kti-md-${x.key}`, data.body))
-        .child(this.dashed(t))
-        .child(this.eyebrow(t, comments.length ? tr("comments", { n: comments.length }) : tr("noComments")))
-        .children(comments.map((c, i) => v_flex().gap(8).p(12).rounded(12).border(1).border_color(t.border)
-          .child(h_flex().gap(8).items_center()
-            .child(this.eyebrow(t, `@${c.author?.login ?? "?"}`, t.foreground))
-            .child(div().font_family(MONO).text_size(11).text_color(t.dim).child(ago(c.createdAt))))
-          .child(this.markdown(t, `kti-mdc-${x.key}-${i}`, c.body)))));
+      const budget = mdBudget(); // one for the body and its comments: a render has ~50 ms (markdown.js)
+      return card
+        .when(Boolean(md), (el) => el.child(h_flex().flex_none().px(12).py(8).items_center().child(div().flex_1()).child(md)).child(this.dashed(t)))
+        .child(scroll("kti-issue").p(18).gap(14)
+          .child(this.markdown(t, `kti-md-${x.key}`, data.body, cx, { body: true, budget }))
+          .child(this.dashed(t))
+          .child(this.eyebrow(t, comments.length ? tr("comments", { n: comments.length }) : tr("noComments")))
+          .children(comments.map((c, i) => v_flex().gap(8).p(12).rounded(12).border(1).border_color(t.border)
+            .child(h_flex().gap(8).items_center()
+              .child(this.eyebrow(t, `@${c.author?.login ?? "?"}`, t.foreground))
+              .child(div().font_family(MONO).text_size(11).text_color(t.dim).child(ago(c.createdAt))))
+            .child(this.markdown(t, `kti-mdc-${x.key}-${i}`, c.body, cx, { budget })))));
     }
     const nChecks = (d.checks ?? []).length;
     const tabs = [["summary", "Summary"], ["code", `Code · ${data.changedFiles ?? 0}`], ["checks", `Checks · ${nChecks}`]]; // i18n: tech
     return card
       .child(h_flex().flex_none().px(12).py(10).gap(6).items_center()
-        .children(tabs.map(([id, label]) => this.chip(t, `kti-tab-${id}`, label, this.tab === id, () => { this.tab = id; }))))
+        .children(tabs.map(([id, label]) => this.chip(t, `kti-tab-${id}`, label, this.tab === id, () => { this.tab = id; })))
+        .when(this.tab === "summary" && Boolean(md), (el) => el.child(div().flex_1()).child(md)))
       .child(this.dashed(t))
-      .when(this.tab === "summary", (el) => el.child(scroll("kti-summary").p(18).child(this.markdown(t, `kti-md-${x.key}`, data.body))))
+      .when(this.tab === "summary", (el) => el.child(scroll("kti-summary").p(18).child(this.markdown(t, `kti-md-${x.key}`, data.body, cx, { body: true }))))
       .when(this.tab === "code", (el) => el.child(this.code(t, x, cx)))
       .when(this.tab === "checks", (el) => el.child(this.checksView(t, x, d)));
   }

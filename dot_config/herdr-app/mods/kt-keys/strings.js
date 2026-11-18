@@ -191,7 +191,7 @@ export default {
     "md.modsActions": "Ouvrir dans Zed, check, dupliquer, copier le chemin",
     "md.modsDelete": "Supprimer un fichier d'un mod inutilisé, après confirmation",
     "pg.notesEdit": "Éditer la note",
-    "pg.notesTick": "Cocher / décocher la case (lecture)",
+    "pg.notesTick": "Cocher / décocher la case (Aperçu ; le Brut ne coche pas)",
     "pg.notesSave": "Enregistrer (sinon 1,5 s après la dernière frappe)",
     "pg.notesBack": "Édition → lecture → liste",
     "pg.notesSections": "Section : Tout, Projet, Worktrees, Orphelines",
@@ -200,6 +200,7 @@ export default {
     "pg.codeZed": "Le fichier dans Zed (checkout local), sinon sur GitHub",
     "pg.codePath": "Copier le chemin du fichier",
     "pg.codeBack": "Retour à la liste (dd, x et [ ] n'y font rien)",
+    "pg.mdRaw": "Le document ouvert : Aperçu (rendu) ou Brut (le source markdown, aux couleurs de Zed)",
   },
   en: {
     title: "Keys",
@@ -390,7 +391,7 @@ export default {
     "md.modsActions": "Open in Zed, check, duplicate, copy the path",
     "md.modsDelete": "Delete a file of an unused mod, after a confirmation",
     "pg.notesEdit": "Edit the note",
-    "pg.notesTick": "Tick / untick the box (reading)",
+    "pg.notesTick": "Tick / untick the box (Preview; Raw doesn't tick)",
     "pg.notesSave": "Save (else 1.5 s after the last keystroke)",
     "pg.notesBack": "Editing → reading → list",
     "pg.notesSections": "Section: All, Project, Worktrees, Orphans",
@@ -399,5 +400,6 @@ export default {
     "pg.codeZed": "The file in Zed (local checkout), else on GitHub",
     "pg.codePath": "Copy the file's path",
     "pg.codeBack": "Back to the list (dd, x and [ ] do nothing there)",
+    "pg.mdRaw": "The open document: Preview (rendered) or Raw (the markdown source, in Zed's colors)",
   },
 };

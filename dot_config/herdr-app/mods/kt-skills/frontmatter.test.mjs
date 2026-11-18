@@ -1,7 +1,6 @@
 // node mods/kt-skills/frontmatter.test.mjs: the shapes found in ~/.claude and ~/.agents skills.
 import assert from "node:assert/strict";
 import { frontmatter } from "./frontmatter.js";
-import { blocks } from "./markdown.js";
 import { githubSource } from "./github.js";
 
 const { meta, body } = frontmatter(`---
@@ -46,33 +45,7 @@ assert.equal(meta.esc, 'say "hi"\n');
 assert.equal(body, "body\n---\nname: not frontmatter\n");
 assert.deepEqual(frontmatter("# no frontmatter").meta, {});
 console.log("frontmatter: ok");
-
-// The body cut for the viewer: fences (any indent, ``` or ~~~, unclosed runs to the end); tables stay.
-const b = blocks(`# T
-
-1. **config.json** :
-   \`\`\`json
-   { "a": 1 }
-     nested
-   \`\`\`
-2. next
-
-| A | \`b|c\` |
-|---|:-:|
-| 1 | 2 |
-
-~~~
-x
-~~~
-Inline \`\`\`not a fence\`\`\` here.
-\`\`\`sh
-unclosed`);
-assert.deepEqual(b.map((x) => x.kind), ["md", "code", "md", "code", "md", "code"]);
-assert.deepEqual(b[1], { kind: "code", lang: "json", text: '{ "a": 1 }\n  nested' });
-assert.ok(b[2].text.startsWith("2. next") && b[2].text.includes("|---|:-:|"));
-assert.equal(b[4].text, "Inline ```not a fence``` here.");
-assert.deepEqual(b[5], { kind: "code", lang: "sh", text: "unclosed" });
-console.log("markdown: ok");
+// The viewer's body cut (markdown.js) is checked with it: bun mods/kt-keys/markdown.check.mjs.
 
 // « Depuis GitHub »: the source's forms; a path never leaves the clone.
 const g = (s) => githubSource(s);

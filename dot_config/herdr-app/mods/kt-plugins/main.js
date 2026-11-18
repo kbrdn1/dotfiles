@@ -28,17 +28,21 @@
 // NORMAL: j/k, gg/G, ctrl-d/u, n/N move the cursor (k on the first row: the filter), / the filter,
 // tab / shift-tab the state segments, enter/o/l open the detail, O the plugin on GitHub, y copies
 // its id, r refresh, e activate / deactivate, u update (the selection when there is one), dd
-// uninstall (danger), + the "Ajouter" menu, x / space / V / ctrl-a select, ? kt-keys, q back to the
-// thread; esc ends the range, then empties the selection, then clears the filter, then as q.
+// uninstall (danger), + the "Ajouter" menu, x / space / V / ctrl-a select, p the README's Aperçu /
+// Brut, ? kt-keys, q back to the thread; esc ends the range, then empties the selection, then clears
+// the filter, then as q.
+// The README (markdown.js): Aperçu (its frontmatter as fields, its fenced code in Zed's colors, its
+// alerts) or Brut (its source in Zed's colors); a link: the web in the browser, a file of the plugin
+// in Zed.
 // Tests: `kt-plugins.add:<view>` opens the menu ("menu") or a form (add.js).
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, theme, spaces, panes, run, layout, props, home, notify, checking, nextCommand, openOverlay, shared, watchFolder } from "herdr";
 import { bump, refreshOn } from "./bus.js";
 import { summary, why } from "./plugins.js";
 import { installed, claude, read } from "./data.js";
-import { blocks } from "./markdown.js";
+import { parse as mdParse, mdState, view, tabs, target } from "./markdown.js";
 import { Select, partition, lines } from "./select.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { Add } from "./add.js";
@@ -102,7 +106,8 @@ export default class Plugins extends View {
     this.markets = {};
     this.enabledAtUser = {}; // settings.json's enabledPlugins (what kt-skills lists)
     this.sel = null; // the open row's key
-    this.doc = null; // { key, segs } its README cut by blocks() (null while read)
+    this.doc = null; // { key, md, readme } its README parsed by markdown.js (md null while read)
+    this.md = mdState(); // Aperçu / Brut (kept from one README to the next) and the colors asked
     this.multi = new Select();
     this.hot = null;
     this.error = null;
@@ -246,12 +251,12 @@ export default class Plugins extends View {
   select(x, cx) {
     if (this.sel === x.key && this.doc?.key === x.key) return;
     this.sel = x.key;
-    this.doc = { key: x.key, segs: null };
+    this.doc = { key: x.key, md: null };
     cx.spawn(async (cx) => {
       let text = null;
       for (const f of ["README.md", "readme.md", "Readme.md"]) if ((text = await read(`${x.dir}/${f}`)) != null) break;
       if (this.doc?.key !== x.key) return;
-      this.doc.segs = text == null ? null : blocks(text);
+      this.doc.md = text == null ? null : mdParse(text);
       this.doc.readme = text != null;
       this.docScroll.scroll_to_item(0);
       cx.notify();
@@ -402,6 +407,11 @@ export default class Plugins extends View {
     if (!this.vim.insert && name === "+") {
       this.vim.normal();
       this.openAdd();
+      return true;
+    }
+    if (!this.vim.insert && name === "p" && this.doc) {
+      this.vim.normal();
+      this.md.raw = !this.md.raw;
       return true;
     }
     if (!this.vim.insert && (name === "e" || name === "u")) {
@@ -692,7 +702,7 @@ export default class Plugins extends View {
 
   // ---------- detail ----------
 
-  detail(t, x, w) {
+  detail(t, x, w, cx) {
     const path = (label, p) => h_flex().gap(8).items_center()
       .child(eyebrow(t, label, t.dim).w(64).flex_none())
       .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.muted).child(tilde(p)));
@@ -742,8 +752,9 @@ export default class Plugins extends View {
           .child(v_flex().gap(6).child(eyebrow(t, x.pjText ? "plugin.json" : tr("catalogEntry")))
             .child(codeBlock(t, `pj-${x.key}`, "json", x.pjText ? pretty(x.pjText) : JSON.stringify(x.entry ?? {}, null, 2)))))
         .child(dashed(t))
-        .child(h_flex().flex_none().px(14).pt(12).pb(6).child(eyebrow(t, "README"))) // i18n: tech
-        .child(this.readme(t, x, d)));
+        .child(h_flex().flex_none().px(14).pt(12).pb(6).items_center().child(eyebrow(t, "README")) // i18n: tech
+          .child(div().flex_1()).when(Boolean(d?.md), (el) => el.child(tabs(t, "ktp-md-tabs", this.md))))
+        .child(this.readme(t, x, d, cx)));
   }
 
   // The components, one line per kind; a skill opens in kt-skills (a dialog on it) when kt-skills
@@ -761,17 +772,22 @@ export default class Plugins extends View {
         .child(tr("skillsNotLinked"))));
   }
 
-  // While it is read: two paragraphs and a code block as bars (skeleton.js), in the README's column,
-  // then the README fades in over them.
-  readme(t, x, d) {
+  // The README by markdown.js: Aperçu in a ~80-character column, Brut as wide as the card (it
+  // soft-wraps). While it is read: two paragraphs and a code block as bars (skeleton.js), then the
+  // README fades in over them.
+  readme(t, x, d, cx) {
     const S = skeleton(t, this.m);
     const para = (n) => v_flex().children(Array.from({ length: n }, (_, i) => S.line(i === n - 1 ? 0.55 : 0.95, { h: 9, lh: 22 })));
-    return S.swap(`ktp-readme-${x.key}`, !(!d || d.segs === null && d.readme === undefined), () => (!d.readme ? empty(t, tr("noReadme"))
-      : v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14)
+    return S.swap(`ktp-readme-${x.key}`, d?.readme !== undefined, () => (!d.readme ? empty(t, tr("noReadme"))
+      : v_flex().flex_none().px(18).pt(2).pb(28).when(!this.md.raw, (el) => el.max_w(MEASURE)).when(this.md.raw, (el) => el.w_full())
         .text_size(13.5).line_height("22px").text_color(t.foreground)
-        .children(d.segs.map((s, i) => (s.kind === "code" ? codeBlock(t, `${x.key}#${i}`, s.lang, s.text)
-          : TextView.markdown(`ktp-md-${x.key}#${i}`, s.text).selectable(true) // i18n: tech
-            .on_link_click((url) => { if (/^https?:/i.test(url)) exec("open", [url]).catch(() => {}); }))))),
+        .child(view(t, this.m, cx, this.md, { id: `ktp-md-${x.key}`, mod: "kt-plugins", doc: d.md, onLink: (url) => {
+          const to = target(url, x.dir);
+          if (to?.web) exec("open", [to.web]).catch(() => {});
+          else if (to) this.zed(to.path);
+        },
+        // Another page of Brut: back to its top, the README row (the doc scroll's 3rd child).
+        onPage: () => this.docScroll.scroll_to_item(2) }))),
     () => v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14).child(para(3)).child(S.block(null, 72, { r: 10 })).child(para(2)));
   }
 
@@ -813,7 +829,7 @@ export default class Plugins extends View {
         .child(this.header(t, q, shown.length))
         .child(h_flex().flex_1().min_h(0).gap(4)
           .child(this.list(t, shown, cx))
-          .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45))))))
+          .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45), cx)))))
       .when(this.menu, (el) => el.child(this.more(t)));
   }
 }
