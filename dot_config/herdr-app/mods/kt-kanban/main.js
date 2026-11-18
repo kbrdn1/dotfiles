@@ -32,7 +32,12 @@
 // agent waits on from you when blocked (the sidebar's decisions: decide.js, a copy of kbrdn-toast's;
 // else herdr-bridge's pending), else what it does or answered (the sidebar's live line); then
 // claude-flow's step; then the PR, its CI as icons and counts, the issue, the sub-agents k/n; last the
-// project and the branch. The cost is the drawer's (and, with the columnCost option, off by default, the
+// project and the branch. A blocked agent's card has the sidebar's decision pills (decide.js'
+// decisionButtons: the same answer as the sidebar's and the toast's). Right-click, or m on the cursor's
+// card, opens its menu (kanban.js cardMenu), anchored to it (gpui-base's Popup): those choices first,
+// then go, the drawer, pin, snooze, archive, the PR, the issue, Zed, the branch copied, the thread
+// closed (kt-confirm); a draft's: launch, edit, delete. j / k move in it, enter runs, esc or q shuts it,
+// and an item's key (o p 1 2 3 0 O I e, L i x) runs it. The cost is the drawer's (and, with the columnCost option, off by default, the
 // column heads'). It lists every project's threads, whatever the sidebar's scope or filter: its
 // views decide (GitHub Projects), through the filter typed after `/` (the archived only with
 // is:archived), then the slice. A click or enter: back to the thread, on that agent (agent.focus).
@@ -47,7 +52,7 @@
 // kanban.js (kanban.check.mjs). Words: strings.js (I18N.md).
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle, Popup } from "gpui-base";
 import { spaces, panes, run, theme, shared, setShared, layout, nextCommand, settings, exec, home, readTextFile, openOverlay, checking, notify, window as win } from "herdr";
 import * as fs from "fs/promises";
 import * as model from "./threads-model.js";
@@ -55,15 +60,16 @@ import * as io from "./threads-io.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
   costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
-  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount } from "./kanban.js";
-// The sidebar's decisions (a byte-identical copy of kbrdn-toast's decide.js): what a blocked agent waits on.
-import { decide } from "./decide.js";
+  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart } from "./kanban.js";
+// The sidebar's decisions (a byte-identical copy of kbrdn-toast's decide.js): what a blocked agent waits
+// on, its pills, and its answer (press, the sidebar's and the toast's path).
+import { decide, decisionButtons, press as answer } from "./decide.js";
 import { companion } from "./companion-logo.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the drawer's dither steps (flow, checks).
 import { viz } from "./viz.js";
 import { costLevel, ctxLevel, levelColor } from "./levels.js";
 import { Vim, keysOf, keyOf } from "./vim.js";
-import { motionState, frame, enter, sharpen, rows, collapse, MS } from "./motion.js";
+import { motionState, frame, enter, sharpen, rows, collapse, sheet, leave, leaving, MS } from "./motion.js";
 import { roll, rollText } from "./roll.js";
 import { refreshOn } from "./bus.js";
 import { ditherBand, TOP } from "./dither.js";
@@ -157,6 +163,8 @@ export default class Kanban extends View {
     this.snoozing = false;
     this.details = {};
     this.decisions = {}; // a blocked agent's terminal -> decide.js' { pending, … } (readDecisions)
+    this.menu = null; // a card's menu: { id (its thread), key (the item under the keys' cursor), anim (its motion id) }
+    this.menus = 0;
     this.cur = null; // the keys' cursor: a thread id
     this.at = null; // where it last was, { l, c, i } (kanban.js locate)
     this.board = { keys: [], lanes: [] };
@@ -342,6 +350,7 @@ export default class Kanban extends View {
     if (!visible()) {
       if (this.shown) {
         this.shown = false;
+        this.menu = null; // a card's menu doesn't wait for the page to come back
         // Left for another page or the thread with the keyboard still here: back to the thread's terminal.
         if (this.handle.is_focused()) this.toTerminal();
       }
@@ -499,7 +508,28 @@ export default class Kanban extends View {
       else return false;
       return true;
     }
+    // A card's menu takes the keys while it shows (not while it leaves): j / k (↓ / ↑) move, enter runs,
+    // esc / q shut it, an item's key (cardMenu's hint) runs that item; ctrl / cmd go on, the rest stops here.
+    const menu = this.menu && !leaving(this.motion, this.menu.anim) ? this.menu : null;
+    if (menu) {
+      const th = this.byId?.get(menu.id);
+      const list = th ? this.menuItems(th) : [];
+      const i = Math.max(0, list.findIndex((it) => it.key === menu.key));
+      if (["j", "down", "k", "up"].includes(name)) menu.key = list[(i + (name === "j" || name === "down" ? 1 : list.length - 1)) % list.length]?.key ?? null;
+      else if (name === "enter") this.runItem(th, list[i], cx);
+      else if (name === "escape" || name === "q") this.closeMenu(cx);
+      else if (list.some((it) => it.hint === name)) this.runItem(th, list.find((it) => it.hint === name), cx);
+      else if (/^(ctrl|cmd)-/.test(name)) return false;
+      return true;
+    }
     if (this.vim.insert) return this.act(this.vim.handle(e), cx);
+    // m: the cursor's card's menu.
+    if (name === "m") {
+      const th = atCard(this.board, this.at ?? { l: 0, c: 0, i: -1 });
+      this.vim.normal();
+      if (th) this.openMenu(th, cx);
+      return true;
+    }
     // n: a new draft (its drawer opens, its title typed at once).
     if (name === "n") {
       this.vim.normal();
@@ -584,11 +614,11 @@ export default class Kanban extends View {
     });
   }
 
-  // Its thread's PR (with its checks) and issue from gh, at most every PR_EVERY (as the badges) unless
+  // Its thread's (or `id`'s: a card's menu wants its PR's and issue's addresses) PR (with its checks) and issue from gh, at most every PR_EVERY (as the badges) unless
   // forced (r, a gh bump); its diff against its base (the PR's, else the repo's default) each time, a
   // remote one only with the gh reads. Never in a check.
-  loadDetail(cx, force = false) {
-    const th = this.byId?.get(this.drawer);
+  loadDetail(cx, force = false, id = this.drawer) {
+    const th = this.byId?.get(id);
     if (!th?.lead?.cwd || checking()) return;
     const d = (this.details[th.id] ??= { at: 0, diffAt: 0 });
     if (d.loading) return;
@@ -635,6 +665,88 @@ export default class Kanban extends View {
   zed(th) {
     if (!th.cwd || th.space.machine) return;
     exec("zed", [th.cwd]).catch(() => exec("open", [`zed://file${th.cwd}`]).catch(() => {}));
+  }
+
+  // ---------- a card's menu (kanban.js cardMenu; anchored to the card: withMenu) ----------
+
+  // Right-click or m: the card takes the cursor and the keyboard, its PR and issue are read (their items);
+  // the highlight on « go » (menuStart: never on a choice, enter can't accept by accident).
+  openMenu(th, cx) {
+    if (this.editing) this.commitEdit();
+    this.vim.normal();
+    this.handle.focus();
+    this.cur = th.id;
+    this.menu = { id: th.id, key: menuStart(this.menuItems(th)), anim: `km-${++this.menus}` };
+    if (!th.draft) this.loadDetail(cx, false, th.id);
+  }
+
+  // motion.js leave(): it fades and sinks 6 px, then goes (unless another opened meanwhile).
+  closeMenu(cx) {
+    const was = this.menu;
+    if (!was) return;
+    leave(this.motion, cx, was.anim, (cx) => {
+      this.motion.out?.delete(was.anim);
+      if (this.menu?.anim === was.anim) this.menu = null;
+      cx.notify();
+    });
+  }
+
+  menuItems(th) {
+    const d = this.details[th.id] ?? {};
+    return cardMenu(th, { decision: this.decisions[th.terminal], prUrl: d.pr?.url ?? th.pr?.url, issueUrl: d.issue?.url });
+  }
+
+  // One item run, then the menu leaves. A decision goes by decide.js' press (the sidebar's and the
+  // toast's answer: the decision file herdr-bridge's plugin reads, or the held dialog's keys); closing
+  // the thread asks kt-confirm (it says what stops); archiving is the sidebar's (nothing closes).
+  runItem(th, it, cx) {
+    if (!th || !it) return;
+    const [kind, arg] = it.key.split(":");
+    const d = this.details[th.id] ?? {};
+    const go = {
+      decide: () => {
+        const dd = this.decisions[th.terminal];
+        if (dd) cx.spawn(async (cx) => this.decided(await answer(dd, arg), cx));
+      },
+      go: () => this.open(th),
+      drawer: () => this.openDrawer(th.id, cx),
+      pin: () => this.pin(th),
+      unpin: () => this.pin(th),
+      snooze: () => this.snooze(th, arg),
+      wake: () => this.snooze(th, null),
+      archive: () => run("tab.settle", { id: th.id }),
+      unarchive: () => this.unarchive(th),
+      openPr: () => this.browse(d.pr?.url ?? th.pr?.url),
+      openIssue: () => this.browse(d.issue?.url),
+      zed: () => this.zed(th),
+      copyBranch: () => {
+        cx.write_to_clipboard(th.branch);
+        notify({ title: tr("copied"), body: th.branch, level: "success", timeout: 2000 });
+      },
+      close: () => openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { thread: th.id } }),
+      launch: () => this.launch(th),
+      edit: () => {
+        if (this.drawer !== th.id) this.openDrawer(th.id, cx);
+        this.startEdit(th, "title");
+      },
+      deleteDraft: () => this.askDeleteDraft(th),
+    }[kind];
+    go?.();
+    this.closeMenu(cx);
+  }
+
+  // A decision answered (a pill, or the menu): a toast when nothing went (kt-threads' decided), what
+  // waits read again.
+  decided(res, cx) {
+    if (!res?.ok) notify({ title: tr("reply.title"), body: res?.reason ?? tr("reply.none"), level: "warning", timeout: 4000 });
+    this.readDecisions(cx);
+    cx.notify();
+  }
+
+  // Back from the archive: auto-archive marks it done (archivePlan never settles it again on its own).
+  unarchive(th) {
+    run("tab.unsettle", { id: th.id });
+    this.markArchived(shared(AUTO_ARCHIVED), [th.id], [...(this.byId?.values() ?? [])], Date.now());
   }
 
   // ---------- drafts (kanban.js draftsOf; shared "kt.kanban.drafts") ----------
@@ -938,7 +1050,7 @@ export default class Kanban extends View {
   // (its leaving copy in the old column, rows()). `gone`: that leaving copy, no longer a target.
   card(t, th, col, cursor, gone, now, cx) {
     const key = `${col}-${th.id}`;
-    if (th.draft) return this.draftCard(t, th, key, cursor, gone);
+    if (th.draft) return this.withMenu(t, th, key, gone, this.draftCard(t, th, key, cursor, gone));
     const muted = th.settled || th.asleep;
     const bridge = th.terminal ? this.shownLive[th.terminal] : null;
     const pet = companion({
@@ -956,12 +1068,21 @@ export default class Kanban extends View {
     // blocked (the sidebar's decision: decide.js' dialog, else herdr-bridge's pending, else that it
     // waits), else what it does now or answered (the sidebar's live line). Two lines at most.
     const asking = th.status === "blocked" ? this.askOf(th) : null;
+    // Its answer there, as the sidebar's pills (decide.js decisionButtons: Accepter, Refuser, other
+    // choices; Ouvrir with none, which goes to the agent as the card's click). Never on a leaving copy:
+    // the pills' ids carry only the terminal.
+    const d = asking && !gone ? this.decisions[th.terminal] : null;
+    const pills = d ? decisionButtons(d, { onDone: (res, cx) => {
+      if (res?.ok && !d.pending.options?.length) this.open(th);
+      this.decided(res, cx);
+    } }) : null;
     const upfront = asking
       ? v_flex().px(8).py(5).gap(2).rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
         .child(h_flex().gap(6).items_center()
           .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
           .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.blocked).child(asking.title)))
         .when(Boolean(asking.detail), (el) => el.child(div().max_h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.foreground).child(asking.detail)))
+        .when(Boolean(pills), (el) => el.child(h_flex().pt(3).child(pills)))
       : th.line ? div().max_h(32).overflow_hidden().text_size(11.5).line_height("16px").text_color(th.status === "working" ? t.muted : t.dim).child(`↳ ${th.line}`)
         : null;
     // Then the flow's step, then the PR (its state's color, a draft in dim as kt-flow) and its CI (/me:report's,
@@ -985,7 +1106,7 @@ export default class Kanban extends View {
     ].filter(Boolean);
     const step = th.flow?.step?.label;
     const working = th.status === "working";
-    return v_flex().id(`kk-card-${key}`).p(8).gap(4).rounded(12).border(1)
+    return this.withMenu(t, th, key, gone, v_flex().id(`kk-card-${key}`).p(8).gap(4).rounded(12).border(1)
       .border_color(cursor ? alpha(t.accent, "99") : th.shown ? alpha(t.accent, "66") : t.border)
       .bg(cursor || th.shown ? alpha(t.accent, "24") : t.background)
       .when(muted, (el) => el.opacity(0.62))
@@ -1012,7 +1133,69 @@ export default class Kanban extends View {
         .child(div().flex_none().max_w(96).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(th.project.name.toUpperCase()))
         .when(Boolean(th.branch), (el) => el
           .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
-          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch))));
+          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch)))));
+  }
+
+  // A right-click opens the card's menu; while it shows, gpui-base's Popup anchors it under the card
+  // (kept clear of the window's edges, above the rest). Never on a leaving copy (gone). `menuDrawn`
+  // tells render() it found its card (a filtered or folded one: the menu goes).
+  withMenu(t, th, key, gone, el) {
+    if (gone) return el;
+    el = el.on_mouse_down("right", (_e, cx) => {
+      cx.stop_propagation();
+      this.openMenu(th, cx);
+      cx.notify();
+    });
+    if (this.menu?.id !== th.id) return el;
+    this.menuDrawn = true;
+    return Popup.new(`kk-menu-${key}`, el).anchor("top_left").w_full().content(this.menuPanel(t, th));
+  }
+
+  // The menu (kt-menu's look: 31 px rows, a rule before a group): what the item says, its icon (a
+  // decision's tone as a dot), its key. It rises in on its first layout and sinks out (sheet / leave);
+  // a press outside it shuts it.
+  menuPanel(t, th) {
+    const list = this.menuItems(th);
+    const at = Math.max(0, list.findIndex((it) => it.key === this.menu.key));
+    const anim = this.menu.anim;
+    const s = sheet(this.m, anim, this.menuShown === anim);
+    const words = {
+      accept: tr("menu.accept"), refuse: tr("menu.refuse"), go: tr("drawer.go"), drawer: tr("menu.drawer"), pin: tr("drawer.pin"),
+      unpin: tr("drawer.unpin"), wake: tr("snooze.wake"), archive: tr("menu.archive"), unarchive: tr("menu.unarchive"),
+      openPr: tr("drawer.openPr"), openIssue: tr("drawer.openIssue"), zed: tr("drawer.zed"), copyBranch: tr("menu.copyBranch"),
+      close: tr("menu.close"), launch: tr("draft.launch"), edit: tr("draft.edit"), deleteDraft: tr("draft.delete"),
+    };
+    const icons = { go: "bot", drawer: "panel-right", pin: "pin", unpin: "pin", snooze: "clock", wake: "sun", archive: "archive",
+      unarchive: "archive-restore", openPr: "git-pull-request", openIssue: "circle-dashed", zed: "folder", copyBranch: "git-branch",
+      close: "x", launch: "sparkles", edit: "square-pen", deleteDraft: "x" };
+    const tone = { positive: t.done, negative: t.ansi1, danger: t.ansi1 };
+    const row = (it, i) => {
+      const [kind, arg] = it.key.split(":");
+      const label = kind === "decide" ? words[arg] ?? it.label : kind === "snooze" ? tr("menu.snooze", { when: tr(`snooze.${arg}`) }) : words[kind];
+      const color = tone[it.tone] ?? t.foreground;
+      return v_flex()
+        .when(Boolean(it.sep) && i > 0, (el) => el.child(div().mx(7).my(4).h(1).bg(t.border)))
+        .child(h_flex().id(`kk-mi-${it.key}`).h(31).px(8).gap(9).rounded(7).items_center().text_color(color).cursor_pointer()
+          .when(i === at, (el) => el.bg(t.selected))
+          .hover((st) => st.bg(t.hover))
+          .on_click((_e, cx) => { cx.stop_propagation(); this.runItem(th, it, cx); cx.notify(); })
+          .child(kind === "decide"
+            ? h_flex().size(14).flex_none().items_center().justify_center().child(div().size(8).rounded(4).bg(color))
+            : svg(I(icons[kind])).size(14).flex_none().text_color(it.tone ? color : t.muted))
+          .child(div().flex_1().min_w(0).truncate().child(label))
+          .when(Boolean(it.hint), (el) => el.child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(it.hint))));
+    };
+    return s.card(s.veil(v_flex().id("kk-menu"))).w(236).p(5).rounded(12).border(1).border_color(t.border).bg(t.popover).text_size(12.8)
+      .on_size_change((_size, cx) => {
+        if (this.menuShown === anim) return;
+        this.menuShown = anim;
+        cx.notify();
+      })
+      .on_mouse_down_out((_e, cx) => {
+        this.closeMenu(cx);
+        cx.notify();
+      })
+      .children(list.map(row));
   }
 
   // What a blocked thread waits on (the sidebar's: decide.js, read for the blocked agents while the page
@@ -1471,10 +1654,13 @@ export default class Kanban extends View {
     // each; the cursor's column comes into view, its card then in column()); by project, the lanes. The
     // slice panel on its left.
     if (this.reveal && o.group !== "project") this.boardScroll.scroll_to_item(this.at.c);
+    this.menuDrawn = false;
     const area = o.group === "project"
       ? this.lanes(t, b, cur, now, cx)
       : h_flex().id("kk-board").flex_1().min_w(0).h_full().gap(4).items_start().overflow_x_scroll().track_scroll(this.boardScroll)
         .children((b.lanes[0]?.cols ?? []).map((col, c) => this.column(t, col, c === this.at.c ? cur : null, now, cx)));
+    // A menu whose card isn't drawn (filtered out, its lane folded, its tab closed) goes.
+    if (this.menu && !this.menuDrawn) this.menu = null;
     // The drawer on the right: its box opens to DRAWER_W (plus the gap) and folds back to 0 on its width,
     // the board narrowing and widening beside it; its content stays drawn while it folds (closeDrawer's
     // one timer). Reduced motion: at once.

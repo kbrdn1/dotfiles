@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
-  costOf, cleanLimits, stepLimit, checkSteps, ciCount, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
+  costOf, cleanLimits, stepLimit, checkSteps, ciCount, cardMenu, menuStart, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
 
@@ -326,6 +326,29 @@ assert.deepEqual(archivePlan(crossing, { days: 7, now, memo: { done: {} } }).aut
 // The column cost: an option, off by default (the cost belongs to the drawer).
 const colCost = declared.find((x) => x.key === "columnCost");
 assert.deepEqual([colCost.type, colCost.default], ["bool", false]);
+// A card's menu: a blocked agent's choices first (decide.js' options), else « go » first; snooze or
+// wake; archive or bring back; the PR, the issue once known; Zed, local only; close last, set apart.
+const keys = (items) => items.map((i) => i.key);
+const perm = { pending: { kind: "permission", options: [{ key: "accept", label: "Accepter", tone: "positive" }, { key: "refuse", label: "Refuser", tone: "negative" }] } };
+const blockedTh = { ...th("tfx-b1", "blocked", 1), cwd: "/tfx/acme", space: { machine: null }, branch: "fix/#9-x" };
+const menu1 = cardMenu(blockedTh, { decision: perm, prUrl: "u/9", issueUrl: "u/i9" });
+assert.deepEqual(keys(menu1), ["decide:accept", "decide:refuse", "go", "drawer", "pin", "snooze:hour", "snooze:tonight", "snooze:tomorrow", "archive", "openPr", "openIssue", "zed", "copyBranch", "close"]);
+assert.deepEqual([menu1[0].option, menu1[0].tone, menu1[1].tone, menu1[2].sep, menu1.at(-1).tone, menu1.at(-1).sep], ["accept", "positive", "negative", true, "danger", true]);
+// Its keys (the drawer's, run while the menu shows): one item each, never the menu's own j k q.
+const hints = menu1.map((i) => i.hint).filter(Boolean);
+assert.deepEqual(hints, ["o", "p", "1", "2", "3", "O", "I", "e"]);
+assert.ok(!hints.some((h) => ["j", "k", "q"].includes(h)));
+// Its highlight starts on « go » (m then enter never accepts), on « launch » for a draft.
+assert.equal(menuStart(menu1), "go");
+assert.equal(menuStart(cardMenu(drafts[0])), "launch");
+// A question (no options): no choices, « go » first; a working one: its decision ignored.
+assert.equal(cardMenu(blockedTh, { decision: { pending: { kind: "question", options: [] } } })[0].key, "go");
+assert.equal(cardMenu({ ...blockedTh, status: "working" }, { decision: perm })[0].key, "go");
+// Pinned, snoozed, archived, remote, no branch, nothing known of its PR.
+const other = cardMenu({ ...th("tfx-b2", "idle", 1, { pinned: true, asleep: true, settled: true }), cwd: "/tfx/x", space: { machine: "vps" } });
+assert.deepEqual(keys(other), ["go", "drawer", "unpin", "wake", "unarchive", "close"]);
+// A draft: launch, edit, delete.
+assert.deepEqual(keys(cardMenu(drafts[0])), ["launch", "edit", "deleteDraft"]);
 // Its option: mod.json's archiveDays, a number from 0 (never), 7 by default.
 const days = declared.find((x) => x.key === "archiveDays");
 assert.deepEqual([days.type, days.min, days.default], ["number", 0, 7]);

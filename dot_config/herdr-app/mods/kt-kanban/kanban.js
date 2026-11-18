@@ -65,6 +65,38 @@ export function columns(threads, field = "status", { pins = [], sort = "activity
   return cols;
 }
 
+// ---------- a card's menu (right-click or m) ----------
+
+/** A card's actions, in order: [{ key, option?, label?, tone?, hint?, sep? }] (main.js says and runs
+ *  them; `hint`, the key that runs it while the menu shows, as in the drawer). A blocked agent's choices
+ *  first (decide.js' options; answered by its own press(), the sidebar's path); blocked with none,
+ *  « go to the agent » leads anyway. Then the drawer, pin, snooze (the sidebar's three) or wake, archive
+ *  or bring back, the PR and the issue once their address is known, Zed (a local checkout), copy the
+ *  branch; last, set apart, close the thread (kt-confirm). A draft: launch, edit, delete.
+ *  `decision`: decide.js' for this agent. */
+export function cardMenu(th, { decision = null, prUrl = null, issueUrl = null } = {}) {
+  if (th.draft) return [{ key: "launch", hint: "L" }, { key: "edit", hint: "i" }, { key: "deleteDraft", hint: "x", tone: "danger", sep: true }];
+  const options = th.status === "blocked" ? decision?.pending?.options ?? [] : [];
+  const choices = options.map((o) => ({ key: `decide:${o.key}`, option: o.key, label: o.label ?? o.key, tone: o.tone === "positive" ? "positive" : "negative" }));
+  return [
+    ...choices,
+    { key: "go", sep: choices.length > 0 },
+    { key: "drawer", hint: "o" },
+    { key: th.pinned ? "unpin" : "pin", hint: "p" },
+    ...(th.asleep ? [{ key: "wake", hint: "0" }] : SNOOZES.map((c, i) => ({ key: `snooze:${c}`, hint: String(i + 1) }))),
+    { key: th.settled ? "unarchive" : "archive" },
+    ...(prUrl ? [{ key: "openPr", hint: "O" }] : []),
+    ...(issueUrl ? [{ key: "openIssue", hint: "I" }] : []),
+    ...(th.cwd && !th.space?.machine ? [{ key: "zed", hint: "e" }] : []),
+    ...(th.branch ? [{ key: "copyBranch" }] : []),
+    { key: "close", tone: "danger", sep: true },
+  ];
+}
+
+/** Where the menu's highlight starts: the first item that answers nothing (go, or launch), so that m
+ *  then enter never accepts a permission by accident; a choice is one k, or a click, away. */
+export const menuStart = (items) => (items.find((i) => !i.option) ?? items[0])?.key ?? null;
+
 // ---------- drafts (GitHub Projects' draft items): an idea that isn't a thread yet ----------
 // Stored in shared "kt.kanban.drafts": [{ id, title, task, space, project, at }]: its title, its consigne
 // (multi-line), the space it was made in, its project as it was then ({ key, name, color, logo, home }),

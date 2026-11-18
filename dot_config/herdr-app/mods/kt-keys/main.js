@@ -88,6 +88,8 @@ const TABLE = {
     ["i / tab / esc", "pg.kanbanDraftEdit", "Kanban"],
     ["L", "pg.kanbanDraftLaunch", "Kanban"],
     ["x / dd", "pg.kanbanDraftDelete", "Kanban"],
+    ["m", "pg.kanbanMenu", "Kanban"],
+    ["j / k / enter / esc", "pg.kanbanMenuKeys", "Kanban"],
     ["e / u / dd / +", "pg.plugins", "Plugins"],
     ["h / L / [ / ]", "pg.market", "Plugins"],
     ["[ / ]", "pg.relation", "Inbox"],
