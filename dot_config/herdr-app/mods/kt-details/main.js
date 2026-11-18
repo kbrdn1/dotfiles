@@ -16,7 +16,7 @@ import { roll } from "./roll.js";
 // kt-keys' motion.js (a byte-identical copy): the card fades in, the repo's block comes in, the message
 // field opens and closes on its height (ANIMATIONS.md).
 import { motionState, frame, enter, collapse } from "./motion.js";
-import { skeleton } from "./skeleton.js";
+import { skeleton, readyFor } from "./skeleton.js";
 
 const tr = makeT(strings);
 
@@ -72,7 +72,8 @@ export default class Details extends View {
     cx.spawn(async (cx) => {
       try {
         const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on });
-        if (top.code !== 0) this.git = { root: null, on };
+        // this.readFor: the place the card's data was read for, set with it (readyFor), a failure too.
+        if (top.code !== 0) { this.git = { root: null, on }; this.readFor = key; }
         else {
           const root = top.stdout.trim();
           const st = await exec("git", ["status", "--porcelain=v2", "--branch"], { cwd: root, on });
@@ -91,8 +92,9 @@ export default class Details extends View {
           }
           if (JSON.stringify([this.machine(), this.folder()]) !== key) return;
           this.git = g;
+          this.readFor = key;
         }
-      } catch (error) { this.git = null; this.note = String(error); }
+      } catch (error) { this.git = null; this.note = String(error); this.readFor = key; }
       finally { this.looking = false; cx.notify(); }
     });
   }
@@ -185,13 +187,17 @@ export default class Details extends View {
 
   render(cx) {
     if (shared("kt.details") !== true) return div();
-    if (!this.git) this.refresh(cx);
+    const cwd = this.folder();
+    // Read for this folder (readyFor): before the first read, and after a change of thread until its own
+    // read answers (read now, not at the next 4 s tick), the repo's block as bars, never the previous
+    // repo's path, branch, changes or buttons (they would act there). No folder: nothing to read.
+    const ready = readyFor(this.readFor, cwd ? JSON.stringify([this.machine(), cwd]) : null);
+    if (!ready) this.refresh(cx);
     // Another mod's action on this repo, or an agent of this space that stopped working: read again.
     const sp = spaces().find((s) => s.active)?.id;
     refreshOn(this, cx, "git", [...gitTopics(this.git?.root ?? null), ...(sp ? [`agent:${sp}`] : [])], async (cx) => this.refresh(cx));
     const t = theme();
-    const g = this.git;
-    const cwd = this.folder();
+    const g = ready && cwd ? this.git : null;
     // The machine the card's folder is on: the editor only opens folders on this computer.
     const on = g?.on ?? this.machine();
     const changed = Boolean(g?.root) && g.files > 0;
@@ -235,9 +241,9 @@ export default class Details extends View {
       })
       .child(this.row(t, "td-where", "folder", tilde(g?.root ?? cwd), null, null))
       .when(!on && Boolean(g?.root ?? cwd), (el) => el.child(this.row(t, "td-open", "external-link", tr("openIn", { app: EDITOR_NAME }), null, (_e, cx) => this.openEditor(cx, g?.root ?? cwd))))
-      // Before the first read: the repo's block as bars (skeleton.js), breathing: the rule, the branch
-      // and changes rows (32 px), the buttons (26 px).
-      .when(this.git === null && !this.note && Boolean(cwd), (el) => el.child(((S) => S.pulse(v_flex().id("td-git-sk").gap(2)
+      // Not read for this folder yet: the repo's block as bars (skeleton.js), breathing: the rule, the
+      // branch and changes rows (32 px), the buttons (26 px).
+      .when(!ready, (el) => el.child(((S) => S.pulse(v_flex().id("td-git-sk").gap(2)
         .child(div().mx(4).my(4).h(1).bg(t.border))
         .child(S.list(2, { h: 32, icon: 15, lines: [0.4] }))
         .child(div().flex().px(4).pt(6).pb(2).gap(6).children([64, 48, 96].map((w) => S.block(w, 26, { r: 8 }))))))(skeleton(t, m))))

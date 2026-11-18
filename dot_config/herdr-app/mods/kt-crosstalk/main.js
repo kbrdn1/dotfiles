@@ -35,7 +35,7 @@ import { randomUUID } from "crypto";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, ink, rows as motionRows } from "./motion.js";
-import { skeleton } from "./skeleton.js";
+import { skeleton, readyFor } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the segments' counts and « N sur M » roll to their new digits.
 import { roll, rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
@@ -315,8 +315,10 @@ export default class Crosstalk extends View {
         cx.notify();
       } finally {
         this.reading = false;
-        // A first answer, even unchanged or failed: the skeleton gives way to what is there.
-        if (!this.readOnce) { this.readOnce = true; cx.notify(); }
+        // An answer for `src`, even unchanged or failed: its skeleton gives way to what is there (readyFor).
+        if (this.readFor !== src) { this.readFor = src; cx.notify(); }
+        // The source changed while this read ran (that read was dropped): read the new one now.
+        if (this.source() !== src) this.read(cx);
       }
     });
   }
@@ -671,13 +673,19 @@ export default class Crosstalk extends View {
       .child(svg(icon).size(14));
   }
 
-  sessionLine(t) {
-    const s = this.pubOk() ? this.pub.session : null;
+  // `ready`: read for the source shown now (readyFor); else its mark and name as bars (skeleton.js), never
+  // the previous source's; the selector stays.
+  sessionLine(t, ready = true) {
+    const s = ready && this.pubOk() ? this.pub.session : null;
+    const S = skeleton(t, this.m);
     return h_flex().gap(8).items_center()
-      .child(s ? this.markOf(t, this.sessionEntry(), s.name ?? "", 18, null) : svg("mods/kt-panel-head/messages-square.svg").size(14).flex_none().text_color(t.muted))
-      .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(s ? t.foreground : t.muted)
-        .child(s?.name ?? (this.src ? `Terminal ${this.src}` : "Crosstalk")))
-      .when(Boolean(this.src), (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(this.src)))
+      .when(!ready, (el) => el.child(S.pulse(h_flex().id("xt-head-sk").flex_1().min_w(0).gap(8).items_center()
+        .child(S.circle(18)).child(S.line(0.4, { h: 8, lh: 18 })))))
+      .when(ready, (el) => el
+        .child(s ? this.markOf(t, this.sessionEntry(), s.name ?? "", 18, null) : svg("mods/kt-panel-head/messages-square.svg").size(14).flex_none().text_color(t.muted))
+        .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(s ? t.foreground : t.muted)
+          .child(s?.name ?? (this.src ? `Terminal ${this.src}` : "Crosstalk"))))
+      .when(ready && Boolean(this.src), (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(this.src)))
       .when(Boolean(s), (el) => el.child(this.tag(t, t.dim, `v${this.pub.v}`)))
       .when(Boolean(this.fixdir), (el) => el.child(this.tag(t, t.blocked, "fixtures"))) // i18n: tech
       .child(h_flex().id("xt-pick").flex_none().h(22).px(8).gap(4).items_center().rounded_full().border(1)
@@ -837,9 +845,12 @@ export default class Crosstalk extends View {
         .child(tr("choose", { n: others.length }))));
   }
 
-  inboxCard(t, now, cx) {
+  // `ready`: read for the source shown now (readyFor). Before that, the previous source's conversations
+  // are neither shown nor walked by the keys.
+  inboxCard(t, now, cx, ready = true) {
+    const ok = ready && this.pubOk();
     const R = this.rowsOf(now);
-    this.lastRows = R;
+    this.lastRows = ok ? R : { flat: [] };
     if (!this.moved || !R.flat.some((r) => this.rowKey(r) === this.cur)) this.cur = this.rowKey(R.flat.find((r) => !r.fold) ?? R.flat[0]);
     const f = this.filters(), opts = this.options();
     const count = (pred) => this.peers().filter(pred).length;
@@ -855,9 +866,9 @@ export default class Crosstalk extends View {
       this.setFilter(k, (g === "s" ? R.state : R.kind) === v ? "all" : v);
     };
     const head = v_flex().flex_none().px(12).pt(10).pb(8).gap(8)
-      .child(this.sessionLine(t))
+      .child(this.sessionLine(t, ready))
       .when(this.picking, (el) => el.child(this.picker(t)))
-      .when(this.pubOk(), (el) => el
+      .when(ok, (el) => el
         .child(this.searchField(t, R))
         .child(h_flex().child(this.segmented(t, f, R, this.m)))
         .when(items.length > 1, (el) => el.child(filterRow({ id: "xt-filters", state: this.frow, t, bg: t.background, items,
@@ -866,12 +877,13 @@ export default class Crosstalk extends View {
     return v_flex().rounded(16).border(1).border_color(t.border).bg(t.background).overflow_hidden()
       .child(head)
       .child(div().mx(12).flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
-      // Until the first read answers: conversation rows as bars (skeleton.js), breathing, rather than
-      // « none » before the answer. Later reads (every 10 s) keep what is shown.
-      .child(this.pubOk() ? this.list(t, R, cx) : !this.readOnce && !checking()
+      // Until a read answers for this source (the first one, or another terminal's): conversation rows
+      // as bars (skeleton.js), breathing, rather than « none » or the previous source's. Later reads
+      // (every 10 s) keep what is shown.
+      .child(ok ? this.list(t, R, cx) : !ready
         ? ((S) => S.pulse(v_flex().id("xt-list-sk").flex_1().min_h(0).p(4).child(S.list(5, { h: 52, icon: 0, lines: [0.4, 0.75], gap_y: 2 }))))(skeleton(t, this.m))
         : this.emptyState(t))
-      .when(this.keyed && this.pubOk(), (el) => el.child(div().flex_none().px(14).py(7).border_t(1).border_dashed().border_color(t.border)
+      .when(this.keyed && ok, (el) => el.child(div().flex_none().px(14).py(7).border_t(1).border_dashed().border_color(t.border)
         .font_family(MONO).text_size(10).text_color(t.dim).child(hint)));
   }
 
@@ -1010,7 +1022,9 @@ export default class Crosstalk extends View {
     this.reg = registry();
     this.keyed = this.isKeyed();
     const wide = this.wide();
-    const c = this.conv();
+    // Read for the source shown now (readyFor): else the previous source's open conversation goes too.
+    const ready = readyFor(this.readFor, this.source());
+    const c = ready ? this.conv() : null;
     if (!c) this.zone = "list";
     const root = v_flex().id("kt-crosstalk").size_full().gap(4).text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
@@ -1021,12 +1035,13 @@ export default class Crosstalk extends View {
     const now = Date.now();
     // The conversation fades in as it opens (no rise: the panel doesn't clip it).
     const conv = (w) => enter(this.m, this.convCard(t, c, w), `xt-conv-${this.openSeq}`, { dy: 0 });
-    if (!wide) return root.child((c ? conv(false) : this.inboxCard(t, now, cx)).flex_1().min_h(0));
+    if (!wide) return root.child((c ? conv(false) : this.inboxCard(t, now, cx, ready)).flex_1().min_h(0));
     return root.child(h_flex().flex_1().min_h(0).gap(4).items_stretch()
-      .child(this.inboxCard(t, now, cx).w(this.inboxW()).flex_none().h_full())
+      .child(this.inboxCard(t, now, cx, ready).w(this.inboxW()).flex_none().h_full())
       .child(c ? conv(true).flex_1().min_w(0).h_full()
         : v_flex().flex_1().h_full().rounded(16).border(1).border_color(t.border).bg(t.background).items_center().justify_center().gap(8)
           .child(svg("mods/kt-panel-head/messages-square.svg").size(22).text_color(t.dim))
-          .child(div().text_size(12.5).text_color(t.muted).child(this.pubOk() ? tr("pickConv") : tr("nothing")))));
+          // Not read yet for this source: no « rien » before the answer.
+          .when(ready, (el) => el.child(div().text_size(12.5).text_color(t.muted).child(this.pubOk() ? tr("pickConv") : tr("nothing"))))));
   }
 }

@@ -1369,7 +1369,11 @@ export default class Worktrees extends View {
   }
 
   // `cursor`: the keys' cursor on it (a 1 px accent ring with the ink; transparent border elsewhere).
-  linkLine(t, id, kind, x, repo, loading, cursor) {
+  // `pending`: the worktree's `gwm status` not answered yet: bars (skeleton.js) where the answer goes, not
+  // « Aucune PR liée » nor « gwm status… » before it. A number already known (gwm list) shows meanwhile.
+  linkLine(t, id, kind, x, repo, pending, cursor) {
+    const S = skeleton(t, this.m);
+    if (!x && pending) return S.pulse(S.row({ h: 30, icon: 14, lines: [0.45], px: 0, gap: 8 }).id(`${id}-sk`));
     if (!x) return div().h(26).flex().items_center().text_size(12.5).text_color(t.dim).child(kind === "pr" ? tr("noPr") : tr("noIssue"));
     const lk = look(kind, x.state);
     return h_flex().id(id).h(30).px(8).mx(-8).gap(8).items_center().rounded(12).border(1)
@@ -1381,7 +1385,7 @@ export default class Worktrees extends View {
       .when(Boolean(lk.label), (el) => el.child(this.tag(t, t[lk.color], lk.label)))
       .when(kind === "pr" && x.checks_total > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(11)
         .text_color(x.checks_passed === x.checks_total ? t.done : t.ansi3).child(`checks ${x.checks_passed}/${x.checks_total}`))) // i18n: tech
-      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.muted).child(x.title ?? (loading ? "gwm status…" : "")))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.muted).child(x.title ?? (pending ? S.pulse(S.line(0.6, { h: 7, lh: 16 }).id(`${id}-sk`)) : "")))
       .when(Boolean(x.url || repo.slug), (el) => el.child(this.github(t, `${id}-gh`, repo, kind, x, 24)));
   }
 
@@ -1401,7 +1405,9 @@ export default class Worktrees extends View {
       this.loadPrefix(w, cx);
     }
     const { issue, pr } = this.links(w);
-    const statusLoading = Boolean(this.inflight[`s:${w.path}|${w.branch}`]);
+    // Its `gwm status` (the links' state and titles) not answered yet for this worktree: the links wait as
+    // bars. Asked again when stale: the last answer stays meanwhile.
+    const pending = Boolean(w.branch) && !this.st[`${w.path}|${w.branch}`];
     const pins = new Set(d.pins?.[w.branch] ?? []);
     const sessions = [...(w.agents?.sessions ?? [])]
       .sort((a, b) => (b.freshness === "active") - (a.freshness === "active") || pins.has(b.id) - pins.has(a.id) || b.last_activity - a.last_activity);
@@ -1416,8 +1422,8 @@ export default class Worktrees extends View {
       .child(this.dashed(t))
       .child(v_flex().gap(2)
         .child(this.eyebrow(t, tr("links")))
-        .child(this.linkLine(t, "kg-p-issue", "issue", issue, repo, statusLoading, cur === "issue"))
-        .child(this.linkLine(t, "kg-p-pr", "pr", pr, repo, statusLoading, cur === "pr")))
+        .child(this.linkLine(t, "kg-p-issue", "issue", issue, repo, pending, cur === "issue"))
+        .child(this.linkLine(t, "kg-p-pr", "pr", pr, repo, pending, cur === "pr")))
       .child(this.dashed(t))
       .child(v_flex().gap(2)
         .child(this.eyebrow(t, sessions.length ? `Agents · ${sessions.length}` : tr("noAgent"))) // i18n: tech
@@ -1494,7 +1500,9 @@ export default class Worktrees extends View {
               max: doc.checks.length, color: doctor[1], figure: `${doc.checks.length - bad.length} / ${doc.checks.length}`,
               detail: bad.map((x) => x.name).join(" · ") || undefined, id: `kg-doc-${repo.common}` }))))
         .child(this.meta(t, ".gwm.toml", trust[0], trust[1]))
-        .child(this.meta(t, "gwm clean", this.inflight[`c:${repo.common}`] ? tr("measuring") : c?.error ? tr("cleanFailed", { error: c.error }) : c?.total ? tr("reclaimable", { total: size(c.total) }) : c ? tr("nothingToReclaim") : "…", c?.total ? t.foreground : t.dim)))
+        // Not measured yet for this repo: a bar (skeleton.js), breathing. Measured again (past 30 min): the
+        // last measure stays until the new one; Rafraîchir drops it, so the bar again.
+        .child(this.meta(t, "gwm clean", !c ? sk("kg-sk-clean", 110) : c.error ? tr("cleanFailed", { error: c.error }) : c.total ? tr("reclaimable", { total: size(c.total) }) : tr("nothingToReclaim"), c?.total ? t.foreground : t.dim)))
       .child(this.dashed(t))
       .child(v_flex().gap(2)
         .child(this.eyebrow(t, linked.length ? `Worktrees · ${linked.length}` : tr("noLinked"))) // i18n: tech
