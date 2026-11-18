@@ -69,17 +69,29 @@ export function assignments(shell: string): Record<string, string> {
     const v = m[2];
     vars[m[1]] = v.startsWith("$(mktemp") ? "/tmp/mktemp" : v.replace(/^["']|["']$/g, "");
   }
-  // X=$(git rev-parse … --git-path|--git-dir|--git-common-dir …) : un chemin du dossier git
-  for (const m of shell.matchAll(/(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=\$\(git rev-parse [^)]*--git-(?:path|dir|common-dir)\b[^)]*\)/g)) vars[m[1]] = `${GITDIR}x`;
+  // X=$(git rev-parse … --git-path ARG|--git-dir|--git-common-dir …) : un chemin du dossier git
+  for (const m of shell.matchAll(/(?:^|[\s;&|(])([A-Za-z_][A-Za-z0-9_]*)=(\$\(git rev-parse [^)]*\))/g)) {
+    const g = gitPath(m[2]);
+    if (g) vars[m[1]] = g;
+  }
   return vars;
 }
 
-// Le dossier git (fichiers internes, diffs et rapports de travail des loops) n'est pas du code source.
-const GITDIR = "/__gitdir__/";
+// Le dossier git (fichiers internes, diffs et rapports de travail des loops) n'est pas du code source,
+// sauf ses hooks et sa config (voir allowed). `--git-path ARG` garde son argument, pour que
+// `--git-path hooks` ou `--git-path config` tombe sous cette exception.
+const GITDIR = "/__gitdir__/.git";
+export function gitPath(expr: string): string | null {
+  const m = /^\$\(git rev-parse ([^)]*)\)$/.exec(expr);
+  if (!m) return null;
+  const arg = /--git-path(?:=|\s+)(['"]?)([^\s'")]+)\1/.exec(m[1]);
+  if (arg) return `${GITDIR}/${arg[2]}`;
+  return /--git-(?:dir|common-dir)\b/.test(m[1]) ? GITDIR : null;
+}
 
 export function resolve(target: string, vars: Record<string, string>): string | null {
   let t = target.replace(/^["']|["']$/g, "");
-  if (/^\$\(git rev-parse [^)]*--git-(?:path|dir|common-dir)\b[^)]*\)/.test(t)) return `${GITDIR}x`;
+  t = t.replace(/\$\(git rev-parse [^)]*\)/g, (sub) => gitPath(sub) ?? sub);
   for (let k = 0; k < 4 && /\$/.test(t); k++)
     t = t.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (all, n) => (n === "HOME" ? HOME : n === "TMPDIR" ? (process.env.TMPDIR ?? "/tmp") : vars[n] ?? all));
   t = t.replace(/^~(?=\/|$)/, HOME);
@@ -89,7 +101,7 @@ export function resolve(target: string, vars: Record<string, string>): string | 
 
 export function allowed(path: string | null, cwd: string, globs: RegExp[] = []): boolean {
   if (path === null) return false;
-  if (DEVS.test(path) || path.startsWith(GITDIR)) return true;
+  if (DEVS.test(path)) return true;
   // le dossier git sauf ses hooks (du code) et sa config
   if (/(^|\/)\.git\//.test(path) && !/(^|\/)\.git\/(.*\/)?(hooks\/|config$)/.test(path)) return true;
   const abs = path.startsWith("/") ? path : `${cwd.replace(/\/$/, "")}/${path}`;

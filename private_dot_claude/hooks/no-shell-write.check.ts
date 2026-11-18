@@ -52,6 +52,12 @@ const cases: [string, boolean][] = [
   [`printf '#!/bin/sh' > .git/hooks/pre-commit`, true],
   [`echo x >> .git/config`, true],
   [`echo x > .git/worktrees/w/hooks/post-checkout`, true],
+  // --git-path garde son argument (brèche vue le 2026-11-18)
+  [`H=$(git rev-parse --git-path hooks); echo x > "$H/pre-commit"`, true],
+  [`echo x > "$(git rev-parse --git-path hooks/pre-commit)"`, true],
+  [`echo x > "$(git rev-parse --git-path config)"`, true],
+  [`G=$(git rev-parse --git-dir); echo x > "$G/hooks/x"`, true],
+  [`G=$(git rev-parse --git-common-dir); echo x > "$G/review.diff"`, false],
 ];
 let bad = 0;
 for (const [cmd, deny] of cases) {
