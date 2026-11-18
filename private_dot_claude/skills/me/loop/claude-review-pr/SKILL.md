@@ -204,6 +204,8 @@ print("STANDARDS_COUNT=%d" % std)
 print("SPEC_COUNT=%d" % spec)
 print("P0P1P2_COUNT=%d" % (std + spec))
 PY
+# (D) dans le même bloc, à ne jamais retirer : la passe part dans le rapport live et le rapport est régénéré.
+~/.claude/skills/me/report/collect.py --pass "$R_STD" "$([ "${SPEC_SKIPPED:-0}" = 1 ] && echo - || echo "$R_SPEC")" 2>&1 | head -4 || true
 ```
 
 > ⚠️ Si `RESUME:` annonce des bloquants mais que le bloc `blocking` correspondant est vide (ou l'inverse), l'agent a mal formaté : relancer **cet axe** en (B), ne pas trancher au jugé.
@@ -212,22 +214,11 @@ PY
 
 ### (D) Rapport live `me:report` — Bash, inline, 0 token
 
-Juste après (C), à chaque passe : la section review du rapport HTML de la branche se remplit pendant que le loop tourne (passes, deux axes séparés, findings dépliables, ouvrir à la ligne). `collect.py` lit les rapports **tels quels** : rien à reformater.
+À chaque passe, la section review du rapport HTML de la branche se remplit pendant que le loop tourne (passes, deux axes séparés, findings dépliables, ouvrir à la ligne). L'onglet Flow de Herdr la lit aussi : sans elle, la Review ne s'y déplie pas.
 
-```bash
-C=~/.claude/skills/me/report/collect.py
-RD=$("$C" --dir) && mkdir -p "$RD/review" && {
-  N=$(( $(ls "$RD/review" | grep -c -- '-standards\.md$') + 1 ))
-  cp "$R_STD" "$RD/review/pass-$N-standards.md"
-  # spec non lancé : JAMAIS le RESUME à zéro écrit plus haut, il s'afficherait « propre »
-  if [ "${SPEC_SKIPPED:-0}" = 1 ]; then echo 'SPEC_SKIPPED=1' > "$RD/review/pass-$N-spec.md"
-  else cp "$R_SPEC" "$RD/review/pass-$N-spec.md"; fi
-  git rev-parse --short HEAD > "$RD/review/pass-$N.sha"
-  "$C" | head -3
-}
-```
+**(D) tient en une ligne, et c'est la dernière du bloc (C)** : `collect.py --pass "$R_STD" <spec>` copie la passe telle quelle dans `review/` (`pass-N-standards.md`, `pass-N-spec.md`, `pass-N.sha`), puis régénère le rapport (`facts.json`). Un axe spec non lancé s'écrit `SPEC_SKIPPED=1`, jamais le RESUME à zéro (il s'afficherait « propre »). Rejouer (C) sur les mêmes rapports n'ajoute pas de passe. Ne recopie pas (C) sans cette ligne : c'était une étape à part, et les sessions la sautaient ou n'en gardaient que les copies (rapport figé sur la passe 1, ou « passe 6/8 » dans Flow pour 4 passes au rapport). Le dossier du rapport reste donné par `collect.py --dir`. Check : `~/.claude/skills/me/report/collect-pass.check.sh`.
 
-Décisions (Step 2), une ligne par finding tranché dans `$RD/review/decisions.tsv`, séparateur tabulation : `p<N>-<axe>-<rang>	fixed	<sha du commit>` après la correction, `p<N>-<axe>-<rang>	discarded	<raison en une phrase>` pour un écartement (`rang` = position de la puce dans le rapport de l'axe, à partir de 1, en comptant **toutes** les puces dans l'ordre du fichier, P3 compris : un rang compté sur les seuls bloquants attache la décision au mauvais finding). Un écartement sans raison s'affiche en rouge dans le rapport.
+Décisions (Step 2), une ligne par finding tranché dans `$RD/review/decisions.tsv` (`RD=$(~/.claude/skills/me/report/collect.py --dir)`), séparateur tabulation : `p<N>-<axe>-<rang>	fixed	<sha du commit>` après la correction, `p<N>-<axe>-<rang>	discarded	<raison en une phrase>` pour un écartement (`rang` = position de la puce dans le rapport de l'axe, à partir de 1, en comptant **toutes** les puces dans l'ordre du fichier, P3 compris : un rang compté sur les seuls bloquants attache la décision au mauvais finding). Un écartement sans raison s'affiche en rouge dans le rapport.
 
 ## Cycle
 

@@ -237,6 +237,29 @@ def write_atomic(path, text):
     os.replace(tmp, path)
 
 
+def record_pass(out, sha, std, spec):
+    """Étape (D) de me:loop:claude-review-pr en un seul appel (`--pass`) : la passe est copiée telle quelle
+    dans review/ (pass-N-standards.md, pass-N-spec.md, pass-N.sha), et la suite du main régénère le
+    rapport. Les sessions recopiaient les fichiers et sautaient la régénération (facts.json figé sur la
+    passe 1), ou sautaient l'étape entière. spec '-' : axe non lancé, jamais un RESUME à zéro (il
+    s'afficherait « propre »). Rejouer (C) sur les mêmes rapports ne crée pas de passe en double."""
+    d = os.path.join(out, 'review')
+    os.makedirs(d, exist_ok=True)
+    read = lambda p: open(p, encoding='utf-8', errors='replace').read()
+    texts = {'standards': read(std), 'spec': 'SPEC_SKIPPED=1\n' if spec == '-' else read(spec)}
+    nums = sorted(int(m.group(1)) for f in os.listdir(d) for m in [re.match(r'pass-(\d+)-standards\.md$', f)] if m)
+    last = nums[-1] if nums else 0
+    if last and all(os.path.exists(os.path.join(d, f'pass-{last}-{k}.md')) and read(os.path.join(d, f'pass-{last}-{k}.md')) == v
+                    for k, v in texts.items()):
+        print('PASS    ', f'passe {last} déjà enregistrée (mêmes rapports)')
+        return
+    n = last + 1
+    for k, v in texts.items():
+        write_atomic(os.path.join(d, f'pass-{n}-{k}.md'), v)
+    write_atomic(os.path.join(d, f'pass-{n}.sha'), sha + '\n')
+    print('PASS    ', f'passe {n} enregistrée')
+
+
 def jsonc(text):
     """JSON avec commentaires et virgules finales (les réglages de Zed), sans toucher aux chaînes."""
     out, i, n, q = [], 0, len(text), False
@@ -485,6 +508,8 @@ def main():
     ap.add_argument('--stale-diff', action='store_true')
     ap.add_argument('--dir', action='store_true', help='affiche le dossier du rapport et sort')
     ap.add_argument('--plan', metavar='SLUG', help='mode plan : ~/Reports/<owner>-<repo>/plans/<slug>/ (hors dépôt : ~/Reports/_plans/<slug>/)')
+    ap.add_argument('--pass', dest='pass_', nargs=2, metavar=('STANDARDS', 'SPEC'),
+                    help="me:loop:claude-review-pr (D) : enregistre la passe dans review/ puis régénère ; SPEC '-' = axe spec non lancé")
     a = ap.parse_args()
     if a.plan:
         return collect_plan(a)
@@ -500,6 +525,8 @@ def main():
     if a.dir:  # pour les loops : le dossier du rapport, sans réseau ni écriture
         print(out)
         return
+    if a.pass_:
+        record_pass(out, (git(repo, 'rev-parse', '--short', 'HEAD') or head[:7]).strip(), *a.pass_)
 
     pr = None
     if not a.offline:
