@@ -49,7 +49,9 @@ import { planClose, planReview, describe } from "./bulk.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
-import { rollText } from "./roll.js";
+import { roll, rollText } from "./roll.js";
+// kt-keys' viz.js (a byte-identical copy, with viz.strings.js): a PR's checks as steps, a bulk run's progress.
+import { viz } from "./viz.js";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { ditherBand, TOP } from "./dither.js";
 import { makeT, relative } from "./i18n.js";
@@ -82,6 +84,9 @@ const RELS = ["assignee", "author", "mentions"];
 const LABEL_COLORS = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
 // `gh pr checks` bucket -> theme color name.
 const BUCKET = { pass: "done", fail: "ansi1", cancel: "ansi1", pending: "ansi3", skipping: "dim" }; // i18n: tech
+// Bucket -> viz.js step state (another: todo), and the steps' order: failed, running, passed, skipped.
+const STEP = { pass: "done", fail: "failed", cancel: "failed", pending: "current", skipping: "skipped" }; // i18n: tech
+const STEP_RANK = { failed: 0, current: 1, done: 2, skipped: 3, todo: 4 }; // i18n: tech
 
 const gh = (args, timeout = 20e3) => exec("gh", args, { timeout }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
 const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
@@ -177,6 +182,7 @@ export default class Inbox extends View {
     this.map = null; // Catppuccin's map.json
     this.tab = "summary";
     this.busy = null; // the running action's label
+    this.bulkStep = null; // a bulk run's { i: calls done, n: calls }, while it runs
     this.actionError = null; // { key, text }
     this.pending = null; // the action the confirm dialog is asking about
     this.seen = {};
@@ -689,7 +695,11 @@ export default class Inbox extends View {
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(rollText(this.m, "kti-sel-n", tr("selected", { n }), 15)))
         .child(div().w(1).h(18).flex_none().bg(t.border))
-        .when(Boolean(this.busy), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
+        // A bulk run: its calls done over all (viz.js progress); else what runs, spinning. A 16 px line: the
+        // progress is 39 px high (the buttons 28), and the bar stays under the list's 64 px foot.
+        .when(Boolean(this.busy && this.bulkStep), (el) => el.child(div().px(10).line_height("16px").child(this.V.progress(tr("running", { what: this.busy }), this.bulkStep.i,
+          { max: this.bulkStep.n, width: 160, figure: `${this.bulkStep.i} / ${this.bulkStep.n}`, id: "kti-bulk-prog" }))))
+        .when(Boolean(this.busy && !this.bulkStep), (el) => el.child(h_flex().h(28).px(10).gap(6).items_center().text_size(12).text_color(t.muted)
           .child(svg(I("refresh-cw")).size(13).spin(900)).child(tr("running", { what: this.busy }))))
         .when(!this.busy, (el) => el.children(actions.map(([id, label, icon, onClick, danger]) => h_flex().id(`kti-bulk-${id}`).h(28).px(10).gap(6).items_center().rounded(8)
           .text_size(12).text_color(danger ? t.ansi1 : t.foreground).cursor_pointer().hover((s) => s.bg(danger ? alpha(t.ansi1, "1a") : t.hover))
@@ -767,13 +777,15 @@ export default class Inbox extends View {
     const failed = [];
     cx.spawn(async (cx) => {
       for (const [i, c] of p.calls.entries()) {
-        this.busy = `${p.label} ${i + 1}/${p.calls.length}`;
+        this.busy = p.label;
+        this.bulkStep = { i, n: p.calls.length };
         cx.notify();
         const r = c.cmd === "gh" ? await gh(c.args, 60e3)
           : await exec("gwm", c.args, { cwd: c.cwd, timeout: 600e3 }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
         if (r.code) failed.push(line(c.label, ((r.stderr || r.stdout).trim().split("\n").pop()) || tr("code", { code: r.code })));
       }
       this.busy = null;
+      this.bulkStep = null;
       // Others read again, even after a half-done run.
       if (p.what === "close") bump("gh", ...p.repos.map((r) => `gh:${r}`));
       else bump("gwm");
@@ -834,15 +846,13 @@ export default class Inbox extends View {
       .child(label);
   }
 
-  // kbrdn.dev `.meter.ticks`: 2 px bars every 6 px, in segment order, the rest off.
-  meter(t, parts, total, ticks = 16) {
-    const colors = [];
-    for (const [n, color] of parts) {
-      const k = n ? Math.max(1, Math.round((n / Math.max(1, total)) * ticks)) : 0;
-      for (let i = 0; i < k; i++) colors.push(color);
-    }
-    while (colors.length < ticks) colors.push(t.border);
-    return h_flex().flex_none().h(12).gap(4).children(colors.slice(0, ticks).map((c) => div().w(2).h_full().bg(c)));
+  // A PR's checks as viz.js steps, a dithered cell each: failed, then running, then passed (each run in
+  // the list's order), in the list's colors (BUCKET). Too many for the width: one bar, « n / total ».
+  checkSteps(t, checks, o) {
+    const list = checks.map((c, i) => ({ label: c.name, state: STEP[c.bucket] ?? "todo", i }))
+      .sort((a, b) => STEP_RANK[a.state] - STEP_RANK[b.state] || a.i - b.i);
+    return this.V.steps(list, { ...o, colors: { done: t.done, current: t.ansi3, failed: t.ansi1 },
+      words: { done: tr("ck.done"), current: tr("ck.current"), failed: tr("ck.failed"), skipped: tr("ck.skipped") } });
   }
 
   dashed(t) {
@@ -1202,7 +1212,7 @@ export default class Inbox extends View {
 
   checkCounts(checks) {
     const n = (b) => checks.filter((c) => b.includes(c.bucket)).length;
-    return { pass: n(["pass"]), fail: n(["fail", "cancel"]), pending: n(["pending"]), total: checks.length };
+    return { pass: n(["pass"]), fail: n(["fail", "cancel"]), pending: n(["pending"]) };
   }
 
   head(t, x, d) {
@@ -1215,11 +1225,8 @@ export default class Inbox extends View {
       kpis.push([tr("kpi.files"), String(data.changedFiles ?? 0)]);
       kpis.push([tr("kpi.lines"), h_flex().gap(8).text_size(15)
         .child(div().text_color(t.done).child(`+${data.additions ?? 0}`)).child(div().text_color(t.ansi1).child(`−${data.deletions ?? 0}`))]);
-      const c = this.checkCounts(d.checks ?? []);
-      kpis.push(["Checks", c.total
-        ? h_flex().gap(8).items_center().child(this.meter(t, [[c.pass, t.done], [c.fail, t.ansi1], [c.pending, t.ansi3]], c.total))
-          .child(div().text_size(15).text_color(c.fail ? t.ansi1 : c.pending ? t.ansi3 : t.foreground).child(`${c.pass}/${c.total}`))
-        : "—"]);
+      // A fixed width: the KPI row wraps, its cells have none.
+      kpis.push(["Checks", d.checks?.length ? this.checkSteps(t, d.checks, { width: 140, id: `kti-ck-head-${x.key}` }) : "—"]);
     }
     // A repo scope's list doesn't count comments (null): an issue's detail does, a PR shows "—".
     kpis.push([tr("kpi.comments"), x.kind === "issue" && data?.comments ? String(Math.max(x.comments ?? 0, data.comments.length)) : x.comments == null ? "—" : String(x.comments)]);
@@ -1240,7 +1247,8 @@ export default class Inbox extends View {
       .child(((ttl) => (this.m ? sharpen(this.m, `kti-dtitle-${x.key}`, ttl) : ttl()))(
         () => div().text_size(21).font_semibold().line_height("28px").text_color(t.foreground).child(data?.title ?? x.title)))
       .when(labels.length > 0, (el) => el.child(h_flex().flex_wrap().gap(5).children(labels.map((l) => this.tag(t, labelColor(t, l), l)))))
-      .child(h_flex().flex_wrap().gap_y(10).children(kpis.map(([label, value], i) => this.kpi(t, label, value, i === 0))))
+      // Stretched: the checks' cell is taller, the eyebrows stay on one line and the separators as high.
+      .child(h_flex().flex_wrap().items_stretch().gap_y(10).children(kpis.map(([label, value], i) => this.kpi(t, label, value, i === 0))))
       .child(this.dashed(t))
       .child(v_flex().gap(6)
         .child(meta(tr("meta.author"), `@${data?.author?.login ?? x.author}`))
@@ -1322,15 +1330,16 @@ export default class Inbox extends View {
       .child(Scrollbar.vertical("kti-code").absolute().inset_0());
   }
 
-  checksView(t, d) {
+  checksView(t, x, d) {
     const cs = d?.checks ?? [];
     if (!d?.data) return this.empty(t, tr("loadingChecks"), null, true);
     if (!cs.length) return this.empty(t, tr("noChecks"));
     const c = this.checkCounts(cs);
+    // The counts by kind, then the steps as wide as the card (« n / total » is theirs).
     return v_flex().id("kti-checks").flex_1().min_h(0).overflow_y_scrollbar().py(4).gap(2)
-      .child(h_flex().mx(4).px(12).py(8).gap(12).items_center()
-        .child(this.meter(t, [[c.pass, t.done], [c.fail, t.ansi1], [c.pending, t.ansi3]], c.total, 24))
-        .child(this.eyebrow(t, tr("checkCounts", { pass: c.pass, fail: c.fail, pending: c.pending, total: c.total }))))
+      .child(v_flex().mx(4).px(12).py(8).gap(8)
+        .child(this.eyebrow(t, tr("checkCounts", { pass: c.pass, fail: c.fail, pending: c.pending })))
+        .child(this.checkSteps(t, cs, { id: `kti-ck-tab-${x.key}` })))
       .children(cs.map((ck, i) => {
         const color = t[BUCKET[ck.bucket] ?? "dim"];
         return h_flex().id(`kti-ck-${i}`).mx(4).px(12).h(38).gap(10).items_center().rounded(12).hover((s) => s.bg(t.hover))
@@ -1367,7 +1376,7 @@ export default class Inbox extends View {
       .child(this.dashed(t))
       .when(this.tab === "summary", (el) => el.child(scroll("kti-summary").p(18).child(this.markdown(t, `kti-md-${x.key}`, data.body))))
       .when(this.tab === "code", (el) => el.child(this.code(t, x, cx)))
-      .when(this.tab === "checks", (el) => el.child(this.checksView(t, d)));
+      .when(this.tab === "checks", (el) => el.child(this.checksView(t, x, d)));
   }
 
   right(t, cx) {
@@ -1425,6 +1434,7 @@ export default class Inbox extends View {
     // changed: the keys are the list's again).
     if (this.zone === "code" && (this.vim.insert || this.tab !== "code" || this.sel?.kind !== "pr")) this.zone = "list";
     const t = theme();
+    this.V = viz(t, this.m, { roll });
     // No frame of its own: the work card around it paints the background. Each arrival fades the
     // page in (no rise: the stack doesn't clip).
     return enter(this.m, h_flex().size_full().gap(4).text_color(t.foreground)
