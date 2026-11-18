@@ -673,10 +673,10 @@ export default class Crosstalk extends View {
       .child(svg(icon).size(14));
   }
 
-  // `ready`: read for the source shown now (readyFor); else its mark and name as bars (skeleton.js), never
-  // the previous source's; the selector stays.
-  sessionLine(t, ready = true) {
-    const s = ready && this.pubOk() ? this.pub.session : null;
+  // `ready`: read for the source shown now, `src` (readyFor); else its mark and name as bars (skeleton.js),
+  // never the previous source's; the selector stays. No source: no publication either.
+  sessionLine(t, ready = true, src = this.src) {
+    const s = ready && src != null && this.pubOk() ? this.pub.session : null;
     const S = skeleton(t, this.m);
     return h_flex().gap(8).items_center()
       .when(!ready, (el) => el.child(S.pulse(h_flex().id("xt-head-sk").flex_1().min_w(0).gap(8).items_center()
@@ -684,8 +684,8 @@ export default class Crosstalk extends View {
       .when(ready, (el) => el
         .child(s ? this.markOf(t, this.sessionEntry(), s.name ?? "", 18, null) : svg("mods/kt-panel-head/messages-square.svg").size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(s ? t.foreground : t.muted)
-          .child(s?.name ?? (this.src ? `Terminal ${this.src}` : "Crosstalk"))))
-      .when(ready && Boolean(this.src), (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(this.src)))
+          .child(s?.name ?? (src ? `Terminal ${src}` : "Crosstalk"))))
+      .when(ready && Boolean(src), (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(src)))
       .when(Boolean(s), (el) => el.child(this.tag(t, t.dim, `v${this.pub.v}`)))
       .when(Boolean(this.fixdir), (el) => el.child(this.tag(t, t.blocked, "fixtures"))) // i18n: tech
       .child(h_flex().id("xt-pick").flex_none().h(22).px(8).gap(4).items_center().rounded_full().border(1)
@@ -830,10 +830,11 @@ export default class Crosstalk extends View {
     return v_flex().id("xt-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.listScroll).p(4).gap(2).children(children);
   }
 
-  emptyState(t) {
-    const others = this.terms.filter((x) => x !== this.src);
-    const [title, body] = !this.src ? [tr("empty.noTerm.title"), tr("empty.noTerm.text")]
-      : this.pub?.error ? [tr("empty.unreadable.title", { src: this.src }), this.pub.error === "version" ? tr("version", { v: this.pub.version }) : tr("unreadable")]
+  // `src`: the source shown now (read for it: readyFor).
+  emptyState(t, src = this.src) {
+    const others = this.terms.filter((x) => x !== src);
+    const [title, body] = !src ? [tr("empty.noTerm.title"), tr("empty.noTerm.text")]
+      : this.pub?.error ? [tr("empty.unreadable.title", { src }), this.pub.error === "version" ? tr("version", { v: this.pub.version }) : tr("unreadable")]
         : [tr("empty.none.title"), tr("empty.none.text")];
     return v_flex().flex_1().min_h(0).p(16).gap(10).items_center().justify_center()
       .child(svg("mods/kt-panel-head/messages-square.svg").size(22).text_color(t.dim))
@@ -845,10 +846,10 @@ export default class Crosstalk extends View {
         .child(tr("choose", { n: others.length }))));
   }
 
-  // `ready`: read for the source shown now (readyFor). Before that, the previous source's conversations
-  // are neither shown nor walked by the keys.
-  inboxCard(t, now, cx, ready = true) {
-    const ok = ready && this.pubOk();
+  // `ready`: read for the source shown now, `src` (readyFor). Before that, the previous source's
+  // conversations are neither shown nor walked by the keys; nor with no source at all.
+  inboxCard(t, now, cx, ready = true, src = this.src) {
+    const ok = ready && src != null && this.pubOk();
     const R = this.rowsOf(now);
     this.lastRows = ok ? R : { flat: [] };
     if (!this.moved || !R.flat.some((r) => this.rowKey(r) === this.cur)) this.cur = this.rowKey(R.flat.find((r) => !r.fold) ?? R.flat[0]);
@@ -866,7 +867,7 @@ export default class Crosstalk extends View {
       this.setFilter(k, (g === "s" ? R.state : R.kind) === v ? "all" : v);
     };
     const head = v_flex().flex_none().px(12).pt(10).pb(8).gap(8)
-      .child(this.sessionLine(t, ready))
+      .child(this.sessionLine(t, ready, src))
       .when(this.picking, (el) => el.child(this.picker(t)))
       .when(ok, (el) => el
         .child(this.searchField(t, R))
@@ -882,7 +883,7 @@ export default class Crosstalk extends View {
       // (every 10 s) keep what is shown.
       .child(ok ? this.list(t, R, cx) : !ready
         ? ((S) => S.pulse(v_flex().id("xt-list-sk").flex_1().min_h(0).p(4).child(S.list(5, { h: 52, icon: 0, lines: [0.4, 0.75], gap_y: 2 }))))(skeleton(t, this.m))
-        : this.emptyState(t))
+        : this.emptyState(t, src))
       .when(this.keyed && ok, (el) => el.child(div().flex_none().px(14).py(7).border_t(1).border_dashed().border_color(t.border)
         .font_family(MONO).text_size(10).text_color(t.dim).child(hint)));
   }
@@ -1022,9 +1023,11 @@ export default class Crosstalk extends View {
     this.reg = registry();
     this.keyed = this.isKeyed();
     const wide = this.wide();
-    // Read for the source shown now (readyFor): else the previous source's open conversation goes too.
-    const ready = readyFor(this.readFor, this.source());
-    const c = ready ? this.conv() : null;
+    // Read for the source shown now (readyFor): else the previous source's open conversation goes too. No
+    // source: nothing, not the previous one's while the read that forgets it runs.
+    const src = this.source();
+    const ready = readyFor(this.readFor, src);
+    const c = ready && src != null ? this.conv() : null;
     if (!c) this.zone = "list";
     const root = v_flex().id("kt-crosstalk").size_full().gap(4).text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
@@ -1035,13 +1038,13 @@ export default class Crosstalk extends View {
     const now = Date.now();
     // The conversation fades in as it opens (no rise: the panel doesn't clip it).
     const conv = (w) => enter(this.m, this.convCard(t, c, w), `xt-conv-${this.openSeq}`, { dy: 0 });
-    if (!wide) return root.child((c ? conv(false) : this.inboxCard(t, now, cx, ready)).flex_1().min_h(0));
+    if (!wide) return root.child((c ? conv(false) : this.inboxCard(t, now, cx, ready, src)).flex_1().min_h(0));
     return root.child(h_flex().flex_1().min_h(0).gap(4).items_stretch()
-      .child(this.inboxCard(t, now, cx, ready).w(this.inboxW()).flex_none().h_full())
+      .child(this.inboxCard(t, now, cx, ready, src).w(this.inboxW()).flex_none().h_full())
       .child(c ? conv(true).flex_1().min_w(0).h_full()
         : v_flex().flex_1().h_full().rounded(16).border(1).border_color(t.border).bg(t.background).items_center().justify_center().gap(8)
           .child(svg("mods/kt-panel-head/messages-square.svg").size(22).text_color(t.dim))
           // Not read yet for this source: no « rien » before the answer.
-          .when(ready, (el) => el.child(div().text_size(12.5).text_color(t.muted).child(this.pubOk() ? tr("pickConv") : tr("nothing"))))));
+          .when(ready, (el) => el.child(div().text_size(12.5).text_color(t.muted).child(src != null && this.pubOk() ? tr("pickConv") : tr("nothing"))))));
   }
 }

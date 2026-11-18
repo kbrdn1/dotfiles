@@ -248,7 +248,11 @@ export default class Files extends View {
           const st = await exec("git", ["status", "--porcelain"], { cwd: root, on });
           for (const l of st.stdout.split("\n").filter(Boolean)) this.marks[l.slice(3)] = l.startsWith("??") ? "U" : "M";
         }
-      } catch { this.paths = []; this.marks = {}; }
+      } catch {
+        this.paths = []; this.marks = {};
+        // Failed on another place than the one listed: the previous repo's open file goes too.
+        if (this.readFor !== key) this.show(null);
+      }
       finally {
         this.busy = false;
         // An answer for this place, even a failed one: no skeleton after it (readyFor). Not when the place

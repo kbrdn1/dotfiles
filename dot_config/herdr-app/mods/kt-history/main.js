@@ -610,9 +610,10 @@ export default class History extends View {
       .when(Boolean(band), (el) => el.child(band))
       .child(h_flex().h(40).px(14).gap(8).items_center()
         .child(svg(I("git-branch")).size(14).flex_none().text_color(t.muted))
-        // Not read for this place yet: the branch as a bar (skeleton.js), breathing. No repo: a dash.
+        // Not read for this place yet: the branch as a bar (skeleton.js), breathing. No repo: nothing (the
+        // list says so).
         .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground)
-          .child(!ready ? S.pulse(S.line(110, { h: 7, lh: 16 }).id("hi-branch-sk")) : this.branch === "" ? tr("detached") : this.branch ?? "—"))
+          .child(!ready ? S.pulse(S.line(110, { h: 7, lh: 16 }).id("hi-branch-sk")) : this.branch === "" ? tr("detached") : this.branch ?? ""))
         .child(div().flex_1())
         .when(this.keyed, (el) => el.child(modePill(t, this.vim)))
         .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(n ? `${n}${n >= COUNT ? "+" : ""} commits` : "")) // i18n: tech

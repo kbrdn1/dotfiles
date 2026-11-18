@@ -366,10 +366,11 @@ export default class SessionLine extends View {
     // the context ring with its label and value, the cost and the duration as bars (skeleton.js),
     // breathing. They fade in only past MS.open: a read that answers at once (local files, the usual)
     // shows no flash at each focus change, one that lags (git asked for a new folder) shows them.
-    // Reduced motion: no delay to be had, so none (the figures come as before).
+    // Reduced motion: no delay to be had, so none (the figures come as before). Their separator is in the
+    // delayed block too: nothing shows on a quick read (its room is kept, where the figures come).
     if (!m.reduced && L.length && !readyFor(this.dataFor, a?.address ?? null)) {
       const S = skeleton(t, m);
-      left.splice(1, 0, sep(), enter(m, h_flex().flex_none().items_center().child(S.pulse(h_flex().id("sl-sk").gap(GAP).items_center()
+      left.splice(1, 0, enter(m, h_flex().flex_none().gap(GAP).items_center().child(sep()).child(S.pulse(h_flex().id("sl-sk").gap(GAP).items_center()
         .child(h_flex().gap(7).items_center().child(S.line(22, { h: 6, lh: 14 })).child(S.circle(RING)).child(S.line(26, { h: 7, lh: 16 })))
         .child(S.line(40, { h: 7, lh: 16 }))
         .child(S.line(48, { h: 7, lh: 16 })))), "sl-sk-in", { dy: 0, delay: MS.open }));

@@ -589,9 +589,10 @@ export default class Changes extends View {
     const commitZone = card().flex_none().p(12).gap(8)
       .child(h_flex().h(22).gap(8).items_center()
         .child(svg(I("git-branch")).size(14).flex_none().text_color(t.muted))
-        // Not read for this place yet: the branch as a bar (skeleton.js), breathing. No repo: a dash.
+        // Not read for this place yet: the branch as a bar (skeleton.js), breathing. No repo: nothing (the
+        // list says so).
         .child(div().min_w(0).truncate().font_family(MONO).text_size(12.5).text_color(t.foreground)
-          .child(!ready ? S.pulse(S.line(110, { h: 7, lh: 16 }).id("cg-branch-sk")) : this.branch === "" ? tr("detached") : this.branch ?? "—"))
+          .child(!ready ? S.pulse(S.line(110, { h: 7, lh: 16 }).id("cg-branch-sk")) : this.branch === "" ? tr("detached") : this.branch ?? ""))
         .child(div().flex_1())
         .when(add + del > 0, (el) => el.child(h_flex().flex_none().gap(6).font_family(MONO).text_size(11)
           // Their ids carry the repo: another repo's totals show at once, not rolling.

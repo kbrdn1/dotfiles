@@ -1151,8 +1151,9 @@ export default class Flow extends View {
 
   // ---------- empty ----------
 
-  empty(t) {
-    const why = !this.term ? tr("noTerminal") : tr("noFlow", { term: this.term });
+  // `term`: the terminal followed now (read for it: readyFor).
+  empty(t, term) {
+    const why = !term ? tr("noTerminal") : tr("noFlow", { term });
     return v_flex().size_full().gap(4).text_color(t.foreground)
       .when(this.keyed, (el) => el.child(h_flex().flex_none().px(14).pt(6).child(div().flex_1()).child(modePill(t, this.vim))))
       .child(v_flex().flex_1().rounded(16).border(1).border_color(t.border).bg(t.background).items_center().justify_center().gap(12).p(24)
@@ -1220,14 +1221,16 @@ export default class Flow extends View {
     const root = (el) => el.id("kt-flow").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx));
     // Before the first read, and after a change of terminal until its own read answers (readyFor): the
     // timeline's shape, never the previous terminal's flow, nor « pas de flow » before the answer.
-    if (!readyFor(this.readFor, this.follow())) {
+    const target = this.follow();
+    if (!readyFor(this.readFor, target)) {
       this.flat = [];
       return root(this.skel(t, m));
     }
-    const steps = this.flow?.steps ?? [];
+    // No terminal: nothing, and not the previous terminal's flow while the read that forgets it runs.
+    const steps = target == null ? [] : this.flow?.steps ?? [];
     if (!steps.length) {
       this.flat = [];
-      return root(this.empty(t));
+      return root(this.empty(t, target));
     }
     const c = this.colors(t);
     // CI unfolded on another PR than the one read (the report moved): read it, once per PR.
