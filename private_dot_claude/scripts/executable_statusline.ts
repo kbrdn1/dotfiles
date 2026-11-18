@@ -225,6 +225,51 @@ function detectWorktreeDir(): string {
   return "";
 }
 
+// The main agent's last API usage in the transcript tail (its tokens and when),
+// and the TTL its prompt cache was written with (1h or 5m, from the newest entry
+// that wrote any). A big tool result can fill 64 KB, so one wider look.
+function lastUsage(path: string): { u: any; at: number | null; ttl: number } | null {
+  for (const bytes of [65536, 1_048_576]) {
+    let found: { u: any; at: number | null; ttl: number } | null = null;
+    const lines = tailLines(path, bytes);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let e: any;
+      try { e = JSON.parse(lines[i]); } catch { continue; }
+      if (e.isSidechain || e.isApiErrorMessage || !e.message?.usage) continue;
+      found ??= { u: e.message.usage, at: Date.parse(e.timestamp) || null, ttl: 300 };
+      const cc = e.message.usage.cache_creation;
+      if (cc?.ephemeral_1h_input_tokens > 0) { found.ttl = 3600; break; }
+      if (cc?.ephemeral_5m_input_tokens > 0) break;
+    }
+    if (found) return found;
+  }
+  return null;
+}
+
+// ── Feed the Herdr app's kbrdn-status / kt-threads mods (one file per Herdr terminal) ─
+// Written before any git/gwm call (detectWorktreeDir below runs git): herdr-agent-quota
+// runs this script under a deadline, a write at the end could be cut. Quota is per
+// account → one file.
+const ctx = getContextInfo(data);
+if (process.env.HC_TERMINAL_ID) {
+  const now = Math.floor(Date.now() / 1000);
+  const last = data.transcript_path ? lastUsage(data.transcript_path) : null;
+  const u = last?.u ?? {};
+  const read = u.cache_read_input_tokens ?? 0, made = u.cache_creation_input_tokens ?? 0, fresh = u.input_tokens ?? 0;
+  writeJson(join(CACHE_DIR, `herdr-${process.env.HC_TERMINAL_ID}.json`), {
+    model: modelName, effort: data.effort?.level ?? "", ctx_pct: ctx.usedPct, window: ctx.windowSize,
+    cost_usd: data.cost?.total_cost_usd ?? null, session_id: data.session_id ?? "",
+    input_tokens: last ? fresh : null, cache_read_input_tokens: last ? read : null,
+    cache_creation_input_tokens: last ? made : null, output_tokens: last ? (u.output_tokens ?? 0) : null,
+    hit_pct: read + made + fresh > 0 ? Math.round((read / (read + made + fresh)) * 1000) / 10 : null,
+    cache_at: last?.at ?? null, cache_ttl: last ? last.ttl : null,
+    duration_ms: data.cost?.total_duration_ms ?? null,
+    lines_added: data.cost?.total_lines_added ?? null, lines_removed: data.cost?.total_lines_removed ?? null,
+    updated_at: now,
+  });
+  if (data.rate_limits) writeJson(join(CACHE_DIR, "herdr-quota.json"), { ...data.rate_limits, updated_at: now });
+}
+
 // One git context for the whole line: the detected worktree, else cwd. A no-op
 // in normal sessions (last edit lives in the cwd repo → same toplevel).
 // resolved: git hands back real paths, so a symlinked cwd (/tmp, /var on macOS)
@@ -330,23 +375,11 @@ function autoPin(dir: string, pins: string[]): void {
 }
 
 // ── Gather data ─────────────────────────────────────────────────────
-const ctx = getContextInfo(data);
 const ctxPct = ctx.usedPct !== null ? ctx.usedPct.toFixed(1) : null;
 const ctxWindowLabel = ctx.windowSize >= 1_000_000
   ? `${(ctx.windowSize / 1_000_000).toFixed(0)}M`
   : `${ctx.windowSize / 1_000}K`;
 
-// ── Feed the Herdr app's kbrdn-status mod (one file per Herdr terminal) ─
-// Written before any git/gwm call: herdr-agent-quota runs this script under a
-// deadline, a write at the end could be cut. Quota is per account → one file.
-if (process.env.HC_TERMINAL_ID) {
-  const now = Math.floor(Date.now() / 1000);
-  writeJson(join(CACHE_DIR, `herdr-${process.env.HC_TERMINAL_ID}.json`), {
-    model: modelName, effort: data.effort?.level ?? "", ctx_pct: ctx.usedPct, window: ctx.windowSize,
-    cost_usd: data.cost?.total_cost_usd ?? null, session_id: data.session_id ?? "", updated_at: now,
-  });
-  if (data.rate_limits) writeJson(join(CACHE_DIR, "herdr-quota.json"), { ...data.rate_limits, updated_at: now });
-}
 const is1MContext = ctx.windowSize >= 1_000_000;
 const rawStyle = data.output_style;
 const outputStyle = typeof rawStyle === "string"

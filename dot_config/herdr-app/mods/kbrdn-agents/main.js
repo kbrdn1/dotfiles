@@ -4,8 +4,12 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout, home, readTextFile, checking } from "herdr";
 
-// kbrdn mascot head by agent status (kbrdn.dev's 31 moods): Herdr's "agents incarnés" pattern.
-const MOOD = { working: "thinking", blocked: "nervous", done: "clap", idle: "content" };
+// Monocode's provider tile: the program's icon on its own color (Herdr's program table).
+function tile(t, p) {
+  const glyph = p?.icon ? (p.tint ? svg(p.icon).size(14).text_color(p.color ?? "#ffffff") : image(p.icon).size(14)) : svg("mods/workspace-chrome/terminal.svg").size(13).text_color(t.muted);
+  return div().w(24).h(20).flex_none().rounded(6).border(1).border_color("#00000033").bg(p?.tile ?? t.raised)
+    .flex().items_center().justify_center().child(glyph);
+}
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -407,7 +411,7 @@ export default class Agents extends View {
             cx.stop_propagation();
             this.folded.has(a.address) ? this.folded.delete(a.address) : this.folded.add(a.address);
             cx.notify();
-          })).child(claude ? image(`brand/mascot/${MOOD[a.status] ?? "neutral"}.png`).size(second ? 26 : 20) : pic)))
+          })).child(tile(t, a.program))))
         .child(v_flex().flex_1().min_w(0).gap(1)
           .child(h_flex().min_w(0).gap(5).items_center()
             .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))

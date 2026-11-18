@@ -75,7 +75,7 @@
             {
               "id": "composer",
               "type": "block",
-              "size": { "px": 132 },
+              "size": { "px": 46 },
               "content": { "mod": "kt-composer" },
               "background": "chrome",
               "border": { "width": 1, "color": "border" },
