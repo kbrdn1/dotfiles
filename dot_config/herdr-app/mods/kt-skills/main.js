@@ -13,22 +13,55 @@
 // Top: title, counter, filter, refresh, source segments. Then one card-row per
 // skill (name, description, path; source and harness; on hover preview, copy,
 // open), grouped by source, 80 to a page. A row opens the detail on the right:
-// description, frontmatter, SKILL.md in a read-only editor, Copy / Zed / Finder.
+// description and frontmatter in a card, then SKILL.md rendered (TextView.markdown, its fenced
+// code drawn here: t.raised, Monaspace Neon), ~80 characters a line, scrolling; a relative link
+// to another .md of the skill opens it in the same pane (SKILL.md › file, back on SKILL.md),
+// anything else of it in Zed, the web in the browser. Copy / Zed (the file shown) / Finder.
 // Scans when the page shows, when the shown space changes while it shows, and
 // on Rafraîchir; never on a timer. Files are re-read only when their mtime moved.
+// Selection (select.js): ⌘-click toggles a row, ⇧-click selects from the anchor, the box left of a
+// row (on hover, or once one is selected) toggles it; a plain click opens and empties it. While
+// rows are selected, a bar floats at the list's foot: copy the /names (one a line), open in Zed,
+// reveal in the Finder, ✕ to empty.
+// + Ajouter (the header, `a`, kt-skills.add): this mod again as a popup (props.add "menu": with the
+// assistant, an empty skeleton, from a folder, from GitHub, from a plugin), then as a dialog
+// (props.add: the way): its form, then a confirmation showing the exact commands (form.js, add.js).
+// The source segments are a filter row (FILTERS.md): one line scrolling sideways, pale tints.
+// Mod commands: kt-skills.add, kt-skills.refresh, kt-skills.bulk:<copy|zed|finder> (tests).
+// Keys (vim.js; kt-keys lists them under Pages): the page opens typing in the filter (INSERT);
+// ctrl-b h/l (pane.go, "focus") or `kt-skills.key:<keys>` give it the keyboard in NORMAL.
+// INSERT: type to filter, ctrl-n/ctrl-p, ctrl-j/ctrl-k, ↓ ↑ move the cursor, enter opens it, esc:
+// NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N move the cursor over the rows and the "Fragments et
+// templates" folds, across pages (k on the first row: the filter, INSERT); / the filter, tab /
+// shift-tab the source segments, enter/o/l open the detail (a click; on a fold: unfold), h folds,
+// O Zed, y copies /skill, r refresh, a + Ajouter, ? kt-keys, q back to the thread (a dialog closes); x or space
+// toggle the row's selection, V a visual range (j/k extend it, esc ends it), ctrl-a selects every
+// listed row; esc ends the range, then empties the selection, then clears the filter, then as q.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, Editor, EditorState, ScrollHandle } from "gpui-base";
-import { exec, readTextFile, theme, settings, spaces, panes, run, layout, props, home, notify, checking } from "herdr";
+import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
+import { exec, readTextFile, theme, spaces, panes, run, layout, props, home, notify, checking, nextCommand, openOverlay, closeOverlay, shared, watchFolder } from "herdr";
 import { frontmatter } from "./frontmatter.js";
+import { blocks } from "./markdown.js";
+import { Select } from "./select.js";
+import { Vim, keysOf, keyOf, step } from "./vim.js";
+import { AddMenu, AddForm, menuSize } from "./form.js";
+import { filterRow, filterState } from "./filters.js";
+import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
+import { motionState, frame, enter, pulse } from "./motion.js";
+import { bump, refreshOn } from "./bus.js";
+import { METHODS } from "./add.js";
 
 const MONO = "Monaspace Krypton";
+const CODE = "Monaspace Neon"; // the viewer's code blocks
+const MEASURE = 620; // the viewer's text column, padding included: ~80 characters of 13.5 px Inter
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const OWN = (name) => `mods/kt-skills/${name}.svg`;
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const PAGE = 80; // rows per page: plain rows (a virtual list's rows can't hold their own buttons)
-const SEGS = [["all", "Tous"], ["personal", "Personnels"], ["plugin", "Plugins"], ["project", "Projet"], ["command", "Commandes"]];
+// The source segments and their filter tints (FILTERS.md; "Tous" stays neutral).
+const SEGS = [["all", "Tous"], ["personal", "Personnels", "ansi4"], ["plugin", "Plugins", "ansi5"], ["project", "Projet", "ansi2"], ["command", "Commandes", "ansi3"]];
 const SOURCE = { personal: "Personnel", plugin: "Plugin", project: "Projet" };
 // The whole scan in one process: each (glob, dir) listed by rg (links followed, hidden
 // folders skipped), then every file's mtime and real path (macOS stat: PATH's may be GNU's).
@@ -36,10 +69,14 @@ const LIST = `while [ $# -gt 1 ]; do g=$1; d=$2; shift 2; [ -d "$d" ] && rg --fi
 
 const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
 const dirOf = (p) => p.slice(0, p.lastIndexOf("/"));
+// "/a/b/../c/./d" -> "/a/c/d".
+const norm = (p) => p.split("/").reduce((a, s) => (s === ".." ? a.slice(0, -1) : s === "." || (s === "" && a.length) ? a : [...a, s]), []).join("/") || "/";
 const tilde = (p) => (p.startsWith(home() + "/") ? `~${p.slice(home().length)}` : p);
 const fmt = (v) => (Array.isArray(v) ? v.join(", ")
   : v && typeof v === "object" ? Object.entries(v).map(([k, s]) => `${k}: ${s}`).join(" · ")
   : String(v ?? "")).trim();
+// A list entry's id for the keys' cursor: a row's key, or its group's fold.
+const idOf = (e) => e.x?.key ?? `fold:${e.glabel}`;
 
 // Shown: kbrdn-threads' main "view" stack is on this page, or this copy is a dialog.
 function find(node, id) {
@@ -59,7 +96,28 @@ const activeSpace = () => spaces().find((s) => s.active);
 
 export default class Skills extends View {
   init(_props, cx) {
+    // + Ajouter's popup or dialog: this mod again, in that role only (no scan, no page keys).
+    const add = props()?.add;
+    if (add) {
+      const m = METHODS.find((x) => x.id === add);
+      this.role = add === "menu" ? new AddMenu("kt-skills", METHODS, cx) : m ? new AddForm("kt-skills", m, cx) : null;
+      if (!checking()) cx.spawn(async (cx) => {
+        for (;;) {
+          const c = await nextCommand();
+          this.role?.command(c, cx);
+          cx.notify();
+        }
+      });
+      return;
+    }
     this.handle = cx.focus_handle();
+    this.segRow = filterState(); // the source filter row (filters.js)
+    this.motion = motionState(); // motion.js: the detail and the bulk bar fade in
+    this.headW = 0; // the head card's width (its dither)
+    this.more = false; // the head's ⋯ menu
+    this.scannedAt = 0;
+    this.watches = []; // ~/.claude/skills and ~/.claude/commands while the page shows
+    this.root = null; // the shown space's git root, as the last scan found it
     this.scroll = ScrollHandle.new();
     this.query = "";
     this.seg = "all";
@@ -67,8 +125,9 @@ export default class Skills extends View {
     this.items = [];
     this.cache = new Map(); // "path\treal" -> { mtime, item }
     this.sel = null; // the open item's key
-    this.code = null; // its SKILL.md, read-only
-    this.codeKey = null;
+    this.doc = null; // the file its viewer shows: { key, path, segs } (segs: blocks(), null while read)
+    this.docScroll = ScrollHandle.new();
+    this.multi = new Select(); // the rows selected for the bulk bar (keys)
     this.hot = null; // the hovered row's key
     this.reveal = null; // a row to scroll to once drawn (props.select)
     this.unfolded = new Set(); // groups whose "Fragments et templates" are open
@@ -77,6 +136,29 @@ export default class Skills extends View {
     this.scanned = false;
     this.space = undefined; // the space the last scan looked at
     this.width = 1100;
+    this.vim = new Vim({ field: true });
+    this.cur = null; // the keys' cursor (idOf an entry); null: the page's first
+    if (checking()) return;
+    // The keyboard left without a render (a click on a terminal): the cursor goes out.
+    // Recorded here too: a hidden copy never renders, so a stale `keyed` would notify every second.
+    cx.timer.every(1000, (cx) => { const f = this.handle.is_focused(); if (this.keyed !== f) { this.keyed = f; cx.notify(); } });
+    // `focus` (pane.go) takes the keyboard in NORMAL; `key:<keys>` takes it and types those keys
+    // ("j", "g g", "/ r e v i e w"), for tests.
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c === "focus") this.focusIn();
+        else if (c.startsWith("key:")) {
+          this.focusIn();
+          for (const k of keysOf(c.slice(4))) this.press(k, cx);
+        }
+        // `bulk:<id>`: the bulk bar's action of that id (copy, zed, finder), as its click, for tests.
+        else if (c.startsWith("bulk:")) this.bulkActions?.find(([id]) => id === c.slice(5))?.[3](cx);
+        else if (c === "add") this.openAdd();
+        else if (c === "refresh") this.scan(cx);
+        cx.notify();
+      }
+    });
   }
 
   // ---------- data ----------
@@ -107,6 +189,7 @@ export default class Skills extends View {
       readTextFile(`${C}/plugins/installed_plugins.json`).catch(() => null),
       this.projectRoot(),
     ]);
+    this.root = proj && proj !== h ? proj : null; // + Ajouter's project scope
     const installed = parse(inst)?.plugins ?? {};
     for (const [key, on] of Object.entries(parse(st)?.enabledPlugins ?? {})) {
       if (on !== true) continue;
@@ -172,6 +255,7 @@ export default class Skills extends View {
         }));
         // By group, its internal bricks last, then by name (me: aside).
         this.items.sort((a, b) => a.order - b.order || a.group.localeCompare(b.group) || a.internal - b.internal || a.sort.localeCompare(b.sort));
+        this.multi.keep(this.items.map((x) => x.key)); // gone (another project): out of the selection
         this.error = this.items.length ? null : r.stderr.trim() || null;
         // A dialog asked for one skill (props.select): open it once; list() pages and scrolls to it.
         const want = props()?.select;
@@ -185,6 +269,7 @@ export default class Skills extends View {
       } finally {
         this.busy = false;
         this.scanned = true;
+        this.scannedAt = Date.now();
         cx.notify();
       }
     });
@@ -232,39 +317,70 @@ export default class Skills extends View {
     return q ? this.items.filter((x) => `${x.name} ${fmt(x.meta.name)} ${x.description}`.toLowerCase().includes(q)) : this.items;
   }
 
-  select(x, cx) {
-    if (this.sel === x.key && this.code) return;
-    this.sel = x.key;
-    this.loadBody(x, cx);
+  // What the list shows: the query's matches in the segment.
+  listed() {
+    return this.queried().filter((x) => this.matches(x, this.seg));
   }
 
-  // SKILL.md without its frontmatter, in a read-only editor (made in a task, never in render).
-  loadBody(x, cx) {
-    this.code?.release();
-    this.code = null;
-    this.codeKey = null;
+  // What the pages hold: the rows, each group's internal bricks (sorted last) behind one fold.
+  entries(shown) {
+    const internal = {};
+    for (const x of shown) if (x.internal) internal[x.glabel] = (internal[x.glabel] ?? 0) + 1;
+    const entries = [];
+    shown.forEach((x, i) => {
+      const open = this.unfolded.has(x.glabel);
+      const prev = shown[i - 1];
+      if (x.internal && !(prev?.internal && prev.glabel === x.glabel)) entries.push({ glabel: x.glabel, fold: internal[x.glabel], open });
+      if (!x.internal || open) entries.push({ glabel: x.glabel, x });
+    });
+    return entries;
+  }
+
+  select(x, cx) {
+    if (this.sel === x.key && this.doc?.key === x.key) return;
+    this.sel = x.key;
+    this.loadDoc(x, x.path, cx);
+  }
+
+  // A file of the open skill for the viewer, cut by blocks() (in a task, never in render): SKILL.md
+  // without its frontmatter (the card above shows it), or a .md one of its links points to.
+  loadDoc(x, path, cx) {
+    this.doc = { key: x.key, path, segs: null };
     cx.spawn(async (cx) => {
-      const text = await readTextFile(x.path).catch(() => null);
-      if (this.sel !== x.key) return;
-      const t = theme();
-      this.codeDark = settings().dark !== false;
-      this.code = EditorState.new({
-        language: "markdown",
-        value: text == null ? "(illisible)" : frontmatter(text).body.replace(/^\n+/, "") || "(vide)",
-        readonly: true,
-        soft_wrap: true,
-        folding: false,
-        font_family: MONO,
-        font_size: 12,
-        syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6, punctuation: t.dim },
-      });
-      this.codeKey = x.key;
+      const text = await readTextFile(path).catch(() => null);
+      if (this.doc?.key !== x.key || this.doc.path !== path) return;
+      const segs = text == null ? [] : blocks(path === x.path ? frontmatter(text).body : text);
+      this.doc.segs = segs.length ? segs : [{ kind: "md", text: text == null ? "_Fichier illisible._" : "_Fichier vide._" }];
+      this.docScroll.scroll_to_item(0);
       cx.notify();
     });
   }
 
+  // A link in the viewer: the web in the browser; a .md of the skill (relative, or absolute) in this
+  // pane when it reads, else in Zed, as any other file; an anchor alone does nothing.
+  link(x, url, cx) {
+    if (/^(https?|mailto):/i.test(url)) return void exec("open", [url]).catch(() => {});
+    let raw = url.replace(/^file:\/\//i, "").replace(/[?#].*$/, "");
+    try { raw = decodeURI(raw); } catch { /* as written */ }
+    if (!raw || /^[a-z][\w+.-]*:/i.test(raw)) return;
+    const path = norm(raw.startsWith("/") ? raw : `${dirOf(this.doc?.path ?? x.path)}/${raw}`);
+    if (!/\.(md|markdown)$/i.test(path)) return this.zed([path]);
+    cx.spawn(async (cx) => {
+      if ((await readTextFile(path).catch(() => null)) == null) return this.zed([path]);
+      this.loadDoc(x, path, cx);
+      cx.notify();
+    });
+  }
+
+  // + Ajouter's popup (this mod as the menu), with what its forms need: the space, its project root.
+  openAdd() {
+    if (checking()) return;
+    openOverlay({ mod: "kt-skills", kind: "popup", frame: "none", ...menuSize(METHODS.length),
+      props: { add: "menu", space: activeSpace()?.id ?? null, root: this.root } });
+  }
+
   async close() {
-    this.code?.release();
+    await this.role?.dispose?.();
   }
 
   copy(x, cx) {
@@ -273,9 +389,14 @@ export default class Skills extends View {
     notify({ title: "Copié", body: text, level: "success", timeout: 2000 });
   }
 
-  // Zed's CLI when it's there, else its URL scheme.
-  zed(x) {
-    exec("zed", [x.real]).catch(() => exec("open", [`zed://file${x.real}`]).catch(() => {}));
+  // Zed's CLI when it's there (every file in one window), else its URL scheme, one by one.
+  zed(paths) {
+    exec("zed", paths).catch(() => { for (const p of paths) exec("open", [`zed://file${p}`]).catch(() => {}); });
+  }
+
+  // What the selection walks: every listed row, in order, across pages (not folds, nor what they hide).
+  order() {
+    return this.entries(this.listed()).filter((e) => e.x).map((e) => e.x.key);
   }
 
   // ---------- pieces ----------
@@ -319,69 +440,199 @@ export default class Skills extends View {
       .child(label);
   }
 
+  // A row's selection box (select.js): drawn on hover or once a row is selected, its room always
+  // kept so the row never moves; a click toggles the row, as ⌘-click does.
+  check(t, id, on, shown, onClick) {
+    return div().id(id).size(16).flex_none().rounded(5).border(1).flex().items_center().justify_center()
+      .when(!shown, (el) => el.border_color(alpha(t.input, "00")))
+      .when(shown, (el) => el.border_color(on ? t.accent : t.input).bg(on ? t.accent : t.background).cursor_pointer()
+        .hover((s) => s.border_color(t.accent))
+        .on_click((_e, cx) => { cx.stop_propagation(); onClick(); cx.notify(); }))
+      .when(on, (el) => el.child(svg(I("check")).size(11).text_color(t.accent_foreground)));
+  }
+
+  // The bulk bar (select.js): floats over the list's foot while rows are selected: how many, the
+  // actions ([id, label, icon, onClick]), ✕ to empty. A card (radius 12, shadow), its buttons 4 px in: 8.
+  bulkBar(t, n, actions) {
+    // It fades in and rises 6 px when a first row is selected (motion.js).
+    // Narrow (the detail and the panel open), its buttons wrap rather than leave the list.
+    return h_flex().absolute().bottom(12).left(0).right(0).px(8).justify_center()
+      .child(enter(this.m, div().max_w_full(), "kts-bulk-in").child(h_flex().id("kts-bulk").max_w_full().flex_wrap().p(4).gap(2).items_center().rounded(12).border(1).border_color(t.border).bg(t.popover).shadow_lg()
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .child(div().pl(10).pr(8).font_family(MONO).text_size(11).text_color(t.foreground).child(`${n} sélectionné${n > 1 ? "s" : ""}`))
+        .child(div().w(1).h(18).flex_none().bg(t.border))
+        .children(actions.map(([id, label, icon, onClick]) => h_flex().id(`kts-bulk-${id}`).h(28).px(10).gap(6).items_center().rounded(8)
+          .text_size(12).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => { onClick(cx); cx.notify(); })
+          .child(svg(icon).size(13)).child(label)))
+        .child(h_flex().id("kts-bulk-clear").size(28).flex_none().items_center().justify_center().rounded(8).text_color(t.muted)
+          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Vider la sélection (esc)")
+          .on_click((_e, cx) => { this.multi.clear(); cx.notify(); })
+          .child(svg(I("x")).size(13)))));
+  }
+
+  // The bar's actions on the selected skills (hidden by the filter or not), in list order.
+  bulk(t) {
+    const picked = this.multi.pick(this.items, (x) => x.key);
+    this.bulkActions = null;
+    if (!picked.length) return null;
+    this.bulkActions = [
+      ["copy", "Copier les /noms", OWN("copy"), (cx) => {
+        cx.write_to_clipboard(picked.map((x) => (x.invocable ? `/${x.name}` : x.name)).join("\n"));
+        notify({ title: `${picked.length} nom${picked.length > 1 ? "s" : ""} copié${picked.length > 1 ? "s" : ""}`, body: "Un par ligne.", level: "success", timeout: 2000 });
+      }],
+      ["zed", "Ouvrir dans Zed", I("external-link"), () => this.zed(picked.map((x) => x.real))],
+      ["finder", "Révéler dans le Finder", I("folder"), () => exec("open", ["-R", ...picked.map((x) => x.real)]).catch(() => {})],
+    ];
+    return this.bulkBar(t, picked.length, this.bulkActions);
+  }
+
   // ---------- header ----------
 
+  // ---------- keys (vim.js; kt-keys lists them) ----------
+
+  // The keyboard comes here (pane.go, a key command): NORMAL, the cursor on the open skill.
+  focusIn() {
+    this.handle.focus();
+    this.vim.normal();
+    const entries = this.entries(this.listed());
+    if (!entries.some((e) => idOf(e) === this.cur)) this.cur = entries.some((e) => idOf(e) === this.sel) ? this.sel : null;
+    const e = this.at(entries);
+    this.reveal = e ? idOf(e) : null;
+  }
+
+  // The cursor's entry: this.cur when listed, else the shown page's first.
+  at(entries) {
+    return entries.find((e) => idOf(e) === this.cur) ?? entries[Math.min(this.page * PAGE, entries.length - 1)] ?? null;
+  }
+
   key(e, cx) {
-    if (e.key === "escape") { if (!this.query) return; this.query = ""; }
-    else if (e.key === "backspace") this.query = this.query.slice(0, -1);
-    else if (e.key === "enter") {
-      const first = this.queried().find((x) => this.matches(x, this.seg));
-      if (first) this.select(first, cx);
-    }
-    else if (e.key_char && !e.modifiers?.control && !e.modifiers?.platform) this.query += e.key_char;
-    else return;
-    this.page = 0;
+    if (!this.press(e, cx)) return; // not ours: ctrl-b, cmd-* go on
     cx.stop_propagation();
     cx.notify();
   }
 
+  // One key (an event, or a name from `kt-skills.key:`): the selection's first (select.js, NORMAL
+  // only: x space V ctrl-a esc), then vim's; a visual range then follows the cursor.
+  press(k, cx) {
+    const cur = () => { const e = this.at(this.entries(this.listed())); return e ? idOf(e) : null; };
+    if (!this.vim.insert && this.multi.key(keyOf(k).name, cur(), this.order())) {
+      this.vim.normal(); // a `d` or a count typed before it is dropped
+      return true;
+    }
+    if (!this.keyAct(this.vim.handle(k), cx)) return false;
+    if (this.multi.visual) this.multi.follow(cur(), this.order());
+    return true;
+  }
+
+  // One vim action; false: not one this page has, and the key goes on.
+  keyAct(a, cx) {
+    if (!a) return false;
+    if (a === "pending" || a === "count" || a === "filter" || a === "normal") return true;
+    const entries = this.entries(this.listed());
+    const e = this.at(entries);
+    const i = entries.indexOf(e);
+    // The cursor onto an entry; list() turns to its page and scrolls to it (reveal).
+    const go = (to) => {
+      if (!to) return;
+      this.cur = idOf(to);
+      this.reveal = this.cur;
+    };
+    if (a === "type" || a === "backspace") {
+      this.query = a === "type" ? this.query + this.vim.char : this.query.slice(0, -1);
+      this.page = 0;
+      this.cur = null;
+    } else if (a === "up" && i <= 0 && !this.vim.insert) this.vim.edit(); // k on the first row: the filter
+    else if (["down", "up", "top", "bottom", "half-down", "half-up", "next", "prev"].includes(a))
+      go(entries[step(a === "next" ? "down" : a === "prev" ? "up" : a, i, entries.length, this.vim.count, 10)]);
+    else if (a === "tab-next" || a === "tab-prev") {
+      const k = SEGS.findIndex(([id]) => id === this.seg);
+      this.seg = SEGS[(k + (a === "tab-next" ? 1 : SEGS.length - 1)) % SEGS.length][0];
+      this.page = 0;
+      this.cur = null;
+    } else if (e && !e.x && ["open", "right", "submit", "left"].includes(a)) {
+      // A fold: enter / o flip it, l unfolds, h folds.
+      if (a === "left" || (a !== "right" && e.open)) this.unfolded.delete(e.glabel);
+      else this.unfolded.add(e.glabel);
+    } else if (a === "open" || a === "right" || a === "submit") { if (e) this.select(e.x, cx); }
+    else if (a === "left") {
+      // h on a fragment folds its group, the cursor on the fold.
+      if (!e?.x.internal) return false;
+      this.unfolded.delete(e.glabel);
+      go({ glabel: e.glabel });
+    } else if (a === "open-alt") { if (e?.x) this.zed([e.x.real]); }
+    else if (a === "yank") { if (e?.x) this.copy(e.x, cx); }
+    else if (a === "refresh") { if (!checking()) this.scan(cx); }
+    else if (a === "archive") this.openAdd(); // a: + Ajouter
+    else if (a === "escape" && this.query) {
+      this.query = "";
+      this.page = 0;
+      this.cur = null;
+    } else if (a === "escape" || a === "quit") {
+      if (props()?.overlay) closeOverlay(props().overlay);
+      else run("layout.select", { stack: "view", child: "thread" });
+    } else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } });
+    else return false;
+    return true;
+  }
+
+  // NORMAL / INSERT (kt-keys' pill), mono 9 px, while the page has the keyboard.
+  mode(t, typing) {
+    return div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+      .border_color(typing ? alpha(t.accent, "66") : t.border).bg(typing ? alpha(t.accent, "24") : t.background)
+      .font_family(MONO).text_size(9).text_color(typing ? t.accent : t.muted).child(this.vim.label);
+  }
+
   header(t, q, shown) {
-    const typing = this.handle.is_focused();
+    const typing = this.keyed && this.vim.insert;
     const skills = this.items.filter((x) => x.kind === "skill").length;
     const filtered = this.query.trim() || this.seg !== "all";
     const count = !this.scanned ? "…" : filtered ? `${shown} / ${this.items.length}` : `${skills} skills · ${this.items.length - skills} commandes`;
-    // Concentric radii: the card (16) holds its toolbar 4 px in, so the toolbar's boxes are 12,
-    // and the segments, 3 px inside theirs, 9.
-    const seg = h_flex().flex_none().h(36).p(3).gap(2).items_center().rounded(12).border(1).border_color(t.border)
-      .children(SEGS.map(([k, label]) => {
-        const on = this.seg === k;
-        return h_flex().id(`kts-seg-${k}`).h_full().px(11).gap(6).items_center().rounded(9).border(1)
-          .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
-          .when(on, (el) => el.bg(alpha(t.accent, "24")))
-          .when(!on, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
-          .text_size(12).text_color(on ? t.foreground : t.muted).cursor_pointer()
-          .on_click((_e, cx) => { this.seg = k; this.page = 0; cx.notify(); })
-          .child(label)
-          .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(String(q.filter((x) => this.matches(x, k)).length)));
-      }));
-    return this.card(t).flex_none().p(4).gap(4)
-      .child(v_flex().px(14).pt(12).pb(6).gap(4)
-        .child(div().text_size(21).font_semibold().line_height("28px").text_color(t.foreground).child("Skills"))
-        .child(div().text_size(13).text_color(t.muted)
-          .child("Les skills et commandes de Claude Code, depuis les dossiers personnels, harness, plugins et projet. Lecture seule.")))
+    // Concentric radii: the card (16) holds its toolbar 4 px in, so the toolbar's boxes are 12.
+    const seg = filterRow({ id: "kts-seg", t, state: this.segRow, active: this.seg, reduced: Boolean(shared("kt.reducedMotion")),
+      items: SEGS.map(([key, label, tint]) => ({ key, label, tint, count: q.filter((x) => this.matches(x, key)).length })),
+      onPick: (k) => { this.seg = k; this.page = 0; this.cur = null; } });
+    // DESIGN-REFERENCE.md's head: the band on the page's dither (Skills: ansi4), the rest under it.
+    return this.card(t).id("kts-head").relative().flex_none().px(4).pb(4).gap(4)
+      .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
+      .children([dither(this.headW, 60, 16, t.ansi4)].filter(Boolean))
+      .child(bandRow(t, { color: t.ansi4, icon: I("sparkles"), title: "Skills",
+        sub: [count, "Claude Code : personnels, harness, plugins, projet"],
+        buttons: [
+          iconBtn(t, "kts-b-add", I("plus"), "Ajouter (a)", () => this.openAdd()),
+          iconBtn(t, "kts-b-refresh", I("refresh-cw"), this.busy ? "Analyse…" : "Rafraîchir (r)", (cx) => { if (!checking()) this.scan(cx); }),
+          iconBtn(t, "kts-b-more", "mods/kt-crosstalk/ellipsis.svg", "Plus", () => { this.more = !this.more; }, this.more)] }))
+      .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi4, "4d")))
       .child(h_flex().flex_wrap().gap(4).items_center()
+        // The filter: the keys' ring (and the ink) while typing in it; the mode beside it.
         .child(h_flex().id("kts-filter").w(280).h(36).px(12).gap(8).items_center().rounded(12).border(1)
-          .border_color(typing ? t.accent : t.border).cursor_text()
+          .border_color(typing ? alpha(t.accent, "99") : t.border).when(typing, (el) => el.bg(alpha(t.accent, "24"))).cursor_text()
           .track_focus(this.handle)
           .on_key_down((e, cx) => this.key(e, cx))
-          .on_click((_e, cx) => { this.handle.focus(); cx.notify(); })
+          .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
           .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
           .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(this.query ? t.foreground : t.dim)
             .child(this.query ? this.query + (typing ? "▏" : "") : typing ? "▏" : "Filtrer"))
           .when(Boolean(this.query), (el) => el.child(div().id("kts-clear").flex_none().text_color(t.dim).cursor_pointer()
             .hover((s) => s.text_color(t.foreground))
-            .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.page = 0; cx.notify(); })
+            .on_click((_e, cx) => { cx.stop_propagation(); this.query = ""; this.page = 0; this.cur = null; cx.notify(); })
             .child(svg(I("x")).size(13)))))
-        .child(h_flex().id("kts-refresh").h(36).px(12).gap(6).items_center().rounded(12).border(1).border_color(t.border)
-          .text_size(12).text_color(this.busy ? t.dim : t.muted)
-          .when(!this.busy, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)))
-          .on_click((_e, cx) => { if (!checking()) this.scan(cx); cx.notify(); })
-          .child(svg(I("refresh-cw")).size(13))
-          .child(this.busy ? "Analyse…" : "Rafraîchir"))
-        .child(div().flex_none().px(8).font_family(MONO).text_size(12).text_color(t.muted).child(count))
-        .child(div().flex_1())
-        .child(seg));
+        .when(Boolean(this.keyed), (el) => el.child(this.mode(t, typing)))
+        .when(this.busy, (el) => el.child(pulse(this.m, div().px(8).font_family(MONO).text_size(11).text_color(t.dim).child("analyse…"), true))))
+      .child(div().px(4).pb(2).child(seg));
   }
+
+  // The head's ⋯: the rest of the page's actions.
+  moreItems() {
+    const dir = `${home()}/.claude/skills`;
+    return [
+      ["kts-mi-add", I("plus"), "Ajouter un skill… (a)", () => this.openAdd()],
+      ["kts-mi-finder", I("folder"), "Révéler ~/.claude/skills dans le Finder", () => exec("open", [dir]).catch(() => {})],
+      ["kts-mi-zed", I("external-link"), "Ouvrir ~/.claude/skills dans Zed", () => this.zed([dir])],
+      ["kts-mi-keys", I("keyboard"), "Les touches (?)", () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } })],
+    ];
+  }
+
 
   // ---------- list ----------
 
@@ -391,25 +642,33 @@ export default class Skills extends View {
       .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border));
   }
 
-  row(t, x) {
+  // `cursor`: "ring" (NORMAL: a 1 px accent ring with the ink), "mark" (INSERT: ctrl-n/p's row) or null.
+  // Selected (select.js): its box checked and a lighter ink than the open row's (border 66, ink 24).
+  row(t, x, cursor) {
     const on = x.key === this.sel;
     const hot = on || x.key === this.hot;
+    const picked = this.multi.has(x.key);
     const badges = [];
     if (x.kind === "command" && x.source !== "personal") badges.push("commande");
     if (x.model) badges.push(`modèle ${x.model}`);
     if (x.tools) badges.push("outils restreints");
     if (x.off) badges.push("non invocable");
-    return v_flex().id(`kts-row-${x.key}`).px(14).py(10).gap(3).rounded(12).border(1)
-      .border_color(on ? alpha(t.accent, "66") : t.border)
-      .bg(on ? alpha(t.accent, "24") : t.background)
-      .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+    return h_flex().id(`kts-row-${x.key}`).pl(10).pr(14).py(10).gap(10).items_start().rounded(12).border(1)
+      .border_color(cursor === "ring" ? alpha(t.accent, "99") : on ? alpha(t.accent, "66") : t.border)
+      .bg(on || cursor === "ring" ? alpha(t.accent, "24") : picked ? alpha(t.accent, "14") : cursor === "mark" ? t.hover : t.background)
+      .when(!on && !cursor && !picked, (el) => el.hover((s) => s.bg(t.hover)))
       .cursor_pointer()
-      .on_click((_e, cx) => { this.select(x, cx); cx.notify(); })
+      .on_click((e, cx) => {
+        this.cur = x.key;
+        if (!this.multi.click(e.modifiers, x.key, this.order())) this.select(x, cx);
+        cx.notify();
+      })
       .on_hover((h, cx) => {
         const next = h ? x.key : this.hot === x.key ? null : this.hot;
         if (next !== this.hot) { this.hot = next; cx.notify(); }
       })
-      .child(h_flex().h(20).gap(8).items_center()
+      .child(this.check(t, `kts-check-${x.key}`, picked, picked || this.multi.size > 0 || x.key === this.hot, () => this.multi.toggle(x.key)).mt(2))
+      .child(v_flex().flex_1().min_w(0).gap(3).child(h_flex().h(20).gap(8).items_center()
         .child(h_flex().min_w(0).items_center().font_family(MONO).text_size(13).font_medium()
           .when(x.invocable, (el) => el.child(div().flex_none().text_color(t.dim).child("/")))
           .child(div().min_w(0).truncate().text_color(t.foreground).child(x.name)))
@@ -424,15 +683,19 @@ export default class Skills extends View {
         .when(hot, (el) => el.child(h_flex().flex_none().gap(2)
           .child(this.icon(t, `kts-see-${x.key}`, OWN("eye"), "Aperçu", (cx) => this.select(x, cx)))
           .child(this.icon(t, `kts-copy-${x.key}`, OWN("copy"), x.invocable ? `Copier /${x.name}` : "Copier le nom", (cx) => this.copy(x, cx)))
-          .child(this.icon(t, `kts-open-${x.key}`, I("external-link"), "Ouvrir dans Zed", () => this.zed(x))))));
+          .child(this.icon(t, `kts-open-${x.key}`, I("external-link"), "Ouvrir dans Zed", () => this.zed([x.real])))))));
   }
 
   // A group's "Fragments et templates · N", folded by default; a click unfolds it.
-  foldRow(t, e) {
+  foldRow(t, e, cursor) {
     return h_flex().id(`kts-fold-${e.glabel}`).h(36).px(14).gap(8).items_center().rounded(12).border(1).border_dashed()
-      .border_color(t.border).text_size(12.5).text_color(t.muted).cursor_pointer()
+      .border_color(cursor === "ring" ? alpha(t.accent, "99") : t.border).text_size(12.5).text_color(cursor === "ring" ? t.foreground : t.muted)
+      .when(cursor === "ring", (el) => el.bg(alpha(t.accent, "24")))
+      .when(cursor === "mark", (el) => el.bg(t.hover))
+      .cursor_pointer()
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => {
+        this.cur = idOf(e);
         if (this.unfolded.has(e.glabel)) this.unfolded.delete(e.glabel);
         else this.unfolded.add(e.glabel);
         cx.notify();
@@ -447,21 +710,12 @@ export default class Skills extends View {
       const text = this.error ?? (!this.scanned || this.busy ? "Analyse des skills…" : this.items.length ? "Aucun skill ne correspond au filtre." : "Aucun skill trouvé.");
       return card.child(this.empty(t, text, this.error ? t.ansi1 : t.dim));
     }
-    const per = {}, internal = {};
-    for (const x of shown) {
-      per[x.glabel] = (per[x.glabel] ?? 0) + 1;
-      if (x.internal) internal[x.glabel] = (internal[x.glabel] ?? 0) + 1;
-    }
-    // What the pages hold: the rows, each group's internal bricks (sorted last) behind one fold.
-    const entries = [];
-    shown.forEach((x, i) => {
-      const open = this.unfolded.has(x.glabel);
-      const prev = shown[i - 1];
-      if (x.internal && !(prev?.internal && prev.glabel === x.glabel)) entries.push({ glabel: x.glabel, fold: internal[x.glabel], open });
-      if (!x.internal || open) entries.push({ glabel: x.glabel, x });
-    });
+    const per = {};
+    for (const x of shown) per[x.glabel] = (per[x.glabel] ?? 0) + 1;
+    const entries = this.entries(shown);
+    // A row to show (props.select, the keys' cursor): its page here, scrolled to below.
     if (this.reveal) {
-      const at = entries.findIndex((e) => e.x?.key === this.reveal);
+      const at = entries.findIndex((e) => idOf(e) === this.reveal);
       if (at >= 0) this.page = Math.floor(at / PAGE);
       else this.reveal = null; // folded away: open the detail only
     }
@@ -469,21 +723,31 @@ export default class Skills extends View {
     const page = Math.min(this.page, pages - 1);
     const from = page * PAGE;
     const slice = entries.slice(from, from + PAGE);
+    // The keys' cursor, while the page has the keyboard.
+    const typing = this.keyed && this.vim.insert;
+    const onCur = this.keyed ? this.at(entries) : null;
+    const cur = onCur ? idOf(onCur) : null;
     const rows = [];
     slice.forEach((e, i) => {
       if (i === 0 || slice[i - 1].glabel !== e.glabel) rows.push(this.groupRow(t, e.glabel, per[e.glabel], i === 0));
-      if (e.x && e.x.key === this.reveal) { this.scroll.scroll_to_item(rows.length); this.reveal = null; }
-      rows.push(e.x ? this.row(t, e.x) : this.foldRow(t, e));
+      if (idOf(e) === this.reveal) { this.scroll.scroll_to_item(rows.length); this.reveal = null; }
+      const c = idOf(e) === cur ? (typing ? "mark" : "ring") : null;
+      rows.push(e.x ? this.row(t, e.x, c) : this.foldRow(t, e, c));
     });
-    const go = (p) => (_e, cx) => { this.page = p; this.scroll.scroll_to_item(0); cx.notify(); };
+    const go = (p) => (_e, cx) => { this.page = p; this.cur = null; this.scroll.scroll_to_item(0); cx.notify(); };
     // The pager sits 4 px inside the card (16): its buttons are 12.
     const step = (id, label, to, ok) => h_flex().id(id).h(30).px(11).items_center().rounded(12).border(1).border_color(t.border)
       .text_size(12).text_color(ok ? t.muted : t.dim)
       .when(ok, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(go(to)))
       .when(!ok, (el) => el.opacity(0.5))
       .child(label);
+    const bar = this.bulk(t);
+    // The bulk bar floats over the rows' foot: room under the last row so it never hides it.
     return card
-      .child(v_flex().id("kts-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).gap(4).children(rows))
+      .child(v_flex().flex_1().min_h(0).relative()
+        .child(v_flex().id("kts-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).gap(4)
+          .when(Boolean(bar), (el) => el.pb(64)).children(rows))
+        .when(Boolean(bar), (el) => el.child(bar)))
       .when(pages > 1, (el) => el.child(this.dashed(t)).child(h_flex().flex_none().p(4).gap(4).items_center()
         .child(this.eyebrow(t, `${from + 1}–${from + slice.length} sur ${entries.length}`).px(10).flex_1())
         .child(step("kts-prev", "‹ Précédents", page - 1, page > 0))
@@ -500,47 +764,105 @@ export default class Skills extends View {
     const path = (label, p) => h_flex().gap(8).items_center()
       .child(this.eyebrow(t, label, t.dim).w(64).flex_none())
       .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.muted).child(tilde(p)));
-    // The card (16) holds everything 4 px in: the close button in its corner is 12.
-    return this.card(t).w(w).flex_none().h_full().p(4).overflow_hidden()
-      .child(h_flex().flex_none().h(32).pl(14).gap(8).items_center()
-        .child(this.eyebrow(t, `${x.glabel}${x.version ? ` · ${x.version}` : ""}`).flex_1().min_w(0).truncate())
-        .child(this.tag(t, t.muted, x.harness))
-        .child(h_flex().id("kts-close").size(32).flex_none().items_center().justify_center().rounded(12).text_color(t.muted)
-          .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Fermer")
-          .on_click((_e, cx) => { this.sel = null; this.code?.release(); this.code = null; cx.notify(); })
-          .child(svg(I("x")).size(14))))
-      .child(v_flex().flex_none().px(14).pt(2).pb(12).gap(8)
-        .child(div().font_family(MONO).text_size(17).font_semibold().line_height("24px").text_color(t.foreground)
-          .child(x.invocable ? `/${x.name}` : x.name))
-        .child(v_flex().gap(2)
-          .child(path("Fichier", x.real))
-          .when(x.path !== x.real, (el) => el.child(path("Via", x.path))))
-        .child(h_flex().flex_wrap().gap(6).pt(4)
-          .child(this.pill(t, "copy", x.invocable ? `Copier /${x.name}` : "Copier le nom", OWN("copy"), (cx) => this.copy(x, cx)))
-          .child(this.pill(t, "zed", "Ouvrir dans Zed", I("external-link"), () => this.zed(x)))
-          .child(this.pill(t, "finder", "Révéler dans le Finder", I("folder"), () => exec("open", ["-R", x.real]).catch(() => {})))))
+    // The viewer's file: SKILL.md, or one of its links (then "SKILL.md › that file", back on a click).
+    const d = this.doc?.key === x.key ? this.doc : null;
+    const sub = d && d.path !== x.path ? d.path : null;
+    const file = sub ?? x.real;
+    const crumb = h_flex().flex_none().px(14).pt(12).pb(6).gap(6).items_center()
+      .child(sub
+        ? div().id("kts-doc-back").font_family(MONO).text_size(11).text_color(t.accent).cursor_pointer().hover((s) => s.text_color(t.foreground))
+          .on_click((_e, cx) => { this.loadDoc(x, x.path, cx); cx.notify(); }).child(x.path.split("/").pop().toUpperCase())
+        : this.eyebrow(t, x.real.split("/").pop()))
+      .when(Boolean(sub), (el) => el.child(this.eyebrow(t, "›", t.dim))
+        .child(this.eyebrow(t, sub?.startsWith(dirOf(x.path) + "/") ? sub.slice(dirOf(x.path).length + 1) : tilde(sub ?? ""), t.foreground).min_w(0).truncate()));
+    // The card (16): DESIGN-REFERENCE.md's band on the page's dither (its width is known: w), the
+    // actions as icon buttons with their key; it fades in and rises when a skill opens (motion.js).
+    const card = this.card(t).w(w).flex_none().h_full().relative().px(4).pb(4).overflow_hidden()
+      .children([dither(w, 60, 16, t.ansi4)].filter(Boolean))
+      .child(bandRow(t, { color: t.ansi4, icon: I("sparkles"), title: x.invocable ? `/${x.name}` : x.name,
+        sub: [x.glabel, x.version, x.harness],
+        buttons: [
+          iconBtn(t, "kts-d-copy", OWN("copy"), x.invocable ? `Copier /${x.name} (y)` : "Copier le nom (y)", (cx) => this.copy(x, cx)),
+          iconBtn(t, "kts-d-zed", I("external-link"), "Ouvrir dans Zed (O)", () => this.zed([file])),
+          iconBtn(t, "kts-d-finder", I("folder"), "Révéler dans le Finder", () => exec("open", ["-R", file]).catch(() => {})),
+          iconBtn(t, "kts-close", I("x"), "Fermer", () => { this.sel = null; this.doc = null; })] }))
+      .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi4, "4d")))
+      .child(v_flex().flex_none().px(10).py(8).gap(2)
+        .child(path("Fichier", x.real))
+        .when(x.path !== x.real, (el) => el.child(path("Via", x.path))))
       .child(this.dashed(t))
-      // As tall as its text: the SKILL.md view below takes the rest.
-      .child(v_flex().flex_none().px(14).py(12).gap(12)
-        .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || "Pas de description."))
-        .when(meta.length > 0, (el) => el.child(v_flex().gap(6).children(meta.map(([k, v]) => pair(k, fmt(v)))))))
-      .child(this.dashed(t))
-      .child(h_flex().flex_none().px(14).pt(10).pb(6).child(this.eyebrow(t, x.real.split("/").pop())))
-      .child(v_flex().flex_1().min_h(160).px(4).pb(4)
-        .child(this.code && this.codeKey === x.key ? Editor.new(this.code).flex_1().min_h(0) : this.empty(t, "Chargement…")));
+      // Everything below scrolls as one: the description and frontmatter card, then the file.
+      .child(v_flex().id("kts-doc").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.docScroll)
+        .child(v_flex().flex_none().px(14).py(12).gap(12)
+          .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || "Pas de description."))
+          .when(meta.length > 0, (el) => el.child(v_flex().gap(6).children(meta.map(([k, v]) => pair(k, fmt(v)))))))
+        .child(this.dashed(t))
+        .child(crumb)
+        .child(this.body(t, x, d)));
+    return enter(this.m, card, `kts-detail-${x.key}`);
+  }
+
+  // The file, rendered: its prose by TextView.markdown (headings, lists, emphasis, inline code,
+  // quotes, tables, in the theme's colors), its fenced code as blocks of our own; a ~80-character
+  // column with airy lines.
+  body(t, x, d) {
+    if (!d?.segs) return this.empty(t, "Chargement…");
+    return v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14)
+      .text_size(13.5).line_height("22px").text_color(t.foreground)
+      .children(d.segs.map((s, i) => (s.kind === "code" ? this.codeBlock(t, `${d.path}#${i}`, s)
+        : TextView.markdown(`kts-md-${d.path}#${i}`, s.text).selectable(true)
+          .on_link_click((url, cx) => { this.link(x, url, cx); cx.notify(); }))));
+  }
+
+  // A fenced block: t.raised, radius 12 (inner boxes here sit 4 px in the 16 cards), Monaspace Neon,
+  // one line per row as written; its language as an eyebrow; a long line scrolls sideways.
+  codeBlock(t, id, s) {
+    return v_flex().flex_none().rounded(12).border(1).border_color(t.border).bg(t.raised).overflow_hidden()
+      .when(Boolean(s.lang), (el) => el.child(div().px(14).pt(9).font_family(MONO).text_size(10).text_color(t.dim).child(s.lang.toUpperCase())))
+      .child(div().id(`kts-code-${id}`).overflow_x_scrollbar().px(14).pt(s.lang ? 6 : 12).pb(12)
+        .child(v_flex().flex_none().font_family(CODE).text_size(12).line_height("19px").text_color(t.foreground)
+          .children(s.text.split("\n").map((l) => div().flex_none().whitespace_nowrap().child(l || " ")))));
   }
 
   render(cx) {
+    if (props()?.add) return this.role ? this.role.render(cx) : div();
+    this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const vis = visible();
+    if (!checking()) {
+      // The bus (DATA-SYNC.md): an add here or in kt-plugins rescans, shown or not.
+      refreshOn(this, cx, "data", ["skills", "plugins"], async (cx) => this.scan(cx));
+      // Outside Herdr: the skill and command folders, watched while the page shows.
+      if (vis && !this.watches.length) for (const dir of [`${home()}/.claude/skills`, `${home()}/.claude/commands`]) {
+        cx.spawn(async (cx) => {
+          for (;;) {
+            const w = watchFolder(dir);
+            this.watches.push(w);
+            let paths;
+            try { paths = await w; } catch { return; }
+            this.watches = this.watches.filter((x) => x !== w);
+            if (!paths.length) return; // cancelled
+            // A hidden page doesn't render: stop here rather than rescan while nobody looks.
+            if (!visible()) { for (const x of this.watches) x.cancel(); this.watches = []; return; }
+            if (!this.busy) this.scan(cx);
+          }
+        });
+      }
+      if (!vis && this.watches.length) { for (const w of this.watches) w.cancel(); this.watches = []; }
+    }
     if (vis && !checking()) {
       if (!this.shown) {
         // The thread's terminal is hidden under this page: take the keyboard (typing filters),
         // after the app has settled its own focus on the switch.
+        // INSERT then, unless pane.go or a key command already gave it the keyboard (NORMAL).
         cx.timer.after(150, (cx) => {
-          if (visible()) this.handle.focus();
+          if (visible() && !this.handle.is_focused()) {
+            this.handle.focus();
+            this.vim.edit();
+          }
           cx.notify();
         });
-        this.scan(cx);
+        // Back on the page: read again when the last read is more than 10 s old (DATA-SYNC.md).
+        if (Date.now() - this.scannedAt > 10e3) this.scan(cx);
       } else if (!this.busy && (activeSpace()?.id ?? null) !== this.space) this.scan(cx);
     }
     if (!vis && this.shown && this.handle.is_focused() && !checking()) {
@@ -550,10 +872,9 @@ export default class Skills extends View {
       if (pane) cx.spawn(async () => run("pane.focus", { pane }));
     }
     this.shown = vis;
+    this.keyed = this.handle.is_focused();
     const t = theme();
     const x = this.items.find((i) => i.key === this.sel);
-    // A look switch (dark/light): the preview's colors are fixed at creation.
-    if (x && this.code && this.codeDark !== (settings().dark !== false)) this.loadBody(x, cx);
     const q = this.queried();
     const shown = q.filter((i) => this.matches(i, this.seg));
     // No frame of its own as a page: the layout's center column (chrome, radius 20, padding 4)
@@ -564,6 +885,8 @@ export default class Skills extends View {
       .child(this.header(t, q, shown.length))
       .child(h_flex().flex_1().min_h(0).gap(4)
         .child(this.list(t, shown))
-        .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45)))));
+        .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45)))))
+      // The head's ⋯, last so that it draws over the list.
+      .when(this.more, (el) => el.relative().child(moreMenu(t, "kts-more", props()?.overlay ? 60 : 56, this.moreItems(), () => { this.more = false; })));
   }
 }

@@ -1,0 +1,265 @@
+// bun ~/.config/herdr-app/mods/kt-keys/viz.check.mjs: viz.js's Bayer threshold, its runs (merged across
+// and down, covering exactly the inked cells), the gauge's and the donut's angles, the monotone cubic
+// (through its points, no overshoot), the round scale, compact, split_delta (Monocode's own tests,
+// ported), the width reveal and reduced motion, the memo, and the element budget per visual (< 400),
+// with gpui-kit mocked. Prints each visual's elements and painted rectangles.
+import assert from "node:assert/strict";
+import { plugin } from "bun";
+
+const el = (kind = "div") => {
+  const node = { kind, kids: [], props: {}, tr: [], on: {} };
+  const p = new Proxy(node, {
+    get(target, k) {
+      if (k in target) return target[k];
+      return (...a) => {
+        if (k === "child") target.kids.push(a[0]);
+        else if (k === "children") target.kids.push(...a[0]);
+        else if (k === "when") return a[0] ? a[1](p) : p;
+        else if (k === "transition") target.tr.push(a[0]);
+        else if (k.startsWith("on_")) target.on[k] = a.at(-1);
+        else target.props[k] = a;
+        return p;
+      };
+    },
+  });
+  return p;
+};
+// A path: its commands counted, a rectangle per move_to (what Herdr replays at every render).
+const builder = (kind) => {
+  const b = { kind, moves: 0, commands: 0 };
+  const api = {
+    move_to: () => (b.moves++, b.commands++, api),
+    line_to: () => (b.commands++, api),
+    close: () => (b.commands++, api),
+    build: () => b,
+  };
+  return api;
+};
+plugin({ setup(build) {
+  build.module("gpui-kit", () => ({ loader: "object", exports: {
+    div: () => el(),
+    PathBuilder: { fill: () => builder("fill"), stroke: (w) => builder(`stroke${w}`) },
+    Background: { linear_gradient: (...a) => ({ gradient: a }) },
+  } }));
+} });
+globalThis.window = { paint_path: (path, bg) => { const e = el("paint"); e.path = path; e.bg = bg; return e; } };
+const V = await import("./viz.js");
+const { motionState, frame } = await import("./motion.js");
+
+const count = (n) => (n && typeof n === "object" && "kids" in n ? 1 + n.kids.reduce((s, k) => s + count(k), 0) : 0);
+const find = (n, pred) => (pred(n) ? n : n?.kids?.reduce((r, k) => r ?? find(k, pred), null) ?? null);
+
+// Bayer: tone k/16 inks exactly k cells of a 4×4 tile; 0.25 is a quarter.
+for (let k = 0; k <= 16; k++) {
+  let n = 0;
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) n += V.inked(x, y, k / 16);
+  assert.equal(n, k, `tone ${k}/16`);
+}
+let quarter = 0;
+for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) quarter += V.inked(x, y, 0.25);
+assert.equal(quarter, 16, "0.25 inks a quarter of an 8×8 block");
+
+// runs: a run across, an equal run below grows it down, a different one starts a rectangle.
+assert.deepEqual(V.runs(4, 3, (c, r) => (r < 2 ? (c < 3 ? "a" : null) : c === 0 ? "a" : "b"), 3),
+  [[0, 0, 9, 6, "a"], [0, 6, 3, 3, "a"], [3, 6, 9, 3, "b"]]);
+// ...and on a random grid the rectangles cover exactly the inked cells, once, in their key.
+let seed = 7;
+const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const grid = Array.from({ length: 23 }, () => Array.from({ length: 37 }, () => (rand() < 0.4 ? null : rand() < 0.5 ? "x" : 2)));
+const cover = new Map();
+for (const [x, y, w, h, k] of V.runs(37, 23, (c, r) => grid[r][c], 2))
+  for (let r = y / 2; r < (y + h) / 2; r++) for (let c = x / 2; c < (x + w) / 2; c++) {
+    assert.ok(!cover.has(`${c},${r}`), "a cell painted twice");
+    cover.set(`${c},${r}`, k);
+  }
+for (let r = 0; r < 23; r++) for (let c = 0; c < 37; c++) assert.equal(cover.get(`${c},${r}`) ?? null, grid[r][c], `cell ${c},${r}`);
+
+// Gauge: 0° at 12 o'clock, clockwise; 270° from -135° (7:30) to 135° (4:30); blocks up to the value.
+assert.equal(V.gaugeAngle(0, -1), 0);
+assert.equal(V.gaugeAngle(1, 0), 90);
+assert.equal(V.gaugeAngle(-1, 0), -90);
+assert.ok(Math.abs(V.gaugeAngle(-1, 1) + 135) < 1e-9);
+const g = V.gaugeInk(0.44, 220);
+assert.equal(g.active, 16, "44 % of 36 blocks: 16 lit, the 16th the head");
+for (let row = 0; row < g.rows; row++) for (let col = 0; col < g.cols; col++) {
+  const k = g.ink(col, row);
+  if (!k) continue;
+  const along = V.gaugeAngle((col + 0.5) * 3 - g.c, (row + 0.5) * 3 - g.c) + 135;
+  assert.ok(along >= 0 && along < 270, `cell ${col},${row} outside the dial (${along})`);
+  if (k === "tint") assert.ok(along < g.active * g.step, `lit beyond the value at ${along}`);
+  else assert.ok(along >= (g.active - 1) * g.step, `track before the head at ${along}`);
+}
+assert.equal(V.gaugeInk(0, 220).active, 0);
+assert.equal(V.gaugeInk(1, 220).active, 36);
+
+// Donut: slices from 12 o'clock clockwise, a gap at each edge, nothing in the hole.
+assert.equal(V.ringAngle(0, -1), 0);
+assert.ok(Math.abs(V.ringAngle(-1, 0) - 1.5 * Math.PI) < 1e-9);
+const d = V.donutInk([1, 1, 2], 184);
+assert.deepEqual(d.edges.map((e) => +e.toFixed(6)), [0, +(Math.PI / 2).toFixed(6), +Math.PI.toFixed(6)]);
+for (let row = 0; row < d.rows; row++) for (let col = 0; col < d.cols; col++) {
+  const k = d.ink(col, row);
+  if (k == null) continue;
+  const [dx, dy] = [(col + 0.5) * 3 - d.half, (row + 0.5) * 3 - d.half];
+  const a = V.ringAngle(dx, dy);
+  assert.equal(k, a < Math.PI / 2 ? 0 : a < Math.PI ? 1 : 2, `slice of cell ${col},${row}`);
+  const r = Math.hypot(dx, dy);
+  assert.ok(r >= d.inner && r <= d.outer);
+  const edge = Math.min(...d.edges.map((e) => { const x = Math.abs(a - e); return Math.min(x, 2 * Math.PI - x); }));
+  assert.ok(edge > Math.PI / 2 || (r * Math.sin(edge)) / 3 >= 0.75, `cell ${col},${row} in an edge's gap`);
+}
+
+// Monotone cubic (Monocode's test): through its points, flat between equal ones, never past them.
+const curve = new V.Curve([[0, 10], [10, 0], [20, 0], [30, 10]]);
+assert.equal(curve.at(10), 0);
+for (let x = 10; x <= 20; x++) assert.ok(Math.abs(curve.at(x)) < 1e-4, "flat between equal points");
+for (let x = 0; x <= 30; x++) assert.ok(curve.at(x) >= 0 && curve.at(x) <= 10);
+for (let n = 0; n < 50; n++) {
+  const pts = Array.from({ length: 8 }, (_, i) => [i * 10 + rand() * 4, rand() * 100]);
+  const c = new V.Curve(pts);
+  for (let k = 0; k < pts.length - 1; k++) {
+    const [lo, hi] = [Math.min(pts[k][1], pts[k + 1][1]), Math.max(pts[k][1], pts[k + 1][1])];
+    for (let s = 0; s <= 20; s++) {
+      const y = c.at(pts[k][0] + ((pts[k + 1][0] - pts[k][0]) * s) / 20);
+      assert.ok(y >= lo - 1e-6 && y <= hi + 1e-6, "overshoot");
+    }
+  }
+}
+// A line in cells stays joined on a steep slope: each column's rows meet the next one's.
+const steep = new V.Curve([[0, 0], [9, 90], [30, 0]]);
+const lr = Array.from({ length: 10 }, (_, col) => V.lineRows(steep, col, 3, 40));
+for (let col = 0; col < 9; col++) assert.ok(lr[col][1] >= lr[col + 1][0] && lr[col + 1][1] >= lr[col][0], `gap between columns ${col} and ${col + 1}`);
+
+// Round scale and compact numbers (Monocode's tests).
+const s = V.Scale.nice([42, 74], true);
+assert.deepEqual([s.min, s.max, s.step], [0, 80, 20]);
+assert.deepEqual(s.ticks(), [0, 20, 40, 60, 80]);
+const flat = V.Scale.nice([5, 5], false);
+assert.ok(flat.max > flat.min);
+assert.deepEqual(V.Scale.nice([], true).ticks(), [0, 0.25], "no values: a quarter step from 0, as in Rust");
+assert.equal(V.compact(48210, 1), "48.2K");
+assert.equal(V.compact(0.25, 0.25), "0.25");
+assert.equal(V.compact(2500000, 1), "2.5M");
+assert.equal(V.compact(12000, 1), "12K");
+assert.equal(V.compact(1.5, 0.5), "1.5");
+
+// split_delta (Monocode's test).
+assert.deepEqual(V.splitDelta("+12.4% vs last month"), ["+12.4%", "vs last month"]);
+assert.deepEqual(V.splitDelta("-3"), ["-3", ""]);
+assert.equal(V.splitDelta("requests per day"), null);
+assert.equal(V.splitDelta("+ more"), null);
+
+// Tokens: Monocode's names, theme names and #hex.
+const t = { background: "#191919d9", foreground: "#e0e0e0", accent: "#d4825d", border: "#2a2a2a", dim: "#666666", muted: "#999999",
+  ansi1: "#e06060", ansi2: "#6bc97f", ansi3: "#e6c654", ansi4: "#5aa0e6", ansi5: "#a87ee0", ansi6: "#6fa39c" };
+assert.equal(V.color(t, "positive"), t.ansi2);
+assert.equal(V.color(t, "faint"), t.dim);
+assert.equal(V.color(t, "series1"), t.ansi4);
+assert.equal(V.color(t, "#123456"), "#123456");
+assert.equal(V.faint("#191919d9", 0.4), "#19191966", "alpha replaced, not stacked");
+assert.equal(V.isLight(t), false);
+
+// Reveal: width 0 on the first draw, w after the first layout, once; reduced motion: no transition.
+const m = motionState();
+let r = V.reveal(frame(m, false), "rv", 200, 9, el());
+let clip = r.kids[0];
+assert.deepEqual(clip.props.w, [0]);
+assert.equal(clip.tr[0], "width");
+let notified = 0;
+r.on.on_size_change({ width: 200, height: 9 }, { notify: () => notified++ });
+r.on.on_size_change({ width: 200, height: 9 }, { notify: () => notified++ });
+assert.equal(notified, 1);
+assert.deepEqual(V.reveal(frame(m, false), "rv", 200, 9, el()).kids[0].props.w, [200]);
+const red = V.reveal(frame(motionState(), true), "rv", 200, 9, el());
+assert.deepEqual([red.tr, red.on, red.kids[0].props.w], [[], {}, undefined]);
+
+// The cap: a geometry over MAX_RECTS is rebuilt once with coarser cells, never past twice the cell.
+const area = (c) => V.chartGeometry("area", [[12e3, 18e3, 15e3, 32e3, 41e3, 38e3, 52e3, 47e3, 61e3, 58e3]], 10, 568, 220, c);
+const fine = area(3);
+const capped = V.capped(area, 3);
+assert.ok(fine.rects.length > V.MAX_RECTS, "the Monocode-sized area is over the cap at 3 px");
+assert.ok(capped.cell > 3 && capped.cell <= 6 && capped.rects.length <= V.MAX_RECTS, `capped to ${capped.cell} px, ${capped.rects.length} rects`);
+assert.equal(V.capped(() => ({ rects: [[0, 0, 3, 3, "a"]], cell: 3 }), 3).cell, 3, "under the cap: untouched");
+console.log(`area 568×220: ${fine.rects.length} rects at 3 px -> ${capped.rects.length} at ${capped.cell} px`);
+
+// Track under, ink over: a progress bar's track is one rectangle, painted first.
+const pg = V.progressGeometry(0.62, 420);
+assert.deepEqual(pg.rects[0], [0, 0, 420, 9, "track"]);
+assert.ok(pg.rects.slice(1).every((r) => r[4] === "tint" && r[0] + r[2] <= pg.head * 3));
+
+// The visuals at the gallery's sizes: each under the cap, few elements, what a render replays.
+const viz = V.viz(t, frame(motionState(), false));
+const weeks = Array.from({ length: 7 }, (_, r) => Array.from({ length: 26 }, (_, c) => ((r * 7 + c * 13) % 9) - 1));
+const cases = {
+  gauge: () => viz.gauge("Quota hebdo", 44, { unit: "%" }),
+  donut: () => viz.donut([{ label: "Terminal", value: 42 }, { label: "Threads", value: 27 }, { label: "Diff", value: 14 }, { label: "Files", value: 9 }], { label: "Heures" }),
+  progress: () => viz.progress("Quota 5 h", 62, { detail: "reset dans 1 h 40", width: 320 }),
+  "chart bar": () => viz.chart("bar", [{ label: "verts", values: [12, 15, 9, 18, 21, 17, 14, 19, 22, 20, 16, 24, 23, 26] }, { label: "rouges", values: [2, 1, 4, 0, 2, 3, 1, 0, 2, 1, 5, 1, 0, 2] }], { labels: Array.from({ length: 14 }, (_, i) => `J${i + 1}`), width: 400, height: 170 }),
+  "chart line": () => viz.chart("line", [{ label: "p50", values: [120, 132, 101, 98, 140, 160, 151, 149, 170, 165] }, { label: "p95", values: [320, 410, 380, 300, 520, 610, 480, 450, 700, 640] }], { width: 400, height: 170 }),
+  "chart area": () => viz.chart("area", [{ label: "tokens", values: [12e3, 18e3, 15e3, 32e3, 41e3, 38e3, 52e3, 47e3, 61e3, 58e3] }], { width: 400, height: 170 }),
+  heatmap: () => viz.heatmap(weeks, { rows: ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"], columns: Array.from({ length: 26 }, (_, i) => ["juin", "juil", "août", "sept", "oct", "nov"][Math.floor(i / 4.4)]), width: 421 }),
+  stat: () => viz.stat("Coût du mois", "$412", { detail: "+12.4% vs octobre", trend: [310, 290, 340, 360, 330, 390, 412], better: "lower", width: 220 }),
+};
+const report = [];
+let total = 0;
+for (const [name, make] of Object.entries(cases)) {
+  const a = make();
+  const n = count(a);
+  const paints = [];
+  (function walk(x) { if (x?.kind === "paint") paints.push(x); x?.kids?.forEach(walk); })(a);
+  assert.ok(paints.length > 0, `${name} paints nothing`);
+  // Rectangles (one per run, inside the painted paths) and the commands a render replays.
+  const rects = paints.reduce((s, x) => s + (x.path.moves ?? 0), 0);
+  const cmds = paints.reduce((s, x) => s + (x.path.commands ?? 0), 0);
+  total += rects;
+  assert.ok(rects <= V.MAX_RECTS * 1.05, `${name}: ${rects} rects`); // + the few strokes and gradients
+  report.push(`${name.padEnd(11)} ${String(n).padStart(3)} elements, ${String(paints.length).padStart(2)} paths, ${String(rects).padStart(4)} rects, ${String(cmds).padStart(4)} commands`);
+}
+console.log(report.join("\n") + `\ntotal ${total} rects`);
+
+// Without `width`, a visual fills its container: a placeholder until measured, then drawn at the
+// measured width, with cells chosen from its area so a 3000 px chart stays under both caps.
+const fm = motionState();
+const rectsOf = (x) => { const ps = []; (function walk(n) { if (n?.kind === "paint") ps.push(n); n?.kids?.forEach(walk); })(x); return ps.reduce((s, p) => s + (p.path.moves ?? 0), 0); };
+const widest = (x) => { let w = 0; (function walk(n) { if (n?.props?.w) w = Math.max(w, n.props.w[0]); n?.kids?.forEach(walk); })(x); return w; };
+const wide = [];
+for (const [name, make] of [
+  ["area", (v) => v.chart("area", [{ values: [12e3, 18e3, 15e3, 32e3, 41e3, 38e3, 52e3, 47e3, 61e3, 58e3] }], { height: 170, id: "w-area" })],
+  ["bar", (v) => v.chart("bar", [{ values: [12, 15, 9, 18, 21, 17, 14, 19, 22, 20, 16, 24, 23, 26] }, { values: [2, 1, 4, 0, 2, 3, 1, 0, 2, 1, 5, 1, 0, 2] }], { height: 170, id: "w-bar" })],
+  ["progress", (v) => v.progress("Quota", 62, { id: "w-prog" })],
+  ["stat", (v) => v.stat("Coût", "$412", { trend: [310, 290, 340, 360, 330, 390, 412], id: "w-stat" })],
+]) for (const px of [1904, 3000]) {
+  fm.widths?.clear();
+  const first = make(V.viz(t, frame(fm, false)));
+  assert.equal(rectsOf(first), 0, `${name}: drawn before it was measured`);
+  const probe = find(first, (n) => n.on?.on_size_change && n.props.w_full);
+  assert.ok(probe, `${name}: no measured wrapper`);
+  probe.on.on_size_change({ width: px, height: 10 }, { notify() {} });
+  const drawn = make(V.viz(t, frame(fm, false)));
+  const r = rectsOf(drawn);
+  assert.equal(widest(drawn), px, `${name} at ${px}: not drawn at the measured width`);
+  assert.ok(r > 0 && r <= V.MAX_RECTS * 1.05, `${name} at ${px}: ${r} rects`);
+  wide.push(`${name} ${px}px ${r}`);
+}
+const w3000 = V.capped((c) => V.chartGeometry("area", [[12e3, 18e3, 15e3, 32e3, 41e3, 38e3, 52e3, 47e3, 61e3, 58e3]], 10, 3000, 170, c), 3, 3000 * 170);
+assert.ok((3000 / w3000.cell) * (170 / w3000.cell) <= V.MAX_CELLS, "cells over MAX_CELLS before the first build");
+assert.equal(V.capped((c) => V.chartGeometry("bar", [[1, 2, 3]], 3, 400, 170, c), 3, 400 * 170).cell, 3, "a 400×170 chart keeps 3 px");
+console.log(`fluid: ${wide.join(", ")} rects; area 3000×170 at ${w3000.cell} px`);
+assert.equal(rectsOf(V.viz(t, null).progress("Q", 50)), rectsOf(V.viz(t, null).progress("Q", 50, { width: 320 })), "no motion state: 320 px");
+
+// Memo: the same input is the same geometry, whatever the theme; colors are applied at paint.
+const one = V.viz(t, null);
+const p1 = find(one.gauge("Q", 44), (x) => x.kind === "paint");
+const p2 = find(V.viz({ ...t, accent: "#a64d2e" }, null).gauge("Q", 44), (x) => x.kind === "paint");
+assert.equal(p1.path, p2.path, "geometry rebuilt for a theme change");
+assert.notEqual(p1.bg, p2.bg);
+
+// Empty states are said in words.
+const said = (x) => find(x, (n) => n.kids?.includes("aucune donnée")) != null;
+assert.ok(said(one.chart("line", [{ values: [] }])));
+assert.ok(said(one.donut([{ value: 0 }])));
+assert.ok(said(one.heatmap([])));
+assert.ok(said(one.trend([3])));
+assert.ok(said(one.gauge("Q", NaN)));
+
+console.log("viz.js: ok");

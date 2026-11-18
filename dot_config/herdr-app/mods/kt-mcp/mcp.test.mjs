@@ -1,6 +1,6 @@
 // node mods/kt-mcp/mcp.test.mjs: masking, transports and `claude mcp list` states.
 import assert from "node:assert/strict";
-import { server, parseList, maskArgs, maskUrl, jsonc, MASK } from "./mcp.js";
+import { server, parseList, maskArgs, maskUrl, jsonc, maskGet, parseGet, splitArgs, shq, maskJson, MASK } from "./mcp.js";
 
 // Secrets never survive: flag values, NAME=value, headers, URL queries/userinfo, tokens.
 const secret = "sk-live_4f9a8b7c6d5e4f3a2b1c";
@@ -38,5 +38,42 @@ claude.ai Gmail: https://gmail.mcp.claude.com/mcp - ? Pending
 `), { context7: "connected", excalidraw: "failed", sentry: "auth", "plugin:context7:context7": "connected", "claude.ai Gmail": "unknown" });
 
 assert.deepEqual(jsonc('{ // c\n "mcp": { "a": { "url": "http://x//y" }, }, /* b */ }'), { mcp: { a: { url: "http://x//y" } } });
+
+// The detail's config: masked values, env and header names only.
+assert.deepEqual(c.config, { type: "stdio", command: "npx", args: ["-y", "tavily-mcp"], env: { TAVILY_API_KEY: MASK } });
+assert.deepEqual(server("claude", "user", "x", { type: "http", url: "https://a.b/mcp?k=v", headers: { Authorization: "Bearer t" } }).config,
+  { type: "http", url: `https://a.b/mcp?k=${MASK}`, headers: { Authorization: MASK } });
+
+// `claude mcp get`: env and header values never survive; the state comes from Status.
+const got = `tavily:
+  Scope: User config (available in all your projects)
+  Status: ✔ Connected
+  Type: stdio
+  Command: npx
+  Args: -y tavily-mcp --api-key abc123
+  Environment:
+    TAVILY_API_KEY=tvly-short
+    PLAIN=x
+  URL: https://u:p@mcp.x.com/mcp?token=abc
+  Headers:
+    Authorization: Bearer sk-abc
+    X-Team: kbrdn
+
+To remove this server, run: claude mcp remove tavily -s user`;
+const m = maskGet(got);
+for (const s of ["tvly-short", "=x", "abc123", "u:p@", "token=abc", "sk-abc", "kbrdn"]) assert.ok(!m.includes(s), s);
+assert.ok(m.includes(`TAVILY_API_KEY=${MASK}`) && m.includes(`Authorization: ${MASK}`) && m.includes("Status: ✔ Connected"));
+assert.equal(parseGet(got), "connected");
+assert.equal(parseGet("x:\n  Status: ! Needs authentication"), "auth");
+assert.equal(parseGet("x:\n  Status: ✗ Failed to connect"), "failed");
+assert.equal(parseGet('No MCP server named "x".'), "unknown");
+
+// + Ajouter: a typed command line, shell-split; arguments quoted back; a pasted config masked.
+assert.deepEqual(splitArgs(`npx -y "@a/b c" --dir='/x y' a\\ b ""`), ["npx", "-y", "@a/b c", "--dir=/x y", "a b", ""]);
+assert.deepEqual([shq("a/b"), shq("x y"), shq("it's")], ["a/b", "'x y'", "'it'\\''s'"]);
+const j = maskJson({ type: "stdio", command: "npx", args: ["-y", "pkg", "--token", "abc"], env: { KEY: "v" },
+  url: "https://h/x?k=v", headers: { Authorization: "Bearer t" }, apiKey: "plain", note: "sk-live_abcdefgh12345" });
+assert.deepEqual(j, { type: "stdio", command: "npx", args: ["-y", "pkg", "--token", MASK], env: { KEY: MASK },
+  url: `https://h/x?k=${MASK}`, headers: { Authorization: MASK }, apiKey: MASK, note: MASK });
 
 console.log("kt-mcp: ok");
