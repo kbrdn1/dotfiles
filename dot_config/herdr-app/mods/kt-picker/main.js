@@ -5,11 +5,19 @@
 // letters in accent. ↑/↓ and Enter, ⌘1-4 (or the pills) narrow to a group, ctrl+d closes the
 // selected thread's tab after kt-confirm, Esc leaves. For keys and debugging, `kt-picker.query:<text>`
 // types into the field, `kt-picker.filter:<1-4>` picks a group, `kt-picker.next` / `.prev` move.
+// Keys (vim.js): it opens typing in the field (INSERT: the Input types, deletes and submits itself);
+// ctrl-n / ctrl-j / ↓ and ctrl-k / ↑ move the selection, tab / shift-tab the group, Esc goes to
+// NORMAL (the keyboard on the card's own handle; the popup stays). NORMAL: j / k (↓ ↑, round),
+// gg / G, ctrl-u move; enter, o or l opens; tab / shift-tab the group; / or a click in the field
+// types again; dd or x closes the selected thread (kt-confirm, as ctrl+d); q or esc leaves; ? the
+// keys (kt-keys, Modales). ⌘1-4 and ctrl+d come first in both modes (so ctrl-d isn't a half page).
+// `kt-picker.key:<keys>` feeds keys ("escape j j", "g g"); text goes through `query:`.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, settings, props, closeOverlay, openOverlay, shared, home, readTextFile, nextCommand, checking, layout } from "herdr";
 import { search } from "./fuzzy.js";
+import { Vim, keyOf, keysOf, step } from "./vim.js";
 
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -86,13 +94,17 @@ export default class Search extends View {
       cx.notify();
     });
     this.input.on("submit", (_e, cx) => this.go(this.selected(), cx));
-    this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
-    this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
+    // vim's mode follows the keyboard: the field's (INSERT) or the card's own handle (NORMAL).
+    this.handle = cx.focus_handle();
+    this.vim = new Vim({ field: true, insert: true });
+    this.input.on("focus", (_e, cx) => { this.typing = true; this.vim.edit(); cx.notify(); });
+    this.input.on("blur", (_e, cx) => { this.typing = false; this.vim.normal(); cx.notify(); });
     // The popup isn't keyed yet in init, so the field asks again, briefly, only while it hasn't got
     // the keyboard. Not the shipped picker's blind refocus at 600 ms: until then the first keys land
-    // in the terminal under it, and then it takes the keyboard back from wherever it went.
+    // in the terminal under it, and then it takes the keyboard back from wherever it went. Not
+    // once the card's handle has it either (Esc: NORMAL).
     this.input.focus();
-    for (const ms of [16, 50, 120, 250, 500]) cx.timer.after(ms, () => { if (!this.typing) this.input.focus(); });
+    for (const ms of [16, 50, 120, 250, 500]) cx.timer.after(ms, () => { if (!this.typing && !this.handle.is_focused()) this.input.focus(); });
     // props.group (ctrl-b w: Projets, kt-head): opened on that group.
     if (props()?.group) this.group = Number(props().group) || 0;
     if (checking()) return;
@@ -108,6 +120,10 @@ export default class Search extends View {
           this.setQuery(arg);
         } else if (name === "filter") this.setGroup(Number(arg) - 1);
         else if (name === "next" || name === "prev") this.move(name === "next" ? 1 : -1);
+        else if (name === "key") {
+          this.refocus();
+          for (const k of keysOf(arg)) this.press(k, cx);
+        }
         cx.notify();
       }
     });
@@ -161,11 +177,53 @@ export default class Search extends View {
     const rows = this.rowsShown;
     if (!rows.length) return;
     const i = Math.max(0, rows.findIndex((r) => r.key === this.selKey));
-    const n = (i + d + rows.length) % rows.length;
+    const n = (((i + d) % rows.length) + rows.length) % rows.length;
     this.selKey = rows[n].key;
     this.moved = true;
     // The selected row stays in view; the first one brings its eyebrow along.
     this.scroll.scroll_to_item(n === 0 ? 0 : this.slots[n]);
+  }
+
+  // The keyboard back where the mode says: the field (INSERT) or the card's handle (NORMAL).
+  refocus() {
+    (this.vim.insert ? this.input : this.handle).focus();
+  }
+
+  key(e, cx) {
+    if (!this.press(e, cx)) return; // not ours (typing in the field, ctrl-b, cmd-*): it goes on
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  // One key, from the keyboard or `key:` (a name): ⌘1-4 and ctrl+d first (both modes, as before),
+  // then vim's.
+  press(e, cx) {
+    const k = keyOf(e).name;
+    if (/^cmd-[1-4]$/.test(k)) this.setGroup(Number(k.slice(4)) - 1);
+    else if (k === "ctrl-d") this.closeTab();
+    else return this.act(this.vim.handle(e), cx);
+    return true;
+  }
+
+  // One vim action; false: not one of ours. In INSERT the Input types, deletes and submits (Enter
+  // already goes through its "submit"): those keys go on to it.
+  act(a, cx) {
+    if (!a || a === "type" || a === "backspace" || a === "submit") return false;
+    if (a === "pending" || a === "count") return true;
+    const rows = this.rowsShown;
+    if (a === "normal") this.handle.focus();
+    else if (a === "filter") this.input.focus();
+    else if (a === "down" || a === "up") this.move((a === "down" ? 1 : -1) * this.vim.count);
+    else if (["top", "bottom", "half-down", "half-up"].includes(a)) {
+      const i = Math.max(0, rows.findIndex((r) => r.key === this.selKey));
+      this.move(step(a, i, rows.length, this.vim.count, 8) - i);
+    } else if (a === "tab-next" || a === "tab-prev") this.setGroup((this.group + (a === "tab-next" ? 1 : GROUPS.length - 1)) % GROUPS.length);
+    else if (a === "open" || a === "right") this.go(this.selected(), cx);
+    else if (a === "delete") this.closeTab();
+    else if (a === "escape" || a === "quit") this.dismiss();
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "modals" } });
+    else return false;
+    return true;
   }
 
   isHome(s) {
@@ -245,7 +303,7 @@ export default class Search extends View {
     if (!r) return;
     if (r.kind === "fold") {
       this.showCalm = !this.showCalm;
-      this.input.focus();
+      this.refocus();
       cx?.notify();
       return;
     }
@@ -324,7 +382,8 @@ export default class Search extends View {
       .items_center()
       .rounded(12)
       .border(1)
-      .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
+      // The selection is the keys' cursor: a 1 px accent ring on it while the popup has the keyboard.
+      .border_color(alpha(t.accent, on ? (this.keyed ? "99" : "66") : "00"))
       .when(on, (el) => el.bg(alpha(t.accent, "24")))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .cursor_pointer()
@@ -420,6 +479,8 @@ export default class Search extends View {
   render(cx) {
     const t = theme();
     const reg = registry();
+    // The popup has the keyboard: in its field or on its own handle (is_focused counts no child).
+    this.keyed = this.typing || this.handle.is_focused();
     const { threads, projects, pages, actions, counts } = this.rows(reg);
     const g = GROUPS[this.group][0];
     const sections = [
@@ -483,6 +544,10 @@ export default class Search extends View {
 
     const typing = this.typing;
     const hint = (k, what) => h_flex().gap(5).items_center().child(this.kbd(t, k)).child(div().child(what));
+    // vim's mode (kt-keys' pill): INSERT on the ink, NORMAL neutral.
+    const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+      .border_color(typing ? alpha(t.accent, "66") : t.border).bg(typing ? alpha(t.accent, "24") : t.background)
+      .font_family(MONO).text_size(9).text_color(typing ? t.accent : t.muted).child(typing ? "INSERT" : "NORMAL");
     const card = v_flex()
       .id("kp-card")
       .flex_none()
@@ -565,7 +630,7 @@ export default class Search extends View {
                           .hover((s) => s.text_color(on ? t.accent : t.foreground))
                           .on_click((_e, cx) => {
                             this.setGroup(i);
-                            this.input.focus();
+                            this.refocus();
                             cx.notify();
                           })
                           .child(name.toUpperCase())
@@ -595,12 +660,13 @@ export default class Search extends View {
               .items_center()
               .text_size(11)
               .text_color(t.dim)
+              .when(this.keyed, (el) => el.child(mode))
               .child(hint("↑↓", "naviguer"))
               .child(hint("↵", "ouvrir"))
               .child(hint("⌘1-4", "filtrer"))
               .when(this.selected()?.kind === "thread", (el) => el.child(hint("ctrl+d", "fermer le thread")))
               .child(div().flex_1())
-              .child(hint("esc", "fermer")),
+              .child(hint("esc", typing ? "normal" : "fermer")),
           ),
       );
 
@@ -619,18 +685,10 @@ export default class Search extends View {
         cx.notify();
       })
       .on_click(() => this.dismiss())
-      .on_key_down((e, cx) => {
-        const k = e.key;
-        const m = e.modifiers;
-        // Stopped here, so Herdr's own Esc doesn't close a second dialog under this one.
-        if (k === "escape") this.dismiss();
-        else if (k === "down" || k === "up") this.move(k === "down" ? 1 : -1);
-        else if (m.platform && /^[1-4]$/.test(k)) this.setGroup(Number(k) - 1);
-        else if (m.control && k === "d") this.closeTab();
-        else return;
-        cx.stop_propagation();
-        cx.notify();
-      })
+      // NORMAL's keys land on this handle; the field's keys bubble up here too. Esc is stopped
+      // (INSERT: NORMAL; NORMAL: closes), so Herdr's own Esc doesn't close a second dialog under it.
+      .track_focus(this.handle)
+      .on_key_down((e, cx) => this.key(e, cx))
       .child(card);
   }
 }

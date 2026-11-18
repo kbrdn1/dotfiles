@@ -1,7 +1,11 @@
 // kbrdn Threads inbox (port of herdr.dev "Threads", restyled to kbrdn.dev):
-// every tab of every space as one inbox of work. Pinned on top, then active
-// (newest first; activity never reshuffles), then the snoozed and settled
-// shelves, folded. A row: the tile of the program it runs (its agent's first),
+// every tab of every space as one inbox of work. Grouped by project by default (Home, then
+// the projects that need you, then the registry's order; inside, pinned, then blocked, done,
+// working, idle, most recent first; a header folds), or by date from the filter menu (pinned on
+// top, then Aujourd'hui, Hier, Cette semaine, Plus ancien; newest thread first inside),
+// then the snoozed shelf, folded. Keys: vim.js (kt-keys lists them). Archived threads (tab.settle,
+// still running) have their own view, from the filter menu (kt-thread-filter: archived,
+// status, period, program; shared "kt.threadFilter"). A row: the tile of the program it runs (its agent's first),
 // its project, its status tag (needs you, done, working for
 // how long) or how long since it last changed; its name; its branch and the
 // icons of what runs in it. A project is a repo, worked out from git (a
@@ -16,15 +20,54 @@
 // Settling is everyone's.
 // kbrdn (Monocode): a space is a project. On top, the shown project with a
 // picker of every space (by machine, worktrees under their repo) and New
-// project; New thread and Inbox; the list follows the shown project unless
+// project; New thread, Inbox, Skills, MCP and Worktrees (with the shown project's
+// worktree count); the list follows the shown project unless
 // "Tous les projets" (shared "kt.project" = "*"); at the bottom, a bar of
-// project squares. A Claude thread's card carries herdr-agent-quota's rows
-// (model, cx / 5h / 7d meters, cache, tokens), fed by ~/.claude/scripts/statusline.ts.
+// project squares. The main area is the layout's "view" stack: "thread" (the
+// tab) or a page ("inbox", "skills", "mcp", "gwm": kt-inbox, kt-skills, kt-mcp,
+// kt-gwm); an entry shows its page, a thread, the project picker and New thread
+// show the thread again.
+// A card (Monocode's sidebar): program tile, title, status; model · effort ·
+// branch and the PR; the agent's live action; its sub-agents hung under the
+// card on a rail. Every card rings its context; the shown thread alone opens an inner card
+// (context / 5 h / cache rings, cost and lines, flow step, todos, sub-agents, report), fed by
+// ~/.claude/scripts/statusline.ts, herdr-bridge and /me:report.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
-import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking } from "herdr";
+import { ring, ctxTokens } from "./ring.js";
+import { companion } from "./companion-logo.js";
+import { longLived, pickPr } from "./pr-pick.js";
+import { filterOf, filtering, passes, groupOf, GROUPS, byNeed, byProject, openFirst, moveInGroup } from "./thread-filter.js";
+import { Vim, keysOf, step } from "./vim.js";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder } from "herdr";
 import * as fs from "fs/promises";
+
+// The layout's main stack and its children (kbrdn-threads.json).
+const VIEW = "view";
+const show = (child) => run("layout.select", { stack: VIEW, child });
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const c of node?.children ?? []) {
+    const f = find(c, id);
+    if (f) return f;
+  }
+  return null;
+}
+const SPIN = "mods/workspace-chrome/spinner.svg";
+
+// kbrdn-tabs' label(): a name the person gave stays; else the agent's live title
+// (its status glyph dropped), else the program; never a bare tab number.
+const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}\p{Ps}\p{Pi}]+/u, "").replace(/^\[ [!.] \] /, "").trim();
+function label(tab, lead) {
+  const prog = lead?.program?.name;
+  const base = tab.named ? tab.name : prog ?? "Terminal";
+  if (!lead?.program?.agent) return base;
+  const live = clean(lead.title);
+  const path = /^[~/]|^[A-Za-z]:\\/.test((lead.title ?? "").replace(/^[^\p{L}\p{N}~/]+/u, ""));
+  const telling = live && live !== lead.terminal && live !== prog && !path && !live.includes("@") && live.toLowerCase() !== lead.program.key;
+  return (tab.name === prog || !tab.named) && telling ? live : base;
+}
 
 // kbrdn: /me:report facts (~/Reports/<owner>-<repo>/<branch>/data.js, written atomically by collect.py).
 // Blockers are p0+p1+p2 of the last pass; an axis "non exécuté" is never a zero; ci null shows nothing.
@@ -34,7 +77,9 @@ function summarizeReport(d) {
   const ran = (a) => a?.state === "ok";
   const review = last ? { pass: last.pass, blockers: ran(last.standards) || ran(last.spec) ? (last.p0 ?? 0) + (last.p1 ?? 0) + (last.p2 ?? 0) : null } : null;
   const ci = f.ci ? { ok: f.ci.ok ?? 0, total: f.ci.total ?? 0, fail: f.ci.fail ?? 0, pending: f.ci.pending ?? 0 } : null;
-  return { review, ci, at: d?.generatedAt ?? null };
+  // its PR, which the card's badge takes over gh's: the same source as the rest of the card
+  const pr = f.pr?.number ? { number: f.pr.number, state: f.pr.state ?? "OPEN", url: f.pr.url } : null;
+  return { review, ci, pr, at: d?.generatedAt ?? null };
 }
 
 const MONO = "Monaspace Krypton";
@@ -45,7 +90,6 @@ const PR = {
   CLOSED: { icon: "git-pull-request-closed", color: "ansi1" },
 };
 const PR_EVERY = 180e3;
-const DEFAULT_BRANCHES = ["main", "master", "trunk", "develop"];
 const I = (name) => `mods/kt-threads/${name}.svg`;
 
 // Snooze choices: label and when it wakes. Edit to taste.
@@ -107,19 +151,7 @@ function duration(ms) {
 
 const num = (id) => Number(String(id).replace(/\D/g, "")) || 0;
 
-function glyph(p, size, color) {
-  if (!p?.icon) return null;
-  return p.tint ? svg(p.icon).size(size).flex_none().text_color(color) : image(p.icon).w(size).h(size).flex_none();
-}
-
-// Monocode's program tile: the program's icon on its own color (Herdr's program table).
-function tile(t, p) {
-  const g = p?.icon ? (p.tint ? svg(p.icon).size(14).text_color(p.color ?? "#ffffff") : image(p.icon).size(14)) : svg("mods/workspace-chrome/terminal.svg").size(13).text_color(t.muted);
-  return div().w(24).h(20).flex_none().rounded(6).border(1).border_color("#00000033").bg(p?.tile ?? t.raised).flex().items_center().justify_center().child(g);
-}
-
-// herdr-agent-quota's severity: green, amber from `amber` % used, red from `red` %.
-const sev = (t, used, amber, red) => (used >= red ? t.ansi1 : used >= amber ? t.ansi3 : t.done);
+const clock = (sec) => { const d = new Date(sec * 1000); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
 // A quota window's reset, from its unix seconds: "4d23h", "3h07m", "12m".
 function resetIn(sec) {
   const m = Math.max(0, Math.round((sec * 1000 - Date.now()) / 60e3));
@@ -139,20 +171,74 @@ function windowOf(q, name) {
 }
 const STATUSLINE = () => `${home()}/.claude/cache/statusline`;
 
+// The projects registry (shared "kt.projects", kept across restarts): [{ id, name, folder, machine,
+// color, logo, order }], id = [machine, the folder's real path]. kt-projects manages it; the list
+// adds every space it sees, so a project closed stays one click away.
+const registry = () => [...(shared("kt.projects") ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+const where = (s) => JSON.stringify([s.machine ?? null, s.folder]);
+// A project's logo for the appearance now (registry `logos: { light, dark }`, or the older single
+// `logo`): its own, else the other mode's; null for none (then the initial on its color).
+function logoOf(e) {
+  const l = e?.logos ?? { light: e?.logo ?? null, dark: e?.logo ?? null };
+  return (settings().dark ? (l.dark ?? l.light) : (l.light ?? l.dark)) ?? null;
+}
+// The theme switch at the bottom (shared "kt.themeMode"), kbrdn.dev's ThemeToggle: light, dark,
+// or blur: frosted glass, a `-glass` copy of the shown layout with `window_blur` and these
+// translucent colors (forces dark). The shown layout's own file is never written.
+const THEME_MODES = [["light", "sun", "Clair"], ["dark", "moon", "Sombre"], ["blur", "blend", "Verre (blur)"]];
+const GLASS = { canvas: "#00000000", chrome: "#0f0f0fb3", surface: "#191919cc", background: "#191919d9", popover: "#242424e6" };
+const GLASS_SUFFIX = "-glass";
+
+// Sets settings.json's `appearance`, touching only that key's text (the rest stays byte for byte);
+// a file where that can't be done is rewritten as JSON. writeTextFile refuses a stale snapshot.
+async function writeAppearance(value) {
+  const path = `${appHome()}/settings.json`;
+  const before = (await readTextFile(path)) ?? "{}";
+  const parsed = JSON.parse(before);
+  if (parsed.appearance === value) return;
+  let text = /"appearance"\s*:\s*"[^"]*"/.test(before)
+    ? before.replace(/("appearance"\s*:\s*)"[^"]*"/, `$1"${value}"`)
+    : before.replace(/^\{\n/, `{\n  "appearance": "${value}",\n`);
+  let ok = text !== before;
+  try { ok = ok && JSON.parse(text).appearance === value; } catch { ok = false; }
+  if (!ok) text = `${JSON.stringify({ ...parsed, appearance: value }, null, 2)}\n`;
+  await writeTextFile(path, text, before);
+}
+
+// `<base>-glass`: the layout's file with window_blur, GLASS's colors and a translucent terminal at
+// its root. Written only when it differs, so the watcher that keeps it in step (followGlass)
+// doesn't loop on its own write.
+async function writeGlass(base) {
+  const dir = `${appHome()}/layouts`;
+  const tree = JSON.parse(await readTextFile(`${dir}/${base}.json`));
+  tree.window_blur = true;
+  tree.colors = { ...(tree.colors ?? {}), ...GLASS };
+  tree.terminal_opacity = 0.9;
+  const path = `${dir}/${base}${GLASS_SUFFIX}.json`;
+  const text = `${JSON.stringify(tree, null, 2)}\n`;
+  const before = await readTextFile(path);
+  if (text !== before) await writeTextFile(path, text, before);
+}
+
+// A registry color: a theme name ("ansi6", "accent") or a #hex.
+const paint = (t, c) => (!c ? null : c.startsWith("#") ? c : t[c] ?? null);
+// A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
+const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// The project bar: 30 px squares 6 px apart, 12 px in from the sidebar's edges; its arrows 20 px.
+const SQUARE = 30, BAR_GAP = 6, BAR_PAD = 12, ARROW = 20;
+
 export default class Threads extends View {
   init(_props, cx) {
     this.hover = null;
-    this.showSettled = false;
     this.showSnoozed = false;
     this.snoozing = null; // the row showing its snooze choices
-    this.projectsOpen = false; // the project picker under the shown project
-    // Agent rows folded or unfolded by hand, by tab id (else: unfolded on the shown thread only).
-    try { this.gauges = JSON.parse(localStorage.getItem("kt.gauges") ?? "{}") ?? {}; } catch { this.gauges = {}; }
+    this.projAt = null; // where the project picker opens: under the selector, as last pressed
     this.quota = null; // ~/.claude/cache/statusline/herdr-quota.json
     this.repos = {}; // folder -> { key, name } | null
 
     this.prs = {}; // "folder|branch" -> { number, state, url } | null
     this.asked = {}; // "folder|branch" -> when
+    this.defaults = {}; // a repo -> its default branch (gh repo view), asked once; null: unknown
     this.queue = [];
     // Durations: checked every second, but the list redraws only when a time
     // it shows really changes ("WORKING 12s" -> "13s", "3m" -> "4m"), else
@@ -161,17 +247,281 @@ export default class Threads extends View {
     this.shownClocks = "";
     cx.timer.every(1000, (cx) => {
       this.ticks++;
-      if (this.ticks >= 30 || this.clocks() !== this.shownClocks) cx.notify();
+      // Also when the keyboard left without a render (a click on a terminal): the cursor goes out.
+      if (this.ticks >= 30 || this.clocks() !== this.shownClocks || this.keyed !== this.handle?.is_focused()) cx.notify();
     });
     cx.timer.every(1500, (cx) => this.lookup(cx));
     // kbrdn: each agent's live line (herdr-bridge Claude mod) every 3 s, /me:report facts every 15 s.
     // Both redraw only when what they read changed.
     this.live = {};
     this.reports = {};
+    this.real = {}; // where(space) -> [machine, its folder's real path], null when it can't be resolved
+    this.seen = new Set(); // spaces whose project color was applied once
+    this.homeReal = null; // home()'s real path: its space is "Home", never a project
+    this.memos = {}; // terminal -> companion-logo's memo (when done or blocked began, one-shots)
+    // Keys (vim.js): ctrl-b h (pane.go, "focus") or `kt-threads.key:<keys>` gives this list the
+    // keyboard; a cursor (a thread id, or "snoozed": the shelf's header) moves over the rows shown.
+    this.handle = cx.focus_handle();
+    this.vim = new Vim();
+    this.cur = null;
+    this.flat = []; // the rows the cursor walks, in order: { id, group, r, fold?, head? }
+    this.folded = new Set(); // project groups folded (h on a header or a thread, or a click)
+    this.listScroll = ScrollHandle.new();
+    // The project bar scrolls sideways: barAt is the first square shown (kept here: a ScrollHandle has
+    // no offset), barW the bar's width, barShown the active project's square last brought into view.
+    this.barScroll = ScrollHandle.new();
+    this.barAt = 0;
+    this.barW = 0;
+    this.barShown = null;
+    this.barPress = null; // the registry project a drag in the bar started on
+    this.barOver = null; // the square it is over (an id of barShownIds)
     if (!checking()) {
+      cx.spawn(async () => {
+        const r = await exec("pwd", ["-P"], { cwd: home() }).catch(() => null);
+        this.homeReal = r?.code === 0 ? r.stdout.trim() : home();
+      });
       cx.timer.every(3000, (cx) => this.readLive(cx));
       cx.timer.every(15000, (cx) => this.readReports(cx));
+      cx.timer.every(5000, (cx) => this.syncProjects(cx));
+      // `kt-threads.density` (a key, or `herdr-app do`) flips the cards like the icon by THREADS;
+      // `kt-threads.projects` opens or closes the project picker; `kt-threads.every` flips every
+      // project / the shown one (the icon by THREADS); `kt-threads.archived` flips the archived view;
+      // `kt-threads.theme-light` /
+      // `theme-dark` / `theme-blur` move the theme switch. `focus` (pane.go) takes the keyboard;
+      // `key:<keys>` takes it and types those keys ("j", "g g", "5 j", "L"), for tests.
+      cx.spawn(async (cx) => {
+        for (;;) {
+          const c = await nextCommand();
+          if (c === "focus") this.focusIn();
+          // `hover:<tab id>` opens a compact row as the pointer would; `hover:` alone leaves it (tests).
+          else if (c.startsWith("hover:")) {
+            const was = this.hover;
+            this.hover = c.slice(6) || null;
+            if (!this.hover) this.linger(was, cx);
+          }
+          else if (c.startsWith("key:")) {
+            this.focusIn();
+            for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
+          }
+          else if (c === "density") this.toggleDensity();
+          else if (c === "projects") this.openProjects();
+          // `bar-move:<name>|<name>`: a drag in the bar from one project onto another (names as the
+          // registry has them, "home" for Home), for tests.
+          else if (c.startsWith("bar-move:")) {
+            const [a, b] = c.slice(9).split("|");
+            const id = (n) => (n === "home" ? "home" : registry().find((e) => e.name === n)?.id);
+            if (id(a) && id(b)) this.moveProject(id(a), id(b));
+          }
+          // The project picker's « Nouveau projet »: `space.new` alone opens in the focused terminal's
+          // folder (no prompt), so ask for a local folder; here, as this list outlives the popup.
+          else if (c === "new-project") {
+            show("thread");
+            const folder = await pickFolder({ prompt: "Ouvrir" }).catch(() => null);
+            if (folder) {
+              run("space.new", { folder, machine: "" });
+              this.syncProjects(cx); // into the registry now, not at the next tick
+            }
+          }
+          else if (c === "every") setShared("kt.project", shared("kt.project") === "*" ? null : "*");
+          else if (c === "archived") {
+            const f = filterOf(shared("kt.threadFilter"));
+            setShared("kt.threadFilter", { ...f, archived: !f.archived });
+          }
+          else if (/^theme-(light|dark|blur)$/.test(c)) this.setTheme(c.slice(6), cx);
+          cx.notify();
+        }
+      });
     }
+  }
+
+  // Keeps the registry in step with the spaces: an open space whose project isn't in it adds it
+  // (the space's name, a worktree's repo name; its space color); a space just opened takes its
+  // project's color, and a color given later to a project's only open space (another mod's
+  // picker) follows into the registry. One entry per project (projectId): a worktree or a second
+  // space on the same folder adds nothing. Names change only from kt-projects.
+  syncProjects(cx) {
+    if (this.syncing) return;
+    const ps = spaces().filter((s) => s.folder);
+    const todo = [...new Set(ps.map(where).filter((l) => !(l in this.real)))];
+    this.syncing = true;
+    cx.spawn(async (cx) => {
+      for (const l of todo) {
+        const [on, folder] = JSON.parse(l);
+        try {
+          const r = await exec("pwd", ["-P"], { cwd: folder, on });
+          this.real[l] = r.code === 0 && r.stdout.trim() ? JSON.stringify([on, r.stdout.trim()]) : null;
+        } catch { this.real[l] = null; }
+      }
+      this.syncing = false;
+      if (this.homeReal === null) return; // which space is Home isn't known yet: next time
+      let next = shared("kt.projects") ?? [];
+      // An older single `logo` becomes `logos` for both modes.
+      let changed = next.some((e) => "logo" in e || "logoFrom" in e);
+      if (changed) next = next.map(({ logo, logoFrom, ...e }) => ({ ...e, logos: e.logos ?? { light: logo ?? null, dark: logo ?? null }, ...(e.logosFrom || !logoFrom ? {} : { logosFrom: { light: logoFrom, dark: logoFrom } }) }));
+      // The home folder is never a project: an entry for it (added before this rule) goes.
+      const homes = [home(), this.homeReal].filter(Boolean);
+      if (next.some((e) => !e.machine && homes.includes(e.folder))) {
+        next = next.filter((e) => e.machine || !homes.includes(e.folder));
+        changed = true;
+      }
+      const colors = { ...(shared("space.colors") ?? {}) };
+      let recolor = false;
+      const open = spaces().filter((s) => s.folder && !this.isHome(s));
+      for (const s of open) {
+        const id = this.projectId(s);
+        if (!id) continue; // unknown yet: next time
+        const e = next.find((x) => x.id === id);
+        if (!e) {
+          const order = next.reduce((m, x) => Math.max(m, (x.order ?? 0) + 1), 0);
+          const repo = this.spaceRepo(s);
+          next = [...next, { id, name: repo?.linked ? repo.name : s.name, folder: JSON.parse(id)[1], machine: s.machine ?? null, color: colors[s.id] ?? null, logos: { light: null, dark: null }, order }];
+          changed = true;
+        } else if (!this.seen.has(s.id)) {
+          if (e.color && colors[s.id] !== e.color) { colors[s.id] = e.color; recolor = true; }
+        } else if (colors[s.id] && colors[s.id] !== e.color && open.filter((o) => this.projectId(o) === id).length === 1) {
+          next = next.map((x) => (x.id === id ? { ...x, color: colors[s.id] } : x));
+          changed = true;
+        }
+        this.seen.add(s.id);
+      }
+      if (changed) setShared("kt.projects", next);
+      if (recolor) setShared("space.colors", colors);
+      if (changed || recolor) cx.notify();
+    });
+  }
+
+  // The Home space: its folder is this computer's home (a remote machine's home isn't known here).
+  // Never a project; shown first, with a house.
+  isHome(s) {
+    if (s.machine) return false;
+    return s.folder === home() || (this.homeReal !== null && this.real[where(s)] === JSON.stringify([null, this.homeReal]));
+  }
+
+  // Home's name, its square in the bar and its group's header: "Home" or the name it was given.
+  homeLabel(s) {
+    return s.named ? s.name : "Home";
+  }
+
+  // A space's registry entry (by project, else by its folder as written while that's unknown).
+  entryOf(s, reg) {
+    const id = this.projectId(s);
+    return reg.find((e) => (id ? e.id === id : e.folder === s.folder && (e.machine ?? null) === (s.machine ?? null))) ?? null;
+  }
+
+  // The project picker under the shown project: a popup (kt-project-picker) the sidebar's width
+  // less 16, under the selector, as tall as its lines (its formula: 118 + 33 per line + 25 per
+  // eyebrow), within the window. It reads the spaces itself; this list gives it what it has
+  // worked out: each folder's real path, home's, each folder's repo.
+  openProjects() {
+    const ps = spaces();
+    const reg = registry();
+    const open = ps.filter((s) => !this.isHome(s));
+    const machines = new Set(open.map((s) => s.machine ?? null)).size;
+    const closed = reg.filter((e) => !open.some((s) => this.entryOf(s, reg) === e)).length;
+    const lines = ps.filter((s) => this.isHome(s)).length + open.length + closed;
+    const eyebrows = (machines > 1 ? machines : 0) + (closed ? 1 : 0);
+    const at = this.projAt ?? { x: 8, y: 106 };
+    const room = Math.max(160, (this.winH ?? 900) - at.y - 12);
+    // A popup is as tall as its content: the card takes `height` from its props too.
+    const height = Math.min(room, 118 + 33 * lines + 25 * eyebrows);
+    openOverlay({
+      mod: "kt-project-picker", kind: "popup", frame: "none", at,
+      width: Math.max(220, (this.width ?? 300) - 16), height,
+      props: { real: this.real, homeReal: this.homeReal, repos: this.repos, height },
+    });
+  }
+
+  // The theme switch's position: what the window shows now (an appearance set elsewhere too);
+  // shared "kt.themeMode" keeps the last pick.
+  themeMode() {
+    return String(shared("layout") ?? "").endsWith(GLASS_SUFFIX) || layout()?.window_blur ? "blur" : settings().dark ? "dark" : "light";
+  }
+
+  // Light / dark: settings.json's appearance, and back to the plain layout. Blur: appearance dark
+  // and `<layout>-glass`, a copy of the shown layout's file rewritten at every pick (so it never
+  // drifts from it) with window_blur, GLASS's colors and a translucent terminal at its root; the
+  // node ids stay, so the mods that look up "view", "panel" or "panel-body" find them. The
+  // shown layout's own file is never written.
+  setTheme(mode, cx) {
+    cx.spawn(async (cx) => {
+      try {
+        await writeAppearance(mode === "light" ? "light" : "dark");
+        const shown = String(shared("layout") ?? "");
+        const base = shown.endsWith(GLASS_SUFFIX) ? shown.slice(0, -GLASS_SUFFIX.length) : shown;
+        if (mode === "blur" && base) {
+          await writeGlass(base);
+          run("layout.switch", { name: `${base}${GLASS_SUFFIX}` });
+        } else if (mode !== "blur" && shown !== base) {
+          run("layout.switch", { name: base });
+        }
+        setShared("kt.themeMode", mode);
+      } catch (err) {
+        notify({ title: "Thème", body: String(err?.message ?? err), level: "error" });
+      }
+      cx.notify();
+    });
+  }
+
+  // In glass mode, the shown `-glass` copy follows its layout: rewritten (writeGlass) whenever that
+  // file changes, else it misses the blocks added since the pick. Nothing runs outside glass mode.
+  // Glass mode is the shown layout, as themeMode() reads it: "kt.themeMode" only keeps the last
+  // pick, and a layout switch (ctrl-shift-l) doesn't update it.
+  followGlass(cx) {
+    const shown = String(shared("layout") ?? "");
+    const base = shown.endsWith(GLASS_SUFFIX) && !checking() ? shown.slice(0, -GLASS_SUFFIX.length) : null;
+    if (base === this.glassBase) return;
+    this.glassWatch?.cancel();
+    this.glassWatch = null;
+    this.glassBase = base;
+    if (!base) return;
+    const dir = `${appHome()}/layouts`;
+    cx.spawn(async () => {
+      // A half-saved layout doesn't parse: the next change retries.
+      const sync = () => writeGlass(base).catch(() => {});
+      await sync(); // what changed while nothing watched
+      while (this.glassBase === base) {
+        const watch = (this.glassWatch = watchFolder(dir));
+        let paths;
+        try { paths = await watch; } catch { return; }
+        if (this.glassBase !== base || !paths.length) return; // [] = cancelled
+        if (paths.some((p) => p === dir || p.endsWith(`/${base}.json`))) await sync();
+      }
+    });
+  }
+
+  // Cards compact (one 36 px line) or detailed, shared "kt.density": kbrdn-agents follows it too.
+  toggleDensity() {
+    setShared("kt.density", shared("kt.density") === "compact" ? "detailed" : "compact");
+  }
+
+  // The thread's todos (herdr-bridge's `todos.items`): done checked, the current one in working,
+  // the rest a ring. Six at most, from the last done one, then "+N" for the rest.
+  todoList(t, todos) {
+    const items = todos?.items ?? [];
+    if (!items.length) return null;
+    const open = items.findIndex((x) => x.status !== "completed");
+    const from = Math.max(0, Math.min((open < 0 ? items.length : open) - 1, items.length - 6));
+    const shown = items.slice(from, from + 6);
+    const more = Math.max(items.length, todos.total ?? 0) - shown.length;
+    const mark = (s) =>
+      s === "completed" ? svg(I("check")).size(11).flex_none().text_color(t.done)
+        : s === "in_progress" ? div().size(7).rounded(4).flex_none().bg(t.working)
+          : div().size(7).rounded(4).flex_none().border(1.5).border_color(t.dim);
+    return v_flex()
+      .gap(1)
+      .child(
+        h_flex().h(16).gap(6).items_center().font_family(MONO).text_size(10.5)
+          .child(div().flex_none().text_color(t.muted).child("TODOS"))
+          .child(div().flex_1())
+          .child(div().flex_none().text_color(t.dim).child(`${todos.done ?? 0}/${todos.total ?? items.length}`)),
+      )
+      .children(shown.map((x) =>
+        h_flex().h(18).gap(7).items_center()
+          .child(h_flex().w(11).flex_none().items_center().justify_center().child(mark(x.status)))
+          .child(div().flex_1().min_w(0).truncate().text_size(11.5)
+            .text_color(x.status === "in_progress" ? t.foreground : x.status === "completed" ? t.dim : t.muted)
+            .child(x.status === "in_progress" ? x.activeForm || x.content : x.content))))
+      .when(more > 0, (el) => el.child(div().pl(18).h(16).font_family(MONO).text_size(10.5).text_color(t.dim).child(`+${more}`)));
   }
 
   readLive(cx) {
@@ -193,9 +543,14 @@ export default class Threads extends View {
           claude = true;
           try {
             const sl = JSON.parse(await readTextFile(`${STATUSLINE()}/herdr-${p.terminal}.json`));
-            if (sl) { delete sl.updated_at; next[p.terminal] = { ...(next[p.terminal] ?? {}), sl }; }
+            // its write time (to the minute) dates the thread's activity; the rest feeds the card
+            if (sl) {
+              const slAt = sl.updated_at ? Math.floor(sl.updated_at / 60) * 60e3 : undefined;
+              delete sl.updated_at;
+              next[p.terminal] = { ...(next[p.terminal] ?? {}), sl, slAt };
+            }
           } catch {
-            if (this.live[p.terminal]?.sl) next[p.terminal] = { ...(next[p.terminal] ?? {}), sl: this.live[p.terminal].sl };
+            if (this.live[p.terminal]?.sl) next[p.terminal] = { ...(next[p.terminal] ?? {}), sl: this.live[p.terminal].sl, slAt: this.live[p.terminal].slAt };
           }
         }
         // claude-flow's timeline (issue, worktree, commits, PR, review, CI, merge), when it publishes one.
@@ -212,6 +567,14 @@ export default class Threads extends View {
         try { quota = JSON.parse(await readTextFile(`${STATUSLINE()}/herdr-quota.json`)); if (quota) delete quota.updated_at; } catch { quota = this.quota; }
       }
       this.readingLive = false;
+      // When each thread was first seen (shared "kt.firstSeen"): the activity date of one with no agent
+      // file. Written only when a tab is new; closed tabs drop out then.
+      const seen = shared("kt.firstSeen") ?? {};
+      const tabs = spaces().flatMap((s) => s.tabs.map((c) => c.id));
+      if (tabs.some((id) => !(id in seen))) {
+        const at = Date.now();
+        setShared("kt.firstSeen", Object.fromEntries(tabs.map((id) => [id, seen[id] ?? at])));
+      }
       const key = JSON.stringify([next, quota]);
       if (key !== this.liveKey) { this.liveKey = key; this.live = next; this.quota = quota; cx.notify(); }
     });
@@ -249,34 +612,28 @@ export default class Threads extends View {
     });
   }
 
-  // Review and CI pills from the thread's /me:report, when one exists for its branch.
-  reportPills(t, lead, w) {
+  // The thread's /me:report facts, when one exists for its branch.
+  reportOf(lead, w) {
     const repo = lead?.cwd && this.repos[JSON.stringify([w.machine ?? null, lead.cwd])]?.name;
-    const r = repo && lead?.branch ? this.reports[`${repo}|${lead.branch}`] : null;
-    if (!r) return [];
-    const pills = [];
-    if (r.review) {
-      const b = r.review.blockers;
-      pills.push(this.tag(b === null ? t.dim : b > 0 ? t.blocked : t.done, `R${r.review.pass} · ${b === null ? "non exécuté" : b === 0 ? "0 bloquant" : `${b} bloquant${b > 1 ? "s" : ""}`}`));
-    }
-    if (r.ci && r.ci.total > 0) {
-      const ci = r.ci;
-      pills.push(ci.fail > 0 ? this.tag(t.ansi1, `CI ✗ ${ci.fail}/${ci.total}`) : ci.pending > 0 ? this.tag(t.ansi3, `CI … ${ci.ok}/${ci.total}`) : this.tag(t.done, `CI ✓ ${ci.ok}/${ci.total}`));
-    }
-    return pills;
+    return repo && lead?.branch ? this.reports[`${repo}|${lead.branch}`] ?? null : null;
   }
 
-  // claude-flow's timeline as a strip: one dot per step (done, current pulsing, pending, failed),
-  // then the current step's label.
-  flowStrip(t, lead) {
-    const steps = (lead?.terminal && this.live[lead.terminal]?.flow?.steps) || [];
-    if (!steps.length) return null;
-    const color = { done: t.done, current: t.accent, failed: t.ansi1, pending: t.border };
-    const now = steps.find((s) => s.state === "current") ?? steps.filter((s) => s.state === "done").at(-1);
-    return h_flex().h(16).gap(4).items_center()
-      .children(steps.map((s, i) => div().id(`kt-flow-${lead.terminal}-${i}`).size(6).rounded(3).flex_none().bg(color[s.state] ?? t.border)
-        .when(s.state === "current", (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1400 }))))
-      .when(Boolean(now?.label), (el) => el.child(div().min_w(0).truncate().pl(4).font_family(MONO).text_size(10.5).text_color(t.muted).child(now.label)));
+  // CI as a compact mark for a card's second line: ✓, ✗ or … in its color.
+  ciMark(t, r) {
+    const ci = r?.ci;
+    if (!ci?.total) return null;
+    const [color, mark] = ci.fail > 0 ? [t.ansi1, "✗"] : ci.pending > 0 ? [t.ansi3, "…"] : [t.done, "✓"];
+    return div().flex_none().font_family(MONO).text_size(10.5).text_color(color).child(`CI ${mark}`);
+  }
+
+  // claude-flow's current step: its dot (pulsing while the thread works) and its label.
+  flowStep(t, lead, working) {
+    const now = ((lead?.terminal && this.live[lead.terminal]?.flow?.steps) || []).find((s) => s.state === "current");
+    if (!now?.label) return null;
+    return h_flex().h(16).gap(7).items_center()
+      .child(div().id(`kt-flow-${lead.terminal}`).size(6).rounded(3).flex_none().bg(t.accent)
+        .when(working, (el) => el.loop("opacity", { from: 0.35, to: 1, period: 1400 })))
+      .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(now.label));
   }
 
   // Monocode's live line: what the thread's agent is doing now, or what it needs.
@@ -284,116 +641,87 @@ export default class Threads extends View {
     const l = lead?.terminal ? this.live[lead.terminal] : null;
     if (c.status === "blocked") {
       return h_flex().h(22).px(10).gap(6).items_center().rounded_full().bg(t.blocked + "26").border(1).border_color(t.blocked + "4d")
+        // The detailed card's one pulse (each one redraws the window): its top right shows no NEEDS YOU.
         .child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))
         .child(div().truncate().text_size(12).font_medium().text_color(t.blocked).child("a besoin de toi"));
     }
-    const todo = l?.todos?.total ? ` · ${l.todos.done}/${l.todos.total}` : "";
-    const text = c.status === "working" ? l?.action?.what && `${l.action.what}${todo}` : c.status === "done" ? l?.answer : null;
-    return text ? div().truncate().text_size(12).text_color(t.muted).child(text) : null;
+    const text = c.status === "working" ? l?.action?.what : c.status === "done" ? l?.answer : null;
+    return text ? div().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(`↳ ${text}`) : null;
   }
 
-  // Unfolded: the shown thread, unless folded by hand (and the other way round).
-  unfolded(id, here) {
-    return this.gauges[id] ?? here;
-  }
-
-  fold(id, here) {
-    const ids = new Set(spaces().flatMap((w) => w.tabs.map((c) => c.id)));
-    this.gauges = Object.fromEntries(Object.entries(this.gauges).filter(([k]) => ids.has(k)));
-    this.gauges[id] = !this.unfolded(id, here);
-    try { localStorage.setItem("kt.gauges", JSON.stringify(this.gauges)); } catch { }
-  }
-
-  // The report's `.ticks` meter: 2 px notches every 6 px (9 in 50 px), as many filled as the
-  // printed percent says, never empty or full between 1 and 99 (herdr-agent-quota's `meter`).
-  notches(t, pct, color, w = 50) {
-    const n = Math.floor((w + 4) / 6);
-    const p = Math.round(pct);
-    const on = p > 0 && p < 100 ? Math.min(n - 1, Math.max(1, Math.round((p * n) / 100))) : p >= 100 ? n : 0;
-    return h_flex().w(w).h(8).gap(4).flex_none().children(Array.from({ length: n }, (_, i) => div().w(2).h(8).bg(i < on ? color : t.raised)));
-  }
-
-  // One of the report's `.kpi`: mono eyebrow (and the reset, dim), the value in Inter, its meter.
-  kpi(t, label, pct, color, tail, first) {
+  // Monocode's rails: the agent's sub-agents (herdr-bridge's `agents`), hung under the card
+  // on a 1 px rail, running first; 4 at most, then "+N". A foreground sub-agent holds its
+  // parent: it spins only while the thread works (the bridge can leave a finished one "running").
+  subAgents(t, lead, working) {
+    const list = (lead?.terminal && this.live[lead.terminal]?.agents) || [];
+    if (!list.length) return null;
+    const order = { running: 0, background: 1, done: 2 };
+    const all = [...list].sort((a, b) => (order[a.state] ?? 3) - (order[b.state] ?? 3));
+    const line = () => h_flex().h(22).pl(10).gap(6).items_center();
+    const state = (s) =>
+      s === "running" ? svg(SPIN).size(11).flex_none().text_color(working ? t.working : t.dim).when(working, (el) => el.spin(900))
+        : s === "done" ? div().flex_none().text_size(11).text_color(t.done).child("✓")
+          : div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child("bg");
     return v_flex()
-      .flex_1()
-      .min_w(0)
-      .gap(3)
-      .when(!first, (el) => el.pl(8).border_l(1).border_dashed().border_color(t.border))
-      .child(
-        h_flex().gap(4).items_center().font_family(MONO).text_size(10.5)
-          .child(div().flex_none().text_color(t.muted).child(label))
-          .child(div().flex_1())
-          .when(Boolean(tail), (el) => el.child(div().min_w(0).truncate().text_color(t.dim).child(tail))),
-      )
-      .child(div().text_size(14).text_color(pct == null ? t.dim : t.foreground).child(pct == null ? "N/A" : `${Math.round(pct)}%`))
-      .child(pct == null ? div().h(8) : this.notches(t, pct, color));
+      .ml(4)
+      .border_l(1)
+      .border_color(t.border)
+      .children(all.slice(0, 4).map((a) =>
+        line()
+          .child(div().flex_none().text_size(11).text_color(t.dim).child("↳"))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(a.what || "agent"))
+          .child(state(a.state))))
+      .when(all.length > 4, (el) => el.child(line().child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(`+${all.length - 4}`))));
   }
 
-  // herdr-agent-quota's rows for a Claude thread: model and effort (the fold toggle),
-  // cx / 5h / 7d, cache hit and TTL with the last turn's tokens, the session's cost,
-  // time and lines. Folded: the model line and cx alone.
-  agentRows(t, c, mine, here) {
-    const p = mine.find((x) => this.live[x.terminal]?.sl && (x.app === "claude-code" || x.program?.key === "claude"));
-    const s = p && this.live[p.terminal].sl;
-    if (!s) return null;
-    const open = this.unfolded(c.id, here);
-    const used = s.ctx_pct;
-    const cxColor = used == null ? t.dim : (s.window ?? 0) >= 1e6 ? sev(t, used, 20, 50) : sev(t, used, 55, 75);
-    const head = h_flex()
-      .id(`kt-agent-${c.id}`)
-      .h(18)
-      .gap(6)
-      .items_center()
-      .font_family(MONO)
-      .text_size(10.5)
-      .text_color(t.muted)
-      .cursor_pointer()
-      .hover((st) => st.text_color(t.foreground))
-      .on_click((_e, cx) => {
-        cx.stop_propagation();
-        this.fold(c.id, here);
-        cx.notify();
-      })
-      .child(svg(I(open ? "chevron-down" : "chevron-right")).size(12).flex_none())
-      .child(div().min_w(0).truncate().text_color(t.foreground).child(s.model || "Claude"))
-      .when(Boolean(s.effort), (el) => el.child(div().flex_none().text_color(t.dim).child(`· ${s.effort}`)))
-      .child(div().flex_1())
-      .when(!open && used != null, (el) => el.child(div().flex_none().text_color(cxColor).child(`cx ${Math.round(used)}%`)));
-    if (!open) return head;
-    const five = windowOf(this.quota, "five_hour");
-    const week = windowOf(this.quota, "seven_day");
-    const mono = (color, text) => div().flex_none().font_family(MONO).text_size(10.5).text_color(color).child(text);
-    const left = cacheLeft(s);
-    const fresh = s.input_tokens == null ? null : (s.input_tokens ?? 0) + (s.cache_creation_input_tokens ?? 0);
-    const dur = s.duration_ms ? duration(Date.now() - s.duration_ms) : "";
-    const facts = [s.cost_usd != null && `$${s.cost_usd.toFixed(2)}`, dur, (s.lines_added != null || s.lines_removed != null) && `+${s.lines_added ?? 0} −${s.lines_removed ?? 0}`].filter(Boolean);
-    return v_flex()
-      .gap(5)
-      .child(head)
-      .child(
-        h_flex()
-          .gap(8)
-          .child(this.kpi(t, "CX", used, cxColor, null, true))
-          .child(this.kpi(t, "5H", five?.used_percentage, five && sev(t, five.used_percentage, 50, 80), five && resetIn(five.resets_at)))
-          .child(this.kpi(t, "7D", week?.used_percentage, week && sev(t, week.used_percentage, 50, 80), week && resetIn(week.resets_at))),
-      )
-      .child(
-        v_flex()
-          .pt(5)
-          .gap(2)
-          .border_t(1)
-          .border_dashed()
-          .border_color(t.border)
-          .child(
-            h_flex().h(16).gap(6).items_center()
-              .when(s.hit_pct != null, (el) => el.child(mono(t.muted, `cache ${s.hit_pct.toFixed(1)}%`)))
-              .when(Boolean(left), (el) => el.child(mono(left === "no cached" ? t.ansi3 : t.dim, left)))
-              .child(div().flex_1())
-              .when(fresh != null, (el) => el.child(mono(t.muted, `↑${toks(fresh)} ↓${toks(s.output_tokens ?? 0)}`))),
-          )
-          .when(facts.length > 0, (el) => el.child(h_flex().h(16).items_center().child(mono(t.dim, facts.join(" · "))))),
-      );
+  // The shown thread's inner card (radius 8, 4 px inside the card's 12: concentric), dashed on
+  // top, with only the rows there's data for: the rings (context, the 5 h window), the numbers
+  // (cost · time · lines · cache TTL, the cache hit under 85 %), claude-flow's step, the todos, the
+  // sub-agents on their rail, the report's CI and review (its PR is on line 2). The weekly quota
+  // stays in the status line.
+  focusCard(t, { sl, todos, lead, agent, working, report, c }) {
+    const s = sl ?? {};
+    const five = sl ? windowOf(this.quota, "five_hour") : null;
+    const eyebrow = (text) => div().font_family(MONO).text_size(10).text_color(t.muted).child(text);
+    const beside = (text) => div().min_w(0).truncate().font_family(MONO).text_size(10).text_color(t.dim).child(text);
+    // A 32 px ring, its value in the middle, its label and detail beside it.
+    const cell = (id, label, pct, sub) => h_flex().flex_1().min_w(0).gap(8).items_center()
+      .child(ring(t, id, pct, 32)).child(v_flex().min_w(0).gap(1).child(eyebrow(label)).when(Boolean(sub), (el) => el.child(beside(sub))));
+    const rings = [
+      s.ctx_pct != null && cell(`kt-ring-cx-${c.id}`, "CONTEXTE", s.ctx_pct, s.window && ctxTokens(s) > 0 ? `${toks(ctxTokens(s))} / ${toks(s.window)}` : null),
+      five && cell(`kt-ring-5h-${c.id}`, "5H", five.used_percentage, `reset ${clock(five.resets_at)}`),
+    ].filter(Boolean);
+    const ttl = s.cache_at && s.cache_ttl ? s.cache_at / 1000 + s.cache_ttl - Date.now() / 1000 : null;
+    const mono = (color, text) => div().flex_none().font_family(MONO).text_size(11).text_color(color).child(text);
+    const numbers = [
+      s.cost_usd != null && mono(t.muted, `$${s.cost_usd.toFixed(2)}`),
+      s.duration_ms > 0 && mono(t.muted, duration(Date.now() - s.duration_ms)),
+      (s.lines_added > 0 || s.lines_removed > 0) && h_flex().gap(4).child(mono(t.ansi2, `+${s.lines_added ?? 0}`)).child(mono(t.ansi1, `−${s.lines_removed ?? 0}`)),
+      ttl != null && (ttl > 0 ? mono(t.dim, `TTL ${ttl >= 3600 ? `${Math.floor(ttl / 3600)}h${String(Math.floor((ttl % 3600) / 60)).padStart(2, "0")}` : `${Math.ceil(ttl / 60)}m`}`) : mono(t.ansi1, "TTL expiré")),
+      // The cache hit only when it's worth a look: under 85 %.
+      s.hit_pct != null && s.hit_pct < 85 && mono(s.hit_pct < 60 ? t.ansi1 : t.blocked, `cache ${Math.round(s.hit_pct)}%`),
+    ].filter(Boolean);
+    // The report's CI and review only (its PR is already on line 2): "✓ CI 3/3 · R2 · 0 bloquant".
+    const ci = report?.ci?.total ? report.ci : null;
+    const rv = report?.review ?? null;
+    const reportLine = [
+      ci && mono(ci.fail > 0 ? t.ansi1 : ci.pending > 0 ? t.ansi3 : t.done, `${ci.fail > 0 ? "✗" : ci.pending > 0 ? "…" : "✓"} CI ${ci.fail > 0 ? ci.fail : ci.ok}/${ci.total}`),
+      rv && mono(rv.blockers === null ? t.dim : rv.blockers > 0 ? t.blocked : t.done,
+        `R${rv.pass} · ${rv.blockers === null ? "non exécuté" : `${rv.blockers} bloquant${rv.blockers > 1 ? "s" : ""}`}`),
+    ].filter(Boolean);
+    const rows = [
+      rings.length > 0 && h_flex().gap(8).items_center().children(rings),
+      numbers.length > 0 && h_flex().min_h(16).gap_x(8).gap_y(4).items_center().flex_wrap()
+        .children(numbers.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
+      this.flowStep(t, lead, working),
+      this.todoList(t, todos),
+      this.subAgents(t, agent, working),
+      reportLine.length > 0 && h_flex().h(16).gap(8).items_center()
+        .children(reportLine.flatMap((n, i) => (i ? [div().text_size(11).text_color(t.border).child("·"), n] : [n]))),
+    ].filter(Boolean);
+    if (!rows.length) return null;
+    return v_flex().p(8).gap(6).rounded(8).bg(t.background).border_t(1).border_dashed().border_color(t.border)
+      .children(rows.map((r, i) => (i ? div().pt(6).border_t(1).border_dashed().border_color(t.border).child(r) : r)));
   }
 
   // The folder's repo of a space (where it was made), or null outside git.
@@ -406,136 +734,217 @@ export default class Threads extends View {
     return this.spaceRepo(s)?.key ?? s.id;
   }
 
-  // A worktree space goes under its repo's checkout when that one is a space too.
-  nested(s, ps) {
+  // The Worktrees entry's badge: the shown project's checkouts (its git dir's worktrees/ entries
+  // and the main one, as `gwm list` counts them), read at most every 10 s; this computer only.
+  worktreeCount(s, cx) {
+    const r = s && !this.isHome(s) ? this.spaceRepo(s) : null;
+    const [on, dir] = r ? JSON.parse(r.key) : [null, null];
+    if (!dir || on) return null;
+    if ((this.wt?.dir !== dir || Date.now() - this.wt.at > 10e3) && !this.wtBusy && !checking()) {
+      this.wtBusy = true;
+      cx.spawn(async (cx) => {
+        const n = 1 + (await fs.readdir(`${dir}/worktrees`).catch(() => [])).length;
+        const changed = this.wt?.dir !== dir || this.wt?.n !== n;
+        this.wt = { dir, n, at: Date.now() };
+        this.wtBusy = false;
+        if (changed) cx.notify();
+      });
+    }
+    return this.wt?.dir === dir ? this.wt.n : null;
+  }
+
+  // A space's project, as the registry ids it: its repo's main checkout (a worktree, or a space
+  // whose terminal moved into a subfolder, belongs to it), else its folder's real path; null
+  // while that's being worked out.
+  projectId(s) {
     const r = this.spaceRepo(s);
-    return Boolean(r?.linked) && ps.some((o) => o !== s && !this.spaceRepo(o)?.linked && this.spaceKey(o) === r.key);
+    if (r) return JSON.stringify([s.machine ?? null, JSON.parse(r.key)[1].replace(/\/\.git$/, "")]);
+    return r === null ? (this.real[where(s)] ?? null) : null;
   }
 
-  // Each checkout space, then its worktree spaces.
+  // Spaces grouped by project, one group per project: its first plain checkout on top, then its
+  // other spaces (worktrees, a second space on the same folder).
   projectTree(ps) {
-    return ps.filter((s) => !this.nested(s, ps)).map((s) => ({ s, kids: ps.filter((k) => this.nested(k, ps) && this.spaceKey(k) === this.spaceKey(s)) }));
-  }
-
-  // Working / blocked / done dots for the threads of a space (blocked pulses).
-  statusDots(t, id, tabs) {
-    return ["working", "blocked", "done"].filter((st) => tabs.some((c) => c.status === st)).map((st) =>
-      div().id(`kt-dot-${id}-${st}`).size(6).rounded(3).flex_none().bg(t[st])
-        .when(st === "blocked", (el) => el.loop("opacity", { from: 0.3, to: 1, period: 1200 })));
-  }
-
-  // The picker's line for a space: color, name, branch, its status dots, how many threads.
-  projectLine(t, s, kid) {
-    return h_flex()
-      .id(`kt-proj-${s.id}`)
-      .h(32)
-      .px(8)
-      .gap(8)
-      .items_center()
-      .rounded(12)
-      .cursor_pointer()
-      .when(s.active, (el) => el.bg(t.accent + "24"))
-      .when(!s.active, (el) => el.hover((st) => st.bg(t.hover)))
-      .on_click((_e, cx) => {
-        this.projectsOpen = false;
-        run("space.select", { id: s.id });
-        cx.notify();
-      })
-      .when(kid, (el) => el.pl(16).child(svg(I("git-branch")).size(12).flex_none().text_color(t.dim)))
-      .when(!kid, (el) => el.child(div().size(8).rounded(2).flex_none().bg(spaceColor(t, s))))
-      .child(div().flex_none().max_w(120).truncate().text_size(13).text_color(s.active ? t.foreground : t.muted).child(s.name))
-      .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(s.branch ?? ""))
-      .children(this.statusDots(t, s.id, s.tabs))
-      .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(String(s.tabs.length)));
-  }
-
-  // Every space, grouped by machine (a header only once there are several), worktrees under their repo.
-  projectPicker(t, ps) {
-    const names = [...new Set(ps.map((s) => s.machine).filter(Boolean))].sort();
-    const groups = [...(ps.some((s) => !s.machine) ? [null] : []), ...names];
-    // ponytail: no scroll of its own; with dozens of spaces it squeezes the thread list (which scrolls).
-    return v_flex()
-      .flex_none()
-      .mx(8)
-      .mt(2)
-      .mb(4)
-      .p(4)
-      .gap(1)
-      .rounded(16)
-      .border(1)
-      .border_color(t.border)
-      .bg(t.surface)
-      .children(
-        groups.flatMap((m) => {
-          const mine = ps.filter((s) => (s.machine ?? null) === m);
-          const head = groups.length > 1 ? [div().px(8).pt(6).pb(2).font_family(MONO).text_size(10.5).text_color(t.dim).child((m ?? "Cet ordinateur").toUpperCase())] : [];
-          return [...head, ...this.projectTree(mine).flatMap(({ s, kids }) => [this.projectLine(t, s, false), ...kids.map((k) => this.projectLine(t, k, true))])];
-        }),
-      )
-      .child(
-        h_flex()
-          .id("kt-proj-new")
-          .h(32)
-          .px(8)
-          .gap(8)
-          .items_center()
-          .rounded(12)
-          .text_size(13)
-          .text_color(t.muted)
-          .cursor_pointer()
-          .hover((st) => st.bg(t.hover).text_color(t.foreground))
-          // `space.new` alone opens in the focused terminal's folder (no prompt): ask for the folder,
-          // a local one (the picker is this computer's), so the space goes on this computer.
-          .on_click((_e, cx) => {
-            this.projectsOpen = false;
-            cx.notify();
-            cx.spawn(async () => {
-              const folder = await pickFolder({ prompt: "Ouvrir" });
-              if (folder) run("space.new", { folder, machine: "" });
-            });
-          })
-          .child(svg(I("plus")).size(14).flex_none())
-          .child("Nouveau projet"),
-      );
+    const groups = new Map();
+    for (const s of ps) {
+      const id = this.projectId(s) ?? `space:${s.id}`;
+      const g = groups.get(id);
+      if (!g) groups.set(id, { s, kids: [] });
+      else if (!this.spaceRepo(s)?.linked && this.spaceRepo(g.s)?.linked) { g.kids.unshift(g.s); g.s = s; }
+      else g.kids.push(s);
+    }
+    return [...groups.values()];
   }
 
   // Monocode's project bar: a colored square per project, the shown one ringed in accent,
   // a pulsing dot where an agent waits for you.
-  projectBar(t, ps) {
-    return h_flex()
-      .px(12)
-      .py(8)
-      .gap(6)
-      .flex_wrap()
-      .border_t(1)
-      .border_color(t.border)
-      .children(
-        this.projectTree(ps).map(({ s, kids }) => {
-          const group = [s, ...kids];
-          const on = group.some((x) => x.active);
-          const blocked = group.some((x) => x.status === "blocked");
-          return div()
-            .id(`kt-bar-${s.id}`)
-            .relative()
-            .size(30)
-            .p(2)
-            .flex_none()
-            .rounded(8)
-            .border(1)
-            .border_color(on ? t.accent : t.accent + "00")
-            .when(!on, (el) => el.hover((st) => st.border_color(t.border)))
-            .cursor_pointer()
-            .tooltip(s.name)
-            .on_click(() => run("space.select", { id: s.id }))
-            .child(
-              div().size_full().rounded(6).bg(spaceColor(t, s)).flex().items_center().justify_center()
-                .text_size(11).font_semibold().text_color(t.chrome).child([...s.name][0]?.toUpperCase() ?? "?"),
-            )
-            .when(blocked, (el) =>
-              el.child(div().id(`kt-bar-wait-${s.id}`).absolute().top(-3).right(-3).size(9).rounded(5).border(2).border_color(t.chrome).bg(t.blocked)
-                .loop("opacity", { from: 0.3, to: 1, period: 1200 })));
-        }),
-      );
+  // Home first (a house), then the open projects in the registry's order, then open spaces it
+  // doesn't hold yet, then the closed projects in the registry's order, dimmed (a click opens them
+  // again): openFirst, the picker's order too. Logo, else the initial on the color.
+  // A registry square drags (as the picker's lines): pressed, moved over another (a 2 px accent bar
+  // where it lands), released there, it takes that one's place among its own group, open or closed
+  // (moveInGroup: a drop outside it lands at its edge); a press released where it began is a click.
+  projectBar(t, all) {
+    const reg = registry();
+    const homes = all.filter((s) => this.isHome(s));
+    const tree = this.projectTree(all.filter((s) => !this.isHome(s))).map((g) => ({ ...g, e: this.entryOf(g.s, reg) }));
+    const isOpen = (id) => tree.some((g) => g.e?.id === id);
+    const ordered = openFirst(reg, isOpen);
+    const openReg = ordered.filter((e) => isOpen(e.id));
+    const closedReg = ordered.filter((e) => !isOpen(e.id));
+    const loose = tree.filter((g) => !g.e);
+    // The ids as shown (drop targets): Home, the open, the loose spaces, the closed.
+    this.barOpen = isOpen;
+    this.barShownIds = [...(homes.length ? ["home"] : []), ...openReg.map((e) => e.id), ...loose.map((g) => g.s.id), ...closedReg.map((e) => e.id)];
+    const from = this.barShownIds.indexOf(this.barPress);
+    // `drag`: a registry project's id (it drags); `drop`: the id it is as a target.
+    const square = (key, name, color, logo, on, dim, onClick, icon, drag, drop) => {
+      const at = this.barShownIds.indexOf(drop);
+      return div()
+        .id(`kt-bar-${key}`)
+        .relative()
+        .size(30)
+        .p(2)
+        .flex_none()
+        .rounded(8)
+        .border(1)
+        .border_color(on ? t.accent : t.accent + "00")
+        .when(!on, (el) => el.hover((st) => st.border_color(t.border)))
+        .cursor_pointer()
+        .tooltip(name)
+        .when(this.barPress === drop && this.barOver !== drop, (el) => el.opacity(0.5))
+        .when(this.barPress != null && this.barOver === drop && this.barPress !== drop, (el) => el.child(
+          div().absolute().top(3).bottom(3).w(2).rounded(1).bg(t.accent).when(from < at, (b) => b.right(-5)).when(from > at, (b) => b.left(-5))))
+        .when(Boolean(drag), (el) => el.on_mouse_down("left", () => { this.barPress = drag; this.barOver = drag; }))
+        .on_mouse_move((_e, cx) => {
+          if (this.barPress != null && this.barOver !== drop) { this.barOver = drop; cx.notify(); }
+        })
+        .on_mouse_up("left", (_e, cx) => {
+          const src = this.barPress;
+          this.barPress = null;
+          this.barOver = null;
+          if (src != null && src !== drop) this.moveProject(src, drop);
+          else if (src === drop && drag) onClick();
+          cx.notify();
+        })
+        .when(!drag, (el) => el.on_click(onClick))
+        .child(
+          div().size_full().rounded(6).bg(logo || icon ? t.raised : color).flex().items_center().justify_center()
+            .when(dim, (el) => el.opacity(0.4))
+            .child(icon ?? (logo ? image(logo).size(18) : div().text_size(11).font_semibold().text_color(t.chrome).child([...name][0]?.toUpperCase() ?? "?"))),
+        );
+    };
+    // One square per project (its group of spaces): ringed when any of them shows; a click goes
+    // to the one shown, else the group's first. Home: a house, no project color.
+    const live = ({ s, kids }, e, house = false) => {
+      const group = [s, ...kids];
+      const blocked = group.some((x) => x.status === "blocked");
+      const go = group.find((x) => x.active) ?? s;
+      const on = group.some((x) => x.active);
+      return square(s.id, house ? this.homeLabel(s) : e?.name ?? s.name, spaceColor(t, s), logoOf(e), on, false, () => run("space.select", { id: go.id }),
+        house ? svg(I("house")).size(14).text_color(on ? t.accent : t.muted) : null, e?.id ?? null, house ? "home" : e?.id ?? s.id)
+        .when(blocked, (el) =>
+          // Still: the agent's card is its one pulse.
+          el.child(div().id(`kt-bar-wait-${s.id}`).absolute().top(-3).right(-3).size(9).rounded(5).border(2).border_color(t.chrome).bg(t.blocked)));
+    };
+    // `on`: the square of the shown project.
+    const groups = [
+      ...(homes.length > 0 ? [{ key: homes[0].id, on: homes.some((x) => x.active), el: live({ s: homes[0], kids: homes.slice(1) }, null, true) }] : []),
+      ...openReg.map((e) => {
+        const g = tree.find((x) => x.e === e);
+        return { key: e.id, on: [g.s, ...g.kids].some((x) => x.active), el: live(g, e) };
+      }),
+      ...loose.map((g) => ({ key: g.s.id, on: [g.s, ...g.kids].some((x) => x.active), el: live(g, null) })),
+      ...closedReg.map((e, i) => ({ key: `closed-${e.id}`, on: false,
+        el: square(`closed-${i}`, `${e.name} (fermé)`, paint(t, e.color) ?? t.dim, logoOf(e), false, true,
+          () => run("space.new", { folder: e.folder, name: e.name, machine: e.machine ?? "" }), null, e.id, e.id) })),
+    ];
+    const n = groups.length;
+    if (!n) return null;
+    // One row that scrolls sideways once it's wider than the sidebar (measured: barW); then the
+    // arrows show, outside the scrolling row so its children stay the squares.
+    const stride = SQUARE + BAR_GAP;
+    const over = this.barW > 0 && n * stride - BAR_GAP + 2 * BAR_PAD > this.barW;
+    const view = over ? this.barW - 2 * BAR_PAD - 2 * (ARROW + 4) : n * stride;
+    const shown = Math.max(1, Math.floor((view + BAR_GAP) / stride));
+    this.barFit = { n, shown: over ? shown : n };
+    this.barAt = over ? Math.max(0, Math.min(this.barAt, n - shown)) : 0;
+    // The shown project comes into view when it changes (once, not on every render).
+    const active = groups.findIndex((g) => g.on);
+    const activeKey = active >= 0 ? groups[active].key : null;
+    if (over && activeKey !== this.barShown) {
+      this.barShown = activeKey;
+      if (active >= 0) {
+        this.barScroll.scroll_to_item(active);
+        if (active < this.barAt) this.barAt = active;
+        else if (active > this.barAt + shown - 1) this.barAt = active - shown + 1;
+      }
+    }
+    const arrow = (dir, ok) =>
+      h_flex()
+        .id(`kt-bar-${dir}`)
+        .w(ARROW)
+        .h(24)
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .rounded(6)
+        .text_color(t.muted)
+        .when(!ok, (el) => el.opacity(0.35))
+        .when(ok, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => { this.pageBar(dir === "right" ? 1 : -1); cx.notify(); }))
+        .child(svg(I(`chevron-${dir}`)).size(14));
+    // Short rules above and below, as the sidebar's other dashed ones: 12 px in, 8 px from the row.
+    const rule = () => div().flex_none().mx(BAR_PAD).h(0).border_t(1).border_dashed().border_color(t.border);
+    return v_flex()
+      .flex_none()
+      .pt(4)
+      .child(rule())
+      .child(
+        h_flex()
+          .id("kt-bar")
+          .px(BAR_PAD)
+          .my(4)
+          .gap(4)
+          .items_center()
+          // A drag let go between squares or on an arrow ends there, nothing moved.
+          .on_mouse_up("left", (_e, cx) => {
+            if (this.barPress == null) return;
+            this.barPress = null;
+            this.barOver = null;
+            cx.notify();
+          })
+          .on_size_change((size, cx) => {
+            if (size.width !== this.barW) {
+              this.barW = size.width;
+              cx.notify();
+            }
+          })
+          .when(over, (el) => el.child(arrow("left", Math.round(this.barAt) > 0)))
+          .child(
+            // 4 px above and below: room for the pulsing dot on a square's corner (the row clips).
+            h_flex()
+              .id("kt-bar-row")
+              .flex_1()
+              .min_w(0)
+              .py(4)
+              .gap(BAR_GAP)
+              .overflow_x_scroll()
+              .track_scroll(this.barScroll)
+              // ponytail: the wheel's move is estimated from its pixels (no offset to read); an arrow can
+              // show at its end a little early or late after a long wheel scroll. Exact once clicked.
+              .on_scroll_wheel((e, cx) => {
+                if (!over) return;
+                const d = e.delta.x || e.delta.y;
+                const at = Math.max(0, Math.min(n - shown, this.barAt - d / stride));
+                if (Math.round(at) !== Math.round(this.barAt)) cx.notify();
+                this.barAt = at;
+              })
+              .children(groups.map((g) => g.el)),
+          )
+          .when(over, (el) => el.child(arrow("right", Math.round(this.barAt) + shown < n))),
+      )
+      .child(rule());
   }
 
   // Every time text the rows show, in one string: what the tick compares.
@@ -607,6 +1016,19 @@ export default class Threads extends View {
     return shared("kt.snoozed") ?? {};
   }
 
+  // When a thread was last active: its agents' herdr-bridge write (updatedAt), their statusline's
+  // (updated_at: the mods can't stat a file's mtime), Herdr's last change of state, else when the
+  // list first saw it (shared "kt.firstSeen").
+  activityOf(c, all, firstSeen, now) {
+    let at = c.changed_at ?? 0;
+    for (const p of all) {
+      if (p.tab !== c.id || !p.terminal) continue;
+      const l = this.live[p.terminal];
+      at = Math.max(at, l?.updatedAt ?? 0, l?.slAt ?? 0);
+    }
+    return at || firstSeen[c.id] || now;
+  }
+
   // Snoozed now: not yet due, and its agent hasn't asked for you since.
   asleep(c) {
     const s = this.snoozed()[c.id];
@@ -622,12 +1044,18 @@ export default class Threads extends View {
     setShared("kt.snoozed", all);
   }
 
-  // The pull request of a branch, asked of `gh` at most every few minutes.
+  // The pull request of a branch, asked of `gh` at most every few minutes (pr-pick.js chooses it).
+  // None on a long-lived branch, nor on the repo's default branch.
   pr(cwd, branch, on) {
-    if (!cwd || !branch || DEFAULT_BRANCHES.includes(branch)) return null;
+    if (!cwd || !branch || longLived(branch, this.defaults[this.repoOf(on, cwd)])) return null;
     const key = JSON.stringify([on ?? null, cwd, branch]);
     if (!(Date.now() - (this.asked[key] ?? 0) < PR_EVERY) && !this.queue.includes(key)) this.queue.push(key);
     return this.prs[key] ?? null;
+  }
+
+  // A folder's repo (its git common dir, as findRepos keys it), else the folder itself.
+  repoOf(on, cwd) {
+    return this.repos[JSON.stringify([on ?? null, cwd])]?.key ?? JSON.stringify([on ?? null, cwd]);
   }
 
   lookup(cx) {
@@ -638,10 +1066,22 @@ export default class Threads extends View {
       for (const key of keys) {
         const [on, cwd, branch] = JSON.parse(key);
         this.asked[key] = Date.now();
-        const r = await exec("gh", ["pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "number,state,url"], { cwd, on }).catch(() => ({ code: 1 }));
+        const repo = this.repoOf(on, cwd);
+        if (!(repo in this.defaults)) {
+          const d = await exec("gh", ["repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"], { cwd, on }).catch(() => ({ code: 1 }));
+          this.defaults[repo] = d.code === 0 ? d.stdout.trim() || null : null;
+        }
+        if (longLived(branch, this.defaults[repo])) {
+          this.prs[key] = null;
+          continue;
+        }
+        const [r, h] = await Promise.all([
+          exec("gh", ["pr", "list", "--head", branch, "--state", "all", "--limit", "5", "--json", "number,state,url,headRefOid,baseRefName"], { cwd, on }).catch(() => ({ code: 1 })),
+          exec("git", ["rev-parse", "HEAD"], { cwd, on }).catch(() => ({ code: 1 })),
+        ]);
         let found = null;
         try {
-          found = r.code === 0 ? (JSON.parse(r.stdout)[0] ?? null) : null;
+          found = r.code === 0 ? pickPr(JSON.parse(r.stdout), branch, h.code === 0 ? h.stdout.trim() : null) : null;
         } catch {}
         this.prs[key] = found;
       }
@@ -681,30 +1121,15 @@ export default class Threads extends View {
     setShared("kt.pins", pins.includes(id) ? pins.filter((p) => p !== id) : [...pins, id]);
   }
 
-  // kbrdn.dev `.tag`: mono uppercase pill, border 30% / fill 10% of its own color.
-  tag(color, text, lead) {
-    return h_flex()
-      .flex_none()
-      .h(20)
-      .px(8)
-      .gap(5)
-      .items_center()
-      .rounded_full()
-      .border(1)
-      .border_color(color + "4d")
-      .bg(color + "1a")
-      .text_color(color)
-      .font_family(MONO)
-      .text_size(10.5)
-      .when(Boolean(lead), (el) => el.child(lead))
-      .child(text);
-  }
 
+  // Monocode's status, mono 10.5 with no frame: a spinner while working, a pulsing dot when it needs you.
   status(t, c) {
+    const mono = (color) => h_flex().flex_none().gap(5).items_center().font_family(MONO).text_size(10.5).text_color(color);
     if (c.status === "blocked")
-      return this.tag(t.blocked, "NEEDS YOU", div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }));
-    if (c.status === "done") return this.tag(t.done, "DONE");
-    if (c.status === "working") return this.tag(t.working, `WORKING${c.working_since ? ` ${duration(c.working_since).toUpperCase()}` : ""}`);
+      return mono(t.blocked).child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 })).child("NEEDS YOU");
+    if (c.status === "done") return mono(t.done).child("DONE");
+    if (c.status === "working")
+      return mono(t.working).child(svg(SPIN).size(11).spin(900)).child(`WORKING${c.working_since ? ` ${duration(c.working_since).toUpperCase()}` : ""}`);
     return null;
   }
 
@@ -730,24 +1155,239 @@ export default class Threads extends View {
       .when(Boolean(label), (el) => el.child(label));
   }
 
-  row(t, r, all) {
+  // ---------- grouped by project ----------
+
+  // The rows by project: Home's spaces one group, every other by its registry project (a worktree
+  // with its repo), else its space. Each group: its rows in byNeed order, how many need you, where
+  // the registry puts it; the groups in byProject order.
+  projectGroups(rows, pins) {
+    const reg = registry();
+    const map = new Map();
+    for (const r of rows) {
+      const home = this.isHome(r.w);
+      const key = home ? "home" : (this.projectId(r.w) ?? `space:${r.w.id}`);
+      let g = map.get(key);
+      if (!g) map.set(key, (g = { key, home, s: r.w, e: home ? null : this.entryOf(r.w, reg), rows: [] }));
+      g.rows.push(r);
+    }
+    const groups = [...map.values()];
+    for (const g of groups) {
+      g.rows.sort((a, b) => byNeed({ id: a.c.id, status: a.c.status, act: a.act }, { id: b.c.id, status: b.c.status, act: b.act }, pins));
+      g.need = g.rows.filter((r) => r.c.status === "blocked").length;
+      g.at = g.e ? reg.indexOf(g.e) : -1;
+    }
+    return groups.sort(byProject);
+  }
+
+  // A project's header, one thin line (no frame, no rule: the space between groups is enough): its
+  // 14 px logo (the registry's, for the appearance now), else its initial on its color, Home's
+  // house; its name as a mono eyebrow, how many threads, "N te demandent" only when some do; a
+  // chevron only once folded (a click, or h on it or one of its threads, folds it).
+  groupHead(t, g, i) {
+    const name = g.home ? this.homeLabel(g.s) : g.e?.name ?? g.s.name;
+    const logo = g.home ? null : logoOf(g.e);
+    const cursor = this.keyed && this.cur === `grp:${g.key}`;
+    const folded = this.folded.has(g.key);
+    const mark = g.home
+      ? svg(I("house")).size(12).text_color(t.muted)
+      : logo
+        ? image(logo).size(14).rounded(3)
+        : div().size(14).rounded(3).bg(paint(t, g.e?.color) ?? spaceColor(t, g.s)).flex().items_center().justify_center()
+          .child(div().text_size(8.5).font_semibold().text_color(t.chrome).child([...name][0]?.toUpperCase() ?? "?"));
+    return h_flex()
+      .id(`kt-grp-${i}`)
+      .mx(8)
+      .mt(i ? 10 : 2)
+      .px(10)
+      .h(22)
+      .gap(7)
+      .items_center()
+      .rounded(8)
+      .border(1)
+      .border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+      .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+      .cursor_pointer()
+      .on_click((_e, cx) => {
+        if (folded) this.folded.delete(g.key);
+        else this.folded.add(g.key);
+        cx.notify();
+      })
+      .child(div().size(14).flex_none().flex().items_center().justify_center().child(mark))
+      .child(div().min_w(0).truncate().font_family(MONO).text_size(10).text_color(cursor ? t.foreground : t.muted).child(name.toUpperCase()))
+      .child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(String(g.rows.length)))
+      .child(div().flex_1())
+      .when(g.need > 0, (el) => el.child(h_flex().flex_none().h(16).px(6).items_center().rounded_full().border(1)
+        .border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a")).font_family(MONO).text_size(9.5).text_color(t.blocked)
+        .child(`${g.need} te demande${g.need > 1 ? "nt" : ""}`)))
+      .when(folded, (el) => el.child(svg(I("chevron-right")).size(11).flex_none().text_color(t.dim)));
+  }
+
+  // ---------- compact rows, opened ----------
+
+  // Compact: the row under the pointer, the keys' cursor, or the one just left open as a detailed
+  // card; detailed cards don't change.
+  expanded(id) {
+    return this.compact && (id === this.hover || id === this.keep || (this.keyed && id === this.cur));
+  }
+
+  // A row the pointer or the cursor just left stays open 150 ms (one timer, the last one wins), so
+  // going from row to row doesn't flicker; then it folds back, no animation.
+  linger(id, cx) {
+    if (!this.compact || !id) return;
+    this.keep = id;
+    const tok = (this.keepTok = (this.keepTok ?? 0) + 1);
+    cx.timer.after(150, (cx) => {
+      if (this.keepTok !== tok) return;
+      this.keep = null;
+      cx.notify();
+    });
+  }
+
+  // ---------- keys (vim.js; kt-keys lists them) ----------
+
+  // The keyboard comes here (ctrl-b h, a key command): normal mode, the cursor on the shown thread.
+  focusIn() {
+    this.handle.focus();
+    this.vim.normal();
+    if (!this.flat.some((x) => x.id === this.cur)) {
+      const here = this.flat.find((x) => x.r?.w.active && x.r?.c.active);
+      this.cur = (here ?? this.flat[0])?.id ?? null;
+    }
+    this.reveal = true;
+  }
+
+  key(e, cx) {
+    if (!this.act(this.vim.handle(e), cx)) return; // not ours: ctrl-b, cmd-* go on
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  // A thread's terminals: the one it shows first, and its agent's (else the lead).
+  leads(c) {
+    const mine = panes().filter((p) => p.tab === c.id && p.terminal);
+    const lead = mine.find((p) => p.focused) ?? mine.find((p) => p.program?.agent) ?? mine[0];
+    return { lead, agent: mine.find((p) => p.program?.agent) ?? lead };
+  }
+
+  // One vim action on the list; false: not one the sidebar has, and the key goes on.
+  act(a, cx) {
+    if (!a) return false;
+    if (a === "pending" || a === "count") return true;
+    const flat = this.flat;
+    const i = flat.findIndex((x) => x.id === this.cur);
+    const x = flat[i];
+    const r = x?.r;
+    if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
+      const j = step(a, i, flat.length, this.vim.count, this.compact ? 14 : 7);
+      if (j >= 0) this.cur = flat[j].id;
+      if (this.cur !== x?.id) this.linger(x?.id, cx);
+      this.reveal = true;
+    } else if (a === "tab-next" || a === "tab-prev") {
+      // The next (previous) group's first row: pinned, the date groups, the snoozed shelf.
+      const groups = [...new Set(flat.map((y) => y.group))];
+      const g = groups.indexOf(x?.group);
+      const to = groups[a === "tab-next" ? Math.min(groups.length - 1, g + 1) : Math.max(0, g - 1)];
+      const first = flat.find((y) => y.group === to);
+      if (first) {
+        this.cur = first.id;
+        this.reveal = true;
+      }
+    } else if (a === "left") {
+      // h folds a project (from its header or one of its threads), or the snoozed shelf.
+      if (x?.fold) {
+        this.folded.add(x.fold);
+        this.cur = `grp:${x.fold}`;
+      } else if (x?.group === "snoozed" && this.showSnoozed) {
+        this.showSnoozed = false;
+        this.cur = "snoozed";
+      }
+    } else if (a === "right" || a === "open") {
+      if (x?.group === "nav") this.nav[x.id]();
+      else if (x?.head) {
+        if (a === "right" || this.folded.has(x.fold)) this.folded.delete(x.fold);
+        else this.folded.add(x.fold);
+      } else if (x?.id === "snoozed") this.showSnoozed = a === "right" ? true : !this.showSnoozed;
+      else if (r) {
+        // l shows the thread and keeps the keyboard; enter / o go to its terminal.
+        show("thread");
+        run("tab.select", { id: r.c.id });
+        const { lead } = this.leads(r.c);
+        if (a === "open" && lead) run("pane.focus", { pane: lead.pane });
+        else this.handle.focus();
+      }
+    } else if (a === "archive") {
+      // Archive (tab.settle, reversible: no confirmation); in the archived view, restore.
+      if (r) {
+        this.cur = (flat[i + 1] ?? flat[i - 1])?.id ?? null;
+        if (r.c.settled) run("tab.unsettle", { id: r.c.id });
+        else this.settle(r.w, r.c);
+      }
+    } else if (a === "delete") {
+      if (r) openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
+        title: "Fermer ce thread ?", detail: `${label(r.c, this.leads(r.c).agent)} : ses terminaux s'arrêtent.`,
+        label: "Fermer", danger: true, command: { name: "tab.close", args: { id: r.c.id } } } });
+    } else if (a === "yank") {
+      const at = r ? this.leads(r.c).lead?.cwd ?? r.w.folder : null;
+      if (at) {
+        cx.write_to_clipboard(at);
+        notify({ title: "Copié", body: at, level: "success", timeout: 2000 });
+      }
+    } else if (a === "refresh") {
+      this.asked = {};
+      this.readLive(cx);
+      this.readReports(cx);
+    } else if (a === "escape" || a === "quit") run("pane.go", { direction: "right" });
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "sidebar" } });
+    else if (a === "scroll-left" || a === "scroll-right") this.pageBar(a === "scroll-right" ? 1 : -1);
+    else return false;
+    return true;
+  }
+
+  // A drop in the bar: `fromId` takes `toId`'s place in its group (moveInGroup), the registry rewritten.
+  moveProject(fromId, toId) {
+    const next = moveInGroup(registry(), fromId, toId, this.barOpen ?? (() => false), this.barShownIds ?? []);
+    if (next) setShared("kt.projects", next);
+  }
+
+  // H / L and the bar's arrows: a page of squares (those shown, less one) to the left or right.
+  // scroll_to_item moves only as much as needed: going right, the square a page past the last
+  // shown comes to the right edge; going left, the one a page before the first, to the left edge.
+  pageBar(dir) {
+    const { n, shown } = this.barFit ?? {};
+    if (!n || n <= shown) return;
+    const page = Math.max(1, shown - 1);
+    const first = Math.min(Math.round(this.barAt), n - shown);
+    const to = dir > 0 ? Math.min(n - 1, first + shown - 1 + page) : Math.max(0, first - page);
+    this.barScroll.scroll_to_item(to);
+    this.barAt = dir > 0 ? Math.max(0, to - shown + 1) : to;
+  }
+
+  row(t, r, all, cx) {
     const { w, c } = r;
     const mine = all.filter((p) => p.tab === c.id && p.terminal);
     const lead = mine.find((p) => p.focused) ?? mine.find((p) => p.program?.agent) ?? mine[0];
-    const programs = [...new Map(mine.map((p) => [p.program?.key, p.program])).values()].filter((p) => p && !p.shell);
+    const agent = mine.find((p) => p.program?.agent) ?? lead;
     const st = this.status(t, c);
-    const pr = this.pr(lead?.cwd, lead?.branch, w.machine);
-    const here = w.active && c.active;
+    // The branch's PR: /me:report's when it has one (the card's other facts come from it), else gh's.
+    const reported = lead?.branch && !longLived(lead.branch, this.defaults[this.repoOf(w.machine, lead?.cwd)]) ? this.reportOf(lead, w)?.pr : null;
+    const pr = reported ?? this.pr(lead?.cwd, lead?.branch, w.machine);
+    // The shown thread, unless a page (Inbox, Skills, MCP, Worktrees) covers it.
+    const here = w.active && c.active && !this.paged;
     const hovered = this.hover === c.id;
+    // The keys' cursor, while the list has the keyboard: an accent border.
+    const cursor = this.keyed && this.cur === c.id;
     const pinned = this.pins().includes(c.id);
     const asleep = this.asleep(c);
     const pj = this.project(w, c, all);
     // Quiet rows recede: what needs you (or what you're on) stays bright.
-    const recede = !here && !hovered && c.status !== "blocked" && c.status !== "done";
+    const recede = !here && !hovered && !cursor && c.status !== "blocked" && c.status !== "done";
     const mono = (color, text) => div().flex_none().font_family(MONO).text_size(11).text_color(color).child(text);
+    // Compact: the row under the pointer or the keys' cursor opens as a detailed card (expanded()).
+    const compact = this.compact && !this.expanded(c.id);
+    const ago = age(c.settled ? c.settled_at : c.changed_at).toUpperCase();
     const right = hovered
       ? c.settled
-        ? this.button(`kt-un-${c.id}`, "Unsettle", "check", () => run("tab.unsettle", { id: c.id }))
+        ? this.button(`kt-un-${c.id}`, "Restaurer", "archive-restore", () => run("tab.unsettle", { id: c.id }))
         : asleep
           ? this.button(`kt-wake-${c.id}`, "Wake", "clock", () => this.snooze(c.id, null))
           : h_flex()
@@ -758,57 +1398,86 @@ export default class Threads extends View {
                 }),
               )
               .child(this.button(`kt-pin-${c.id}`, pinned ? "Unpin" : "", "pin", () => this.togglePin(c.id)))
-              .child(this.button(`kt-settle-${c.id}`, "Settle", "check", () => this.settle(w, c)))
+              // Archive: tab.settle, the thread keeps running; Herdr brings it back when its agent needs you.
+              .child(this.button(`kt-settle-${c.id}`, "", "archive", () => this.settle(w, c)).tooltip("Archiver"))
       : asleep
         ? mono(t.working, until(this.snoozed()[c.id].until).toUpperCase())
-        : (st ?? mono(t.dim, age(c.settled ? c.settled_at : c.changed_at).toUpperCase()));
+        // A detailed blocked card says it once, in its line 3 pill: up here only the ring.
+        : c.status === "blocked" && !compact && !c.settled
+          ? null
+          // Compact: the status and how long since it changed (a working one's status says how long).
+          : compact && st
+            ? h_flex().flex_none().gap(8).items_center().child(st).when(c.status !== "working" && Boolean(ago), (el) => el.child(mono(t.dim, ago)))
+            : (st ?? mono(t.dim, ago));
     const short = c.settled || asleep;
-    // Monocode's program tile: the agent's program (else what runs in it); a mod-only
-    // thread (the Inbox) shows the layers glyph. The status stays on the tags.
-    const modOnly = !mine.length && all.some((p) => p.tab === c.id && p.mod);
-    const avatar = modOnly
-      ? tile(t, { icon: I("layers"), tint: true, color: t.muted })
-      : tile(t, (mine.find((p) => p.program?.agent) ?? lead)?.program);
-    const agentRows = short ? null : this.agentRows(t, c, mine, here);
-    const body = v_flex()
+    const title = label(c, agent);
+    // Line 2: model · effort (statusline) · branch, else the project; its eyebrow only across projects.
+    const sl = agent?.terminal ? this.live[agent.terminal]?.sl : null;
+    const facts = [sl?.model, sl?.effort, lead?.branch || (!this.everyProject && pj.name)].filter(Boolean).join(" · ");
+    const live = this.liveLine(t, c, lead);
+    const todos = agent?.terminal ? this.live[agent.terminal]?.todos : null;
+    const report = this.reportOf(lead, w);
+    const ci = this.ciMark(t, report);
+    const working = c.status === "working";
+    const focus = here && !compact && !short ? this.focusCard(t, { sl, todos, lead, agent, working, report, c }) : null;
+    // The context everywhere: a ring at the line's right end (16 px compact, 18 detailed).
+    const ctxRing = sl?.ctx_pct != null && !short ? ring(t, `kt-ring-${c.id}`, sl.ctx_pct, compact ? 16 : 18) : null;
+    // The program's tile, alive (companion-logo.js): its own icon, a bob while working, what it does in
+    // a corner (herdr-bridge's action), "!" blocked, sparkles once done. 24×20, 20×16 compact. A click
+    // hops it once; the card's own click still runs (it doesn't stop the event).
+    const bridge = agent?.terminal ? this.live[agent.terminal] : null;
+    const pet = companion({
+      program: agent?.program, state: agent?.status ?? c.status, id: `kt-c-${c.id}`, cx,
+      action: bridge?.state ? (bridge.action ?? null) : undefined, since: bridge?.state ? bridge.since : undefined,
+      size: compact ? 20 : 24, height: compact ? 16 : 20, memo: (this.memos[agent?.terminal ?? c.id] ??= {}),
+    });
+    // Compact: one 36 px line (28 + the card's 4 px around it): tile, title, ring, status.
+    const content = v_flex()
       .flex_1()
       .min_w(0)
-      .gap(short ? 0 : 3)
+      .px(6)
+      .py(compact ? 0 : short ? 2 : 6)
+      .gap(4)
       .child(
         h_flex()
-          .h(20)
-          .gap(7)
+          .h(compact ? 28 : 20)
+          .gap(8)
           .items_center()
-          .child(div().w(8).h(8).rounded(2).flex_none().bg(spaceColor(t, pj.first)))
-          // kbrdn.dev `.eyebrow`: the project.
-          .child(div().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.muted).child(pj.name.toUpperCase()))
-          .when(Boolean(pj.machine), (el) => el.child(div().flex_none().px(6).rounded_full().bg(t.raised).text_size(11).text_color(t.dim).child(pj.machine)))
-          .child(div().flex_1())
+          // Monocode's program tile, once: the agent's program, else what runs in the thread.
+          .child(pet)
+          .child(div().flex_1().min_w(0).truncate().text_size(short || compact ? 13 : 13.5).font_medium().text_color(short ? t.muted : t.foreground).child(title))
           .when(pinned && !hovered, (el) => el.child(svg(I("pin")).size(12).flex_none().text_color(t.dim)))
-          .child(right),
+          .when(compact && Boolean(ctxRing), (el) => el.child(ctxRing))
+          .when(Boolean(right), (el) => el.child(right))
+          .when(!compact && Boolean(ctxRing), (el) => el.child(ctxRing)),
       )
-      .when(!short, (el) =>
+      .when(!short && !compact, (el) =>
         el
-          .child(div().truncate().text_size(14).font_medium().text_color(t.foreground).child(c.name))
-          .when(Boolean(this.liveLine(t, c, lead)), (el) => el.child(this.liveLine(t, c, lead)))
-          .when(Boolean(agentRows), (el) => el.child(agentRows))
-          .when(Boolean(this.flowStrip(t, lead)), (el) => el.child(this.flowStrip(t, lead)))
-          .when(this.reportPills(t, lead, w).length > 0, (el) => el.child(h_flex().gap(4).flex_wrap().children(this.reportPills(t, lead, w))))
           .child(
             h_flex()
-              .h(18)
+              .h(16)
               .gap(6)
               .items_center()
-              .text_color(t.dim)
-              .when(Boolean(lead?.branch), (el) =>
-                el.child(svg(I("git-branch")).size(12).flex_none()).child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).child(lead.branch)),
+              .text_size(11)
+              .text_color(t.muted)
+              .when(this.everyProject, (el) =>
+                el
+                  .child(div().size(6).rounded(2).flex_none().bg(spaceColor(t, pj.first)))
+                  // kbrdn.dev `.eyebrow`: the project.
+                  .child(div().flex_none().max_w(120).truncate().font_family(MONO).text_size(10.5).child(pj.name.toUpperCase())),
               )
-              .when(!lead?.branch, (el) => el.child(div().flex_1()))
+              .child(div().flex_1().min_w(0).truncate().child(facts))
+              .when(Boolean(pj.machine), (el) => el.child(div().flex_none().px(6).rounded_full().bg(t.raised).text_color(t.dim).child(pj.machine)))
               .when(Boolean(pr), (el) => el.child(this.badge(t, c, pr)))
-              .children(programs.filter((p) => p.icon).slice(0, 3).map((p) => glyph(p, 14, t.muted))),
-          ),
+              .when(Boolean(ci), (el) => el.child(ci)),
+          )
+          // Line 3: the last action (or "a besoin de toi"), the todos' count on the right.
+          .when(Boolean(live) || todos?.total > 0, (el) => el.child(
+            h_flex().min_h(16).gap(8).items_center()
+              .child(div().flex_1().min_w(0).when(Boolean(live), (el) => el.child(live)))
+              .when(todos?.total > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(`${todos.done}/${todos.total}`))),
+          )),
       )
-      .when(short, (el) => el.child(div().truncate().text_size(13).text_color(t.muted).child(c.name)))
       .when(this.snoozing === c.id, (el) =>
         el.child(
           h_flex()
@@ -824,48 +1493,57 @@ export default class Threads extends View {
             ),
         ),
       );
-    return h_flex()
+    // The card: radius 12, padding 10 (4 + the content's 6, so the gauges' inner card sits 4 in).
+    const card = v_flex()
       .id(`kt-row-${c.id}`)
-      .mx(8)
-      .px(10)
-      .py(short ? 6 : 8)
-      .gap(10)
-      .items_start()
+      .p(4)
+      .gap(4)
       .rounded(12)
       // kbrdn.dev SegmentInk on the shown thread (transparent border elsewhere: no shift).
       .border(1)
-      .border_color(here ? t.accent + "66" : t.accent + "00")
-      .when(here, (el) => el.bg(t.accent + "24"))
-      .when(!here, (el) => el.hover((s) => s.bg(t.hover)))
+      // The keys' cursor: a 1 px accent ring on the card, with the ink.
+      .border_color(cursor ? alpha(t.accent, "99") : here ? t.accent + "66" : t.accent + "00")
+      .when(here || cursor, (el) => el.bg(alpha(t.accent, "24")))
+      .when(!here && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
       .cursor_pointer()
-      .when(recede, (el) => el.opacity(0.62))
       .on_hover((h, cx) => {
         if (h) this.hover = c.id;
-        else if (this.hover === c.id) this.hover = null;
+        else if (this.hover === c.id) {
+          this.hover = null;
+          this.linger(c.id, cx);
+        }
         if (!h && this.snoozing === c.id) this.snoozing = null;
         cx.notify();
       })
-      .on_click(() => run("tab.select", { id: c.id }))
+      .on_click(() => {
+        show("thread");
+        run("tab.select", { id: c.id });
+      })
       .on_mouse_down("right", () =>
         openOverlay({ mod: "menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: w.id, settled: c.settled } } }),
       )
-      .child(avatar)
-      .child(body);
+      .child(content)
+      .when(Boolean(focus), (el) => el.child(focus));
+    return v_flex()
+      .mx(8)
+      .when(recede, (el) => el.opacity(0.62))
+      .child(card);
   }
 
   // kbrdn.dev `.eyebrow` shelf header.
-  section(id, label, open, onClick) {
+  section(id, label, open, onClick, cursor = false) {
     const t = this.t;
     return h_flex()
       .id(id)
-      .mx(18)
+      .mx(cursor ? 8 : 18)
+      .when(cursor, (el) => el.px(9).py(3).rounded(12).border(1).border_color(alpha(t.accent, "99")).bg(alpha(t.accent, "24")))
       .mt(10)
       .mb(4)
       .gap(8)
       .items_center()
       .font_family(MONO)
       .text_size(11)
-      .text_color(t.muted)
+      .text_color(cursor ? t.foreground : t.muted)
       .cursor_pointer()
       .hover((s) => s.text_color(t.foreground))
       .on_click(onClick)
@@ -876,6 +1554,7 @@ export default class Threads extends View {
 
   render(cx) {
     this.findRepos(cx);
+    this.followGlass(cx);
     const t = (this.t = theme());
     this.ticks = 0;
     this.shownClocks = this.clocks();
@@ -883,22 +1562,110 @@ export default class Threads extends View {
     const ps = spaces();
     // The project filter (shared "kt.project"): "*" lists every project; anything else
     // follows the shown space, with its repo's worktree spaces.
-    const everyProject = shared("kt.project") === "*";
+    const everyProject = (this.everyProject = shared("kt.project") === "*");
+    const compact = (this.compact = shared("kt.density") === "compact");
     const shown = ps.find((w) => w.active);
     const scope = shown && !everyProject ? this.spaceKey(shown) : null;
     const every = ps.flatMap((w) => w.tabs.map((c) => ({ w, c, pj: this.project(w, c, all) })));
     const rows = every.filter((r) => !scope || r.w.id === shown.id || this.spaceKey(r.w) === scope);
-    const inbox = all.find((x) => x.mod === "kt-inbox");
-    const inboxShown = Boolean(inbox) && shown?.tabs.some((c) => c.active && c.id === inbox.tab);
+    const page = find(layout(), VIEW)?.active ?? "thread";
+    const inboxOn = page === "inbox";
+    this.paged = page !== "thread";
+    const worktrees = this.worktreeCount(shown, cx);
+    // The filter (kt-thread-filter, shared "kt.threadFilter"): the archived view or the active one,
+    // then status, period (by activity) and program; none set lets everything through.
+    const filter = filterOf(shared("kt.threadFilter"));
+    const now = Date.now();
+    const firstSeen = shared("kt.firstSeen") ?? {};
+    for (const r of rows) {
+      r.act = this.activityOf(r.c, all, firstSeen, now);
+      r.prog = all.find((p) => p.tab === r.c.id && p.program?.agent)?.program?.key ?? null;
+    }
+    const kept = rows.filter((r) => passes(filter, { status: r.c.status, activity: r.act, program: r.prog }, now));
     const pins = this.pins();
     const awake = (r) => !r.c.settled && !this.asleep(r.c);
-    const pinned = pins.map((id) => rows.find((r) => r.c.id === id && awake(r))).filter(Boolean);
-    const active = rows.filter((r) => awake(r) && !pins.includes(r.c.id)).sort((a, b) => num(b.c.id) - num(a.c.id));
-    const snoozed = rows.filter((r) => this.asleep(r.c)).sort((a, b) => this.snoozed()[a.c.id].until - this.snoozed()[b.c.id].until);
-    const settled = rows.filter((r) => r.c.settled).sort((a, b) => (b.c.settled_at ?? 0) - (a.c.settled_at ?? 0));
+    const pinned = filter.archived ? [] : pins.map((id) => kept.find((r) => r.c.id === id && awake(r))).filter(Boolean);
+    const active = filter.archived ? [] : kept.filter((r) => awake(r) && !pins.includes(r.c.id));
+    const snoozed = filter.archived ? [] : kept.filter((r) => this.asleep(r.c)).sort((a, b) => this.snoozed()[a.c.id].until - this.snoozed()[b.c.id].until);
+    // Archived (tab.settle): dated by when they were put away.
+    const archived = filter.archived ? kept.filter((r) => r.c.settled).map((r) => ({ ...r, act: r.c.settled_at ?? r.act })) : [];
+    // Monocode's date groups, newest thread first inside each (a group never reshuffles on activity).
+    const dated = (list) => GROUPS.map((name, i) => [name, list.filter((r) => groupOf(r.act, now) === i).sort((a, b) => num(b.c.id) - num(a.c.id))])
+      .filter(([, l]) => l.length > 0);
+    // Grouped by project (the default; "Grouper par" in the filter menu, shared "kt.threadFilter"
+    // group): one group per project (Home its own), the pinned on top of theirs, then what needs you,
+    // done, working, idle (byNeed); Home first, then the projects a thread of which needs you, then the
+    // registry's order (byProject). Grouped by date: the pinned on their shelf, then the date groups.
+    const byDate = filter.group === "date";
+    const listed = byDate ? dated(filter.archived ? archived : active) : [];
+    const projects = byDate ? [] : this.projectGroups(filter.archived ? archived : [...pinned, ...active], pins);
+    const shelf = byDate ? [...pinned].sort((a, b) => byNeed({ id: a.c.id, status: a.c.status, act: a.act }, { id: b.c.id, status: b.c.status, act: b.act }, pins)) : [];
+    // One project shown ("Projet actif"): its header would only repeat the selector above.
+    const heads = projects.length > 1 || everyProject;
+    if (!heads) for (const g of projects) this.folded.delete(g.key); // no header to unfold it from
+    // What the keys' cursor walks: the navigation lines on top (the shown project, New thread, the
+    // pages, Search; enter runs their click), then the rows in the order shown (a project's header a
+    // stop too: h / l fold and unfold it), the snoozed shelf's header too.
+    this.keyed = this.handle.is_focused();
+    this.nav = {
+      "kt-project": () => this.openProjects(),
+      "kt-new": () => { show("thread"); run("mod.open", { name: "kt-new" }); },
+      "kt-inbox": () => show("inbox"),
+      "kt-skills": () => show("skills"),
+      "kt-mcp": () => show("mcp"),
+      "kt-gwm": () => show("gwm"),
+      "kt-search": () => run("mod.open", { name: "kt-picker" }),
+    };
+    this.flat = [
+      ...Object.keys(this.nav).map((id) => ({ id, group: "nav", r: null })),
+      ...shelf.map((r) => ({ id: r.c.id, group: "pinned", r })),
+      ...listed.flatMap(([name, list]) => list.map((r) => ({ id: r.c.id, group: name, r }))),
+      ...projects.flatMap((g) => [
+        ...(heads ? [{ id: `grp:${g.key}`, group: g.key, fold: g.key, head: true, r: null }] : []),
+        ...(this.folded.has(g.key) ? [] : g.rows.map((r) => ({ id: r.c.id, group: g.key, fold: g.key, r }))),
+      ]),
+      ...(snoozed.length ? [{ id: "snoozed", group: "snoozed", r: null }] : []),
+      ...(this.showSnoozed ? snoozed.map((r) => ({ id: r.c.id, group: "snoozed", r })) : []),
+    ];
+    // The list's children, the cursor's brought into view once after it moved.
+    const items = [];
+    const put = (id, el) => {
+      if (this.reveal && id === this.cur) {
+        this.listScroll.scroll_to_item(items.length);
+        this.reveal = false;
+      }
+      items.push(el);
+    };
+    if (filter.archived) items.push(h_flex().id("kt-archived").mx(18).mt(2).mb(2).gap(8).items_center()
+      .font_family(MONO).text_size(10.5).text_color(t.muted)
+      .child(svg(I("archive")).size(12).flex_none())
+      .child(div().flex_1().child(`ARCHIVÉS · ${archived.length}`))
+      .child(div().id("kt-archived-back").px(6).rounded(6).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => { setShared("kt.threadFilter", { ...filter, archived: false }); cx.notify(); })
+        .child("ACTIFS")));
+    for (const r of shelf) put(r.c.id, this.row(t, r, all, cx));
+    if (shelf.length > 0) items.push(div().mx(18).my(6).h(1).bg(t.border));
+    for (const [name, list] of listed) {
+      items.push(div().mx(18).mt(8).mb(2).text_size(12).text_color(t.dim).child(name));
+      for (const r of list) put(r.c.id, this.row(t, r, all, cx));
+    }
+    projects.forEach((g, i) => {
+      if (heads) put(`grp:${g.key}`, this.groupHead(t, g, i));
+      if (!this.folded.has(g.key)) for (const r of g.rows) put(r.c.id, this.row(t, r, all, cx));
+    });
+    if (!pinned.length && !listed.length && !projects.length && !snoozed.length) items.push(div().mx(18).mt(10).text_size(12.5).text_color(t.dim)
+      .child(filter.archived ? "Aucun thread archivé." : filtering(filter) ? "Aucun thread pour ces filtres." : "Aucun thread."));
+    if (snoozed.length > 0) put("snoozed", this.section("kt-snoozed", `Snoozed (${snoozed.length})`, this.showSnoozed, (_e, cx) => {
+      this.showSnoozed = !this.showSnoozed;
+      cx.notify();
+    }, this.keyed && this.cur === "snoozed"));
+    if (this.showSnoozed) for (const r of snoozed) put(r.c.id, this.row(t, r, all, cx));
+    items.push(div().h(12));
 
-    // Monocode's 32 px navigation lines.
-    const tool = (id, icon, label, onClick, right) =>
+    // Monocode's 32 px navigation lines; `on`: the kbrdn.dev ink (transparent border elsewhere: no shift).
+    // The keys' cursor on one: a 1 px accent ring and the ink.
+    const navCur = (id) => this.keyed && this.cur === id;
+    const tool = (id, icon, label, onClick, right, on = false) =>
       h_flex()
         .id(id)
         .mx(8)
@@ -907,21 +1674,34 @@ export default class Threads extends View {
         .gap(10)
         .items_center()
         .rounded(12)
+        .border(1)
+        .border_color(navCur(id) ? alpha(t.accent, "99") : on ? t.accent + "66" : t.accent + "00")
+        .when(on || navCur(id), (el) => el.bg(alpha(t.accent, "24")))
         .text_size(13)
-        .text_color(t.muted)
+        .text_color(on || navCur(id) ? t.foreground : t.muted)
         .cursor_pointer()
-        .hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .when(!on && !navCur(id), (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
         .on_click(onClick)
         .child(svg(I(icon)).size(15))
         .child(div().flex_1().child(label))
         .when(Boolean(right), (el) => el.child(right));
 
+    const bar = this.projectBar(t, ps);
     return v_flex()
+      .id("kt-root")
       .size_full()
       .bg(t.chrome)
       .text_color(t.foreground)
+      // No frame of its own when it has the keyboard: the focus shows on the element under the cursor.
+      .track_focus(this.handle)
+      .on_key_down((e, cx) => this.key(e, cx))
+      // Its width and the window's height (the brand block, 62, above it): the project picker's room.
+      .on_size_change((size) => {
+        this.width = size.width;
+        this.winH = size.height + 62;
+      })
       .pt(4)
-      // The shown project; its picker below.
+      // The shown project; a click opens its picker under it, floating (openProjects).
       .child(
         h_flex()
           .id("kt-project")
@@ -931,34 +1711,39 @@ export default class Threads extends View {
           .gap(9)
           .items_center()
           .rounded(12)
+          .border(1)
+          .border_color(navCur("kt-project") ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+          .when(navCur("kt-project"), (el) => el.bg(alpha(t.accent, "24")))
           .cursor_pointer()
-          .when(this.projectsOpen, (el) => el.bg(t.hover))
           .hover((s) => s.bg(t.hover))
-          .on_click((_e, cx) => {
-            this.projectsOpen = !this.projectsOpen;
-            cx.notify();
+          // Where the picker goes: 4 px under the selector (its top-left from the press).
+          .on_mouse_down("left", (e) => {
+            if (e.local_position) this.projAt = { x: e.position.x - e.local_position.x, y: e.position.y - e.local_position.y + (e.bounds?.height ?? 36) + 4 };
           })
-          .child(div().size(10).rounded(3).flex_none().bg(shown ? spaceColor(t, shown) : t.dim))
-          .child(div().min_w(0).truncate().text_size(14).font_medium().child(shown?.name ?? "Aucun projet"))
+          .on_click(() => this.openProjects())
+          .child(((logo) => shown && this.isHome(shown)
+            ? svg(I("house")).size(14).flex_none().text_color(t.accent)
+            // The project's registry logo when it has one, as in the bar below; else its color.
+            : logo ? image(logo).size(16).flex_none()
+            : div().size(10).rounded(3).flex_none().bg(shown ? spaceColor(t, shown) : t.dim))(shown && !this.isHome(shown) ? logoOf(this.entryOf(shown, registry())) : null))
+          .child(div().min_w(0).truncate().text_size(14).font_medium().child(shown ? (this.isHome(shown) ? this.homeLabel(shown) : shown.name) : "Aucun projet"))
           .child(svg(I("chevron-down")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1())
           .when(Boolean(shown?.branch), (el) => el.child(div().flex_none().max_w(110).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(shown.branch))),
       )
-      .when(this.projectsOpen, (el) => el.child(this.projectPicker(t, ps)))
-      .child(tool("kt-new", "square-pen", "Nouveau thread", () => run("mod.open", { name: "kt-new" }), div().font_family(MONO).text_size(10.5).text_color(t.dim).child("⌘T")))
       .child(
-        tool(
-          "kt-inbox",
-          "layers",
-          "Inbox",
-          () => {
-            const p = panes().find((x) => x.mod === "kt-inbox");
-            if (p) run("tab.select", { id: p.tab }); else run("tab.new", { mod: "kt-inbox", name: "Inbox" });
-          },
-          inboxShown ? null : div().size(6).rounded(3).bg(t.accent),
-        ),
+        tool("kt-new", "square-pen", "Nouveau thread", () => {
+          show("thread");
+          run("mod.open", { name: "kt-new" });
+        }, div().font_family(MONO).text_size(10.5).text_color(t.dim).child("⌘T")),
       )
-      .child(tool("kt-search", "search", "Search", () => run("mod.open", { name: "picker" })))
+      .child(tool("kt-inbox", "layers", "Inbox", () => show("inbox"), inboxOn ? null : div().size(6).rounded(3).bg(t.accent), inboxOn))
+      .child(tool("kt-skills", "sparkles", "Skills", () => show("skills"), null, page === "skills"))
+      .child(tool("kt-mcp", "plug", "MCP", () => show("mcp"), null, page === "mcp"))
+      .child(tool("kt-gwm", "git-branch", "Worktrees", () => show("gwm"), worktrees == null ? null
+        : div().flex_none().h(18).px(7).flex().items_center().rounded_full().border(1).border_color(t.border)
+          .font_family(MONO).text_size(10.5).text_color(page === "gwm" ? t.foreground : t.muted).child(String(worktrees)), page === "gwm"))
+      .child(tool("kt-search", "search", "Search", () => run("mod.open", { name: "kt-picker" })))
       // kbrdn.dev `.eyebrow` over the list, and the filter as a `.segment` pill.
       .child(
         h_flex()
@@ -966,29 +1751,70 @@ export default class Threads extends View {
           .mt(8)
           .gap(8)
           .items_center()
+          // vim's mode beside it while the list has the keyboard (ctrl-b h).
           .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child("THREADS"))
+          .when(this.keyed, (el) => el.child(div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+            .border_color(t.border).bg(t.background).font_family(MONO).text_size(9).text_color(t.muted).child(this.vim.label)))
+          // The cards' density: the icon shows the current one.
+          .child(
+            div()
+              .id("kt-density")
+              .flex_none()
+              .p(3)
+              .rounded(6)
+              .text_color(t.dim)
+              .cursor_pointer()
+              .hover((s) => s.bg(t.hover).text_color(t.foreground))
+              .tooltip(compact ? "Cartes compactes" : "Cartes détaillées")
+              .on_click((_e, cx) => {
+                this.toggleDensity();
+                cx.notify();
+              })
+              .child(svg(I(compact ? "list" : "layout-list")).size(13)),
+          )
           .child(div().flex_1().h(1).bg(t.border))
           .child(
+            // Every project or the shown one: a 24 px square, the accent and its ink when on.
             h_flex()
               .id("kt-every")
-              .h(22)
-              .px(10)
+              .size(24)
               .flex_none()
               .items_center()
-              .rounded_full()
-              .border(1)
-              .border_color(everyProject ? t.accent + "66" : t.border)
-              .when(everyProject, (el) => el.bg(t.accent + "24"))
-              .font_family(MONO)
-              .text_size(10.5)
-              .text_color(everyProject ? t.accent : t.muted)
+              .justify_center()
+              .rounded(8)
+              .when(everyProject, (el) => el.bg(t.accent))
+              .text_color(everyProject ? t.accent_foreground : t.muted)
               .cursor_pointer()
-              .hover((s) => s.text_color(t.foreground))
+              .when(!everyProject, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
+              .tooltip(everyProject ? "Tous les projets" : "Projet actif")
               .on_click((_e, cx) => {
                 setShared("kt.project", everyProject ? null : "*");
                 cx.notify();
               })
-              .child("TOUS LES PROJETS"),
+              .child(svg(I("layers")).size(14)),
+          )
+          // The filters (kt-thread-filter, a popup at the pointer): accent once any is set.
+          .child(
+            h_flex()
+              .id("kt-filter")
+              .size(24)
+              .flex_none()
+              .items_center()
+              .justify_center()
+              .rounded(8)
+              .when(filtering(filter), (el) => el.bg(t.accent))
+              .text_color(filtering(filter) ? t.accent_foreground : t.muted)
+              .cursor_pointer()
+              .when(!filtering(filter), (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)))
+              .tooltip("Filtres")
+              .on_click((_e, cx) => {
+                const programs = new Set(all.filter((p) => p.program?.agent).map((p) => p.program.key)).size;
+                openOverlay({ mod: "kt-thread-filter", kind: "popup", at: "pointer", frame: "none", width: 240,
+                  // + 99: its GROUPER PAR section (a rule, an eyebrow, two lines).
+                  height: 334 + 99 + (programs ? 31 + 32 * programs : 0) });
+                cx.notify();
+              })
+              .child(svg(I("list-filter")).size(14)),
           ),
       )
       .child(
@@ -997,43 +1823,54 @@ export default class Threads extends View {
           .flex_1()
           .min_h(0)
           .overflow_y_scrollbar()
+          .track_scroll(this.listScroll)
           .pt(6)
-          .gap(2)
-          .children(pinned.map((r) => this.row(t, r, all)))
-          .when(pinned.length > 0, (el) => el.child(div().mx(18).my(6).h(1).bg(t.border)))
-          .children(active.map((r) => this.row(t, r, all)))
-          .when(snoozed.length > 0, (el) =>
-            el.child(
-              this.section("kt-snoozed", `Snoozed (${snoozed.length})`, this.showSnoozed, (_e, cx) => {
-                this.showSnoozed = !this.showSnoozed;
-                cx.notify();
-              }),
-            ),
-          )
-          .when(this.showSnoozed, (el) => el.children(snoozed.map((r) => this.row(t, r, all))))
-          .when(settled.length > 0, (el) =>
-            el.child(
-              this.section("kt-settled", `Settled (${settled.length})`, this.showSettled, (_e, cx) => {
-                this.showSettled = !this.showSettled;
-                cx.notify();
-              }),
-            ),
-          )
-          .when(this.showSettled, (el) => el.children(settled.map((r) => this.row(t, r, all))))
-          .child(div().h(12)),
+          .gap(4)
+          // The archived view says so, with the way back (in `items`, built above).
+          .children(items),
       )
-      .child(this.projectBar(t, ps))
+      .when(Boolean(bar), (el) => el.child(bar))
       .child(
         h_flex()
-          .h(44)
+          .h(40)
           .px(14)
           .gap(4)
           .items_center()
-          .border_t(1)
-          .border_color(t.border)
           .child(this.button("kt-settings", "", "settings", () => run("app.settings")))
           .child(this.button("kt-keys", "", "keyboard", () => run("app.help")))
-          .child(this.button("kt-layout", "", "layers", () => run("layout.switch"))),
+          .child(this.button("kt-layout", "", "layers", () => run("layout.switch")))
+          .child(div().flex_1())
+          // kbrdn.dev `.segmented` theme switch: the ink on the position now.
+          .child(
+            h_flex()
+              .flex_none()
+              .p(2)
+              .gap(1)
+              .items_center()
+              .rounded_full()
+              .border(1)
+              .border_color(t.border)
+              .bg(t.background)
+              .children(THEME_MODES.map(([mode, icon, label]) => {
+                const on = this.themeMode() === mode;
+                return div()
+                  .id(`kt-theme-${mode}`)
+                  .size(24)
+                  .flex()
+                  .items_center()
+                  .justify_center()
+                  .rounded_full()
+                  .border(1)
+                  .border_color(on ? t.accent + "66" : t.accent + "00")
+                  .when(on, (el) => el.bg(t.accent + "24"))
+                  .text_color(on ? t.accent : t.muted)
+                  .cursor_pointer()
+                  .when(!on, (el) => el.hover((s) => s.text_color(t.foreground)))
+                  .tooltip(label)
+                  .on_click((_e, cx) => this.setTheme(mode, cx))
+                  .child(svg(I(icon)).size(13));
+              })),
+          ),
       );
   }
 }

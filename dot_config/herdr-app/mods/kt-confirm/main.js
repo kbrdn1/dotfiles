@@ -1,14 +1,16 @@
 // kbrdn Threads' confirm (a clone of the shipped `confirm`, kt-new's look): asks before
 // something destructive. Opened as a dialog with props { title, detail, command: { name, args } }
 // and optional `label` (the confirm button) and `danger` (the button in red). Open it with
-// `frame: "none"`: it draws its own card. Enter confirms (runs the command), Esc cancels.
+// `frame: "none"`: it draws its own card. y or Enter confirms (runs the command); n, q or Esc
+// cancels; no other key (no vim motion here). `kt-confirm.key:<keys>` feeds keys, for tests.
 // Full window (mod.json, or width: 1, height: 1): a veil over the window and the 460 px card in its
 // middle; a click on the veil cancels, unless `danger` (then only the buttons and Esc). Opened in a
 // card-sized box (an explicit `width: 460, height: 200`), the card fills it as before, no veil.
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, theme, settings } from "herdr";
+import { run, props, closeOverlay, theme, settings, nextCommand, checking } from "herdr";
+import { keyOf, keysOf } from "./vim.js";
 
 const MONO = "Monaspace Krypton";
 const CARD = 460;
@@ -20,6 +22,20 @@ export default class Confirm extends View {
   init(_props, cx) {
     this.handle = cx.focus_handle();
     this.handle.focus();
+    if (!checking()) cx.spawn(async () => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c.startsWith("key:")) for (const k of keysOf(c.slice(4))) this.act(k);
+      }
+    });
+  }
+
+  // One key name; false: not one of ours, and it goes on.
+  act(k) {
+    if (k === "y" || k === "enter") this.yes();
+    else if (k === "n" || k === "q" || k === "escape") closeOverlay(props().overlay);
+    else return false;
+    return true;
   }
 
   yes() {
@@ -115,10 +131,9 @@ export default class Confirm extends View {
       .items_center()
       .justify_center()
       .track_focus(this.handle)
+      // Enter and Esc with any modifier, as before; y, n and q bare.
       .on_key_down((e, cx) => {
-        if (e.key === "enter") this.yes();
-        else if (e.key === "escape") closeOverlay(props().overlay);
-        else return;
+        if (!this.act(e.key === "enter" || e.key === "escape" ? e.key : keyOf(e).name)) return;
         cx.stop_propagation();
       })
       .on_size_change((size, cx) => {

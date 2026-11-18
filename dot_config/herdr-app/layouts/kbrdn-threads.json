@@ -12,6 +12,7 @@
   "background": "chrome",
   "preview": "layouts/kbrdn-threads.png",
   "resizable": true,
+  "divider": { "width": 1, "color": "border" },
   "children": [
     {
       "id": "side",

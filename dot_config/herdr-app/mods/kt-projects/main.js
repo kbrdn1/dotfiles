@@ -7,10 +7,16 @@
 // Forgetting deletes no file of the project; an open project's space must be closed first, after
 // a second, explicit confirmation (its terminals close). Opened as a dialog with frame "none" from
 // the project picker's « Gérer les projets ». ↑/↓ pick a project, Enter renames, Esc closes.
+// Keys (vim.js): it opens on the list (NORMAL): j / k (↓ ↑, round), gg / G, ctrl-d / ctrl-u pick
+// a project; enter or o renames it (INSERT in the name field); / opens « Parcourir… » typing in
+// its filter (INSERT); dd or x forgets it (kt-confirm, as « Retirer »); q or esc closes; ? the
+// keys (kt-keys, Modales). In a field: Enter renames, Esc leaves it (as before: the rename is
+// dropped, the browse list closes). `kt-projects.key:<keys>` feeds keys ("j j", "o"), for tests.
 
 import { View, div, image } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, props, closeOverlay, shared, setShared, exec, openOverlay, nextCommand, appHome, checking, settings, readTextFile, home } from "herdr";
+import { Vim, keysOf, step } from "./vim.js";
 
 const MONO = "Monaspace Krypton";
 // The theme's colors, then kbrdn.dev's primary scale (600, 400, 300, 800).
@@ -81,15 +87,22 @@ export default class Projects extends View {
     this.error = "";
     this.handle = cx.focus_handle();
     this.handle.focus();
+    // Keys (vim.js): its mode follows `typing` (a field: INSERT, the list: NORMAL).
+    this.vim = new Vim({ field: true });
+    this.listScroll = ScrollHandle.new();
     if (checking()) return;
     // kt-confirm answers with `kt-projects.confirmed`; `next` / `prev` pick a project; `browse`
-    // opens or closes the list of the folder's images.
+    // opens or closes the list of the folder's images; `key:<keys>` types keys, for tests.
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
         if (c === "confirmed") this.confirmed();
         else if (c === "next" || c === "prev") this.step(c === "next" ? 1 : -1);
         else if (c === "browse") { this.browse = !this.browse; this.typing = this.browse ? "filter" : null; }
+        else if (c.startsWith("key:")) {
+          this.handle.focus();
+          for (const k of keysOf(c.slice(4))) this.press(k);
+        }
         cx.notify();
       }
     });
@@ -140,7 +153,49 @@ export default class Projects extends View {
     const reg = registry();
     if (!reg.length) return;
     const i = Math.max(0, reg.findIndex((e) => e.id === this.current()?.id));
-    this.select(reg[(i + by + reg.length) % reg.length].id);
+    this.select(reg[(((i + by) % reg.length) + reg.length) % reg.length].id);
+    this.reveal = true;
+  }
+
+  // vim's mode follows where the keys go: a field (INSERT) or the list (NORMAL).
+  sync() {
+    if (Boolean(this.typing) !== this.vim.insert) this.typing ? this.vim.edit() : this.vim.normal();
+  }
+
+  // One key, from the keyboard or `key:` (a name).
+  press(ev) {
+    this.sync();
+    return this.act(this.vim.handle(ev));
+  }
+
+  // One vim action; false: not one of ours, and the key goes on. In a field, what it did before.
+  act(a) {
+    if (!a) return false;
+    if (a === "pending" || a === "count") return true;
+    const e = this.current();
+    if (this.typing === "name" && e) {
+      if (a === "normal") this.typing = null;
+      else if (a === "submit") this.rename(e);
+      else if (a === "backspace") this.draft = this.draft.slice(0, -1);
+      else if (a === "type") { if (this.draft.length < 60) this.draft += this.vim.char; }
+      else return false;
+    } else if (this.typing === "filter") {
+      if (a === "normal") { this.typing = null; this.browse = false; this.filter = ""; }
+      else if (a === "backspace") this.filter = this.filter.slice(0, -1);
+      else if (a === "type") { if (this.filter.length < 80) this.filter += this.vim.char; }
+      else return false;
+    } else if (a === "escape" || a === "quit") closeOverlay(props().overlay);
+    else if (a === "down" || a === "up") this.step((a === "down" ? 1 : -1) * this.vim.count);
+    else if (["top", "bottom", "half-down", "half-up"].includes(a)) {
+      const reg = registry();
+      const j = step(a, reg.findIndex((x) => x.id === e?.id), reg.length, this.vim.count, 10);
+      if (j >= 0) { this.select(reg[j].id); this.reveal = true; }
+    } else if (a === "open" && e) { this.typing = "name"; this.draft = e.name; }
+    else if (a === "filter" && e && !e.machine) { this.browse = true; this.typing = "filter"; }
+    else if (a === "delete" && e) this.forget(e);
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "modals" } });
+    else return false;
+    return true;
   }
 
   update(id, patch) {
@@ -331,6 +386,16 @@ export default class Projects extends View {
       this.findPair(e, cx);
     }
     const focused = this.handle.is_focused();
+    this.sync();
+    // The picked project brought into view once after a key moved it (the list's children are its rows).
+    if (this.reveal) {
+      const i = reg.findIndex((x) => x.id === e?.id);
+      if (i >= 0) this.listScroll.scroll_to_item(i);
+      this.reveal = false;
+    }
+    const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+      .border_color(this.vim.insert ? alpha(t.accent, "66") : t.border).bg(this.vim.insert ? alpha(t.accent, "24") : t.background)
+      .font_family(MONO).text_size(9).text_color(this.vim.insert ? t.accent : t.muted).child(this.vim.label);
     const kbd = (k) => div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
     const hint = (k, what) => h_flex().gap(5).items_center().child(kbd(k)).child(div().child(what));
     const dashed = () => div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border);
@@ -366,8 +431,10 @@ export default class Projects extends View {
 
     // A project row; drag it onto another to reorder (a 2 px accent bar shows where it lands).
     const from = this.pressed === null ? -1 : reg.findIndex((x) => x.id === this.pressed);
+    // The picked row is the keys' cursor too: on the list (NORMAL, the dialog keyed) a 1 px accent ring.
     const row = (x, i) => {
       const on = e?.id === x.id;
+      const cursor = on && focused && !this.typing;
       const open = Boolean(this.spaceOf(x));
       return h_flex()
         .id(`kp-row-${i}`)
@@ -379,7 +446,7 @@ export default class Projects extends View {
         .items_center()
         .rounded(12)
         .border(1)
-        .border_color(on ? t.accent + "66" : t.accent + "00")
+        .border_color(alpha(t.accent, cursor ? "99" : on ? "66" : "00"))
         .when(on, (el) => el.bg(t.accent + "24"))
         .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
         .when(this.pressed === x.id && this.over !== x.id, (el) => el.opacity(0.5))
@@ -566,7 +633,7 @@ export default class Projects extends View {
           .child(
             h_flex().flex_1().min_h(0).items_start()
               .child(
-                v_flex().id("kp-list").w(280).h_full().flex_none().p(8).gap(2).overflow_y_scrollbar().border_r(1).border_dashed().border_color(t.border)
+                v_flex().id("kp-list").w(280).h_full().flex_none().p(8).gap(2).overflow_y_scrollbar().track_scroll(this.listScroll).border_r(1).border_dashed().border_color(t.border)
                   .when(!reg.length, (el) => el.child(div().p(8).text_size(12).text_color(t.dim).child("Aucun projet : ouvre un dossier avec « Nouveau projet », il s'ajoute ici.")))
                   .children(reg.map(row)),
               )
@@ -575,6 +642,7 @@ export default class Projects extends View {
           .child(dashed())
           .child(
             h_flex().flex_none().px(14).py(10).gap(12).items_center().text_size(11).text_color(t.dim)
+              .when(focused, (el) => el.child(mode))
               .child(hint("↑↓", "projet"))
               .child(hint("glisser", "réordonner"))
               .child(hint("↵", "renommer"))
@@ -598,24 +666,7 @@ export default class Projects extends View {
       .when(full, (el) => el.bg(veil()).on_click(() => closeOverlay(props().overlay)))
       .track_focus(this.handle)
       .on_key_down((ev, cx) => {
-        const k = ev.key;
-        const m = ev.modifiers;
-        const typed = ev.key_char && !m.control && !m.alt && !m.platform;
-        if (this.typing === "name" && e) {
-          if (k === "escape") this.typing = null;
-          else if (k === "enter") this.rename(e);
-          else if (k === "backspace") this.draft = this.draft.slice(0, -1);
-          else if (typed) { if (this.draft.length < 60) this.draft += ev.key_char; }
-          else return;
-        } else if (this.typing === "filter") {
-          if (k === "escape") { this.typing = null; this.browse = false; this.filter = ""; }
-          else if (k === "backspace") this.filter = this.filter.slice(0, -1);
-          else if (typed) { if (this.filter.length < 80) this.filter += ev.key_char; }
-          else return;
-        } else if (k === "escape") return closeOverlay(props().overlay);
-        else if (k === "down" || k === "up") this.step(k === "down" ? 1 : -1);
-        else if (k === "enter" && e) { this.typing = "name"; this.draft = e.name; }
-        else return;
+        if (!this.press(ev)) return; // not ours: ctrl-b, cmd-* go on
         cx.stop_propagation();
         cx.notify();
       })

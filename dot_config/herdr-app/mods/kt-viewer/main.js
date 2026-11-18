@@ -7,15 +7,21 @@
 // a drag moves it; + − 0 (fit) 1 (100 %) zoom from the keyboard; ← → or the
 // arrows switch between two images, "Comparer" puts them side by side. The
 // controls float in a pill at the bottom (fitting leaves it room), ✕ alone at
-// the top right. Esc, ✕ or a click on the veil outside the image closes it.
+// the top right. Esc, q, ✕ or a click on the veil outside the image closes it.
+// Keys (vim.js, NORMAL only, no counts: 0 and 1 zoom): h j k l scroll a zoomed
+// image (sxiv's way: h shows more of its left); [ ] the previous / next image,
+// and h / l too while the image fits whole (nothing to scroll); ? the keys
+// (kt-keys, Modales). `kt-viewer.key:<keys>` feeds keys ("l", "+ h"), for tests.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { props, closeOverlay, theme } from "herdr";
+import { props, closeOverlay, theme, openOverlay, nextCommand, checking } from "herdr";
+import { Vim, keyOf, keysOf } from "./vim.js";
 
 const MONO = "Monaspace Krypton";
 const MIN = 0.1, MAX = 8;
 const RESERVE = 72; // the bottom bar (40) and its 16 px above and below
+const PAN = 80; // px an h j k l press scrolls the zoomed image
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const clamp = (z) => Math.min(MAX, Math.max(MIN, z));
@@ -32,6 +38,17 @@ export default class Viewer extends View {
     this.drag = null;
     this.handle = cx.focus_handle();
     this.handle.focus();
+    this.vim = new Vim({ counts: false });
+    if (!checking()) cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c.startsWith("key:")) {
+          this.handle.focus();
+          for (const k of keysOf(c.slice(4))) this.press(k);
+        }
+        cx.notify();
+      }
+    });
   }
 
   images() {
@@ -92,17 +109,40 @@ export default class Viewer extends View {
   }
 
   key(e, cx) {
-    const k = e.key, c = e.key_char;
-    if (k === "escape") return this.close();
-    if (c === "+" || c === "=") this.zoomTo(this.scale() * 1.25);
-    else if (c === "-" || c === "_") this.zoomTo(this.scale() / 1.25);
-    else if (c === "0") this.reset();
-    else if (c === "1") this.reset(1);
-    else if (k === "left") this.go(-1);
-    else if (k === "right") this.go(1);
-    else return;
+    if (!this.press(e)) return; // not ours: ctrl-b, cmd-* go on
     cx.stop_propagation();
     cx.notify();
+  }
+
+  // One key, from the keyboard or `key:` (a name): its own keys first (as before), then vim's.
+  press(e) {
+    const k = keyOf(e).name;
+    if (k === "escape") this.close();
+    else if (k === "+" || k === "=") this.zoomTo(this.scale() * 1.25);
+    else if (k === "-" || k === "_") this.zoomTo(this.scale() / 1.25);
+    else if (k === "0") this.reset();
+    else if (k === "1") this.reset(1);
+    else if (k === "left") this.go(-1);
+    else if (k === "right") this.go(1);
+    else return this.act(this.vim.handle(e));
+    return true;
+  }
+
+  // One vim action; false: not one the viewer has.
+  act(a) {
+    if (!a) return false;
+    if (a === "pending") return true;
+    // Fits whole (fitted, or 100 % of a small one): h / l change image, j / k have nothing to scroll.
+    const whole = this.compare || this.scale() <= this.fit() + 1e-6;
+    if (a === "panel-prev" || a === "panel-next") this.go(a === "panel-next" ? 1 : -1);
+    else if ((a === "left" || a === "right") && whole) this.go(a === "right" ? 1 : -1);
+    else if (["left", "right", "up", "down"].includes(a) && !whole) {
+      const d = a === "left" || a === "up" ? PAN : -PAN;
+      this.off = a === "left" || a === "right" ? { ...this.off, x: this.off.x + d } : { ...this.off, y: this.off.y + d };
+    } else if (a === "quit") this.close();
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "modals" } });
+    else return false;
+    return true;
   }
 
   pill(t, id, label, onClick, on) {
@@ -115,13 +155,16 @@ export default class Viewer extends View {
       .child(label);
   }
 
-  // The floating pill at the bottom: ←, label, size, zoom, − + 100 % Ajuster, Comparer, →.
+  // The floating pill at the bottom: vim's mode (with the keyboard), ←, label, size, zoom, − + 100 %
+  // Ajuster, Comparer, →.
   bar(t) {
     const raw = this.images()[this.index] ?? {}, n = this.images().length;
     const z = this.scale();
     return h_flex().absolute().bottom(16).left(0).right(0).justify_center().child(h_flex().h(RESERVE - 32).gap(6).p(4).items_center()
       .rounded_full().bg(alpha(t.popover, "e6")).border(1).border_color(t.border)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .when(this.handle.is_focused(), (el) => el.child(div().flex_none().h(16).ml(6).px(6).flex().items_center().rounded(5).border(1)
+        .border_color(t.border).bg(t.background).font_family(MONO).text_size(9).text_color(t.muted).child(this.vim.label)))
       .when(n === 2 && !this.compare, (el) => el.child(this.arrow(t, "kv-prev", "left", -1)))
       .child(this.pill(t, "kv-label", `${String(raw.label ?? raw.name ?? "image").toUpperCase()}${raw.name && raw.label ? ` · ${raw.name}` : ""}`))
       .when(Boolean(raw.w && raw.h), (el) => el.child(this.pill(t, "kv-dims", `${raw.w}×${raw.h}${raw.size ? ` · ${kb(raw.size)}` : ""}`)))

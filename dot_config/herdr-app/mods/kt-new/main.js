@@ -8,12 +8,21 @@
 // The dialog stays open while gwm works, then opens a space in the new
 // worktree with the agent. gwm runs without a terminal: a repo whose
 // .gwm.toml isn't trusted yet (`gwm trust add`) is refused, and the error
-// shows here. ctrl+P project, ctrl+W checkout, ctrl+T type, ctrl+A agent,
-// Esc closes.
+// shows here. ctrl+P project, ctrl+W checkout, ctrl+T type, ctrl+A agent
+// (in both modes, before vim's keys).
+//
+// Keys (vim.js): it opens typing the thread (INSERT). There ctrl-n / ctrl-j / ↓
+// and ctrl-k / ↑ move the rows' cursor (Projet, Checkout, Type, Agent), tab /
+// shift-tab change the cursor row's pick, Enter starts, Esc goes to NORMAL (the
+// dialog stays). NORMAL: j / k (↓ ↑), gg / G move the cursor; h / l and tab /
+// shift-tab change its pick; enter or o starts; / or a click on the field types
+// again; q or esc closes; ? the keys (kt-keys, Modales). `kt-new.key:<keys>`
+// feeds keys ("escape j l", "h e l l o"), for tests.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, run, theme, props, closeOverlay, shared, setShared, exec, settings } from "herdr";
+import { spaces, run, theme, props, closeOverlay, shared, setShared, exec, settings, openOverlay, nextCommand, checking } from "herdr";
+import { Vim, keyOf, keysOf, step } from "./vim.js";
 
 const MONO = "Monaspace Krypton";
 // The dialog is the whole window (mod.json): the card keeps its 680 px.
@@ -80,8 +89,21 @@ export default class NewThread extends View {
     this.repos = {}; // folder -> { key, name, main } | null
     this.handle = cx.focus_handle();
     this.handle.focus();
+    // Keys (vim.js): typing the thread first; `at` is the row the cursor is on.
+    this.vim = new Vim({ field: true, insert: true });
+    this.at = "project";
     // The project and type groups scroll sideways when they're longer than the dialog.
     this.scrolls = { project: ScrollHandle.new(), type: ScrollHandle.new() };
+    if (!checking()) cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c.startsWith("key:")) {
+          this.handle.focus();
+          for (const k of keysOf(c.slice(4))) this.press(k, cx);
+        }
+        cx.notify();
+      }
+    });
     cx.spawn(async (cx) => {
       for (const s of spaces()) {
         try {
@@ -117,9 +139,78 @@ export default class NewThread extends View {
     closeOverlay(props().overlay);
   }
 
+  // The rows the cursor walks, as shown: Checkout only in a git project, Type only for a worktree.
+  fields() {
+    const git = Boolean(this.projects()[this.project]?.git);
+    return ["project", ...(git ? ["worktree"] : []), ...(git && this.worktree ? ["type"] : []), "agent"];
+  }
+
+  // A row's next (d = 1) or previous pick, round; its group scrolls to it.
+  cycle(field, d) {
+    if (field === "worktree") this.worktree = !this.worktree;
+    else {
+      const n = Math.max(1, { project: this.projects().length, type: TYPES.length, agent: AGENTS.length }[field]);
+      this[field] = (this[field] + d + n) % n;
+      this.scrolls[field]?.scroll_to_item(this[field]);
+    }
+  }
+
+  key(e, cx) {
+    if (!this.press(e, cx)) return; // not ours: ctrl-b, cmd-* go on
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  // One key, from the keyboard or `key:` (a name): ctrl+p / w / t / a first (both modes, as
+  // before), then vim's.
+  press(e, cx) {
+    const chord = { "ctrl-p": "project", "ctrl-w": "worktree", "ctrl-t": "type", "ctrl-a": "agent" }[keyOf(e).name];
+    if (keyOf(e).name === "ctrl-e" && !this.busy) {
+      this.blank();
+      return true;
+    }
+    if (chord && !this.busy) {
+      this.cycle(chord, 1);
+      return true;
+    }
+    return this.act(this.vim.handle(e), cx);
+  }
+
+  // One vim action; false: not one the dialog has. While gwm works, only closing.
+  act(a, cx) {
+    if (!a) return false;
+    if (a === "escape" || a === "quit") this.close();
+    else if (a === "normal" || a === "filter" || a === "pending" || a === "count") {} // the mode changed, or a gg on its way
+    else if (this.busy) return false;
+    else if (a === "submit" || a === "open") this.start(cx);
+    else if (a === "type") {
+      if (this.name.length < MAX_NAME) this.name += this.vim.char;
+      this.nudge = null;
+    } else if (a === "backspace") this.name = this.name.slice(0, -1);
+    else if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
+      const f = this.fields();
+      this.at = f[step(a, Math.max(0, f.indexOf(this.at)), f.length, this.vim.count, 4)];
+    } else if (a === "left" || a === "right" || a === "tab-next" || a === "tab-prev") this.cycle(this.at, a === "left" || a === "tab-prev" ? -1 : 1);
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "modals" } });
+    else return false;
+    return true;
+  }
+
+  // An empty thread: a plain terminal in the chosen project's folder, no agent, no name, no worktree.
+  blank() {
+    if (this.busy) return;
+    const p = this.projects()[this.project];
+    if (!p) return;
+    run("layout.select", { stack: "view", child: "thread" });
+    this.close();
+    run("tab.new", { space: p.space.id, ...(p.space.folder ? { folder: p.space.folder } : {}) });
+  }
+
   start(cx) {
     if (this.busy) return;
     const name = this.name.trim();
+    // No name with the shell picked (and no worktree to make): that's an empty thread.
+    if (!name && AGENTS[this.agent]?.[1] === null && !this.worktree) return this.blank();
     if (!name) {
       this.nudge = "name";
       return;
@@ -220,23 +311,40 @@ export default class NewThread extends View {
     const spec = tree ? issueOf(this.name) : null;
     // kbrdn.dev `kbd`: a small mono pill.
     const kbd = (k) => div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
-    const hint = (k, what) => h_flex().gap(5).items_center().child(kbd(k)).child(div().child(what));
-    // kbrdn.dev `.eyebrow` label, then its `.segmented` group.
-    const row = (label, group) =>
-      h_flex()
-        .h(32)
+    const hint = (k, what) => h_flex().flex_none().gap(5).items_center().child(kbd(k)).child(div().child(what));
+    // The keys' cursor walks these rows (`at`); one gone (Type, Checkout) puts it back on the first.
+    const fields = this.fields();
+    if (!fields.includes(this.at)) this.at = fields[0];
+    const keyed = this.handle.is_focused();
+    // kbrdn.dev `.eyebrow` label, then its `.segmented` group (32 px, round). Under the keys' cursor
+    // (while the dialog has the keyboard): a 1 px accent ring on the ink, round around the group's
+    // pill; a transparent border elsewhere (no shift).
+    const row = (label, group, field) => {
+      const cursor = keyed && this.at === field;
+      return h_flex()
+        .h(36)
+        .px(10)
         .gap(10)
         .items_center()
-        .child(div().w(76).flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(label.toUpperCase()))
+        .rounded_full()
+        .border(1)
+        .border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+        .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+        .child(div().w(76).flex_none().font_family(MONO).text_size(10.5).text_color(cursor ? t.foreground : t.muted).child(label.toUpperCase()))
         .child(group);
+    };
     const pick = (field, i) => (_e, cx) => {
       this[field] = i;
       cx.notify();
     };
     const placeholder = tree ? `#issue que construit-on${p ? ` dans ${p.name}` : ""} ?` : `Que construit-on${p ? ` dans ${p.name}` : ""} ?`;
     const nudge = this.nudge === "issue" ? "Un nouveau worktree demande une issue : « #42 fix the login »" : null;
-    const focused = this.handle.is_focused();
+    // The field looks live while typing (INSERT); in NORMAL it rests, without its caret.
+    const focused = keyed && this.vim.insert;
     const dashed = () => div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border);
+    const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+      .border_color(focused ? alpha(t.accent, "66") : t.border).bg(focused ? alpha(t.accent, "24") : t.background)
+      .font_family(MONO).text_size(9).text_color(focused ? t.accent : t.muted).child(this.vim.label);
     const shown = Boolean(this.size);
     // The card (radius 20, 4 px around) and its inner card (16): frame "none" (mod.json), so it's ours.
     const card = v_flex()
@@ -264,7 +372,7 @@ export default class NewThread extends View {
             v_flex()
               .p(12)
               .gap(10)
-              // The field (radius 12) in its accent ring (3 px, radius 15) while the dialog has the keyboard.
+              // The field (radius 12) in its accent ring (3 px, radius 15) while it types (INSERT).
               .child(
                 div()
                   .p(3)
@@ -272,6 +380,7 @@ export default class NewThread extends View {
                   .bg(focused ? t.accent + "33" : t.accent + "00")
                   .child(
                     h_flex()
+                      .id("kt-n-field")
                       .h(44)
                       .px(14)
                       .gap(10)
@@ -281,6 +390,9 @@ export default class NewThread extends View {
                       .border(1)
                       .border_color(focused ? t.accent : t.input)
                       .text_size(16)
+                      .cursor_text()
+                      // A click on the field types again (INSERT).
+                      .on_click((_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
                       .child(svg("mods/kt-threads/square-pen.svg").size(15).flex_none().text_color(t.dim))
                       .child(
                         h_flex()
@@ -288,7 +400,7 @@ export default class NewThread extends View {
                           .min_w(0)
                           .items_center()
                           .when(Boolean(this.name), (el) => el.child(div().min_w(0).truncate().text_color(t.foreground).child(this.name)))
-                          .child(div().flex_none().w(2).h(20).rounded(1).bg(t.accent))
+                          .when(focused, (el) => el.child(div().flex_none().w(2).h(20).rounded(1).bg(t.accent)))
                           .when(!this.name, (el) => el.child(div().pl(6).min_w(0).truncate().text_color(this.nudge === "name" ? t.blocked : t.dim).child(placeholder))),
                       )
                       // The worktree's branch to be, gwm's way.
@@ -297,8 +409,7 @@ export default class NewThread extends View {
               )
               .child(
                 v_flex()
-                  .px(4)
-                  .child(row("Projet", this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space))), this.scrolls.project)))
+                  .child(row("Projet", this.segmented(t, "kt-n-ps", ps.map((x, i) => this.chip(t, `kt-n-p${i}`, x.name, i === this.project, pick("project", i), spaceColor(t, x.space))), this.scrolls.project), "project"))
                   .when(git, (el) =>
                     el.child(
                       row(
@@ -307,11 +418,12 @@ export default class NewThread extends View {
                           this.chip(t, "kt-n-cur", "Checkout actuel", !this.worktree, pick("worktree", false)),
                           this.chip(t, "kt-n-wt", "Nouveau worktree", this.worktree, pick("worktree", true)),
                         ]),
+                        "worktree",
                       ),
                     ),
                   )
-                  .when(tree, (el) => el.child(row("Type", this.segmented(t, "kt-n-ts", TYPES.map((n, i) => this.chip(t, `kt-n-t${i}`, n, i === this.type, pick("type", i))), this.scrolls.type))))
-                  .child(row("Agent", this.segmented(t, "kt-n-as", AGENTS.map(([n], i) => this.chip(t, `kt-n-a${i}`, n, i === this.agent, pick("agent", i)))))),
+                  .when(tree, (el) => el.child(row("Type", this.segmented(t, "kt-n-ts", TYPES.map((n, i) => this.chip(t, `kt-n-t${i}`, n, i === this.type, pick("type", i))), this.scrolls.type), "type")))
+                  .child(row("Agent", this.segmented(t, "kt-n-as", AGENTS.map(([n], i) => this.chip(t, `kt-n-a${i}`, n, i === this.agent, pick("agent", i)))), "agent")),
               )
               .when(Boolean(nudge || this.error), (el) =>
                 el.child(div().px(4).text_size(12).text_color(this.error ? t.ansi1 : t.blocked).child(this.error || nudge)),
@@ -338,15 +450,47 @@ export default class NewThread extends View {
                     .child("GWM CREATE…"),
                 ),
               )
-              .when(!this.busy, (el) =>
-                el
-                  .child(hint("ctrl+p", "projet"))
-                  .when(git, (el) => el.child(hint("ctrl+w", "checkout")))
-                  .when(tree, (el) => el.child(hint("ctrl+t", "type")))
-                  .child(hint("ctrl+a", "agent"))
-                  .child(hint("esc", "annuler")),
+              .when(keyed, (el) => el.child(mode))
+              // The key hints take what the buttons leave and clip past it: Start never leaves the card.
+              .child(
+                h_flex()
+                  .flex_1()
+                  .min_w(0)
+                  .gap(12)
+                  .items_center()
+                  .overflow_hidden()
+                  .when(!this.busy, (el) =>
+                    el
+                      // Three hints fit beside the buttons; ctrl+w / ctrl+t / ctrl+a stay in the keys help (ctrl-b ?).
+                      .child(hint("ctrl+p", "projet"))
+                      .child(hint("ctrl+e", "terminal"))
+                      .child(hint("esc", this.vim.insert ? "normal" : "annuler")),
+                  ),
               )
-              .child(div().flex_1())
+              // An empty thread: just a terminal in the project (ctrl+e).
+              .when(!this.busy, (el) =>
+                el.child(
+                  h_flex()
+                    .id("kt-n-blank")
+                    .flex_none()
+                    .h(30)
+                    .px(12)
+                    .gap(6)
+                    .items_center()
+                    .rounded_full()
+                    .border(1)
+                    .border_color(t.input)
+                    .text_color(t.muted)
+                    .font_family(MONO)
+                    .text_size(11)
+                    .cursor_pointer()
+                    .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                    .tooltip("Ouvrir un terminal vide dans le projet (ctrl+e)")
+                    .on_click(() => this.blank())
+                    .child(svg("mods/workspace-chrome/terminal.svg").size(12))
+                    .child("TERMINAL VIDE"),
+                ),
+              )
               // kbrdn.dev primary button: solid ink, round.
               .child(
                 h_flex()
@@ -388,28 +532,7 @@ export default class NewThread extends View {
       })
       .on_click(() => this.close())
       .track_focus(this.handle)
-      .on_key_down((e, cx) => {
-        const k = e.key;
-        const m = e.modifiers;
-        if (k === "escape") return this.close();
-        if (this.busy) return;
-        if (k === "enter") this.start(cx);
-        else if (k === "p" && m.control) {
-          this.project = (this.project + 1) % Math.max(1, ps.length);
-          this.scrolls.project.scroll_to_item(this.project);
-        } else if (k === "a" && m.control) this.agent = (this.agent + 1) % AGENTS.length;
-        else if (k === "w" && m.control) this.worktree = !this.worktree;
-        else if (k === "t" && m.control) {
-          this.type = (this.type + 1) % TYPES.length;
-          this.scrolls.type.scroll_to_item(this.type);
-        } else if (k === "backspace") this.name = this.name.slice(0, -1);
-        else if (e.key_char && !m.control && !m.alt) {
-          if (this.name.length < MAX_NAME) this.name += e.key_char;
-          this.nudge = null;
-        } else return;
-        cx.stop_propagation();
-        cx.notify();
-      })
+      .on_key_down((e, cx) => this.key(e, cx))
       .child(card);
   }
 }

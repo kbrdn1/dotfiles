@@ -9,11 +9,19 @@
 // plugin keeps its unread counts in the session's memory only (never stored),
 // so "nouveaux" here is this panel's own: messages since you last opened that
 // conversation here (localStorage). Reads every 5 s while shown.
+// Keys (vim.js; kt-keys lists them, group "panel"): ctrl-b l (pane.go, "focus") or
+// `kt-crosstalk.key:<keys>` gives Crosstalk the keyboard: a cursor (an accent ring on the ink) on
+// a conversation. j k gg G ctrl-d ctrl-u move; l / enter / o open it, where j k... move over its
+// messages and h / esc come back to the list; tab / shift-tab: Cette session / Toutes; y copies
+// the peer (a message: its text); r reads again; esc gives the keyboard back to the terminal; [ ]
+// the panel's previous / next tab; ? the keys. While Crosstalk has the keyboard it keeps the same
+// session.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { focused, panes, spaces, theme, layout, home, nextCommand, checking } from "herdr";
+import { focused, panes, spaces, theme, layout, home, nextCommand, checking, run, notify, openOverlay } from "herdr";
 import * as fs from "fs/promises";
+import { Vim, keysOf, step } from "./vim.js";
 
 const ME = "crosstalk"; // this block's id in the layout's "panel-body" stack
 const MONO = "Monaspace Krypton";
@@ -44,6 +52,22 @@ function terminal() {
   const mine = panes().filter((p) => p.tab === tab?.id && p.terminal && !p.terminal.includes("/"));
   return (mine.find((p) => p.program?.agent) ?? mine[0])?.terminal ?? null;
 }
+// The panel's tabs in order, and each one's mod: [ / ] show the next one and give it the keyboard.
+const TABS = ["files", "diff", "history", "flow", "crosstalk", "gwm-panel"];
+const TAB_MODS = { files: "kt-files", diff: "kt-diff", history: "kt-history", flow: "kt-flow", crosstalk: "kt-crosstalk", "gwm-panel": "kt-gwm" };
+// The keyboard follows a moment later: a `<mod>.focus` sent at once reaches no copy (the new tab
+// isn't shown yet) and the app gives the keyboard back to the terminal.
+function panelTab(dir, cx) {
+  const child = TABS[(TABS.indexOf(ME) + dir + TABS.length) % TABS.length];
+  run("layout.select", { stack: "panel-body", child });
+  // gwm-panel: kt-gwm's panel copy only (its page copy may show too).
+  cx.timer.after(120, () => run(child === "gwm-panel" ? "kt-gwm.panel-focus" : `${TAB_MODS[child]}.focus`));
+}
+// NORMAL / INSERT, kt-keys' pill: INSERT on the ink, NORMAL plain.
+const modePill = (t, vim) => div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+  .border_color(vim.insert ? alpha(t.accent, "66") : t.border).bg(vim.insert ? alpha(t.accent, "24") : t.background)
+  .font_family(MONO).text_size(9).text_color(vim.insert ? t.accent : t.muted).child(vim.label);
+const MOVES = ["down", "up", "top", "bottom", "half-down", "half-up"];
 const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 const load = (k) => { try { return JSON.parse(localStorage.getItem(k) ?? "null"); } catch { return null; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { } };
@@ -66,6 +90,12 @@ export default class Crosstalk extends View {
     this.open = null; // { sid, peer }
     this.hot = null;
     this.scroll = ScrollHandle.new();
+    this.handle = cx.focus_handle();
+    this.vim = new Vim();
+    this.cur = null; // the keys' cursor in the list: a conversation's "<sid>|<peer>"
+    this.mcur = 0; // the cursor in an open conversation: a message's index
+    this.msgAt = []; // a message's index -> its child index in xt-msgs (day lines between)
+    this.listScroll = ScrollHandle.new();
     if (checking()) return;
     this.seen = load("seen") ?? {};
     this.since = load("since") ?? Date.now();
@@ -75,16 +105,89 @@ export default class Crosstalk extends View {
         const c = await nextCommand();
         if (c === "open-first") { const first = this.conversations()[0]; if (first) this.openConv(first, cx); }
         else if (c === "back") this.open = null;
+        // `focus` (pane.go) takes the keyboard; `key:<keys>` takes it and types those keys, for tests.
+        else if (c === "focus") this.focusIn();
+        else if (c.startsWith("key:")) {
+          this.focusIn();
+          for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
+        }
         cx.notify();
       }
     });
     this.read(cx);
     cx.timer.every(5000, (cx) => this.read(cx));
+    // The keyboard went away (Herdr doesn't always redraw then): drop the cursor.
+    cx.timer.every(500, (cx) => { if (this.keyed !== this.handle.is_focused()) cx.notify(); });
+  }
+
+  // ---------- keys (vim.js; kt-keys lists them) ----------
+
+  // The keyboard comes here: NORMAL, the cursor where it was, else on the latest conversation.
+  focusIn() {
+    this.handle.focus();
+    this.vim.normal();
+    const convs = this.conversations();
+    if (!convs.some((x) => `${x.sid}|${x.peer}` === this.cur)) this.cur = convs[0] ? `${convs[0].sid}|${convs[0].peer}` : null;
+    this.reveal = true;
+  }
+
+  key(e, cx) {
+    if (!this.act(this.vim.handle(e), cx)) return; // not ours: ctrl-b, cmd-* go on
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  // One vim action on the list, or on the open conversation; false: not one Crosstalk has.
+  act(a, cx) {
+    if (!a) return false;
+    if (a === "pending" || a === "count") return true;
+    const convs = this.conversations();
+    const c = this.open && convs.find((x) => x.sid === this.open.sid && x.peer === this.open.peer);
+    const i = convs.findIndex((x) => `${x.sid}|${x.peer}` === this.cur);
+    const copy = (text) => {
+      if (!text) return;
+      cx.write_to_clipboard(text);
+      notify({ title: "Copié", body: text, level: "success", timeout: 2000 });
+    };
+    if (c && MOVES.includes(a)) {
+      const j = step(a, this.mcur, c.entries.length, this.vim.count, 6);
+      if (j >= 0) this.mcur = j;
+      this.reveal = true;
+    } else if (c && (a === "left" || a === "escape")) {
+      // Back to the list, the cursor on this conversation.
+      this.open = null;
+      this.reveal = true;
+    } else if (c && a === "yank") copy(c.entries[this.mcur]?.text);
+    else if (MOVES.includes(a)) {
+      const j = step(a, i, convs.length, this.vim.count, 8);
+      if (j >= 0) this.cur = `${convs[j].sid}|${convs[j].peer}`;
+      this.reveal = true;
+    } else if (a === "right" || a === "open") {
+      if (!c && convs[i]) this.openConv(convs[i], cx);
+    } else if (a === "left") {
+      // A flat list: nothing folds.
+    } else if (a === "tab-next" || a === "tab-prev") {
+      // The two segments, as their clicks: "Cette session" only when the focused terminal has one.
+      if (this.session) {
+        this.all = !this.all;
+        this.open = null;
+        this.reveal = true;
+      }
+    } else if (a === "yank") copy(convs[i]?.peer);
+    else if (a === "refresh") {
+      this.key = null;
+      this.read(cx);
+    } else if (a === "escape") run("pane.go", { direction: "left" });
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "panel" } });
+    else if (a === "panel-prev" || a === "panel-next") panelTab(a === "panel-next" ? 1 : -1, cx);
+    else return false;
+    return true;
   }
 
   read(cx) {
     if (!visible() || this.reading) return;
-    const term = terminal();
+    // The focused terminal's session, kept while Crosstalk has the keyboard (taking it may move focused()).
+    const term = this.handle.is_focused() && this.term ? this.term : terminal();
     this.reading = true;
     cx.spawn(async (cx) => {
       try {
@@ -137,6 +240,8 @@ export default class Crosstalk extends View {
 
   openConv(c, cx) {
     this.open = { sid: c.sid, peer: c.peer };
+    this.cur = `${c.sid}|${c.peer}`;
+    this.mcur = Math.max(0, c.entries.length - 1);
     this.seen[`${c.sid}|${c.peer}`] = c.last?.at ?? Date.now();
     save("seen", this.seen);
     this.scroll.scroll_to_item(Math.max(0, c.entries.length * 2));
@@ -152,8 +257,12 @@ export default class Crosstalk extends View {
     const k = `${c.sid}|${c.peer}`;
     const hot = this.hot === k;
     const live = this.terms[c.sid];
+    // The keys' cursor, while Crosstalk has the keyboard: an accent ring on the ink.
+    const cursor = this.keyed && this.cur === k;
     return v_flex().id(`xt-row-${i}`).px(12).py(9).gap(4).rounded(12).cursor_pointer()
-      .when(hot, (el) => el.bg(t.hover))
+      .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+      .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
+      .when(hot && !cursor, (el) => el.bg(t.hover))
       .on_hover((on, cx) => { const n = on ? k : this.hot === k ? null : this.hot; if (n !== this.hot) { this.hot = n; cx.notify(); } })
       .on_click((_e, cx) => this.openConv(c, cx))
       .child(h_flex().gap(8).items_center()
@@ -172,6 +281,7 @@ export default class Crosstalk extends View {
   conversation(t, c) {
     const out = [];
     let day = null;
+    this.msgAt = [];
     c.entries.forEach((e, i) => {
       const d = e.at ? dayOf(e.at) : null;
       if (d && d !== day) {
@@ -182,11 +292,14 @@ export default class Crosstalk extends View {
           .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border)));
       }
       const mine = e.dir === "out";
+      // The keys' cursor on a message: the ring on the ink, on its bubble.
+      const cursor = this.keyed && this.mcur === i;
+      this.msgAt[i] = out.length;
       out.push(v_flex().id(`xt-msg-${i}`).flex_none().w_full().gap(4).py(4).when(mine, (el) => el.items_end())
         .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(`${mine ? "toi" : c.peer}${e.at ? ` · ${clock(e.at)}` : ""}`))
         .child(div().max_w(420).px(12).py(8).rounded(12).text_size(12.5).line_height("18px").text_color(t.foreground)
-          .bg(mine ? alpha(t.accent, "1f") : t.raised)
-          .border(1).border_color(mine ? alpha(t.accent, "4d") : t.border)
+          .bg(cursor ? alpha(t.accent, "24") : mine ? alpha(t.accent, "1f") : t.raised)
+          .border(1).border_color(cursor ? alpha(t.accent, "99") : mine ? alpha(t.accent, "4d") : t.border)
           .child(e.text)));
     });
     return out;
@@ -197,6 +310,10 @@ export default class Crosstalk extends View {
     if (vis && !this.shown && !checking()) this.read(cx);
     this.shown = vis;
     const t = theme();
+    this.keyed = this.handle.is_focused();
+    // The same root in both views, so the keyboard stays here (focus, key:, esc, [ ]).
+    const root = () => v_flex().id("kt-crosstalk").size_full().gap(4).text_color(t.foreground)
+      .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx));
     const card = () => v_flex().rounded(16).border(1).border_color(t.border).bg(t.background);
     const convs = this.conversations();
     const scope = this.all || !this.session ? "Toutes les sessions" : `Session de ${this.term}`;
@@ -209,13 +326,20 @@ export default class Crosstalk extends View {
       .child(h_flex().gap(8).items_center()
         .child(svg("mods/kt-panel-head/messages-square.svg").size(14).flex_none().text_color(t.muted))
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.muted).child(scope.toUpperCase()))
-        .child(this.tag(t, t.dim, "lecture seule")))
+        .child(this.tag(t, t.dim, "lecture seule"))
+        .when(this.keyed, (el) => el.child(modePill(t, this.vim))))
       .child(h_flex().gap(4)
         .child(seg("xt-mine", "Cette session", !this.all && Boolean(this.session), Boolean(this.session), () => { this.all = false; this.open = null; }))
         .child(seg("xt-all", "Toutes", this.all || !this.session, true, () => { this.all = true; this.open = null; })));
     const c = this.open && convs.find((x) => x.sid === this.open.sid && x.peer === this.open.peer);
     if (c) {
-      return v_flex().size_full().gap(4).text_color(t.foreground)
+      const msgs = this.conversation(t, c);
+      // The cursor's message brought into view once after it moved.
+      if (this.reveal) {
+        if (this.msgAt[this.mcur] != null) this.scroll.scroll_to_item(this.msgAt[this.mcur]);
+        this.reveal = false;
+      }
+      return root()
         .child(head)
         .child(card().flex_1().min_h(0)
           .child(h_flex().flex_none().h(40).px(8).gap(8).items_center()
@@ -226,16 +350,22 @@ export default class Crosstalk extends View {
             .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(`${c.entries.length} message${c.entries.length > 1 ? "s" : ""}`)))
           .child(div().mx(12).flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
           .child(v_flex().id("xt-msgs").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).px(12).py(6)
-            .children(this.conversation(t, c)))
+            .children(msgs))
           .child(div().flex_none().px(14).py(8).border_t(1).border_dashed().border_color(t.border).font_family(MONO).text_size(10.5).text_color(t.dim)
             .child("Répondre : /crosstalk dans la session (SendMessage).")));
     }
     const empty = !Object.keys(this.threads).length ? "Aucune conversation crosstalk enregistrée."
       : "Aucune conversation pour cette session.";
-    return v_flex().size_full().gap(4).text_color(t.foreground)
+    // The cursor's conversation brought into view once after it moved.
+    if (this.reveal) {
+      const at = convs.findIndex((x) => `${x.sid}|${x.peer}` === this.cur);
+      if (at >= 0) this.listScroll.scroll_to_item(at);
+      this.reveal = false;
+    }
+    return root()
       .child(head)
       .child(card().flex_1().min_h(0)
-        .child(v_flex().id("xt-list").flex_1().min_h(0).overflow_y_scrollbar().p(4).gap(2)
+        .child(v_flex().id("xt-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.listScroll).p(4).gap(2)
           .when(!convs.length, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child(empty)))
           .children(convs.map((x, i) => this.row(t, x, i))))
         .child(div().flex_none().px(14).py(8).border_t(1).border_dashed().border_color(t.border).font_family(MONO).text_size(10.5).text_color(t.dim)

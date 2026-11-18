@@ -7,12 +7,22 @@
 // target waits in shared "kt-branch.switch". A worktree: its space if one is there, else a new one.
 // Nothing here deletes a branch or a worktree, resets or stashes.
 // Props: { cwd, machine, terminal, pane }; opened bare (mod.open), the focused pane's.
+// Keys (vim.js): it opens typing in the filter (INSERT: the Input types, deletes and submits
+// itself); ctrl-n / ctrl-j / ↓ and ctrl-k / ↑ move the highlight, tab / shift-tab jump to the
+// worktrees / the branches, Esc goes to NORMAL (the keyboard on the popup's own handle; it stays).
+// NORMAL: j / k (↓ ↑, round), gg / G, ctrl-d / ctrl-u move; enter, o or l takes the row; tab /
+// shift-tab as above; / or a click in the field types again; q or esc closes; ? the keys (kt-keys,
+// Modales). `kt-branch.key:<keys>` feeds keys ("escape j", "g g"), `kt-branch.query:<text>` sets
+// the filter: for tests.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
-import { agents, focused, panes, spaces, theme, props, run, closeOverlay, openOverlay, setShared, exec, home, appHome, readTextFile, checking } from "herdr";
+import { agents, focused, panes, spaces, theme, props, run, closeOverlay, openOverlay, setShared, exec, home, appHome, readTextFile, checking, nextCommand } from "herdr";
+import { Vim, keysOf, step } from "./vim.js";
 
 const MONO = "Monaspace Krypton";
+// A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
+const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const ICON = (name) => `mods/kt-threads/${name}.svg`;
 // Read-only git: no index refresh, no lock, nothing written in a repo others are using.
 const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.quotePath=false"];
@@ -56,13 +66,57 @@ export default class Branches extends View {
     this.input = InputState.new({ placeholder: "Filtrer" });
     this.input.on("change", (_e, cx) => { this.hl = 0; this.note = ""; cx.notify(); });
     this.input.on("submit", (_e, cx) => { const r = this.rows()[this.hl]; if (r) this.pick(r, cx); cx.notify(); });
-    this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
-    this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
-    // As the shipped picker: the popup may not be keyed yet in init, so the field asks again.
+    // vim's mode follows the keyboard: the field's (INSERT) or the popup's own handle (NORMAL).
+    this.handle = cx.focus_handle();
+    this.vim = new Vim({ field: true, insert: true });
+    this.input.on("focus", (_e, cx) => { this.typing = true; this.vim.edit(); cx.notify(); });
+    this.input.on("blur", (_e, cx) => { this.typing = false; this.vim.normal(); cx.notify(); });
+    // As the shipped picker: the popup may not be keyed yet in init, so the field asks again
+    // (unless the popup's handle has the keyboard by then: Esc, NORMAL).
     this.input.focus();
-    cx.timer.after(600, () => this.input.focus());
+    cx.timer.after(600, () => { if (!this.handle.is_focused()) this.input.focus(); });
     if (checking()) return;
     this.load(cx);
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c.startsWith("key:")) {
+          (this.vim.insert ? this.input : this.handle).focus();
+          for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
+        } else if (c.startsWith("query:")) {
+          this.input.set_value(c.slice(6));
+          this.hl = 0;
+        }
+        cx.notify();
+      }
+    });
+  }
+
+  key(e, cx) {
+    if (!this.act(this.vim.handle(e), cx)) return; // not ours (typing in the field, ctrl-b, cmd-*): it goes on
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  // One vim action; false: not one of ours. In INSERT the Input types, deletes and submits (Enter
+  // already goes through its "submit"): those keys go on to it.
+  act(a, cx) {
+    if (!a || a === "type" || a === "backspace" || a === "submit") return false;
+    if (a === "pending" || a === "count") return true;
+    const rows = this.rows();
+    if (a === "normal") this.handle.focus();
+    else if (a === "filter") this.input.focus();
+    else if (a === "down" || a === "up") this.move((a === "down" ? 1 : -1) * this.vim.count);
+    else if (["top", "bottom", "half-down", "half-up"].includes(a)) this.move(step(a, this.hl, rows.length, this.vim.count, 10) - this.hl);
+    else if (a === "tab-next" || a === "tab-prev") {
+      // The first worktree row (tab) or the first branch row (shift-tab).
+      const i = rows.findIndex((r) => r.kind === (a === "tab-next" ? "worktree" : "branch"));
+      if (i >= 0) this.move(i - this.hl);
+    } else if (a === "open" || a === "right") { const r = rows[this.hl]; if (r) this.pick(r, cx); }
+    else if (a === "escape" || a === "quit") this.close();
+    else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "modals" } });
+    else return false;
+    return true;
   }
 
   close() {
@@ -181,7 +235,7 @@ export default class Branches extends View {
   move(by) {
     const n = this.rows().length;
     if (!n) return;
-    this.hl = (this.hl + by + n) % n;
+    this.hl = (((this.hl + by) % n) + n) % n;
     this.scroll.scroll_to_item(this.slots[this.hl] ?? 0);
   }
 
@@ -196,11 +250,13 @@ export default class Branches extends View {
         .child(mono(10.5, t.muted).flex_none().child(label))
         .child(mono(10.5, t.dim).flex_none().child(String(n)))
         .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border));
-    // A row (radius 12 in the 16 card): the highlighted one sits on the kbrdn.dev ink.
+    // A row (radius 12 in the 16 card): the highlighted one sits on the kbrdn.dev ink. It is the
+    // keys' cursor: a 1 px accent ring while the popup has the keyboard (field or handle).
+    const keyed = this.typing || this.handle.is_focused();
     const row = (r, i, lead, title, right, sub) => {
       const on = i === this.hl;
       return h_flex().id(`kb-${r.kind}-${r.key}`).flex_none().gap(10).px(10).py(6).items_center()
-        .rounded(12).border(1).border_color(on ? t.accent + "66" : t.accent + "00").when(on, (el) => el.bg(t.accent + "24"))
+        .rounded(12).border(1).border_color(alpha(t.accent, on ? (keyed ? "99" : "66") : "00")).when(on, (el) => el.bg(t.accent + "24"))
         .cursor_pointer().hover((s) => s.bg(on ? t.accent + "24" : t.hover))
         .on_click((_e, cx) => { this.hl = i; this.pick(r, cx); cx.notify(); })
         .child(lead)
@@ -272,12 +328,14 @@ export default class Branches extends View {
       .border(1)
       .border_color(t.border)
       .shadow_lg()
-      .on_key_down((e, cx) => {
-        if (e.key === "escape") return this.close();
-        if (e.key === "up" || e.key === "down") { this.move(e.key === "up" ? -1 : 1); cx.stop_propagation(); cx.notify(); }
-      })
+      // NORMAL's keys land on this handle; the field's keys bubble up here too.
+      .track_focus(this.handle)
+      .on_key_down((e, cx) => this.key(e, cx))
       .child(
         v_flex()
+          // A press in the card never reaches the root's handle: a click beside the field (a pill,
+          // the scrollbar) doesn't take the keyboard from it (INSERT stays).
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .flex_1()
           .min_h(0)
           .p(4)
@@ -300,6 +358,10 @@ export default class Branches extends View {
             h_flex().flex_none().px(4).pt(6).pb(2).gap(8).items_center()
               .child(pill("kb-new", ICON("plus"), "NOUVEAU WORKTREE…", () => { this.close(); run("mod.open", { name: "kt-new" }); }))
               .child(div().flex_1())
+              // vim's mode (kt-keys' pill): INSERT on the ink, NORMAL neutral.
+              .when(keyed, (el) => el.child(div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+                .border_color(this.typing ? alpha(t.accent, "66") : t.border).bg(this.typing ? alpha(t.accent, "24") : t.background)
+                .font_family(MONO).text_size(9).text_color(this.typing ? t.accent : t.muted).child(this.typing ? "INSERT" : "NORMAL")))
               .child(pill("kb-refresh", ICON("refresh-cw"), "RAFRAÎCHIR", (_e, cx) => { this.note = ""; this.load(cx); cx.notify(); })),
           ),
       );

@@ -4,18 +4,43 @@
 // what git knows (tracked and new, not ignored); outside git, what `rg
 // --files` finds. Read-only: the agent edits, you read. Polls only while the
 // right panel shows Files.
+// Keys (vim.js; kt-keys lists them, group "panel"): ctrl-b l (pane.go, "focus") or
+// `kt-files.key:<keys>` gives the tree the keyboard: a cursor (an accent ring on the ink) on a
+// row, or on Search files. j k gg G ctrl-d ctrl-u move; k past the first row, or /, goes to
+// Search files and types there (INSERT: ctrl-n / ctrl-p move, enter opens, esc back to NORMAL,
+// the filter stays); h folds the folder (on a file or a folded one: folds its parent and goes
+// there); l unfolds a folder or opens a file; enter / o as a click; O opens in Zed; y copies the
+// path; r reads again; n N next / previous match; esc clears the filter, else gives the keyboard
+// back to the terminal; [ ] the panel's previous / next tab; ? the keys.
 
 import { View, div, svg, image } from "gpui-kit";
-import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, exec, readTextFile, settings, theme, layout, home, appHome, checking } from "herdr";
+import { v_flex, h_flex, Editor, EditorState, ScrollHandle } from "gpui-base";
+import { spaces, panes, exec, readTextFile, settings, theme, layout, home, appHome, checking, run, nextCommand, notify, openOverlay } from "herdr";
 import { ICON_MAP, catIcon } from "./icons.js";
+import { Vim, keysOf, step } from "./vim.js";
 
 const ME = "files"; // this block's id in the layout's "panel-body" stack
 const I = (name) => `mods/kt-threads/${name}.svg`;
+const MONO = "Monaspace Krypton";
 const MAX_FILES = 5000;
 const MAX_BYTES = 400e3;
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// The panel's tabs in order, and each one's mod: [ / ] show the next one and give it the keyboard.
+const TABS = ["files", "diff", "history", "flow", "crosstalk", "gwm-panel"];
+const TAB_MODS = { files: "kt-files", diff: "kt-diff", history: "kt-history", flow: "kt-flow", crosstalk: "kt-crosstalk", "gwm-panel": "kt-gwm" };
+// The keyboard follows a moment later: a `<mod>.focus` sent at once reaches no copy (the new tab
+// isn't shown yet) and the app gives the keyboard back to the terminal.
+function panelTab(dir, cx) {
+  const child = TABS[(TABS.indexOf(ME) + dir + TABS.length) % TABS.length];
+  run("layout.select", { stack: "panel-body", child });
+  // gwm-panel: kt-gwm's panel copy only (its page copy may show too).
+  cx.timer.after(120, () => run(child === "gwm-panel" ? "kt-gwm.panel-focus" : `${TAB_MODS[child]}.focus`));
+}
+// NORMAL / INSERT, kt-keys' pill: INSERT on the ink, NORMAL plain.
+const modePill = (t, vim) => div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
+  .border_color(vim.insert ? alpha(t.accent, "66") : t.border).bg(vim.insert ? alpha(t.accent, "24") : t.background)
+  .font_family(MONO).text_size(9).text_color(vim.insert ? t.accent : t.muted).child(vim.label);
 // File endings the highlighter doesn't know, read as one it does.
 const LANG = { ts: "js", tsx: "js", mts: "js", cts: "js", jsx: "js", mjs: "js", toml: "yaml", jsonc: "json", svelte: "html", vue: "html" };
 
@@ -67,16 +92,109 @@ export default class Files extends View {
     this.file = null;
     this.code = null;
     this.query = "";
-    this.typing = false;
     this.shown = false;
     this.handle = cx.focus_handle();
+    // Search files is the field: typing in it is vim's INSERT mode.
+    this.vim = new Vim({ field: true });
+    this.cur = null; // the keys' cursor: "search", "d:<folder>" or "f:<file>"
+    this.flat = []; // what it walks, in order: Search files, then the rows shown { id, path, dir, parent }
+    this.listScroll = ScrollHandle.new();
     this.map = null; // Catppuccin's map.json
-    if (!checking()) cx.spawn(async (cx) => {
-      try { this.map = JSON.parse(await readTextFile(`${appHome()}/${ICON_MAP}`)); } catch { this.map = null; }
-      cx.notify();
-    });
+    if (!checking()) {
+      cx.spawn(async (cx) => {
+        try { this.map = JSON.parse(await readTextFile(`${appHome()}/${ICON_MAP}`)); } catch { this.map = null; }
+        cx.notify();
+      });
+      // `focus` (pane.go) takes the keyboard; `key:<keys>` takes it and types those keys, for tests.
+      cx.spawn(async (cx) => {
+        for (;;) {
+          const c = await nextCommand();
+          if (c === "focus") this.focusIn();
+          else if (c.startsWith("key:")) {
+            this.focusIn();
+            for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
+          }
+          cx.notify();
+        }
+      });
+      // The keyboard went away (Herdr doesn't always redraw then): drop the cursor.
+      cx.timer.every(500, (cx) => { if (this.keyed !== this.handle.is_focused()) cx.notify(); });
+    }
     this.refresh(cx);
     cx.timer.every(5000, (cx) => this.refresh(cx));
+  }
+
+  // ---------- keys (vim.js; kt-keys lists them) ----------
+
+  // The keyboard comes here: NORMAL, the cursor on the open file, else the first row.
+  focusIn() {
+    this.handle.focus();
+    this.vim.normal();
+    if (!this.flat.some((x) => x.id === this.cur) || this.cur === "search")
+      this.cur = (this.flat.find((x) => x.path === this.file && !x.dir) ?? this.flat[1] ?? this.flat[0])?.id ?? null;
+    this.reveal = true;
+  }
+
+  key(e, cx) {
+    if (!this.act(this.vim.handle(e), cx)) return; // not ours: ctrl-b, cmd-* go on
+    cx.stop_propagation();
+    cx.notify();
+  }
+
+  // One vim action on the tree; false: not one Files has, and the key goes on.
+  act(a, cx) {
+    if (!a) return false;
+    if (a === "pending" || a === "count" || a === "normal") return true; // vim keeps the mode
+    const flat = this.flat;
+    const i = flat.findIndex((x) => x.id === this.cur);
+    const x = flat[i]?.field ? null : flat[i]; // a row, not Search files
+    // On Search files is typing there (INSERT).
+    const to = (id) => { this.cur = id; this.reveal = true; if (id === "search") this.vim.edit(); };
+    if (a === "filter") to("search");
+    else if (a === "type" || a === "backspace") {
+      this.query = a === "type" ? this.query + this.vim.char : this.query.slice(0, -1);
+      this.cur = "search"; // the first match next
+    } else if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
+      let j = step(a, i, flat.length, this.vim.count, 20);
+      if (j === 0 && a !== "up" && flat.length > 1) j = 1; // only k climbs into the field
+      if (j >= 0) to(flat[j].id);
+    } else if (a === "next" || a === "prev") {
+      if (!this.query) return false;
+      const j = step(a === "next" ? "down" : "up", i, flat.length, this.vim.count);
+      if (j > 0) to(flat[j].id);
+    } else if (this.cur === "search" && (a === "open" || a === "right")) this.vim.edit();
+    else if (a === "left") {
+      // An open folder folds; on a file or a folded folder, its parent folds and takes the cursor.
+      if (x?.dir && this.open.has(x.path)) this.open.delete(x.path);
+      else if (x?.parent) { this.open.delete(x.parent); to(`d:${x.parent}`); }
+    } else if (a === "right") {
+      if (x?.dir) this.open.add(x.path);
+      else if (x) this.show(x.path, cx);
+    } else if (a === "submit" && !x) {
+      // enter in the field, no cursor yet: the first match, as before.
+      const first = this.paths.find((p) => p.toLowerCase().includes(this.query.toLowerCase()));
+      if (first) this.show(first, cx);
+    } else if (a === "open" || a === "submit") {
+      if (x?.dir) { if (this.open.has(x.path)) this.open.delete(x.path); else this.open.add(x.path); }
+      else if (x) this.show(x.path, cx);
+    } else if (a === "open-alt") {
+      if (x && this.root && !this.on) exec("open", [`zed://file${this.root}/${x.path}`]).catch(() => {});
+    } else if (a === "yank") {
+      const p = x && this.root ? (this.on ? x.path : `${this.root}/${x.path}`) : null;
+      if (p) {
+        cx.write_to_clipboard(p);
+        notify({ title: "Copié", body: p, level: "success", timeout: 2000 });
+      }
+    } else if (a === "refresh") {
+      this.plain = null;
+      this.refresh(cx);
+    } else if (a === "escape") {
+      if (this.query) { this.query = ""; this.cur = null; }
+      else run("pane.go", { direction: "left" });
+    } else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "panel" } });
+    else if (a === "panel-prev" || a === "panel-next") panelTab(a === "panel-next" ? 1 : -1, cx);
+    else return false;
+    return true;
   }
 
   refresh(cx) {
@@ -140,9 +258,13 @@ export default class Files extends View {
     });
   }
 
-  fileRow(t, path, name, depth) {
+  fileRow(t, path, name, depth, flat, parent) {
     const m = this.marks[path];
     const on = this.file === path;
+    const id = `f:${path}`;
+    flat.push({ id, path, dir: false, parent });
+    // The keys' cursor, while Files has the keyboard: an accent ring on the ink.
+    const cursor = this.keyed && this.cur === id;
     return h_flex()
       .id(`tf-${path}`)
       .h(24)
@@ -153,22 +275,26 @@ export default class Files extends View {
       .rounded(10)
       // kbrdn.dev SegmentInk on the open file (transparent border elsewhere: no shift).
       .border(1)
-      .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
+      .border_color(cursor ? alpha(t.accent, "99") : on ? alpha(t.accent, "66") : alpha(t.accent, "00"))
       .text_size(12)
       .cursor_pointer()
       .text_color(m === "U" ? t.ansi2 : m === "M" ? t.ansi3 : t.muted)
-      .when(on, (el) => el.bg(alpha(t.accent, "24")).text_color(t.foreground))
-      .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
+      .when(on || cursor, (el) => el.bg(alpha(t.accent, "24")).text_color(t.foreground))
+      .when(!on && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => this.show(path, cx))
       .child(image(catIcon(this.map, path.split("/").pop(), { dark: settings().dark !== false })).size(14).flex_none())
       .child(div().flex_1().truncate().child(name))
       .when(Boolean(m), (el) => el.child(div().font_family("Monaspace Krypton").text_size(10.5).child(m)));
   }
 
-  rows(t, node, prefix, depth, out) {
+  // The tree's rows into `out`, and what the cursor walks into `flat` (same order, one each).
+  rows(t, node, prefix, depth, out, flat) {
+    const parent = prefix ? prefix.slice(0, -1) : null;
     for (const [name, child] of [...node.dirs].sort((a, b) => a[0].localeCompare(b[0]))) {
       const path = prefix + name;
       const open = this.open.has(path);
+      flat.push({ id: `d:${path}`, path, dir: true, parent });
+      const cursor = this.keyed && this.cur === `d:${path}`;
       out.push(
         h_flex()
           .id(`td-${path}`)
@@ -177,10 +303,13 @@ export default class Files extends View {
           .gap(6)
           .items_center()
           .rounded(10)
+          .border(1)
+          .border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
+          .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
           .text_size(12)
           .text_color(t.foreground)
           .cursor_pointer()
-          .hover((s) => s.bg(t.hover))
+          .when(!cursor, (el) => el.hover((s) => s.bg(t.hover)))
           .on_click((_e, cx) => {
             if (open) this.open.delete(path);
             else this.open.add(path);
@@ -190,9 +319,9 @@ export default class Files extends View {
           .child(image(catIcon(this.map, name, { folder: true, open, dark: settings().dark !== false })).size(14).flex_none())
           .child(div().truncate().child(name)),
       );
-      if (open) this.rows(t, child, path + "/", depth + 1, out);
+      if (open) this.rows(t, child, path + "/", depth + 1, out, flat);
     }
-    for (const name of node.files) out.push(this.fileRow(t, prefix + name, name, depth));
+    for (const name of node.files) out.push(this.fileRow(t, prefix + name, name, depth, flat, parent));
     return out;
   }
 
@@ -202,13 +331,24 @@ export default class Files extends View {
     if (vis && (!this.shown || !this.root)) this.refresh(cx);
     this.shown = vis;
     const t = theme();
+    this.keyed = this.handle.is_focused();
+    const typing = this.keyed && this.vim.insert;
+    const onField = this.keyed && this.cur === "search"; // ctrl-n moved it to a row: the caret and INSERT say it types
     const q = this.query.toLowerCase();
+    // Search files first (k climbs into it), then the rows: tf-list's children are flat[1..].
+    const flat = [{ id: "search", field: true }];
     const list = q
       ? this.paths
           .filter((p) => p.toLowerCase().includes(q))
           .slice(0, 300)
-          .map((p) => this.fileRow(t, p, p, 0))
-      : this.rows(t, tree(this.paths), "", 0, []);
+          .map((p) => this.fileRow(t, p, p, 0, flat, null))
+      : this.rows(t, tree(this.paths), "", 0, [], flat);
+    this.flat = flat;
+    if (this.reveal) {
+      const at = flat.findIndex((x) => x.id === this.cur);
+      if (at > 0) this.listScroll.scroll_to_item(at - 1);
+      this.reveal = false;
+    }
     const side = v_flex()
       .h_full()
       .when(Boolean(this.file), (el) => el.w(240).flex_none().border_l(1).border_dashed().border_color(t.border))
@@ -224,21 +364,24 @@ export default class Files extends View {
           .items_center()
           .rounded(10)
           .border(1)
-          .border_color(this.typing ? t.accent : t.border)
-          .bg(t.background)
+          // The cursor on the field, the keyboard here: the ring on the ink.
+          .border_color(onField ? alpha(t.accent, "99") : t.border)
+          .bg(onField ? alpha(t.accent, "24") : t.background)
           .text_size(12)
           .cursor_text()
           .on_click((_e, cx) => {
-            this.typing = true;
+            this.cur = "search";
+            this.vim.edit();
             this.handle.focus();
             cx.notify();
           })
           .child(svg(I("search")).size(13).text_color(t.dim))
           .child(
             this.query
-              ? div().flex_1().truncate().text_color(t.foreground).child(this.query + (this.typing ? "▏" : ""))
-              : div().flex_1().text_color(t.dim).child((this.typing ? "▏" : "") + "Search files"),
-          ),
+              ? div().flex_1().truncate().text_color(t.foreground).child(this.query + (typing ? "▏" : ""))
+              : div().flex_1().text_color(t.dim).child((typing ? "▏" : "") + "Search files"),
+          )
+          .when(this.keyed, (el) => el.child(modePill(t, this.vim))),
       )
       .child(
         v_flex()
@@ -248,27 +391,14 @@ export default class Files extends View {
           .px(4)
           .pb(8)
           .overflow_y_scrollbar()
+          .track_scroll(this.listScroll)
           .children(list)
           .when(this.paths.length === 0, (el) => el.child(div().p(12).text_size(12).text_color(t.dim).child(this.note ?? (this.root ? "No files." : "No folder.")))),
       );
     return h_flex()
       .id("kt-files")
       .track_focus(this.handle)
-      .on_key_down((e, cx) => {
-        if (!this.typing) return;
-        const m = e.modifiers;
-        if (e.key === "escape") {
-          this.typing = false;
-          this.query = "";
-        } else if (e.key === "backspace") this.query = this.query.slice(0, -1);
-        else if (e.key === "enter") {
-          const first = this.paths.find((p) => p.toLowerCase().includes(this.query.toLowerCase()));
-          if (first) this.show(first, cx);
-        } else if (e.key_char && !m.control && !m.platform) this.query += e.key_char;
-        else return;
-        cx.stop_propagation();
-        cx.notify();
-      })
+      .on_key_down((e, cx) => this.key(e, cx))
       .size_full()
       .text_color(t.foreground)
       .when(Boolean(this.file), (el) =>
