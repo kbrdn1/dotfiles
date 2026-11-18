@@ -5,12 +5,17 @@
 // which describes what closes and runs it confirmed; worktrees go through gwm, never Herdr's own
 // worktree dialog (it creates checkouts outside gwm and removes without the dirty guard): New opens
 // kt-new on a new worktree, Open shows the Worktrees page, Remove is left to that page's guarded remove.
+// A thread's menu is the same from kt-threads' cards and kt-head's title; its copies (name, Claude's
+// session id, folder, branch, terminal address) go to the clipboard with a "Copied" toast.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec, shared } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, keys, terminals, spaces, panes, exec, shared, notify, home, readTextFile } from "herdr";
 // Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
 import { motionState, frame, sheet, leave, leaving, rows } from "./motion.js";
+// Copied byte for byte from mods/kt-threads/threads-model.js (with its pr-pick.js and thread-filter.js):
+// the thread's name and terminals as its sidebar card has them.
+import { label, leads } from "./threads-model.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -30,7 +35,14 @@ async function checkout(folder, on) {
   return common.stdout.trim() === `${top.stdout.trim()}/.git` ? "main" : "linked";
 }
 
-function items(p, git) {
+// A thread, its space and its terminals (threads-model.js leads: the one it shows, its agent's).
+function thread(tg) {
+  const space = spaces().find((s) => s.id === tg.space);
+  const tab = space?.tabs.find((c) => c.id === tg.id);
+  return { space, tab, ...(tab ? leads(tab, panes()) : {}) };
+}
+
+function items(p, git, session) {
   p = p ?? {};
   const tg = p.target ?? {};
   switch (p.tab) {
@@ -63,12 +75,23 @@ function items(p, git) {
         ...(inTab ? [[tr("closePane"), "pane.close", { pane: tg.pane }]] : []),
       ];
     }
-    case "tab":
+    case "tab": {
+      // The copies, each only when there's something to copy. The folder is kt-threads' `y` one.
+      const { space, tab, lead, agent } = thread(tg);
+      const copies = [
+        ["copyName", tab && label(tab, agent)],
+        ["copySession", session],
+        ["copyFolder", lead?.cwd ?? space?.folder],
+        ["copyBranch", lead?.branch],
+        ["copyAddress", agent?.terminal],
+      ].filter(([, text]) => text).map(([key, text]) => [tr(key), "copy", { text }]);
       return [
         [tr("rename"), "tab.rename", { id: tg.id }],
         [tr("newThread"), "tab.new", { space: tg.space }],
+        ...copies,
         [tr("close"), "tab.close", { id: tg.id }],
       ];
+    }
     case "space":
       return [
         [tr("rename"), "space.rename", { id: tg.id }],
@@ -88,6 +111,7 @@ function items(p, git) {
 }
 
 function menuIcon(command) {
+  if (command === "copy") return "mods/kt-menu/copy.svg";
   const name = command.endsWith(".close") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "panel-right" : command === "pane.zoom" ? "square" : "terminal";
   return `mods/workspace-chrome/${name}.svg`;
 }
@@ -115,6 +139,17 @@ export default class Menu extends View {
         this.git = await checkout(folder, space.machine).catch(() => null);
         cx.notify();
       });
+    // A thread's Claude session id: its statusline's per-terminal file, here only (readLive's rule:
+    // a remote "vps/t7" has none here). Its copy shows once read.
+    this.session = null;
+    const agent = p?.tab === "tab" && thread(p.target ?? {}).agent;
+    if (agent?.terminal && !agent.terminal.includes("/") && (agent.app === "claude-code" || agent.program?.key === "claude"))
+      cx.spawn(async (cx) => {
+        try {
+          this.session = JSON.parse(await readTextFile(`${home()}/.claude/cache/statusline/herdr-${agent.terminal}.json`))?.session_id ?? null;
+        } catch { /* none yet, or torn mid-write: no copy */ }
+        cx.notify();
+      });
   }
 
   // motion.js leave(): the menu fades and sinks 6 px, then the popup closes.
@@ -124,8 +159,13 @@ export default class Menu extends View {
 
   choose(i, cx) {
     if (leaving(this.motion, "km")) return; // leaving: a second Enter or click would run it twice
-    const it = items(props(), this.git)[i];
+    const it = items(props(), this.git, this.session)[i];
     if (!it) return;
+    if (it[1] === "copy") {
+      cx.write_to_clipboard(it[2].text);
+      notify({ title: tr("copied"), body: it[2].text, level: "success", timeout: 2000 });
+      return this.dismiss(cx);
+    }
     // An item opening another dialog (kt-new, kt-confirm, Herdr's rename prompt, the keys) closes the menu
     // first, at once, as before: that dialog comes in on its own and takes the keyboard last. The rest
     // runs, then the menu leaves.
@@ -147,7 +187,7 @@ export default class Menu extends View {
 
   render(cx) {
     const t = theme();
-    const list = items(props(), this.git);
+    const list = items(props(), this.git, this.session);
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const s = sheet(m, "km", this.shown); // no veil in a popup: the menu itself fades and moves 6 px
     return s.card(s.veil(v_flex().id("menu")))
@@ -167,12 +207,13 @@ export default class Menu extends View {
         cx.stop_propagation(); // Herdr's own Esc would close the popup at once, cutting the exit short
         cx.notify();
       })
-      // The items open in order from the top as the menu comes in (motion.js rows(), keyed by rank: the
-      // list doesn't change while the menu is open; 12 items at most, else at once).
+      // The items open in order from the top as the menu comes in (motion.js rows(), keyed by label, unique
+      // in a menu: one read after opening, the worktrees or the session id, comes in where it goes; 12 items
+      // at most, else at once).
       .children(
-        rows(m, cx, "km-items", list, (it) => String(list.indexOf(it)), (it, i) =>
+        rows(m, cx, "km-items", list, (it) => it[0], (it, i) =>
           v_flex()
-            .when(i > 0 && (it[1].endsWith(".close") || it[1] === "app.help" || (it[1] === "app.theme" && list[i - 1][1] !== "app.theme")), el => el.child(div().mx(7).my(4).h(1).bg(t.border)))
+            .when(i > 0 && (it[1].endsWith(".close") || it[1] === "app.help" || (["app.theme", "copy"].includes(it[1]) && list[i - 1][1] !== it[1])), el => el.child(div().mx(7).my(4).h(1).bg(t.border)))
             .child(h_flex()
             .id(`mi-${i}`)
             .h(31)
