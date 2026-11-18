@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { OPTIONS, choice, nextChoice, FIELDS, columns, board, slices, sliced, onBoard, locate, move, atCard, tokens, parseQuery, matchQuery,
-  costOf, cleanLimits, stepLimit, checkSteps, ciCount, cardMenu, menuStart, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
+  costOf, cleanLimits, stepLimit, checkSteps, ciCount, cardMenu, menuStart, takesFocus, SNOOZES, wakeAt, draftsOf, attach, toArchive, archivePlan, DEFAULT_VIEWS, settingsOf, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView } from "./kanban.js";
 import { byStatus, STATUSES, PHASES as STEP_PHASE } from "./threads-model.js";
 import { PHASES } from "./steps.js";
 
@@ -338,6 +338,16 @@ assert.deepEqual([menu1[0].option, menu1[0].tone, menu1[1].tone, menu1[2].sep, m
 const hints = menu1.map((i) => i.hint).filter(Boolean);
 assert.deepEqual(hints, ["o", "p", "1", "2", "3", "O", "I", "e"]);
 assert.ok(!hints.some((h) => ["j", "k", "q"].includes(h)));
+// Arriving on the page, it takes the keyboard only with no overlay open (herdr-app status), still shown,
+// not already focused; an unreadable status: never.
+const st = (overlays) => ({ overlays, errors: [] });
+assert.equal(takesFocus({ visible: true, focused: false, status: st([]) }), true);
+assert.equal(takesFocus({ visible: true, focused: false, status: st(["kt-new"]) }), false);
+assert.equal(takesFocus({ visible: true, focused: false, status: st([{ mod: "kt-confirm" }]) }), false);
+assert.equal(takesFocus({ visible: false, focused: false, status: st([]) }), false);
+assert.equal(takesFocus({ visible: true, focused: true, status: st([]) }), false);
+assert.equal(takesFocus({ visible: true, focused: false, status: null }), false);
+assert.equal(takesFocus({ visible: true, focused: false, status: { errors: [] } }), false);
 // Its highlight starts on « go » (m then enter never accepts), on « launch » for a draft.
 assert.equal(menuStart(menu1), "go");
 assert.equal(menuStart(cardMenu(drafts[0])), "launch");

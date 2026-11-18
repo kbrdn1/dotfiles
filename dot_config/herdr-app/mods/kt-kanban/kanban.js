@@ -93,6 +93,11 @@ export function cardMenu(th, { decision = null, prUrl = null, issueUrl = null } 
   ];
 }
 
+/** Arriving on the page, the keyboard comes to it only while it still shows, doesn't have it yet, and
+ *  herdr-app status says no overlay is open (a dialog, a popup); a status it couldn't read: it stays put. */
+export const takesFocus = ({ visible, focused, status }) =>
+  Boolean(visible) && !focused && Array.isArray(status?.overlays) && status.overlays.length === 0;
+
 /** Where the menu's highlight starts: the first item that answers nothing (go, or launch), so that m
  *  then enter never accepts a permission by accident; a choice is one k, or a click, away. */
 export const menuStart = (items) => (items.find((i) => !i.option) ?? items[0])?.key ?? null;

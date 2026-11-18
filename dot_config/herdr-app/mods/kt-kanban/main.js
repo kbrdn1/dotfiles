@@ -60,7 +60,7 @@ import * as io from "./threads-io.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
   costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
-  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart } from "./kanban.js";
+  FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart, takesFocus } from "./kanban.js";
 // The sidebar's decisions (a byte-identical copy of kbrdn-toast's decide.js): what a blocked agent waits
 // on, its pills, and its answer (press, the sidebar's and the toast's path).
 import { decide, decisionButtons, press as answer } from "./decide.js";
@@ -1550,11 +1550,21 @@ export default class Kanban extends View {
         // Back on the page: what moved while it was hidden, if read over 10 s ago.
         if (Date.now() - this.readAt > STALE) this.refresh(cx);
         // The thread's terminal is hidden under the page: the keyboard comes here, in NORMAL, once the
-        // app has settled its own focus on the switch (unless pane.go already gave it).
+        // app has settled its own focus on the switch (unless pane.go already gave it), and only while no
+        // overlay is open (herdr-app status' `overlays`; kanban.js takesFocus): a dialog or a popup that
+        // opened meanwhile keeps the keyboard (else its Space would open the drawer under it).
         cx.timer.after(150, (cx) => {
-          if (visible() && !this.handle.is_focused()) this.focusIn();
           this.autoArchive(); // and what has gone quiet since
           cx.notify();
+          if (!visible() || this.handle.is_focused()) return;
+          cx.spawn(async (cx) => {
+            const r = await exec("herdr-app", ["status"], { timeout: 3000 }).catch(() => null);
+            let status = null;
+            try { status = r?.code === 0 ? JSON.parse(r.stdout) : null; } catch { status = null; }
+            if (!takesFocus({ visible: visible(), focused: this.handle.is_focused(), status })) return;
+            this.focusIn();
+            cx.notify();
+          });
         });
       }
     }
