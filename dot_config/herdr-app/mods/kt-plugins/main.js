@@ -29,12 +29,13 @@
 // tab / shift-tab the state segments, enter/o/l open the detail, O the plugin on GitHub, y copies
 // its id, r refresh, e activate / deactivate, u update (the selection when there is one), dd
 // uninstall (danger), + the "Ajouter" menu, x / space / V / ctrl-a select, p the README's Aperçu /
-// Brut, ? kt-keys, q back to the thread; esc ends the range, then empties the selection, then clears
-// the filter, then as q.
+// Brut, ctrl-e / ctrl-y scroll Brut a row (any mode), ? kt-keys, q back to the thread; esc ends the
+// range, then empties the selection, then clears the filter, then closes the open detail, then as q.
 // The README (markdown.js): Aperçu (its frontmatter as fields, its fenced code in Zed's colors, its
-// alerts) or Brut (its source in Zed's colors); a link: the web in the browser, a file of the plugin
-// in Zed.
-// Tests: `kt-plugins.add:<view>` opens the menu ("menu") or a form (add.js).
+// alerts) or Brut (its source in Zed's colors, filling the card under the README row as a virtual
+// list, soft-wrapped at its width); a link: the web in the browser, a file of the plugin in Zed.
+// Tests: `kt-plugins.add:<view>` opens the menu ("menu") or a form (add.js); `kt-plugins.raw:<how>`
+// scrolls Brut (top, bottom, down, up, half-down, half-up, a row).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
@@ -42,7 +43,7 @@ import { exec, theme, spaces, panes, run, layout, props, home, notify, checking,
 import { bump, refreshOn } from "./bus.js";
 import { summary, why } from "./plugins.js";
 import { installed, claude, read } from "./data.js";
-import { parse as mdParse, mdState, view, tabs, target } from "./markdown.js";
+import { parse as mdParse, mdState, view, tabs, target, rawList, rawScroll } from "./markdown.js";
 import { Select, partition, lines } from "./select.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { Add } from "./add.js";
@@ -146,6 +147,8 @@ export default class Plugins extends View {
         } else if (c === "refresh") this.scan(cx);
         // `add:menu` the "Ajouter" popup, `add:browse | marketplace | folder | manual` one of its forms (tests).
         else if (c.startsWith("add:")) this.openAdd(c.slice(4));
+        // `raw:<top|bottom|down|up|half-down|half-up|<row>>`: the README's Brut scroll, for tests (rawScroll).
+        else if (c.startsWith("raw:")) rawScroll(this.md, c.slice(4));
         // Only the copy holding that token runs it (an "Ajouter" dialog may have asked).
         else if (c.startsWith("confirmed:") && this.pending && c.slice(10) === this.pending.token) {
           const p = this.pending;
@@ -414,6 +417,11 @@ export default class Plugins extends View {
       this.md.raw = !this.md.raw;
       return true;
     }
+    // Brut's scroll: vim's own ctrl-e / ctrl-y (j / k move the list).
+    if ((name === "ctrl-e" || name === "ctrl-y") && this.md.raw && this.doc) {
+      rawScroll(this.md, name === "ctrl-e" ? "down" : "up");
+      return true;
+    }
     if (!this.vim.insert && (name === "e" || name === "u")) {
       this.vim.normal();
       const picked = this.multi.pick(this.items, (x) => x.key);
@@ -469,6 +477,10 @@ export default class Plugins extends View {
     else if (a === "escape" && this.query) {
       this.query = "";
       this.cur = null;
+    } else if (a === "escape" && this.sel) {
+      // Then the open detail closes (its ✕), before the page is left (as in Skills).
+      this.sel = null;
+      this.doc = null;
     } else if (a === "escape" || a === "quit") run("layout.select", { stack: "view", child: "thread" });
     else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } });
     else return false;
@@ -745,16 +757,27 @@ export default class Plugins extends View {
         .children(off.map(([k, r]) => div().text_size(11.5).text_color(t.dim).child(tr("verbWhy", { verb: VERB(k), why: r }))))
         .child(div().text_size(11.5).text_color(t.dim).child(RELOAD())))
       .child(dashed(t))
-      .child(v_flex().id("ktp-doc").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.docScroll)
-        .child(v_flex().flex_none().px(14).py(12).gap(14)
-          .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || tr("noDescription")))
-          .child(this.parts(t, x))
-          .child(v_flex().gap(6).child(eyebrow(t, x.pjText ? "plugin.json" : tr("catalogEntry")))
-            .child(codeBlock(t, `pj-${x.key}`, "json", x.pjText ? pretty(x.pjText) : JSON.stringify(x.entry ?? {}, null, 2)))))
-        .child(dashed(t))
-        .child(h_flex().flex_none().px(14).pt(12).pb(6).items_center().child(eyebrow(t, "README")) // i18n: tech
-          .child(div().flex_1()).when(Boolean(d?.md), (el) => el.child(tabs(t, "ktp-md-tabs", this.md))))
-        .child(this.readme(t, x, d, cx)));
+      // Brut (the README read): its row stays, the source fills the rest of the card as a virtual list
+      // (markdown.js rawList); the description, components and plugin.json are Aperçu's.
+      .when(this.md.raw && Boolean(d?.md), (el) => el.child(this.readmeHead(t, d))
+        .child(v_flex().flex_1().min_h(0).px(14).pb(12)
+          .child(rawList(t, this.m, cx, this.md, { id: `ktp-md-${x.key}`, mod: "kt-plugins", doc: d.md }))))
+      .when(!(this.md.raw && Boolean(d?.md)), (el) => el
+        .child(v_flex().id("ktp-doc").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.docScroll)
+          .child(v_flex().flex_none().px(14).py(12).gap(14)
+            .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || tr("noDescription")))
+            .child(this.parts(t, x))
+            .child(v_flex().gap(6).child(eyebrow(t, x.pjText ? "plugin.json" : tr("catalogEntry")))
+              .child(codeBlock(t, `pj-${x.key}`, "json", x.pjText ? pretty(x.pjText) : JSON.stringify(x.entry ?? {}, null, 2)))))
+          .child(dashed(t))
+          .child(this.readmeHead(t, d))
+          .child(this.readme(t, x, d, cx))));
+  }
+
+  // The README's row: its eyebrow, and Aperçu / Brut once it is read.
+  readmeHead(t, d) {
+    return h_flex().flex_none().px(14).pt(12).pb(6).items_center().child(eyebrow(t, "README")) // i18n: tech
+      .child(div().flex_1()).when(Boolean(d?.md), (el) => el.child(tabs(t, "ktp-md-tabs", this.md)));
   }
 
   // The components, one line per kind; a skill opens in kt-skills (a dialog on it) when kt-skills
@@ -772,22 +795,19 @@ export default class Plugins extends View {
         .child(tr("skillsNotLinked"))));
   }
 
-  // The README by markdown.js: Aperçu in a ~80-character column, Brut as wide as the card (it
-  // soft-wraps). While it is read: two paragraphs and a code block as bars (skeleton.js), then the
-  // README fades in over them.
+  // The README in Aperçu (markdown.js) in a ~80-character column. While it is read (in Brut too): two
+  // paragraphs and a code block as bars (skeleton.js), then the README fades in over them.
   readme(t, x, d, cx) {
     const S = skeleton(t, this.m);
     const para = (n) => v_flex().children(Array.from({ length: n }, (_, i) => S.line(i === n - 1 ? 0.55 : 0.95, { h: 9, lh: 22 })));
     return S.swap(`ktp-readme-${x.key}`, d?.readme !== undefined, () => (!d.readme ? empty(t, tr("noReadme"))
-      : v_flex().flex_none().px(18).pt(2).pb(28).when(!this.md.raw, (el) => el.max_w(MEASURE)).when(this.md.raw, (el) => el.w_full())
+      : v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28)
         .text_size(13.5).line_height("22px").text_color(t.foreground)
         .child(view(t, this.m, cx, this.md, { id: `ktp-md-${x.key}`, mod: "kt-plugins", doc: d.md, onLink: (url) => {
           const to = target(url, x.dir);
           if (to?.web) exec("open", [to.web]).catch(() => {});
           else if (to) this.zed(to.path);
-        },
-        // Another page of Brut: back to its top, the README row (the doc scroll's 3rd child).
-        onPage: () => this.docScroll.scroll_to_item(2) }))),
+        } }))),
     () => v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14).child(para(3)).child(S.block(null, 72, { r: 10 })).child(para(2)));
   }
 

@@ -14,8 +14,9 @@
 // skill (name, description, path; source and harness; on hover preview, copy,
 // open), grouped by source, 80 to a page. A row opens the detail on the right:
 // description and frontmatter in a card, then SKILL.md (markdown.js: Aperçu, its fenced code in
-// Zed's colors, or Brut, its source in Zed's colors; p or the two chips switch), ~80 characters a
-// line, scrolling; a relative link to another .md of the skill opens it in the same pane (SKILL.md ›
+// Zed's colors, ~80 characters a line, scrolling; or Brut, its source in Zed's colors filling the card
+// as a virtual list, soft-wrapped at its width; p or the two chips switch); a relative link to another
+// .md of the skill opens it in the same pane (SKILL.md ›
 // file, its frontmatter as fields, back on SKILL.md), anything else of it in Zed, the web in the
 // browser. Copy / Zed (the file shown) / Finder.
 // Scans when the page shows, when the shown space changes while it shows, and
@@ -28,23 +29,25 @@
 // assistant, an empty skeleton, from a folder, from GitHub, from a plugin), then as a dialog
 // (props.add: the way): its form, then a confirmation showing the exact commands (form.js, add.js).
 // The source segments are a filter row (FILTERS.md): one line scrolling sideways, pale tints.
-// Mod commands: kt-skills.add, kt-skills.refresh, kt-skills.bulk:<copy|zed|finder> (tests).
+// Mod commands: kt-skills.add, kt-skills.refresh, kt-skills.bulk:<copy|zed|finder>,
+// kt-skills.raw:<top|bottom|down|up|half-down|half-up|<row>> (Brut's scroll) (tests).
 // Keys (vim.js; kt-keys lists them under Pages): the page opens typing in the filter (INSERT);
 // ctrl-b h/l (pane.go, "focus") or `kt-skills.key:<keys>` give it the keyboard in NORMAL.
 // INSERT: type to filter, ctrl-n/ctrl-p, ctrl-j/ctrl-k, ↓ ↑ move the cursor, enter opens it, esc:
 // NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N move the cursor over the rows and the "Fragments et
 // templates" folds, across pages (k on the first row: the filter, INSERT); / the filter, tab /
 // shift-tab the source segments, enter/o/l open the detail (a click; on a fold: unfold), h folds,
-// O Zed, y copies /skill, r refresh, a + Ajouter, p Aperçu / Brut of the open file, ? kt-keys, q back
-// to the thread (a dialog closes); x or space
+// O Zed, y copies /skill, r refresh, a + Ajouter, p Aperçu / Brut of the open file, ctrl-e / ctrl-y
+// scroll Brut a row (any mode), ? kt-keys, q back to the thread (a dialog closes); x or space
 // toggle the row's selection, V a visual range (j/k extend it, esc ends it), ctrl-a selects every
-// listed row; esc ends the range, then empties the selection, then clears the filter, then as q.
+// listed row; esc ends the range, then empties the selection, then clears the filter, then closes the
+// open detail (not in a dialog), then as q.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, readTextFile, theme, spaces, panes, run, layout, props, home, notify, checking, nextCommand, openOverlay, closeOverlay, shared, watchFolder } from "herdr";
 import { frontmatter } from "./frontmatter.js";
-import { parse as mdParse, mdState, view, tabs, target } from "./markdown.js";
+import { parse as mdParse, mdState, view, tabs, target, rawList, rawScroll } from "./markdown.js";
 import { Select } from "./select.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { AddMenu, AddForm, menuSize } from "./form.js";
@@ -168,6 +171,8 @@ export default class Skills extends View {
         }
         // `bulk:<id>`: the bulk bar's action of that id (copy, zed, finder), as its click, for tests.
         else if (c.startsWith("bulk:")) this.bulkActions?.find(([id]) => id === c.slice(5))?.[3](cx);
+        // `raw:<top|bottom|down|up|half-down|half-up|<row>>`: Brut's scroll, for tests (markdown.js rawScroll).
+        else if (c.startsWith("raw:")) rawScroll(this.md, c.slice(4));
         else if (c === "add") this.openAdd();
         else if (c === "refresh") this.scan(cx);
         cx.notify();
@@ -527,17 +532,22 @@ export default class Skills extends View {
   }
 
   // One key (an event, or a name from `kt-skills.key:`): the selection's first (select.js, NORMAL
-  // only: x space V ctrl-a esc), then p (Aperçu / Brut of the open file), then vim's; a visual range
-  // then follows the cursor.
+  // only: x space V ctrl-a esc), then p (Aperçu / Brut of the open file) and ctrl-e / ctrl-y (Brut's
+  // scroll: vim's own, j / k move the list), then vim's; a visual range then follows the cursor.
   press(k, cx) {
     const cur = () => { const e = this.at(this.entries(this.listed())); return e ? idOf(e) : null; };
-    if (!this.vim.insert && this.multi.key(keyOf(k).name, cur(), this.order())) {
+    const name = keyOf(k).name;
+    if (!this.vim.insert && this.multi.key(name, cur(), this.order())) {
       this.vim.normal(); // a `d` or a count typed before it is dropped
       return true;
     }
-    if (!this.vim.insert && keyOf(k).name === "p" && this.doc) {
+    if (!this.vim.insert && name === "p" && this.doc) {
       this.vim.normal();
       this.md.raw = !this.md.raw;
+      return true;
+    }
+    if ((name === "ctrl-e" || name === "ctrl-y") && this.md.raw && this.doc) {
+      rawScroll(this.md, name === "ctrl-e" ? "down" : "up");
       return true;
     }
     if (!this.keyAct(this.vim.handle(k), cx)) return false;
@@ -588,6 +598,10 @@ export default class Skills extends View {
       this.query = "";
       this.page = 0;
       this.cur = null;
+    } else if (a === "escape" && this.sel && !props()?.overlay) {
+      // Then the open detail closes (its ✕), before the page is left.
+      this.sel = null;
+      this.doc = null;
     } else if (a === "escape" || a === "quit") {
       if (props()?.overlay) closeOverlay(props().overlay);
       else run("layout.select", { stack: "view", child: "thread" });
@@ -835,31 +849,34 @@ export default class Skills extends View {
         .child(path(tr("path.file"), x.real))
         .when(x.path !== x.real, (el) => el.child(path("Via", x.path))))
       .child(this.dashed(t))
-      // Everything below scrolls as one: the description and frontmatter card, then the file.
-      .child(v_flex().id("kts-doc").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.docScroll)
-        .child(v_flex().flex_none().px(14).py(12).gap(12)
-          .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || tr("noDescription")))
-          .when(meta.length > 0, (el) => el.child(v_flex().gap(6).children(meta.map(([k, v]) => pair(k, fmt(v)))))))
-        .child(this.dashed(t))
-        .child(crumb)
-        .child(this.body(t, x, d, cx)));
+      // Brut (the file read): the crumb stays, the source fills the rest of the card as a virtual list,
+      // every row from the first to the last (markdown.js rawList; the card above is in the source).
+      .when(this.md.raw && Boolean(d?.md) && d?.note !== "unreadableMd", (el) => el.child(crumb)
+        .child(v_flex().flex_1().min_h(0).px(14).pb(12)
+          .child(rawList(t, this.m, cx, this.md, { id: `kts-md-${d.path}`, mod: "kt-skills", doc: d.md }))))
+      // Else everything below scrolls as one: the description and frontmatter card, then the file.
+      .when(!(this.md.raw && Boolean(d?.md) && d?.note !== "unreadableMd"), (el) => el
+        .child(v_flex().id("kts-doc").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.docScroll)
+          .child(v_flex().flex_none().px(14).py(12).gap(12)
+            .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || tr("noDescription")))
+            .when(meta.length > 0, (el) => el.child(v_flex().gap(6).children(meta.map(([k, v]) => pair(k, fmt(v)))))))
+          .child(this.dashed(t))
+          .child(crumb)
+          .child(this.body(t, x, d, cx))));
     return enter(this.m, card, `kts-detail-${x.key}`);
   }
 
-  // The file, by markdown.js: Aperçu in a ~80-character column with airy lines, Brut as wide as the
-  // card (it soft-wraps; Kylian, 2026-11-18: « attention à la droite, c'est pas dynamique »).
-  // While it is read: two paragraphs and a code block as bars (skeleton.js), in the same column, then
-  // the file fades in over them. Unreadable, or empty in Aperçu: said in the column.
+  // The file in Aperçu (markdown.js) in a ~80-character column with airy lines. While it is read (in
+  // Brut too): two paragraphs and a code block as bars (skeleton.js), then the file fades in over them.
+  // Unreadable, or empty in Aperçu: said in the column.
   body(t, x, d, cx) {
     const S = skeleton(t, this.m);
     const para = (n) => v_flex().children(Array.from({ length: n }, (_, i) => S.line(i === n - 1 ? 0.55 : 0.95, { h: 9, lh: 22 })));
-    const col = () => v_flex().flex_none().px(18).pt(2).pb(28).gap(14).when(!this.md.raw, (el) => el.max_w(MEASURE)).when(this.md.raw, (el) => el.w_full());
+    const col = () => v_flex().flex_none().max_w(MEASURE).px(18).pt(2).pb(28).gap(14);
     return S.swap(`kts-body-${d?.path}`, Boolean(d?.md), () => col().text_size(13.5).line_height("22px").text_color(t.foreground)
-      .child(d.note === "unreadableMd" || (d.note && !this.md.raw) ? div().text_color(t.dim).child(tr(d.note))
+      .child(d.note ? div().text_color(t.dim).child(tr(d.note))
         : view(t, this.m, cx, this.md, { id: `kts-md-${d.path}`, mod: "kt-skills", doc: d.md,
-          onLink: (url, cx) => { this.link(x, url, cx); cx.notify(); },
-          // Another page of Brut: back to its top, the crumb (the doc scroll's 3rd child).
-          onPage: () => this.docScroll.scroll_to_item(2) })),
+          onLink: (url, cx) => { this.link(x, url, cx); cx.notify(); } })),
     () => col().child(para(3)).child(S.block(null, 72, { r: 10 })).child(para(2)));
   }
 

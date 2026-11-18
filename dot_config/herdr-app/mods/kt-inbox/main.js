@@ -10,8 +10,9 @@
 // since I last opened it). Right: the selected item's key figures, meta and
 // actions, then for a PR Summary / Code / Checks, for an issue its body and
 // last 20 comments. The body (an issue's, a PR's Summary) by markdown.js: Aperçu (its fenced code
-// in Zed's colors, its alerts, no HTML comments) or Brut (its source in Zed's colors), the two
-// chips above it or p; the comments in Aperçu only. Every change (merge, draft, ready, close, reopen) asks
+// in Zed's colors, its alerts, no HTML comments) or Brut (its source in Zed's colors, filling the
+// card as a virtual list, soft-wrapped at its width; an issue's comments are then not shown), the
+// two chips above it or p; the comments in Aperçu only. Every change (merge, draft, ready, close, reopen) asks
 // first through the `kt-confirm` dialog, which calls back
 // `kt-inbox.confirmed` (a mod command: it reaches this copy while the page shows).
 // Data: `gh`, cached in localStorage by scope (list 2 min, detail 1 min); the
@@ -28,7 +29,8 @@
 // NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N move the cursor (k on the first row: the filter, INSERT),
 // / the filter, tab / shift-tab the type pills, [ ] the relation pills, enter/o/l open (a click), O
 // GitHub, y copy the link, r refresh, dd close it (kt-confirm, open ones), p the body's Aperçu / Brut,
-// ? kt-keys, q back to the thread, esc empties the selection, else clears the filter, then back to the thread.
+// ctrl-e / ctrl-y scroll Brut a row (any mode), ? kt-keys, q back to the thread, esc empties the
+// selection, else clears the filter, then back to the thread. `kt-inbox.raw:<how>` scrolls Brut (tests).
 // Selection (select.js): x / space pick the cursor's row, V a range, ctrl-a every listed row,
 // ⌘-click / ⇧-click; a bar then acts on them (bulk.js): open, copy the links, gwm review (PRs with a
 // local checkout, never bootstrapped), close (open ones only, each listed in a danger confirm).
@@ -53,7 +55,7 @@ import { planClose, planReview, describe, fitAsked } from "./bulk.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
-import { mdState, mdBudget, docOf, view, preview, tabs as mdTabs } from "./markdown.js";
+import { mdState, mdBudget, docOf, view, preview, tabs as mdTabs, rawList, rawScroll } from "./markdown.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { roll, rollText } from "./roll.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): a PR's checks as steps, a bulk run's progress.
@@ -229,6 +231,8 @@ export default class Inbox extends View {
           for (const k of keysOf(c.slice(4))) this.press(k, cx);
         }
         else if (c === "refresh") this.refresh(cx);
+        // `raw:<top|bottom|down|up|half-down|half-up|<row>>`: the body's Brut scroll, for tests (rawScroll).
+        else if (c.startsWith("raw:")) rawScroll(this.md, c.slice(4));
         else if (c === "code-first" && this.sel?.kind === "pr") {
           this.tab = "code";
           const f = this.diffs[this.sel.key]?.files?.[0];
@@ -1006,7 +1010,8 @@ export default class Inbox extends View {
 
   // One key, from the keyboard or `key:`: in NORMAL the selection's first (select.js: x / space
   // toggle the cursor's row, V a visual range, ctrl-a every listed row, esc empties), then vim's
-  // (dd still closes the cursor's item), p the body's Aperçu / Brut. A move in a visual range extends it.
+  // (dd still closes the cursor's item), p the body's Aperçu / Brut, ctrl-e / ctrl-y Brut's scroll. A
+  // move in a visual range extends it.
   press(e, cx) {
     // The Code zone takes the keys first: x, space or dd there never pick nor close the list's items.
     if (this.zone === "code" && !this.vim.insert && this.tab === "code" && this.sel?.kind === "pr") return this.codeKey(this.vim.handle(e), cx);
@@ -1015,6 +1020,11 @@ export default class Inbox extends View {
     if (!this.vim.insert && keyOf(e).name === "p" && this.sel) {
       this.vim.normal();
       this.md.raw = !this.md.raw;
+      return true;
+    }
+    // Brut's scroll: vim's own ctrl-e / ctrl-y (j / k move the list).
+    if ((keyOf(e).name === "ctrl-e" || keyOf(e).name === "ctrl-y") && this.md.raw && this.sel) {
+      rawScroll(this.md, keyOf(e).name === "ctrl-e" ? "down" : "up");
       return true;
     }
     const taken = this.keyAct(this.vim.handle(e), cx);
@@ -1413,12 +1423,17 @@ export default class Inbox extends View {
     const scroll = (id) => v_flex().id(id).flex_1().min_h(0).overflow_y_scrollbar();
     // The body's Aperçu / Brut (markdown.js), right of the PR's tabs; an issue's in a row of its own.
     const md = Boolean(data.body?.trim()) && mdTabs(t, "kti-md-tabs", this.md);
+    // Brut: the body's source filling the card as a virtual list (markdown.js rawList); an issue's
+    // comments are Aperçu's.
+    const raw = () => v_flex().flex_1().min_h(0).p(12)
+      .child(rawList(t, this.m, cx, this.md, { id: `kti-md-${x.key}`, mod: "kt-inbox", doc: docOf(this.md, data.body) }));
     if (x.kind === "issue") {
       const comments = data.comments ?? [];
       const budget = mdBudget(); // one for the body and its comments: a render has ~50 ms (markdown.js)
       return card
         .when(Boolean(md), (el) => el.child(h_flex().flex_none().px(12).py(8).items_center().child(div().flex_1()).child(md)).child(this.dashed(t)))
-        .child(scroll("kti-issue").p(18).gap(14)
+        .when(Boolean(md) && this.md.raw, (el) => el.child(raw()))
+        .when(!(md && this.md.raw), (el) => el.child(scroll("kti-issue").p(18).gap(14)
           .child(this.markdown(t, `kti-md-${x.key}`, data.body, cx, { body: true, budget }))
           .child(this.dashed(t))
           .child(this.eyebrow(t, comments.length ? tr("comments", { n: comments.length }) : tr("noComments")))
@@ -1426,7 +1441,7 @@ export default class Inbox extends View {
             .child(h_flex().gap(8).items_center()
               .child(this.eyebrow(t, `@${c.author?.login ?? "?"}`, t.foreground))
               .child(div().font_family(MONO).text_size(11).text_color(t.dim).child(ago(c.createdAt))))
-            .child(this.markdown(t, `kti-mdc-${x.key}-${i}`, c.body, cx, { budget })))));
+            .child(this.markdown(t, `kti-mdc-${x.key}-${i}`, c.body, cx, { budget }))))));
     }
     const nChecks = (d.checks ?? []).length;
     const tabs = [["summary", "Summary"], ["code", `Code · ${data.changedFiles ?? 0}`], ["checks", `Checks · ${nChecks}`]]; // i18n: tech
@@ -1435,7 +1450,8 @@ export default class Inbox extends View {
         .children(tabs.map(([id, label]) => this.chip(t, `kti-tab-${id}`, label, this.tab === id, () => { this.tab = id; })))
         .when(this.tab === "summary" && Boolean(md), (el) => el.child(div().flex_1()).child(md)))
       .child(this.dashed(t))
-      .when(this.tab === "summary", (el) => el.child(scroll("kti-summary").p(18).child(this.markdown(t, `kti-md-${x.key}`, data.body, cx, { body: true }))))
+      .when(this.tab === "summary" && Boolean(md) && this.md.raw, (el) => el.child(raw()))
+      .when(this.tab === "summary" && !(md && this.md.raw), (el) => el.child(scroll("kti-summary").p(18).child(this.markdown(t, `kti-md-${x.key}`, data.body, cx, { body: true }))))
       .when(this.tab === "code", (el) => el.child(this.code(t, x, cx)))
       .when(this.tab === "checks", (el) => el.child(this.checksView(t, x, d)));
   }

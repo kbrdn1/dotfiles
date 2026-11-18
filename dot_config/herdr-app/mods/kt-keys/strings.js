@@ -201,6 +201,9 @@ export default {
     "pg.codePath": "Copier le chemin du fichier",
     "pg.codeBack": "Retour à la liste (dd, x et [ ] n'y font rien)",
     "pg.mdRaw": "Le document ouvert : Aperçu (rendu) ou Brut (le source markdown, aux couleurs de Zed)",
+    "pg.mdScroll": "Faire défiler le Brut d'une rangée (j / k restent à la liste)",
+    "pg.notesRawScroll": "Dans la note en Brut : une rangée, une demi-page, le début ou la fin",
+    "pg.skillsEsc": "Après le filtre, fermer le détail ouvert, puis revenir au thread",
   },
   en: {
     title: "Keys",
@@ -401,5 +404,8 @@ export default {
     "pg.codePath": "Copy the file's path",
     "pg.codeBack": "Back to the list (dd, x and [ ] do nothing there)",
     "pg.mdRaw": "The open document: Preview (rendered) or Raw (the markdown source, in Zed's colors)",
+    "pg.mdScroll": "Scroll Raw by one row (j / k stay with the list)",
+    "pg.notesRawScroll": "In a note shown Raw: one row, half a page, the start or the end",
+    "pg.skillsEsc": "After the filter, close the open detail, then back to the thread",
   },
 };

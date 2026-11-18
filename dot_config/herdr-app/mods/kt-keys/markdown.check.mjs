@@ -1,8 +1,10 @@
 // bun ~/.config/herdr-app/mods/kt-keys/markdown.check.mjs: markdown.js' pure side (the cut: fences,
-// alerts, HTML comments; the frontmatter as fields; parse; the hash; the fence's language and the
-// fallback to plain mono; links), then its colors (one batch per render, the cache by content and
-// mode, a failure kept as mono, nothing under checking) and its drawing (Aperçu / Brut, the
-// skeleton while Brut is asked, the tabs). herdr and gpui mocked; exec stands for zed-tokens.ts.
+// alerts, HTML comments; the frontmatter as fields; parse; the hash; the soft wrap: rows, indent,
+// colors cut at the same points, words longer than a row, surrogate pairs, rowCount = wrapLine; the
+// fence's language and the fallback to plain mono; links), then its colors (one batch per render, the
+// cache by content and mode, a failure kept as mono, nothing under checking) and its drawing (Aperçu,
+// the paged Brut, the virtual-list Brut and its scroll, the columns from the width, the tabs). herdr and
+// gpui mocked; exec stands for zed-tokens.ts.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,6 +39,9 @@ plugin({
     b.module("gpui-base", () => ({ loader: "object", exports: {
       v_flex: () => el("v"), h_flex: () => el("h"),
       TextView: { markdown: (id, text) => { const x = el("md"); x.props.id = [id]; x.props.text = [text]; return x; } },
+      v_virtual_list: (...args) => { const x = el("list"); x.props.args = args; return x; },
+      Scrollbar: { vertical: (id) => { const x = el("bar"); x.props.for = [id]; return x; } },
+      VirtualListScrollHandle: { new: () => ({ calls: [], scroll_to_item(i, s) { this.calls.push(["item", i, s]); }, scroll_to_bottom() { this.calls.push(["bottom"]); } }) },
     } }));
     b.module("herdr", () => ({ loader: "object", exports: {
       appHome: () => home, home: () => home, settings: () => ({ dark }), checking: () => isChecking, shared: () => undefined, setShared: () => {},
@@ -54,7 +59,8 @@ plugin({
     } }));
   },
 });
-const { blocks, fields, parse, hash, softLine, wrapPlan, mdBudget, langFor, target, mdState, docOf, colorsOf, view, preview, tabs } = await import("./markdown.js");
+const { blocks, fields, parse, hash, wrapLine, wrapRows, rowCount, rowStarts, lineAt, colsFor, mdBudget, langFor, target, mdState, docOf, colorsOf,
+  view, preview, rawList, rawScroll, tabs } = await import("./markdown.js");
 const { motionState, frame } = await import("./motion.js");
 
 // ---------- the cut: fences (any indent, ``` or ~~~, unclosed runs to the end); tables stay ----------
@@ -138,38 +144,63 @@ assert.equal(hash("abc"), hash("abc"));
 assert.notEqual(hash("abc"), hash("abd"));
 assert.match(hash(""), /^811c9dc5-0$/);
 
-// The soft wrap: the indent apart (kept on every row), pieces that break only after a space, a word
-// split across runs kept whole, an indent across runs, a line of spaces, an empty line.
+// ---------- the soft wrap ----------
 const R = "#ff0000", G = "#00ff00";
-assert.deepEqual(softLine([["    const ", R, 0], ["a = ", G, 0], ["1;", R, 2]]),
-  { indent: "    ", pieces: [[["const ", R, 0]], [["a ", G, 0]], [["= ", G, 0]], [["1;", R, 2]]] });
-assert.deepEqual(softLine([["Un ", G, 0], ["**gras**", R, 2], [", fin", G, 0]]),
-  { indent: "", pieces: [[["Un ", G, 0]], [["**gras**", R, 2], [", ", G, 0]], [["fin", G, 0]]] });
-assert.deepEqual(softLine([["  ", G, 0], ["  - item  x", R, 0]]), { indent: "    ", pieces: [[["- ", R, 0]], [["item  ", R, 0]], [["x", R, 0]]] });
-assert.deepEqual(softLine([["   ", null, 0]]), { indent: "   ", pieces: [] });
-assert.deepEqual(softLine([]), { indent: "", pieces: [] });
-assert.equal(softLine([["  a very long line indeed", null, 0]]).pieces.flat().map((x) => x[0]).join(""), "a very long line indeed", "nothing lost");
-// wrapPlan: one style, one text (1 element); several, between pieces while the budget allows, then its
-// runs merged by style, then plain; never a character lost, the indent always kept.
-const multi = [["  - ", R, 0], ["**a**", G, 2], [" b c", R, 0]];
-const long = [["  - ", R, 0], ["**a**", G, 2], [` b c${" d".repeat(30)}`, R, 0]];
-const longText = `- **a** b c${" d".repeat(30)}`;
-assert.deepEqual(wrapPlan([["  plain text", R, 0]]), { indent: "  ", mode: "one", parts: [["plain text", R, 0]], cost: 1 });
-assert.deepEqual(wrapPlan([]), { indent: "", mode: "one", parts: [[" ", null, 0]], cost: 1 });
-// A short line of several colors: its runs (it won't wrap: the same look, for less).
-assert.deepEqual(wrapPlan(multi), { indent: "  ", mode: "segs", parts: [["- ", R, 0], ["**a**", G, 2], [" b c", R, 0]], cost: 4 });
-// A long one: words, those of one style grouped up to 32 characters; 2, then 2 a chunk, 2 more a span
-// for a glued one (**a** and its space).
-const w = wrapPlan(long);
-assert.equal(w.mode, "words");
-assert.deepEqual(w.parts.slice(0, 3), [[["- ", R, 0]], [["**a**", G, 2], [" ", R, 0]], [[`b c ${"d ".repeat(14)}`, R, 0]]]);
-assert.ok(w.parts.slice(2).every((c) => c.length === 1 && c[0][0].length <= 32), "chunks of 32 characters at most");
-assert.equal(w.cost, 2 + 2 + (2 * 2 + 2) + 2 * (w.parts.length - 2));
-const sg = wrapPlan(long, 30);
-assert.deepEqual([sg.mode, sg.cost], ["segs", 4]);
-const mono = wrapPlan(long, 3);
-assert.deepEqual([mono.mode, mono.indent, mono.parts, mono.cost], ["mono", "  ", [[longText, null, 0]], 1]);
-for (const p of [w, sg, mono]) assert.equal((p.mode === "words" ? p.parts.flat() : p.parts).map((s) => s[0]).join(""), longText, p.mode);
+const rowText = (r) => r.runs.map((s) => s[0]).join("");
+// Every row fits its columns (avail, or avail + 1 when the extra is the space it was cut after); the
+// rows give back the line's text after its indent; nothing starts with half a surrogate pair.
+function wellCut(runs, cols) {
+  const text = runs.map((s) => s[0]).join("");
+  const rows = wrapLine(runs, cols);
+  const lead = text.length - text.trimStart().length;
+  for (const r of rows) {
+    const avail = Math.max(20, cols - r.pad);
+    const s = rowText(r);
+    assert.ok(s.length <= avail || (s.length === avail + 1 && s.endsWith(" ")), `row too long: ${JSON.stringify(s)} (${avail})`);
+    const c = s.charCodeAt(0);
+    assert.ok(!(c >= 0xdc00 && c <= 0xdfff), "half a surrogate pair");
+    assert.equal(r.pad, Math.min(lead, Math.max(0, cols - 20)), "the indent on every row");
+  }
+  assert.equal(rows.map(rowText).join(""), text.trimStart(), "nothing lost");
+  assert.equal(rowCount(text, cols), rows.length, "rowCount agrees");
+  return rows;
+}
+assert.deepEqual(wrapLine([["short", R, 0]], 30), [{ pad: 0, runs: [["short", R, 0]] }]);
+assert.deepEqual(wrapLine([], 30), [{ pad: 0, runs: [] }], "an empty line: one empty row");
+// Cut after the last space that fits; a space at the column stays at the row's end.
+assert.deepEqual(wellCut([["alpha beta gamma delta epsilon zeta eta theta", null, 0]], 20).map(rowText),
+  ["alpha beta gamma ", "delta epsilon zeta ", "eta theta"]);
+// A word longer than a row: cut at the column (défaut c).
+assert.deepEqual(wellCut([["x".repeat(50), null, 0]], 20).map(rowText), ["x".repeat(20), "x".repeat(20), "x".repeat(10)]);
+assert.deepEqual(wellCut([["see https://raw.githubusercontent.com/USER/main/banner.png", null, 0]], 24).map(rowText),
+  ["see ", "https://raw.githubuserco", "ntent.com/USER/main/bann", "er.png"]);
+// The indent: padding on every row, capped so a row keeps 20 columns of text.
+const ind = wellCut([["    - item with quite a few words to wrap around the column", null, 0]], 30);
+assert.ok(ind.length > 1 && ind.every((r) => r.pad === 4));
+assert.equal(wellCut([[`${" ".repeat(30)}deep`, null, 0]], 24)[0].pad, 4);
+// Colors cut at the same points, each character keeping its run's color and style.
+const colored = [["  ", null, 0], ["- ", R, 0], ["**gras**", G, 2], [` ${"mot ".repeat(12)}fin`, R, 0]];
+const cr = wellCut(colored, 24);
+const colorAt = (runs) => runs.flatMap(([s, c, st]) => [...s].map(() => `${c}/${st}`));
+assert.deepEqual(colorAt(cr.flatMap((r) => r.runs)), colorAt(colored).slice(2), "every character keeps its color");
+assert.ok(cr.length > 2);
+// Emoji (a surrogate pair each), never split.
+wellCut([["😀".repeat(30), null, 0]], 21);
+wellCut([["a😀b😀".repeat(15), R, 0]], 23);
+// rowCount = wrapLine().length over many lines (a fixed pseudo-random draw).
+let seed = 7;
+const rnd = (n) => ((seed = (seed * 1103515245 + 12345) % 2147483648) % n);
+for (let k = 0; k < 400; k++) {
+  const words = Array.from({ length: rnd(25) }, () => (rnd(10) === 0 ? "😀" : "w".repeat(1 + rnd(rnd(8) === 0 ? 40 : 9))));
+  wellCut([[`${" ".repeat(rnd(12))}${words.join(rnd(5) === 0 ? "  " : " ")}`, R, 0]], 20 + rnd(60));
+}
+// wrapRows, rowStarts, lineAt, colsFor.
+assert.equal(wrapRows([[["a", null, 0]], [["x".repeat(45), null, 0]]], 20).map((x) => x.length).join(), "1,3");
+const st0 = rowStarts(["a", "x".repeat(45), "", "b"], 20);
+assert.deepEqual(st0, [0, 1, 4, 5, 6]);
+assert.deepEqual([0, 1, 3, 4, 5].map((v) => lineAt(st0, v)), [0, 1, 1, 2, 3]);
+assert.equal(colsFor(28 + 7.2 * 40), 39);
+assert.equal(colsFor(0), 20);
 
 // The fence's language, and the fallback: no info, nothing asked (plain mono).
 assert.equal(langFor(""), null);
@@ -241,6 +272,8 @@ const t = { border: "#2a2a2a", raised: "#1c1c1c", foreground: "#e8e8e8", muted: 
   ansi1: "#ff0000", ansi2: "#00ff00", ansi3: "#ffff00", ansi5: "#ff00ff" };
 const find = (n, pred, out = []) => { if (n && typeof n === "object" && "kids" in n) { if (pred(n)) out.push(n); for (const k of n.kids) find(k, pred, out); } return out; };
 const texts = (n) => find(n, () => true).flatMap((x) => x.kids.filter((k) => typeof k === "string"));
+const nodes = (n) => find(n, () => true).length;
+const sizeCx = () => { const c = { n: 0, notify: () => c.n++ }; return c; };
 let m = frame(motionState(), false);
 st = mdState();
 const doc = parse("---\ntitle: Démo\n---\n# Titre\n\n> [!NOTE]\n> Lu.\n\n```js\nconst a = 1;\n```\n");
@@ -260,7 +293,14 @@ assert.equal(spawned.length, 1);
 await settle();
 v = view(t, m, cx, st, { id: "kx-md", mod: "kt-x", doc });
 assert.equal(find(v, (x) => x.props.text_color?.[0] === "#ff0000").length, 1, "the code block in Zed's colors");
-// Brut: the switch fades it in; the skeleton while asked (asked only now), then the source, one row per line.
+// A code block's columns: from its width (on_size_change), a render only when they change.
+const blockEl = find(v, (x) => x.props.id?.[0] === "kx-md#2-code")[0];
+const sc = sizeCx();
+blockEl.on.on_size_change({ width: 28 + 7.2 * 41, height: 80 }, sc);
+blockEl.on.on_size_change({ width: 28 + 7.2 * 41 + 3, height: 120 }, sc);
+assert.equal(sc.n, 1, "one render for a change of columns, none for a pixel or a height");
+// Paged Brut (view: a Brut inside a longer page): the switch fades it in; the skeleton while asked
+// (asked only now), then the source, one row per line.
 st.raw = true;
 const before = calls.length;
 m = frame(m, false);
@@ -301,23 +341,22 @@ tb.kids[0].on.on_click(null, { stop_propagation: () => {}, notify: () => {} });
 assert.equal(st.raw, false);
 tb.kids[1].on.on_click(null, { stop_propagation: () => {}, notify: () => {} });
 assert.equal(st.raw, true);
-// Brut and code blocks soft-wrap: nothing scrolls sideways nor stays on one row, the boxes as wide as
-// their caller; a line of several colors wraps between its pieces, its indent in front.
+// Rows: one per wrapped row, never wrapping by themselves (nowrap), nothing scrolling sideways, the box
+// as wide as its caller; a line of several colors as its runs side by side, its indent as padding.
 const d3 = parse("  - **a** b\nplain");
 st.colors.set(`dark:markdown:${d3.hash}`, [[["  - ", R, 0], ["**a**", G, 2], [" b", R, 0]], [["plain", R, 0]]]);
 m = frame(m, false);
 v = view(t, m, cx, st, { id: "kx-d3", mod: "kt-x", doc: d3 });
-const sideways = (n) => find(n, (x) => "overflow_x_scrollbar" in x.props || "whitespace_nowrap" in x.props).length;
-assert.equal(sideways(v), 0);
+assert.equal(find(v, (x) => "overflow_x_scrollbar" in x.props).length, 0, "nothing scrolls sideways");
 assert.ok("w_full" in v.props && "w_full" in v.kids[0].props, "as wide as the caller");
-assert.equal(find(v, (x) => "flex_wrap" in x.props).length, 1, "the multi-color line wraps between pieces");
-assert.deepEqual(find(v, (x) => "flex_wrap" in x.props)[0].props.pl, [2 * 7.2], "its indent as padding, on every row");
-assert.ok(texts(v).includes("plain"), "a one-color line wraps as text");
-// The budget: a big Brut goes by pages, each bounded (a render is interrupted past ~50 ms); the pages
-// cover every line once, ‹ › move between them.
+const row1 = find(v, (x) => x.kind === "h" && "whitespace_nowrap" in x.props)[0];
+assert.deepEqual(row1.props.pl, [2 * 7.2], "its indent as padding");
+assert.deepEqual(texts(row1), ["- ", "**a**", " b"]);
+assert.ok(texts(v).includes("plain"));
+// The paged Brut's budget: pages, each bounded (a render is interrupted past ~50 ms); every line once,
+// ‹ › move between them.
 const big = parse(Array.from({ length: 1400 }, (_, i) => `  - l${i} \`c\` **b** and some more words to wrap`).join("\n"));
 st.colors.set(`dark:markdown:${big.hash}`, Array.from({ length: 1400 }, (_, i) => [["  - ", R, 0], [`l${i} `, G, 0], ["`c`", R, 0], [" ", G, 0], ["**b**", R, 2], [" and some more words to wrap", G, 0]]));
-const nodes = (n) => find(n, () => true).length;
 const seenLines = new Set();
 let pages = 0, bv;
 const click = (n, id) => find(n, (x) => x.props.id?.[0] === id)[0]?.on.on_click(null, { stop_propagation: () => {}, notify: () => {} });
@@ -326,47 +365,102 @@ for (;;) {
   bv = view(t, m, cx, st, { id: "kx-big", mod: "kt-x", doc: big });
   pages++;
   assert.ok(nodes(bv) < 3000, `page ${pages} bounded: ${nodes(bv)} elements`);
-  for (const s of texts(bv)) { const k = /^(?:- )?l(\d+) /.exec(s); if (k) { assert.ok(!seenLines.has(k[1]), "a line on one page only"); seenLines.add(k[1]); } }
+  for (const s of texts(bv)) { const k = /^(?:- )?l(\d+) $/.exec(s); if (k) { assert.ok(!seenLines.has(k[1]), "a line on one page only"); seenLines.add(k[1]); } }
   assert.ok(texts(bv).some((s) => /^lignes \d+–\d+ sur 1400$/.test(s)), "the page says where it is");
   if (!find(bv, (x) => x.props.id?.[0] === "kx-big:nextt").length) break;
   click(bv, "kx-big:nextb");
-  assert.ok(pages < 40);
+  assert.ok(pages < 60);
 }
 assert.equal(seenLines.size, 1400, "every line, once");
 assert.ok(pages > 1 && texts(bv).some((s) => /^lignes \d+–1400 sur 1400$/.test(s)), "the last page");
 click(bv, "kx-big:prevt");
 m = frame(m, false);
-assert.ok(!texts(view(t, m, cx, st, { id: "kx-big", mod: "kt-x", doc: big })).some((s) => /^(?:- )?l1399 /.test(s)), "‹ back a page");
-// A plain line costs 1 (no plan): a page of plain lines holds BUDGET (500) of them.
+assert.ok(!texts(view(t, m, cx, st, { id: "kx-big", mod: "kt-x", doc: big })).some((s) => /^(?:- )?l1399 $/.test(s)), "‹ back a page");
+// A one-color line costs a row: a page of short plain lines holds BUDGET (500) of them.
 const plain = parse(Array.from({ length: 3000 }, (_, i) => `row ${i}`).join("\n"));
 m = frame(m, false);
 view(t, m, cx, st, { id: "kx-plain", mod: "kt-x", doc: plain }); // its colors asked
 await settle();
 m = frame(m, false);
 assert.ok(texts(view(t, m, cx, st, { id: "kx-plain", mod: "kt-x", doc: plain })).includes("lignes 1–500 sur 3000"));
-// One budget for a render's documents (mdBudget): what one spends, the next has not; a page change
-// tells the mod (onPage), which brings the page's top into view.
-let turned = 0;
+// One budget for a render's documents (mdBudget): what one spends, the next has not.
 const shared = mdBudget();
 m = frame(m, false);
 view(t, m, cx, st, { id: "kx-s1", mod: "kt-x", doc: plain, budget: shared });
-const s2 = view(t, m, cx, st, { id: "kx-s2", mod: "kt-x", doc: plain, budget: shared, onPage: () => turned++ });
-assert.ok(texts(s2).includes("lignes 1–1 sur 3000"), "the second document gets what is left: a line, then its pages");
-click(s2, "kx-s2:nextb");
-assert.equal(turned, 1);
+assert.ok(texts(view(t, m, cx, st, { id: "kx-s2", mod: "kt-x", doc: plain, budget: shared })).includes("lignes 1–1 sur 3000"), "the second gets what is left");
 // Aperçu's code blocks: past the budget, plain (nothing hidden); past HARD (1000) rows a render, cut and
 // said: Brut shows the rest, or (noRaw, a comment) not shown.
 st.raw = false;
 m = frame(m, false);
-const block = (n) => parse("```\n" + Array.from({ length: n }, (_, i) => `x${i}`).join("\n") + "\n```");
+const block = (k) => parse("```\n" + Array.from({ length: k }, (_, i) => `x${i}`).join("\n") + "\n```");
 const lv = view(t, m, cx, st, { id: "kx-long", mod: "kt-x", doc: block(900) });
 assert.ok(texts(lv).includes("x899") && !texts(lv).some((s) => s.startsWith("…")), "900 rows: all drawn");
 m = frame(m, false);
 assert.ok(texts(view(t, m, cx, st, { id: "kx-long2", mod: "kt-x", doc: block(2000) })).includes("… 1000 lignes de plus : le Brut les montre (p)."));
 assert.ok(texts(preview(t, cx, st, { id: "kx-c2", mod: "kt-x", doc: block(2000), noRaw: true })).includes("… 1000 lignes de plus, trop pour un seul affichage."));
-st.raw = true;
-st.raw = false;
+// A long code line in Aperçu: cut into rows at the block's columns, a word longer than a row too.
+const url = parse("```html\n    srcset=\"https://raw.githubusercontent.com/USER/USER/main/banner-light.png\">\n```");
 m = frame(m, false);
-assert.equal(sideways(view(t, m, cx, st, { id: "kx-md", mod: "kt-x", doc })), 0, "code blocks wrap too");
+const uv = view(t, m, cx, st, { id: "kx-url", mod: "kt-x", doc: url });
+const cols0 = colsFor(st.lastW);
+const urlRows = find(uv, (x) => "whitespace_nowrap" in x.props);
+assert.ok(urlRows.length > 1 && urlRows.every((r) => texts(r).join("").length <= cols0 - 4 + 1), "every row fits");
+assert.equal(urlRows.map((r) => texts(r).join("")).join(""), "srcset=\"https://raw.githubusercontent.com/USER/USER/main/banner-light.png\">");
 st.raw = true;
 console.log("markdown view: ok");
+
+// ---------- rawList: Brut as a virtual list ----------
+st = mdState();
+const gdoc = parse(Array.from({ length: 300 }, (_, i) => (i % 3 ? `line ${i}` : `${"  ".repeat(i % 4)}- item ${i} ${"word ".repeat(30)}`)).join("\n"));
+m = frame(motionState(), false);
+let lv2 = rawList(t, m, cx, st, { id: "kx-list", mod: "kt-x", doc: gdoc });
+assert.equal(find(lv2, (x) => x.props.id?.[0] === "kx-list:src~sk").length, 1, "the skeleton while its colors are asked");
+await settle();
+m = frame(m, false);
+lv2 = rawList(t, m, cx, st, { id: "kx-list", mod: "kt-x", doc: gdoc });
+const list = find(lv2, (x) => x.kind === "list")[0];
+const [lid, count, size, key, render] = list.props.args;
+const cols = colsFor(st.lastW);
+const gsrc = gdoc.src.replace(/\n+$/, "").split("\n");
+assert.equal(lid, "kx-list:list");
+assert.equal(count, gsrc.reduce((s, l) => s + rowCount(l, cols), 0), "one item per row");
+assert.equal(size, 19, "uniform rows of 19 px");
+assert.equal(key(7), "7");
+assert.ok(find(lv2, (x) => x.kind === "bar" && x.props.for[0] === "kx-list:list").length === 1, "its scrollbar");
+assert.equal(list.props.track_scroll[0], st.scroll);
+// The renderer builds the rows on screen only, from the line that holds the first one.
+const got = render({ start: 40, end: 70 }, cx);
+assert.equal(got.length, 30);
+assert.deepEqual(st.range, { start: 40, end: 70 });
+const all = wrapRows(gsrc.map((l) => [[l, "#ff0000", 0]]), cols).flat();
+assert.deepEqual(got.map((r) => texts(r).join("")), all.slice(40, 70).map((r) => r.runs.map((s) => s[0]).join("") || " "));
+assert.ok(got.every((r) => "whitespace_nowrap" in r.props && r.props.pr?.[0] === 14), "rows padded inside the box, never wrapping");
+assert.ok(nodes(v_list_of(render({ start: 0, end: 50 }, cx))) < 200, "a screen of rows costs a screen of elements");
+function v_list_of(rows) { const x = el("v"); x.kids.push(...rows); return x; }
+// The scroll: a row, half the rows on screen, the top, the bottom, a row's number; a new document at its top.
+// scroll_to_item only brings a row into view (the nearest edge, seen on screen): a move aims just past
+// the rows on screen, never at one of them (a row already shown moves nothing).
+render({ start: 40, end: 70 }, cx); // the rows last on screen: 40 to 69
+st.scroll.calls.length = 0;
+for (const how of ["down", "up", "half-down", "half-up", "bottom", "12", "top", "99999"]) rawScroll(st, how);
+assert.deepEqual(st.scroll.calls, [["item", 70, "top"], ["item", 39, "top"], ["item", 84, "top"], ["item", 25, "top"], ["bottom"], ["item", 12, "top"], ["item", 0, "top"], ["item", count - 1, "top"]]);
+for (const [how, at] of [["down", 70], ["up", 39], ["half-down", 84], ["half-up", 25]]) assert.ok(at < 40 || at >= 70, `${how} aims off screen`);
+render({ start: 0, end: 30 }, cx);
+st.scroll.calls.length = 0;
+rawScroll(st, "up");
+rawScroll(st, "half-up");
+assert.deepEqual(st.scroll.calls, [["item", 0, "top"], ["item", 0, "top"]], "at the top: stays there");
+m = frame(m, false);
+rawList(t, m, cx, st, { id: "kx-other", mod: "kt-x", doc: plain });
+assert.deepEqual(st.scroll.calls.at(-1), ["item", 0, "top"], "another document starts at its top");
+// The columns follow the box: a narrower one, more rows (rowStarts cached per columns).
+const area = (n) => find(n, (x) => x.props.id?.[0] === "kx-list:area")[0];
+m = frame(m, false);
+lv2 = rawList(t, m, cx, st, { id: "kx-list", mod: "kt-x", doc: gdoc });
+const sc2 = sizeCx();
+area(lv2).on.on_size_change({ width: 300, height: 500 }, sc2);
+assert.equal(sc2.n, 1);
+m = frame(m, false);
+const narrow = find(rawList(t, m, cx, st, { id: "kx-list", mod: "kt-x", doc: gdoc }), (x) => x.kind === "list")[0].props.args[1];
+assert.ok(narrow > count, "narrower: more rows");
+console.log("markdown list: ok");

@@ -11,29 +11,36 @@
 // - Brut: the source, in Zed's colors (~/.claude/scripts/zed-tokens.ts, lang markdown: the
 //   frontmatter as YAML, the fences in their language), asked only while Brut shows, the skeleton
 //   meanwhile; plain mono when zed-tokens gives nothing (no bun, past the timeout, unknown language).
-//   As wide as its caller's box: a caller keeps its prose measure (max_w) for Aperçu only.
-// Brut and the code blocks soft-wrap as an editor does (softLine, wrapPlan): a long line goes on under
-// itself, its indent kept; nothing is cut, nothing scrolls sideways. A render has ~50 ms before the
-// engine interrupts it, so one budget per render (mdBudget(), shared by the documents a mod draws):
-// Brut draws by pages of what fits (‹ ›, « lignes a–b sur n »); Aperçu's code blocks go on plain past
-// it, and stop only past HARD rows a render, saying so (code(), LINE, BUDGET).
+//   rawList(): a virtual list of rows (v_virtual_list, 19 px each, kt-history's pattern) that fills its
+//   caller's box: only the rows on screen are built, from the first line to the last, no pages. The
+//   mod scrolls it with rawScroll() (its keys, `<mod>.raw:` for tests). view() keeps a paged Brut
+//   inside a longer page (kt-workflow's sections), within the render's budget.
+// Source lines soft-wrap as an editor does, here and in the Aperçu's code blocks (wrapLine): Brut's
+// font is mono (CH px a column), so a line is cut at the last space before the column, a word longer
+// than a row at the column, its indent kept as padding on every row, its colors cut at the same
+// points; the columns come from the box's width (on_size_change), a column of margin. A row never
+// wraps by itself (nowrap): nothing is cut, nothing scrolls sideways.
+// A render has ~50 ms before the engine interrupts it: the paged Brut and the code blocks share one
+// budget per render (mdBudget()); past it the code blocks go on plain, and stop past HARD rows, saying so.
 // Colors are asked from render on a miss, never under checking(): every miss of one render goes in
 // ONE batch (a task, after the render), cached per view by (content hash, language, light / dark).
 // A theme flip is a miss for the other mode: Brut shows the skeleton again, then the new colors.
 //
-//   const md = mdState();                                   // per view; md.raw: Brut shown (sticky)
+//   const md = mdState();                                   // in init(): md.raw, Brut shown (sticky)
 //   const doc = parse(text) | parse(text, { fields: false })   // in a task: { src, fields, segs }
 //   parse(text, { meta: false })                            // no frontmatter at all (a note's later block)
 //   const doc = docOf(md, text)                             // or in render, memoized by text
 //   tabs(t, "kx-md-tabs", md)                               // Aperçu / Brut, their key in the tooltip
-//   view(t, m, cx, md, { id, mod, doc, onLink, budget, onPage })   // the document: Aperçu or Brut
+//   md.raw ? rawList(t, m, cx, md, { id, mod, doc })        // Brut filling a flex_1 box
+//          : view(t, m, cx, md, { id, mod, doc, onLink })   // Aperçu (or a paged Brut: view alone)
 //   preview(t, cx, md, { id, mod, doc, onLink, budget, noRaw })    // Aperçu only (an issue's comment)
 //   const budget = mdBudget()                               // once per render, for several documents
+//   rawScroll(md, "down" | "up" | "half-down" | "half-up" | "top" | "bottom" | "<row>")
 //   key "p" (NORMAL): md.raw = !md.raw                       // the mod's own press(), before vim
 //   target(url, dir)                                        // a link: { web } | { path } | null
 
 import { div } from "gpui-kit";
-import { v_flex, h_flex, TextView } from "gpui-base";
+import { v_flex, h_flex, TextView, v_virtual_list, Scrollbar, VirtualListScrollHandle } from "gpui-base";
 import { exec, appHome, home, settings, checking } from "herdr";
 import * as fs from "fs/promises";
 import { skeleton } from "./skeleton.js";
@@ -45,21 +52,19 @@ const tr = makeT(mdStrings);
 const MONO = "Monaspace Krypton";
 const CODE = "Monaspace Neon";
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
-// What one render may spend on source lines, in units of one colored one-run line (14 to 30 µs, by the
-// machine's load). Measured 2026-11-18 under herdr-app check: a call into a mod is interrupted past
-// ~50 ms (a busy wait of 45 ms passes, 75 ms doesn't; init and render have one each); 800 one-color
-// lines take 20 to 25 ms, 32 lines of six colors cut into words 16 to 22 ms, 2900 colored code rows
-// ~28 ms. A line in one color or none is a padded text, 1 unit; a line of several colors costs LINE
-// (its plan) plus its elements (wrapPlan). One BUDGET per render (~12 ms), shared by the documents a
-// mod draws (mdBudget()):
-// - Brut stops where it runs out and offers the next page (colors on every page);
-// - Aperçu's code blocks go on plain (no colors) past it, and stop at HARD rows a render, saying so
-//   (before #43, 2000 plain rows drew in 8 to 13 ms, with nothing else on the page).
+const CH = 7.2; // Monaspace Neon's advance at 12 px (0.6 em): a column, and an indent drawn as padding
+const ROW = 19; // a row's height: Brut's and the code blocks' line height
+// What one render may spend on source rows outside the virtual list (the paged Brut, the code
+// blocks), in units of one colored one-run row (14 to 30 µs, by the machine's load). Measured
+// 2026-11-18 under herdr-app check: a call into a mod is interrupted past ~50 ms (a busy wait of 45 ms
+// passes, 75 ms doesn't; init and render have one each). A row costs 1, a line of several colors LINE
+// more and a unit per run on its rows. One BUDGET per render (~12 ms), shared by the documents a mod
+// draws (mdBudget()): the paged Brut stops where it runs out and offers the next page; the code blocks
+// go on plain (no colors) past it, and stop at HARD rows a render, saying so.
 const LINE = 1;
 const BUDGET = 500;
 const HARD = 1000;
 export const mdBudget = () => ({ left: BUDGET, rows: 0 });
-const CH = 7.2; // Monaspace Neon's advance at 12 px (0.6 em): an indent drawn as padding
 // ponytail: a bounded LRU per view; a page showing more than KEEP colored blocks at once would ask
 // again on each render. MAX_CODE per document keeps that out of reach.
 const KEEP = 128;
@@ -169,99 +174,104 @@ export function parse(text, { fields: show = true, meta = true } = {}) {
   return { src, hash: hash(src), fields: show ? fm.fields : [], segs };
 }
 
-/** A source line for the soft wrap (Brut and the code blocks, as an editor's): its indent (the leading
- *  spaces, kept in front of every row the line takes) and the rest in pieces that break only after a
- *  space, each piece its spans [text, color, style]; `**gras**,` across two runs stays one piece. */
-// Plain loops, split and slice: the mods' engine is an interpreter (a regex match per word and for…of
-// over runs cost ~75 µs a line, measured), and a render is interrupted past ~50 ms.
-export function softLine(runs) {
-  let indent = "", lead = true, open = false;
-  const pieces = [];
-  for (let r = 0; r < runs.length; r++) {
-    let s = String(runs[r][0] ?? "");
-    const color = runs[r][1] ?? null, style = runs[r][2] ?? 0;
-    if (lead) {
-      const t = s.replace(LEAD, "");
-      indent += s.slice(0, s.length - t.length);
-      if (!t) continue;
-      s = t;
-      lead = false;
-    }
-    const words = s.split(" ");
-    for (let k = 0; k < words.length; k++) {
-      const w = k < words.length - 1 ? `${words[k]} ` : words[k];
-      if (!w) continue;
-      if (w === " ") {
-        // One more space after a piece: onto its last span (or a span of its own, in this run's style).
-        const p = pieces[pieces.length - 1], last = p[p.length - 1];
-        if (last[1] === color && last[2] === style) last[0] += " ";
-        else p.push([" ", color, style]);
-        open = false;
-        continue;
-      }
-      if (open) pieces[pieces.length - 1].push([w, color, style]);
-      else pieces.push([[w, color, style]]);
-      open = !w.endsWith(" ");
-    }
-  }
-  return { indent, pieces };
-}
-const LEAD = /^ +/;
-const WORDS_AT = 40; // the budget left under which a line isn't cut into words (softLine) at all
-const WRAP_AT = 60; // characters: a line shorter than this rarely wraps (60 × 7.2 px = 432 px)
-const MAX_WORDS = 40; // a longer line (a frontmatter description) wraps by runs: one page would hold few lines
-const CHUNK = 32; // characters: words of one style drawn as one element
+// ---------- pure: the soft wrap ----------
 
-/** How one source line is drawn, with `left` units to spend (one colored one-run line each, ~14 µs):
- *  { indent, mode, parts, cost }.
- *  - "one": a line in one color and style, one text that wraps itself (parts: [span]); cost 1.
- *  - "words": a line of several colors longer than WRAP_AT, breaking between softLine's pieces, those
- *    of one style grouped up to CHUNK characters (parts: chunks); cost 2 + 2 a chunk (+2 a span more for
- *    a chunk of several spans: a word across runs).
- *  - "segs": its runs merged by style, each wrapping inside (parts: spans); cost 1 + a run. A short
- *    line looks the same as in words; a long one past the budget gets rows a little ragged.
- *  - "mono": past the budget, plain, one text that wraps itself; cost 1.
- *  The indent is drawn as padding: every row the line takes starts under its first character. The
- *  common line (one style) costs a replace and a slice; words only while the budget allows. */
-export function wrapPlan(runs, left = Infinity) {
-  // The indent: the leading spaces, across runs (a run of spaces alone, then the line's first word).
-  let indent = "", r = 0, first = "";
-  for (; r < runs.length; r++) {
-    const s = String(runs[r][0] ?? "");
-    first = s.replace(LEAD, "");
-    indent += s.slice(0, s.length - first.length);
-    if (first) break;
-  }
-  if (r >= runs.length) return { indent, mode: "one", parts: [[" ", null, 0]], cost: 1 };
-  // The rest, its runs merged by style.
-  const segs = [[first, runs[r][1] ?? null, runs[r][2] ?? 0]];
-  for (let k = r + 1; k < runs.length; k++) {
-    const last = segs[segs.length - 1], c = runs[k][1] ?? null, st = runs[k][2] ?? 0;
-    if (last[1] === c && last[2] === st) last[0] += String(runs[k][0] ?? "");
-    else segs.push([String(runs[k][0] ?? ""), c, st]);
-  }
-  if (segs.length === 1) return { indent, mode: "one", parts: segs, cost: 1 };
-  // Words only for a line long enough to wrap (a shorter one looks the same in runs, for less): a word
-  // piece costs twice a run (measured), plus softLine's cut.
-  let len = 0;
-  for (let k = 0; k < segs.length; k++) len += segs[k][0].length;
-  if (len > WRAP_AT && left > WORDS_AT) {
-    // Words of one style side by side go together up to CHUNK characters: a break every few words
-    // (a row ends at most CHUNK short), a third of the elements of one per word.
-    const chunks = [];
-    for (const p of softLine(runs).pieces) {
-      const last = chunks[chunks.length - 1];
-      if (p.length === 1 && last?.length === 1 && last[0][1] === p[0][1] && last[0][2] === p[0][2] && last[0][0].length + p[0][0].length <= CHUNK) last[0][0] += p[0][0];
-      else chunks.push(p);
+const MIN_COLS = 20; // a row keeps at least this many columns of text, however deep its indent
+
+// Where a body of text is cut into rows of `avail` columns: each row's end. After the last space that
+// fits (the space stays at the row's end: a row may hold avail + 1 when that extra is a space); a word
+// longer than a row is cut at the column (défaut c), never between the two halves of a surrogate pair.
+function cuts(body, avail) {
+  const out = [];
+  let p = 0;
+  while (body.length - p > avail) {
+    const s = body.lastIndexOf(" ", p + avail);
+    let e = s > p ? s + 1 : p + avail;
+    if (s <= p) {
+      const c = body.charCodeAt(e);
+      if (c >= 0xdc00 && c <= 0xdfff && e - 1 > p) e -= 1;
     }
-    let words = 2;
-    for (let k = 0; k < chunks.length; k++) words += chunks[k].length > 1 ? 2 * chunks[k].length + 2 : 2;
-    if (words <= left && chunks.length <= MAX_WORDS) return { indent, mode: "words", parts: chunks, cost: words };
+    out.push(e);
+    p = e;
   }
-  if (1 + segs.length <= left) return { indent, mode: "segs", parts: segs, cost: 1 + segs.length };
+  out.push(body.length);
+  return out;
+}
+
+// A line's lay-out at `cols` columns: its leading spaces (lead), the indent drawn (pad: capped so a
+// row keeps MIN_COLS of text), the columns left for text (avail).
+function lay(text, cols) {
+  const body = text.trimStart();
+  const lead = text.length - body.length;
+  const pad = Math.min(lead, Math.max(0, cols - MIN_COLS));
+  return { body, lead, pad, avail: Math.max(MIN_COLS, cols - pad) };
+}
+
+/** How many rows a source line takes at `cols` columns (as wrapLine cuts it). A line no longer than the
+ *  columns is one row, whatever its indent (the common case: no trim, no cut). */
+export function rowCount(text, cols) {
+  if (text.length <= cols) return 1;
+  const { body, avail } = lay(text, cols);
+  return body.length <= avail ? 1 : cuts(body, avail).length;
+}
+
+/** One source line soft-wrapped at `cols` columns, as an editor does: [{ pad, runs }], one per row.
+ *  pad: the line's indent (in columns, drawn as padding on every row); runs: the row's pieces of the
+ *  line's runs [text, color, style], cut at the same points (a run across a cut goes on in the next
+ *  row, its color kept). `runs`: zed-tokens' runs of the line, or [[text, null, 0]]. */
+export function wrapLine(runs, cols) {
   let text = "";
-  for (let k = 0; k < segs.length; k++) text += segs[k][0];
-  return { indent, mode: "mono", parts: [[text, null, 0]], cost: 1 };
+  for (let k = 0; k < runs.length; k++) text += runs[k][0];
+  const { body, lead, pad, avail } = lay(text, cols);
+  const rows = [];
+  let r = 0, rStart = 0, a = lead;
+  for (const end of cuts(body, avail)) {
+    const b = lead + end;
+    const parts = [];
+    while (r < runs.length && rStart + runs[r][0].length <= a) { rStart += runs[r][0].length; r++; }
+    for (let j = r, jStart = rStart; j < runs.length && jStart < b; jStart += runs[j][0].length, j++) {
+      const s = runs[j][0], from = Math.max(a, jStart) - jStart, to = Math.min(b, jStart + s.length) - jStart;
+      if (to > from) parts.push([s.slice(from, to), runs[j][1] ?? null, runs[j][2] ?? 0]);
+    }
+    rows.push({ pad, runs: parts });
+    a = b;
+  }
+  return rows;
+}
+
+/** wrapLine for each line of `lines` (runs per line). */
+export const wrapRows = (lines, cols) => lines.map((runs) => wrapLine(runs, cols));
+
+/** Each line's first row at `cols` columns, and the total at the end: starts[i], starts[n]. */
+export function rowStarts(rows, cols) {
+  const starts = new Array(rows.length + 1);
+  let n = 0;
+  for (let i = 0; i < rows.length; i++) { starts[i] = n; n += rowCount(rows[i], cols); }
+  starts[rows.length] = n;
+  return starts;
+}
+
+/** The line that holds row v: the last i with starts[i] <= v. */
+export function lineAt(starts, v) {
+  let lo = 0, hi = starts.length - 2;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid] <= v) lo = mid;
+    else hi = mid - 1;
+  }
+  return Math.max(0, lo);
+}
+
+/** The columns a box `w` px wide holds: its two 14 px paddings off, one column of margin. */
+export const colsFor = (w) => Math.max(MIN_COLS, Math.floor((w - 28) / CH) - 1);
+
+// zed-tokens' runs for source line i when they are its text (else the line plain: never a row lost).
+function runsOf(rows, lines, i) {
+  const runs = lines?.[i];
+  if (!runs?.length) return [[rows[i], null, 0]];
+  let text = "";
+  for (let k = 0; k < runs.length; k++) text += runs[k][0];
+  return text === rows[i] ? runs : [[rows[i], null, 0]];
 }
 
 // zed-tokens' names for a fence's info string; null: draw it plain (no info, nothing to ask).
@@ -288,10 +298,14 @@ export function target(url, dir) {
 
 // ---------- state ----------
 
-// raw: Brut shown; pages: Brut's page starts per document; colors / busy / queue: colorsOf's; docs:
-// docOf's; seen / fade / n: view()'s fade
-// on a switch (the face each document was last drawn in, the fade's id for those that switched).
-export const mdState = () => ({ raw: false, colors: new Map(), busy: new Set(), queue: [], docs: new Map(), seen: new Map(), fade: new Map(), n: 0, pages: new Map() });
+// In init() (it makes Brut's scroll handle). raw: Brut shown; pages: the paged Brut's page starts per
+// document; colors / busy / queue: colorsOf's; docs: docOf's; seen / fade / n: view()'s fade on a
+// switch; widths / lastW: the boxes' widths (their columns); starts: rowStarts per (hash, columns);
+// scroll / range / total / listOf: rawList's handle, the rows on screen, their count, its document.
+export const mdState = () => ({
+  raw: false, colors: new Map(), busy: new Set(), queue: [], docs: new Map(), seen: new Map(), fade: new Map(), n: 0, pages: new Map(),
+  widths: new Map(), lastW: 640, starts: new Map(), scroll: VirtualListScrollHandle.new(), range: { start: 0, end: 0 }, total: 0, listOf: null,
+});
 
 // A bounded map, least recently used out first.
 function remember(map, k, v) {
@@ -306,6 +320,18 @@ export function docOf(st, text, opts) {
   const k = `${opts?.fields === false ? 0 : 1}${opts?.meta === false ? 0 : 1}${text ?? ""}`;
   return st.docs.has(k) ? remember(st.docs, k, st.docs.get(k)) : remember(st.docs, k, parse(text, opts));
 }
+
+// A box's width, for its columns: recorded on its on_size_change; a render only when the columns change
+// (a height, a pixel more, never: no loop through the rows' widths). The first frame uses the last width.
+function measure(st, key) {
+  return (s, cx) => {
+    const before = colsFor(st.widths.get(key) ?? st.lastW);
+    remember(st.widths, key, s.width);
+    st.lastW = s.width;
+    if (colsFor(s.width) !== before) cx.notify();
+  };
+}
+const colsOf = (st, key) => colsFor(st.widths.get(key) ?? st.lastW);
 
 // ---------- colors (zed-tokens.ts) ----------
 
@@ -361,69 +387,65 @@ export function colorsOf(st, cx, mod, text, lang, h) {
 // ---------- drawing ----------
 
 // A span of code: its color and style (1 italic, 2 bold). As few calls as can be: each one costs (the
-// render's ~50 ms). `el`: a flex item gets min_w(0), so a word wider than the box wraps, never cut.
+// render's ~50 ms).
 function span([text, color, style], el = div()) {
   if (color) el = el.text_color(color);
   if (style & 1) el = el.italic();
   if (style & 2) el = el.font_weight(700);
-  return el.child(text);
+  return el.child(text || " ");
 }
 
-// One source line as wrapPlan drew it up, soft-wrapped as an editor does: its indent as padding (every
-// row it takes starts under its first character), its pieces or runs breaking between them. A row of
-// the column stretches to its width by itself.
-function softRow(p) {
-  const el = p.mode === "one" || p.mode === "mono" ? span(p.parts[0], p.indent ? div().pl(p.indent.length * CH) : div())
-    : (p.indent ? h_flex().pl(p.indent.length * CH) : h_flex()).flex_wrap().children(p.mode === "segs" ? p.parts.map((s) => span(s, div().min_w(0)))
-      : p.parts.map((g) => (g.length > 1 ? h_flex().min_w(0).children(g.map((s) => span(s))) : span(g[0], div().min_w(0)))));
-  return el;
+// One row as wrapLine cut it: one text, or its runs side by side; never wrapping by itself (it fits its
+// columns). Its indent as padding, after `inset` px (the virtual list's rows carry their box's padding).
+function vrow(r, inset = 0) {
+  const left = inset + r.pad * CH;
+  let el = r.runs.length > 1 ? h_flex() : div();
+  if (left) el = el.pl(left);
+  if (inset) el = el.pr(inset);
+  el = el.whitespace_nowrap();
+  if (r.runs.length > 1) return el.children(r.runs.map((s) => span(s, div().flex_none())));
+  return r.runs.length ? span(r.runs[0], el) : el.child(" ");
 }
 
-/** Source lines from `from`, soft-wrapped, in Zed's colors while `budget` (mdBudget()) lasts: { el, to },
- *  `to` the first line not drawn (one at least is). `page` (Brut): stop where the budget runs out.
- *  Else (a code block): go on plain past it, up to HARD rows a render. A line in one color or none is
- *  a padded text with no plan (the common line, as cheap as before #43). */
-function code(t, rows, lines, budget, from = 0, page = false) {
+/** Source lines from `from`, soft-wrapped at `cols` columns, in Zed's colors while `budget` (mdBudget())
+ *  lasts: { el, to }, `to` the first line not drawn (one at least is). `page` (the paged Brut): stop
+ *  where the budget runs out. Else (a code block): go on plain past it, up to HARD rows a render. */
+function code(t, rows, lines, budget, cols, from = 0, page = false) {
   const kids = [];
   let i = from;
   for (; i < rows.length; i++) {
     const rich = budget.left > 0;
     if (i > from && (page ? !rich : budget.rows >= HARD)) break;
-    budget.rows++;
-    const runs = rich ? lines?.[i] : null;
-    if (!runs || runs.length <= 1) {
-      const s = runs?.length ? String(runs[0][0] ?? "") : rows[i];
-      const body = s.trimStart(), n = s.length - body.length;
-      kids.push(span([body || " ", runs?.[0]?.[1] ?? null, runs?.[0]?.[2] ?? 0], n ? div().pl(n * CH) : div()));
-      budget.left -= 1;
-      continue;
-    }
-    const p = wrapPlan(runs, budget.left - LINE);
-    budget.left -= LINE + p.cost;
-    kids.push(softRow(p));
+    const runs = rich ? runsOf(rows, lines, i) : [[rows[i], null, 0]];
+    const wl = wrapLine(runs, cols);
+    let cost = wl.length;
+    if (runs.length > 1) { cost += LINE; for (const r of wl) cost += r.runs.length; }
+    budget.left -= cost;
+    budget.rows += wl.length;
+    for (const r of wl) kids.push(vrow(r));
   }
-  return { el: v_flex().w_full().min_w(0).font_family(CODE).text_size(12).line_height("19px").text_color(t.foreground).children(kids), to: i };
+  return { el: v_flex().w_full().min_w(0).font_family(CODE).text_size(12).line_height(`${ROW}px`).text_color(t.foreground).children(kids), to: i };
 }
 
 const note = (t, text) => div().font_family(MONO).text_size(10.5).text_color(t.dim).child(text);
 
-/** A fenced block: t.raised, radius 12, Monaspace Neon; its language as an eyebrow; long lines soft-wrap.
- *  Past `budget` (shared by what the render draws), its lines go on plain; past HARD rows, they stop,
- *  said (`raw`: Brut shows them, else not shown). */
-export function codeBlock(t, s, lines, budget = mdBudget(), raw = true) {
+/** A fenced block: t.raised, radius 12, Monaspace Neon; its language as an eyebrow; long lines soft-wrap
+ *  at the block's columns (`st`, `key`: where its width is kept). Past `budget` (shared by what the
+ *  render draws), its lines go on plain; past HARD rows, they stop, said (`raw`: Brut shows them). */
+export function codeBlock(t, s, lines, budget, raw, st, key) {
   const rows = s.text.split("\n");
-  const { el, to } = code(t, rows, lines, budget);
+  const { el, to } = code(t, rows, lines, budget, colsOf(st, key));
   return v_flex().flex_none().w_full().rounded(12).border(1).border_color(t.border).bg(t.raised).overflow_hidden()
     .when(Boolean(s.lang), (el) => el.child(div().px(14).pt(9).font_family(MONO).text_size(10).text_color(t.dim).child(s.lang.toUpperCase())))
-    .child(div().px(14).pt(s.lang ? 6 : 12).pb(12).child(el))
+    .child(div().id(`${key}-code`).w_full().min_w(0).overflow_hidden().px(14).pt(s.lang ? 6 : 12).pb(12).on_size_change(measure(st, key)).child(el))
     .when(to < rows.length, (el) => el.child(note(t, tr(raw ? "md.codeMore" : "md.codeCut", { n: rows.length - to })).px(14).pb(10)));
 }
 
-// Previous / next page of Brut: small chips (the tabs' look), no track_focus.
+// Previous / next page of the paged Brut: small chips (the tabs' look), no track_focus.
 function pageChip(t, id, label, onClick) {
   return h_flex().id(id).flex_none().h(20).px(8).items_center().rounded_full().border(1).border_color(t.border)
     .hover((s) => s.bg(t.hover).text_color(t.foreground)).font_family(MONO).text_size(10.5).text_color(t.muted).cursor_pointer()
-    .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); cx.notify(); })
+    .on_click((_e, cx) => { cx.stop_propagation(); onClick(); cx.notify(); })
     .child(label);
 }
 
@@ -456,15 +478,15 @@ export function preview(t, cx, st, { id, mod, doc, onLink, budget = mdBudget(), 
   return v_flex().flex_none().gap(14)
     .when(doc.fields.length > 0, (el) => el.child(fieldsCard(t, doc.fields)))
     .children(doc.segs.map((s, i) => (s.kind === "code"
-      ? codeBlock(t, s, n++ < MAX_CODE ? colorsOf(st, cx, mod, s.text, langFor(s.lang), s.hash) : null, budget, !noRaw)
+      ? codeBlock(t, s, n++ < MAX_CODE ? colorsOf(st, cx, mod, s.text, langFor(s.lang), s.hash) : null, budget, !noRaw, st, `${id}#${i}`)
       : s.kind === "alert" ? alertBox(t, `${id}#${i}`, s, onLink)
         : prose(`${id}#${i}`, s.text, onLink))));
 }
 
-// Brut: the source in pages (code() until the render's budget runs out), the pages' starts kept per
-// document (st.pages), « lignes a–b sur n » and ‹ › above and under a page when there are several;
-// `onPage(cx)`: the mod brings the page's top into view (its scroll handle).
-function raw(t, m, cx, st, { id, mod, doc, budget = mdBudget(), onPage }) {
+// The paged Brut, inside a longer page (kt-workflow's sections): code() until the render's budget runs
+// out, the pages' starts kept per document (st.pages), « lignes a–b sur n » and ‹ › above and under a
+// page when there are several.
+function raw(t, m, cx, st, { id, mod, doc, budget = mdBudget() }) {
   const rows = doc.src.replace(/\n+$/, "").split("\n");
   const lines = colorsOf(st, cx, mod, doc.src, "markdown", doc.hash);
   const S = skeleton(t, m);
@@ -475,23 +497,82 @@ function raw(t, m, cx, st, { id, mod, doc, budget = mdBudget(), onPage }) {
     if (starts[starts.length - 1] >= rows.length) starts = [0]; // the text got shorter (a note edited)
     remember(st.pages, id, starts);
     const from = starts[starts.length - 1];
-    const { el: src, to } = code(t, rows, lines, budget, from, true);
+    const { el: src, to } = code(t, rows, lines, budget, colsOf(st, id), from, true);
     const paged = from > 0 || to < rows.length;
-    const turn = (f) => (cx) => { f(); onPage?.(cx); };
     const pager = (k) => h_flex().px(14).py(8).gap(6).items_center()
       .child(note(t, tr("md.lines", { from: from + 1, to, n: rows.length })).flex_1().min_w(0))
-      .when(starts.length > 1, (el) => el.child(pageChip(t, `${id}:prev${k}`, tr("md.prev"), turn(() => starts.pop()))))
-      .when(to < rows.length, (el) => el.child(pageChip(t, `${id}:next${k}`, tr("md.next"), turn(() => starts.push(to)))));
+      .when(starts.length > 1, (el) => el.child(pageChip(t, `${id}:prev${k}`, tr("md.prev"), () => starts.pop())))
+      .when(to < rows.length, (el) => el.child(pageChip(t, `${id}:next${k}`, tr("md.next"), () => starts.push(to))));
     return box()
       .when(lines === null && !checking(), (el) => el.child(note(t, tr("md.mono")).px(14).pt(9)))
       .when(paged, (el) => el.child(pager("t")))
-      .child(div().px(14).py(12).child(src))
+      .child(div().id(`${id}:src-x`).w_full().min_w(0).overflow_hidden().px(14).py(12).on_size_change(measure(st, id)).child(src))
       .when(paged, (el) => el.child(pager("b")));
-  }, () => box().px(14).py(12).gap(2).children([0.5, 0.9, 0.75, 0.3, 0.95, 0.6].map((w) => S.line(w, { h: 8, lh: 19 }))));
+  }, () => box().px(14).py(12).gap(2).children([0.5, 0.9, 0.75, 0.3, 0.95, 0.6].map((w) => S.line(w, { h: 8, lh: ROW }))));
 }
 
-/** The document: Aperçu (fields, prose, code, alerts) or Brut (the source), as md.raw says, faded in
- *  on a switch. id: unique in the view, per document; mod: the folder its colors' batches go under. */
+/** Brut as a virtual list filling its caller's flex_1 box: every row of the document, 19 px each,
+ *  only those on screen built (v_virtual_list, kt-history's pattern), its scrollbar; soft-wrapped at
+ *  the box's columns, rowStarts cached per (hash, columns). The skeleton while its colors are asked;
+ *  plain mono, and said, when none come. A new document starts at its top. */
+export function rawList(t, m, cx, st, { id, mod, doc }) {
+  const rows = doc.src.replace(/\n+$/, "").split("\n");
+  const lines = colorsOf(st, cx, mod, doc.src, "markdown", doc.hash);
+  const cols = colsOf(st, id);
+  const k = `${doc.hash}|${cols}`;
+  const starts = st.starts.has(k) ? remember(st.starts, k, st.starts.get(k)) : remember(st.starts, k, rowStarts(rows, cols));
+  st.total = starts[rows.length];
+  if (st.listOf !== id) {
+    st.listOf = id;
+    st.range = { start: 0, end: 0 };
+    st.scroll.scroll_to_item(0, "top");
+  }
+  const S = skeleton(t, m);
+  // Called from inside layout, for the rows on screen only: no handlers, no state but the range.
+  const render = (range) => {
+    st.range = { start: range.start, end: range.end };
+    const out = [];
+    for (let i = lineAt(starts, range.start); i < rows.length && starts[i] < range.end; i++) {
+      const wl = wrapLine(runsOf(rows, lines, i), cols);
+      for (let r = 0; r < wl.length; r++) {
+        const v = starts[i] + r;
+        if (v >= range.start && v < range.end) out.push(vrow(wl[r], 14));
+      }
+    }
+    return out;
+  };
+  return v_flex().flex_1().min_h(0).w_full().min_w(0).rounded(12).border(1).border_color(t.border).bg(t.raised).overflow_hidden()
+    .when(lines === null && !checking(), (el) => el.child(note(t, tr("md.mono")).px(14).pt(9)))
+    .child(S.swap(`${id}:src`, lines !== undefined, () => div().id(`${id}:area`).flex_1().min_h(0).w_full().min_w(0).relative().overflow_hidden()
+      .on_size_change(measure(st, id))
+      .child(v_virtual_list(`${id}:list`, st.total, ROW, (v) => String(v), render).size_full().track_scroll(st.scroll)
+        .font_family(CODE).text_size(12).line_height(`${ROW}px`).text_color(t.foreground))
+      .child(Scrollbar.vertical(`${id}:list`).absolute().inset_0()),
+    () => v_flex().flex_1().px(14).py(12).gap(2).children([0.5, 0.9, 0.75, 0.3, 0.95, 0.6].map((w) => S.line(w, { h: 8, lh: ROW }))), { grow: true }));
+}
+
+/** Scrolls rawList's Brut: "down" / "up" a row, "half-down" / "half-up" half the rows on screen, "top",
+ *  "bottom", or a row's number (`<mod>.raw:<how>`, for tests: that row brought to the nearest edge, the
+ *  top when it is above the screen, the bottom when below; already on screen, nothing moves).
+ *  scroll_to_item only brings a row into view (seen on screen, 2026-11-19), so a move aims just past
+ *  the rows last on screen: the first below them (range.end) to go down, the one above (start − 1) to
+ *  go up, half a screen further for the half pages. */
+export function rawScroll(st, how) {
+  const { start, end } = st.range;
+  const half = Math.max(1, Math.floor((end - start) / 2));
+  const to = (v) => st.scroll.scroll_to_item(Math.max(0, Math.min(Math.max(0, st.total - 1), v)), "top");
+  if (how === "top") to(0);
+  else if (how === "bottom") st.scroll.scroll_to_bottom();
+  else if (how === "down") to(end);
+  else if (how === "up") to(start - 1);
+  else if (how === "half-down") to(end - 1 + half);
+  else if (how === "half-up") to(start - half);
+  else if (/^\d+$/.test(how)) to(Number(how));
+}
+
+/** The document: Aperçu (fields, prose, code, alerts) or the paged Brut (the source), as md.raw says,
+ *  faded in on a switch. id: unique in the view, per document; mod: the folder its colors' batches go
+ *  under. A mod whose Brut fills a box draws rawList() for it instead. */
 export function view(t, m, cx, st, o) {
   const face = st.raw ? "raw" : "pv";
   const was = st.seen.get(o.id);
