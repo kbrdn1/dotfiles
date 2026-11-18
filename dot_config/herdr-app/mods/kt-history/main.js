@@ -7,7 +7,8 @@
 // `git diff -M` against its first parent: statuses, counts and patches at once,
 // and a merge shows what it brought), an image into its before/after preview.
 // The files can't unfold inside the list: a virtual list's rows take no
-// handlers. Read-only. Polls every 10 s while shown.
+// handlers. The header card draws the commits per day over the last 30 days (viz.js' trend), from a
+// second `git log --since` read with the list. Read-only. Polls every 10 s while shown.
 // Keys (vim.js; kt-keys lists them, group "panel"): ctrl-b l (pane.go, "focus") or
 // `kt-history.key:<keys>` gives History the keyboard: a cursor (an accent ring on the ink) on a
 // commit. j k gg G ctrl-d ctrl-u move; l / enter / o open the commit's files (again: go into
@@ -32,6 +33,8 @@ const tr = makeT(strings);
 // The header's pixel band (kt-keys' dither.js, a byte-identical copy).
 import { ditherBand, TOP } from "./dither.js";
 import { shouldRead } from "./reread.js";
+// The header's activity curve (kt-keys' viz.js and viz.strings.js, byte-identical copies).
+import { viz } from "./viz.js";
 
 const ME = "history"; // this block's id in the layout's "panel-body" stack
 const I = (name) => `mods/kt-threads/${name}.svg`;
@@ -43,6 +46,7 @@ const ROW = 44; // a commit row
 const LANE = 14; // one lane's width
 const DOT_Y = 14; // the dot sits on the title line
 const MAX_LANES = 12;
+const DAYS = 30; // the activity curve's window, today last
 // The panel's tabs in order, and each one's mod: [ / ] show the next one and give it the keyboard.
 const TABS = ["files", "diff", "history", "flow", "crosstalk", "gwm-panel"];
 const TAB_MODS = { files: "kt-files", diff: "kt-diff", history: "kt-history", flow: "kt-flow", crosstalk: "kt-crosstalk", "gwm-panel": "kt-gwm" };
@@ -140,10 +144,29 @@ export function graph(commits) {
 // A commit's day (git's seconds): « 18 nov. », the year when it isn't this one.
 const day = (at) => date(at * 1000);
 
+// The activity curve's DAYS local days, by date and not by 86 400 s (the window may cross a DST
+// change): `since`, the first one's midnight in git's seconds, and each day's index.
+const dayOf = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+function windowOf(now) {
+  const d = new Date(now);
+  const days = Array.from({ length: DAYS }, (_, i) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - DAYS + 1 + i));
+  return { since: Math.floor(days[0].getTime() / 1000), index: new Map(days.map((x, i) => [dayOf(x), i])) };
+}
+// Commits per day (git's seconds) in that window: a zero for a day without one, a date outside it dropped.
+function perDay(stamps, index) {
+  const out = new Array(DAYS).fill(0);
+  for (const s of stamps) {
+    const i = index.get(dayOf(new Date(s * 1000)));
+    if (i != null) out[i]++;
+  }
+  return out;
+}
+
 export default class History extends View {
   init(_props, cx) {
     this.commits = [];
     this.rows = [];
+    this.activity = null; // commits per day over DAYS days, today last: the header's curve
     this.sel = null; // the selected commit's hash
     this.detail = null; // { hash, files, error, loading }
     this.open = new Set();
@@ -314,28 +337,36 @@ export default class History extends View {
         if (top.code !== 0) {
           // Not a repo (a thread on ~): forget the key and the branch too, as kt-diff does, or coming back
           // to the same repo would find the same key and keep « pas de dépôt git ici ».
-          if (this.root !== null) { this.root = null; this.key = null; this.branch = null; this.commits = []; this.rows = []; this.sel = null; this.detail = null; cx.notify(); }
+          if (this.root !== null) { this.root = null; this.key = null; this.branch = null; this.commits = []; this.rows = []; this.activity = null; this.sel = null; this.detail = null; cx.notify(); }
           return;
         }
         const root = top.stdout.trim();
         const git = (args) => exec("git", [...READ, ...args], { cwd: root, on });
-        const [log, br] = await Promise.all([
+        const win = windowOf(Date.now());
+        const [log, br, act] = await Promise.all([
           git(["log", "--topo-order", "-n", String(COUNT), "--decorate=full", "--format=%H%x00%P%x00%an%x00%at%x00%D%x00%s"]),
           git(["branch", "--show-current"]),
+          // The activity curve's commits, by committer date as --since reads it. A repo without commits fails: none.
+          git(["log", `--since=@${win.since}`, "--format=%ct"]).catch(() => null),
         ]);
-        const key = JSON.stringify([root, on, br.stdout, log.stdout]);
+        // A repo without commits (an unborn HEAD) fails git log too: no commits, said as such, not an error.
+        // Asked of git rather than read in its stderr, which is in the person's language.
+        const unborn = log.code !== 0 && (await git(["rev-parse", "-q", "--verify", "HEAD"])).code !== 0;
+        // The window too: past midnight, the same commits fall a day earlier.
+        const key = JSON.stringify([root, on, br.stdout, log.stdout, act?.stdout, win.since]);
         if (key === this.key && !force) return;
         if (root !== this.root || on !== this.on) { this.sel = null; this.detail = null; this.open.clear(); }
         this.key = key;
         this.root = root;
         this.on = on;
         this.branch = br.stdout.trim(); // "": a detached HEAD, said at render
-        this.error = log.code ? log.stderr.trim() : null;
+        this.error = log.code && !unborn ? log.stderr.trim() : null;
         this.commits = log.stdout.split("\n").filter(Boolean).map((l) => {
           const [hash, parents, author, at, d, subject] = l.split("\0");
           return { hash, parents: parents ? parents.split(" ") : [], author, at: +at, refs: refs(d ?? ""), subject: subject ?? "" };
         });
         this.rows = graph(this.commits);
+        this.activity = perDay(act?.code === 0 ? act.stdout.split("\n").filter(Boolean).map(Number) : [], win.index);
         cx.notify();
       } catch (e) { this.error = String(e); cx.notify(); }
       finally {
@@ -491,7 +522,7 @@ export default class History extends View {
         .child(h_flex().gap(8).items_center()
           .child(svg(I("git-commit")).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().text_size(13.5).font_semibold().text_color(t.foreground).child(c?.subject ?? d.hash))
-          .child(action(t, "hi-close", I("x"), "Fermer", (cx) => { this.sel = null; this.detail = null; cx.notify(); })))
+          .child(action(t, "hi-close", I("x"), tr("close"), (cx) => { this.sel = null; this.detail = null; cx.notify(); })))
         .child(h_flex().gap(8).items_center().font_family(MONO).text_size(11).text_color(t.muted)
           .child(div().flex_none().child(d.hash.slice(0, 10)))
           .child(div().min_w(0).truncate().child(`${c?.author ?? ""} · ${c ? day(c.at) : ""}`))
@@ -545,6 +576,16 @@ export default class History extends View {
     const reg = this.root && (shared("kt.projects") ?? []).filter((x) => !x.machine && x.folder && !this.on && (this.root === x.folder || this.root.startsWith(`${x.folder}/`)))
       .sort((a, b) => b.folder.length - a.folder.length)[0];
     const tint = !reg?.color ? t.accent : reg.color.startsWith("#") ? reg.color : t[reg.color] ?? t.accent;
+    // Under the branch, the commits per day over DAYS days (viz.js' trend) in the band's tint, the period
+    // said above it. Its id carries the repo: another repo's curve draws in afresh, never from this one's
+    // (reduced motion: at once). No repo: nothing (the list says it). No commit in the window: said in
+    // words at the same height (a flat line would read as steady work).
+    const total = this.activity?.reduce((s, v) => s + v, 0) ?? 0;
+    const activity = !this.activity ? null : div().px(14).pb(12).child(total
+      ? v_flex().gap(6)
+        .child(div().h(14).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(tr("activity", { n: total, days: DAYS })))
+        .child(viz(t, m).trend(this.activity, { color: tint, id: `hi-trend:${this.on ?? ""}:${this.root}` }))
+      : div().h(76).flex().items_center().justify_center().text_size(12).text_color(t.dim).child(tr("activityNone", { days: DAYS })));
     const band = ditherBand(this.headW - 2, 40, 15, alpha(tint, settings().dark !== false ? "6b" : "4d"), TOP);    const head = v_flex().id("hi-head").relative().overflow_hidden().flex_none().rounded(16).border(1).border_color(t.border).bg(t.background)
       .on_size_change((size, cx) => { if (Math.abs(size.width - (this.headW ?? 0)) > 0.5) { this.headW = size.width; cx.notify(); } })
       .when(Boolean(band), (el) => el.child(band))
@@ -554,7 +595,8 @@ export default class History extends View {
         .child(div().flex_1())
         .when(this.keyed, (el) => el.child(modePill(t, this.vim)))
         .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(n ? `${n}${n >= COUNT ? "+" : ""} commits` : "")) // i18n: tech
-        .child(action(t, "hi-refresh", I("refresh-cw"), "Actualiser", (cx) => this.refresh(cx, true))));
+        .child(action(t, "hi-refresh", I("refresh-cw"), tr("refresh"), (cx) => this.refresh(cx, true))))
+      .when(Boolean(activity), (el) => el.child(activity));
     const empty = this.root === null ? tr("noRepo") : this.error ?? (this.root === undefined ? "…" : tr("noCommits"));
     const list = v_flex().flex_1().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background).p(4)
       .when(!n, (el) => el.child(div().p(12).text_size(13).text_color(t.dim).child(empty)))

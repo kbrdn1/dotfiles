@@ -2,6 +2,7 @@
 // both languages.
 export default {
   fr: {
+    close: "Fermer",
     copied: "Copié",
     detached: "HEAD détachée",
     diffFailed: "git diff a échoué",
@@ -9,9 +10,13 @@ export default {
     loading: "Chargement…",
     noFiles: "Aucun fichier modifié.",
     noRepo: "Pas de dépôt git ici.",
-    noCommits: "Aucun commit.",
+    noCommits: "Aucun commit dans ce dépôt.",
+    refresh: "Actualiser",
+    activity: { one: "{n} commit sur les {days} derniers jours", other: "{n} commits sur les {days} derniers jours" },
+    activityNone: "Aucun commit sur les {days} derniers jours.",
   },
   en: {
+    close: "Close",
     copied: "Copied",
     detached: "detached HEAD",
     diffFailed: "git diff failed",
@@ -19,6 +24,9 @@ export default {
     loading: "Loading…",
     noFiles: "No file changed.",
     noRepo: "No git repository here.",
-    noCommits: "No commits.",
+    noCommits: "No commits in this repository.",
+    refresh: "Refresh",
+    activity: { one: "{n} commit over the last {days} days", other: "{n} commits over the last {days} days" },
+    activityNone: "No commits over the last {days} days.",
   },
 };
