@@ -1686,6 +1686,11 @@ export default class Threads extends View {
 
     const eyebrow = (text) => div().flex_none().font_family(MONO).text_size(10).text_color(t.muted).child(text);
     const dim = (text) => div().min_w(0).truncate().font_family(MONO).text_size(10).text_color(t.dim).child(text);
+    // The agent's logo, as kt-usage's tile() has it: its program's icon while one runs, else Herdr's for the key.
+    const logo = (key) => {
+      const p = panes().find((x) => x.program?.key === key)?.program ?? { icon: `icons/${key}.svg`, tint: false };
+      return p.tint ? svg(p.icon).size(12).flex_none().text_color(t.foreground) : image(p.icon).size(12).flex_none();
+    };
     // The focus card's 32 px ring (levels.js' quota colours), its label and detail beside it.
     const cell = (id, label, w, sub) => h_flex().gap(8).items_center()
       .child(ring(t, id, w.used, 32, { kind: "quota", severity: w.severity, roll, m }))
@@ -1701,13 +1706,13 @@ export default class Threads extends View {
     const parts = [
       claude.length > 0 && v_flex().gap(8)
         .child(h_flex().gap(6).items_center()
-          .child(svg("mods/kt-usage/gauge.svg").size(12).flex_none().text_color(t.accent))
+          .child(logo("claude"))
           .child(eyebrow("CLAUDE")) // i18n: tech
           .child(div().flex_1())
           .when(Boolean(sc?.plan), (el) => el.child(dim(sc.plan))))
         .children(claude),
       codex && h_flex().gap(8).items_center()
-        .child(eyebrow("CODEX")) // i18n: tech
+        .child(h_flex().gap(6).items_center().child(logo("codex")).child(eyebrow("CODEX"))) // i18n: tech
         .child(div().flex_1())
         .children(cw.length ? cw.map(([label, w]) => div().flex_none().font_family(MONO).text_size(10.5)
           .text_color(levelColor(t, quotaLevel(w.used))).child(tr("peek.pct", { label, n: Math.round(w.used) }))) : [dim(codex.five || codex.week ? tr("peek.stale") : "—")]),
