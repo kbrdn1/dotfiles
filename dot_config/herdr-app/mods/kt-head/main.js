@@ -298,7 +298,12 @@ export default class Head extends View {
               .child(div().max_w(180).truncate().child(label(c, lead)))))
             .child(div().flex_1()))
           .when(!page, (el) => el
-            .child(sharpen(m, `kh-thread:${c?.id ?? ""}`, () => div().truncate().text_size(14).font_medium().text_color(t.foreground).child(label(c, lead))).flex_shrink(1).min_w(0))
+            // A right-click: the thread's menu, kt-threads' own (the kt-menu overlay, same props): one definition.
+            .child(sharpen(m, `kh-thread:${c?.id ?? ""}`, () => div().truncate().text_size(14).font_medium().text_color(t.foreground).child(label(c, lead))).flex_shrink(1).min_w(0)
+              .when(Boolean(c), (el) => el.on_mouse_down("right", (_e, cx) => {
+                cx.stop_propagation();
+                openOverlay({ mod: "kt-menu", kind: "popup", width: 200, props: { tab: "tab", target: { id: c.id, space: p.id, settled: c.settled } } });
+              })))
             .when(Boolean(lead?.branch), (el) => el.child(h_flex().flex_none().h(22).px(8).gap(5).items_center().rounded_full()
               .border(1).border_color(t.border).font_family(MONO).text_size(10.5).text_color(t.muted)
               .child(svg(I("git-branch")).size(11).text_color(t.dim))
@@ -313,7 +318,8 @@ export default class Head extends View {
           .child(button(m, t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true, false, tr("details")))
           .child(button(m, t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, tr("splitRight")))
           .child(button(m, t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open, false, tr("drawer")))
-          .child(button(m, t, "kt-h-panel", "panel-right", () => run("layout.toggle", { id: "panel" }), shown(layout(), "panel"), false, tr("panel"))),
+          // lucide panel-right-open while it's hidden, panel-right-close while it shows.
+          .child(((on) => button(m, t, "kt-h-panel", `mods/kt-head/panel-right-${on ? "close" : "open"}.svg`, () => run("layout.toggle", { id: "panel" }), on, false, tr("panel")))(shown(layout(), "panel"))),
       )
       .when(Boolean(w.buttons), (el) =>
         el.child(
