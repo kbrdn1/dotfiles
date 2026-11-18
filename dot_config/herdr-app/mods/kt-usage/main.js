@@ -26,7 +26,7 @@ import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { theme, props, closeOverlay, settings, nextCommand, checking, agents, knownAgents, exec, home, readTextFile, run, shared, watchFolder } from "herdr";
 import * as fs from "fs/promises";
 import { ring, ringColor } from "./ring.js";
-import { costLevel, levelColor } from "./levels.js";
+import { costLevel, quotaLevel, levelColor } from "./levels.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter, pulse, stagger, sheet, leave, sharpen } from "./motion.js";
 import { bump } from "./bus.js";
@@ -158,6 +158,7 @@ export default class Usage extends View {
     this.items = [];
     this.motion = motionState();
     this.bw = {}; // band id -> measured width (the dither's tiles)
+    this.costsAt = 0; // the sessions' cost donut: drawn from the card's third layout on (claude())
     // The dialog isn't keyed yet in init: ask for the keyboard again, briefly, until it has it.
     this.handle.focus();
     for (const ms of [16, 50, 120, 250]) cx.timer.after(ms, () => { if (!this.handle.is_focused()) this.handle.focus(); });
@@ -467,8 +468,17 @@ export default class Usage extends View {
     // Fable's weekly limit, and its share of the week, as the endpoint gives them.
     if (u?.scoped) list.push(this.window(t, "ku-p-claude-fable", u.scoped, {
       why: tr("notGiven"), name: tr(u.scoped.active === false ? "scopedInactive" : "scopedName", { name: u.scoped.name ?? tr("scoped") }) }, now));
-    if (u?.shares.length) list.push(div().px(10).text_size(12).text_color(t.muted).child(u.shares.map((s) =>
-      tr(s.used != null ? "shareUsed" : "share", { name: s.label ?? tr("scoped"), n: Math.round(s.value), used: s.used != null ? Math.round(s.used) : "" })).join(" · ")));
+    // A share with its used part and an allowance is a bar (its fill: used of the allowance, in the
+    // status line's quota colours); a share without one stays a sentence.
+    const shareText = (s) => tr(s.used != null ? "shareUsed" : "share", { name: s.label ?? tr("scoped"), n: Math.round(s.value), used: s.used != null ? Math.round(s.used) : "" });
+    const shareWords = [];
+    (u?.shares ?? []).forEach((s, i) => {
+      if (s.used == null || !(s.value > 0)) { shareWords.push(shareText(s)); return; }
+      list.push(this.V.progress(tr("share.bar", { name: s.label ?? tr("scoped") }), s.used, { max: s.value, id: `ku-p-claude-share-${i}`,
+        figure: tr("share.figure", { used: Math.round(s.used), n: Math.round(s.value) }), detail: tr("share.detail", { used: Math.round(s.used), n: Math.round(s.value) }),
+        color: levelColor(t, quotaLevel((s.used / s.value) * 100)) }));
+    });
+    if (shareWords.length) list.push(div().px(10).text_size(12).text_color(t.muted).child(shareWords.join(" · ")));
     if (!five.missing) list.push(this.window(t, "ku-p-claude-5h", five, { name: tr("fiveQuota") }, now));
     if (five.missing) list.push(div().px(10).text_size(12).text_color(t.muted).child(tr(c.plan === "Ultra" ? "five.ultra" : "five.none")));
     // The week per surface (Claude Code, Chats, Cowork, Other): a donut, the second heavy visual.
@@ -477,17 +487,28 @@ export default class Usage extends View {
       list.push(div().px(10).child(this.V.donut(u.rows.map((r) => ({ label: r.label, value: r.value })),
         { label: tr("surfaces"), value: tr("sevenDays"), size: 132, id: "ku-d-claude-surfaces" })));
     }
-    // Usage credits: said as the endpoint gives them, or "non fourni".
+    // Usage credits and spend: a bar (used of the limit, quota colours) when a limit and the amount
+    // used are given; else said as the endpoint gives them, or "non fourni".
     if (u) {
+      const stateOf = (c) => (c.enabled === false ? (c.byUser ? tr("credit.offByYou") : c.reason ? tr("credit.offWhy", { why: c.reason }) : tr("credit.off"))
+        : c.enabled ? tr("credit.on") : tr("credit.unknown"));
       const credit = (name, c) => {
         if (c == null) return tr("credit.none", { name });
-        const state = c.enabled === false ? (c.byUser ? tr("credit.offByYou") : c.reason ? tr("credit.offWhy", { why: c.reason }) : tr("credit.off"))
-          : c.enabled ? tr("credit.on") : tr("credit.unknown");
+        const state = stateOf(c);
         const used = moneyLabel(c.used);
         return !used ? tr("credit.line", { name, state })
           : c.limit ? tr("credit.usedOf", { name, state, used, limit: moneyLabel(c.limit) }) : tr("credit.used", { name, state, used });
       };
-      list.push(div().px(10).text_size(12).text_color(t.muted).child(`${credit(tr("credits"), u.extra)} · ${credit(tr("spend"), u.spend)}`));
+      const bars = [];
+      const words = [];
+      for (const [key, name, c] of [["credits", tr("credits"), u.extra], ["spend", tr("spend"), u.spend]]) {
+        if (!(c?.limit?.amount > 0) || c.used == null) { words.push(credit(name, c)); continue; }
+        bars.push(div().flex_1().min_w(0).child(this.V.progress(name, c.used.amount, { max: c.limit.amount, id: `ku-p-claude-${key}`,
+          figure: tr("credit.figure", { used: moneyLabel(c.used), limit: moneyLabel(c.limit) }), detail: stateOf(c),
+          color: levelColor(t, quotaLevel((c.used.amount / c.limit.amount) * 100)) })));
+      }
+      if (bars.length) list.push(h_flex().gap(16).items_start().children(bars));
+      if (words.length) list.push(div().px(10).text_size(12).text_color(t.muted).child(words.join(" · ")));
     }
 
     // The live Claude sessions on this computer (a remote one's statusLine files are on its machine).
@@ -500,6 +521,30 @@ export default class Usage extends View {
       items.push({ kind: "session", id: `s-${a.address}`, terminal: a.address });
       // A row's figures roll while the list stays short (ANIMATIONS.md: not past 12 rows).
       list.push(this.session(t, a, byT.get(a.address), idx, now, live.length <= 12));
+    }
+    // The rows' costs as a donut: each live session's cost_usd, a running total since that session
+    // began (not today's cost, summed differently below). The 5 dearest, then the rest. Not past 12
+    // sessions (the rows stop rolling there too), nor without any cost.
+    const costs = live.map((a) => ({ label: `${a.space_name} · ${a.tab_name}`, value: byT.get(a.address)?.cost_usd }))
+      .filter((s) => s.value > 0).sort((x, y) => y.value - x.value);
+    // Slices to the dime, the legend's own precision (viz compact, step 0.1): the ring is rebuilt when
+    // a session crosses one, not at every statusLine reading.
+    const dime = (v) => Math.round(v * 10) / 10;
+    const slices = [...costs.slice(0, 5), { label: tr("cumul.rest"), value: costs.slice(5).reduce((sum, s) => sum + s.value, 0), color: "muted" }]
+      .map((s) => ({ ...s, value: dime(s.value) })).filter((s) => s.value > 0);
+    if (slices.length && live.length <= 12) {
+      list.push(this.eyebrow(t, tr("cumul.title")));
+      // Drawn at the card's third layout, a render of its own: the first render with data builds the
+      // gauge and the surfaces donut cold, the second viz's fluid bars (Fable, its share, credits,
+      // spend), and this ring in either call came near Herdr's ~120 ms interrupt (scratch check,
+      // 7 sessions: 5 interrupted in 10 with it in the first, 0 without). A new id per step: its
+      // on_size_change reports each one's first layout.
+      const at = this.costsAt;
+      list.push(div().id(`ku-d-claude-sessions~at${at}`).px(10)
+        .on_size_change((_size, cx) => { if (this.costsAt === at && at < 2) { this.costsAt = at + 1; cx.notify(); } })
+        .child(at >= 2 ? this.V.donut(slices, { label: tr("cumul.caption"), size: 132, id: "ku-d-claude-sessions",
+          value: usd(costs.reduce((sum, s) => sum + s.value, 0)) }) : div().h(132)));
+      list.push(div().px(10).text_size(11).text_color(t.dim).child(tr("cumul.about")));
     }
 
     const cost = dayCost(c.files, midnight());
