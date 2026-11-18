@@ -193,13 +193,13 @@ ro = rdraw(["p", "q"]);
 assert.deepEqual(ro.map((w) => [w.props.h?.[0], w.tr.includes("height")]), [[40, true], [40, true]], "opening: its height");
 for (const k of ["p", "q"]) RS.st.get("rs").rest.set(k, Date.now() - 1);
 ro = rdraw(["p", "q"]);
-assert.deepEqual(ro.map((w) => [w.props.h, w.tr.includes("height"), w.props.opacity[0]]), [[undefined, false, 1], [undefined, false, 1]], "at rest: auto");
+assert.deepEqual(ro.map((w) => [w.props.h, w.tr.includes("height"), w.props.opacity[0]]), [[undefined, true, 1], [undefined, true, 1]], "at rest: auto, its height transition still declared");
 notified = 0;
 ro[0].kids[0].on.on_size_change({ width: 200, height: 90 }, rcx);
 assert.deepEqual([notified, RS.h.get("rs:p")], [0, 90], "an inner unfold: followed, measured, no render");
 ro = rdraw(["q"]);
 const pinned = ro[0];
-assert.deepEqual([pinned.props.h, pinned.props.opacity, pinned.tr], [[90], [0], ["opacity"]], "leaving at rest: pinned at its height, fading");
+assert.deepEqual([pinned.props.h, pinned.props.opacity, pinned.tr.sort()], [[90], [0], ["height", "opacity"]], "leaving at rest: pinned at its height, fading, the height transition declared");
 assert.deepEqual(timers.map((x) => x.ms), [20, M.MS.open + 40 + 20], "a fold timer and a drop timer for the wave");
 notified = 0;
 timers.shift().fn(rcx);
@@ -210,6 +210,29 @@ timers.shift().fn(rcx);
 assert.deepEqual(rdraw(["q"]).length, 1, "then it goes");
 ro = rdraw(["q", "p"]);
 assert.deepEqual(ro[1].props.h, [0], "back later: a new row, opening");
+
+// A sidebar group of 3 threads at rest, folded (its rows become []): gpui animates only the target changes
+// that follow a declared transition, so each card declares its height transition on EVERY render
+// from rest to gone (at rest, pinned, folding). Without it on the pinned render, the fold to 0 would
+// be the transition's first target: the cards would drop at once (the bug of 2026-11-18).
+{
+  timers.length = 0;
+  const G = M.motionState();
+  const gdraw = (keys) => M.rows(M.frame(G, false), rcx, "kt-th-p-x", keys, (k) => k, () => el());
+  let g = gdraw(["t1", "t2", "t3"]);
+  for (const w of g) w.kids[0].on.on_size_change({ width: 260, height: 58 }, rcx);
+  g = gdraw(["t1", "t2", "t3"]);
+  for (const k of ["t1", "t2", "t3"]) G.st.get("kt-th-p-x").rest.set(k, Date.now() - 1);
+  const stages = [gdraw(["t1", "t2", "t3"]), gdraw([])];
+  timers.shift().fn(rcx); // the 20 ms one: they fold
+  stages.push(gdraw([]));
+  assert.deepEqual(stages.map((s) => s.map((w) => w.tr.includes("height"))), [[true, true, true], [true, true, true], [true, true, true]],
+    "rest, pinned, folding: the height transition declared on each render");
+  assert.deepEqual(stages.map((s) => s.map((w) => w.props.h?.[0])), [[undefined, undefined, undefined], [58, 58, 58], [0, 0, 0]],
+    "auto at rest, pinned at 58, then to 0");
+  assert.deepEqual(stages[2].map((w) => w.trp?.height?.delay ?? null).length, 3);
+  timers.length = 0;
+}
 timers.length = 0;
 for (const w of ro) w.kids[0].on.on_size_change({ width: 200, height: 50 }, rcx);
 rdraw(["q", "p"]);

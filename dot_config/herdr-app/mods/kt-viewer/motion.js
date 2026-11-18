@@ -221,8 +221,10 @@ export function rows(m, cx, id, items, keyOf, row, { ms = MS.open } = {}) {
     let el;
     let quiet = false;
     if (o?.pin) {
-      // At rest, leaving: pinned where it stands (no height transition this render), fading.
-      el = w.h(h ?? 0).opacity(0).transition("opacity", p);
+      // At rest, leaving: pinned where it stands, fading. The height transition stays declared (as it
+      // was at rest): gpui animates only target changes after it is declared, so a transition first
+      // declared on the fold itself would drop the card to 0 at once.
+      el = w.h(h ?? 0).opacity(0).transition("height", p).transition("opacity", p);
     } else if (o || (h === undefined && late !== undefined)) {
       // Closing, or new and not measured yet: nothing.
       el = w.h(0).opacity(0).transition("height", p).transition("opacity", p);
@@ -231,7 +233,8 @@ export function rows(m, cx, id, items, keyOf, row, { ms = MS.open } = {}) {
       // without a render. Already there while the list was plain: at rest at once.
       if (!st.rest.has(k)) st.rest.set(k, h === undefined ? 0 : now + (late ?? 0) + ms + 40);
       quiet = rests(k) || h === undefined;
-      el = (quiet ? w : w.h(h).transition("height", p)).opacity(1).transition("opacity", p);
+      // At rest: no height target (it follows its content), but the height transition stays declared.
+      el = (quiet ? w : w.h(h)).transition("height", p).opacity(1).transition("opacity", p);
     }
     return el
       .child(div().id(`${wid}~in`).w_full().flex_none().child(row(st.item.get(k), o ? -1 : at.get(k)))
