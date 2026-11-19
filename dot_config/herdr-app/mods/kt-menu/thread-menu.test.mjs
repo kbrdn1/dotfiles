@@ -38,7 +38,7 @@ mock.module(`${MOD}/motion.js`, () => ({
 let asked = [];
 mock.module(`${MOD}/shortcuts.js`, () => ({ shortcut: (_binds, _layout, actions) => (asked.push(actions), ""), kbd: chain }));
 
-const { default: Menu } = await import(`${MOD}/main.js`);
+const { default: Menu, isHelp } = await import(`${MOD}/main.js`);
 const open = async (target) => {
   props = { tab: "tab", target, overlay: "o1" };
   const m = new Menu();
@@ -103,4 +103,11 @@ test("Touches opens the layout's help (kt-keys), never Herdr's app.help; its key
   expect(asked[i]).toEqual(["mod.open:kt-keys", "mod.open"]);
   m.choose(i, { write_to_clipboard() {}, notify() {} });
   expect(ran).toEqual([["mod.open", { name: "kt-keys" }]]);
+});
+
+test("only the keys help closes the menu first and starts a group: another mod.open takes neither", () => {
+  expect(isHelp(["Touches", "mod.open", { name: "kt-keys" }])).toBe(true);
+  expect(isHelp(["Mods", "mod.open", { name: "kt-mods" }])).toBe(false);
+  expect(isHelp(["Machines", "mod.open", {}])).toBe(false);
+  expect(isHelp(["Touches", "app.help", {}])).toBe(false);
 });
