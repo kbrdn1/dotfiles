@@ -59,7 +59,7 @@ Les versions sont datées : `vAAAA.MM.JJ`, et `vAAAA.MM.JJ.1` pour une deuxième
 
 1. Sur `dev` : déplacer le contenu de `[Unreleased]` de [`CHANGELOG.md`](CHANGELOG.md) dans `changelogs/AAAA.MM.JJ.md`, et ajouter la version à l'index « Past releases »
 2. PR `dev` → `main`, mergée en merge commit
-3. Tag **après** le merge, sur le merge commit de `main` : `git tag vAAAA.MM.JJ && git push origin vAAAA.MM.JJ`
+3. Tag **après** le merge, sur le merge commit de `main` (la source reste sur `dev`, donc on vise `origin/main`, pas `HEAD`) : `git fetch origin && git tag vAAAA.MM.JJ origin/main && git push origin vAAAA.MM.JJ`
 4. Release GitHub : `gh release create vAAAA.MM.JJ --title vAAAA.MM.JJ --notes-file changelogs/AAAA.MM.JJ.md`
 
 `dev` n'a pas à être réaligné sur `main` ensuite : le merge commit de `main` n'apporte rien de neuf, et la PR `dev` → `main` suivante se fusionne sans conflit. Ouvrir cette PR juste après le commit du changelog évite qu'un lot arrivé entre-temps parte sans être listé.
