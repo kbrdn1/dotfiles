@@ -153,9 +153,12 @@ export default class SessionLine extends View {
     });
   }
 
+  // On a Chat pane (#86, a mod pane: no terminal), its agent: kt-chat's registry "kt.chat.panes" =
+  // { [pane]: terminal } (kt-chat/chat-pane.js).
   agent() {
     const f = focused();
-    return agents().find((a) => a.address === f?.terminal) ?? agents().find((a) => a.focused) ?? null;
+    const term = f?.terminal ?? (f?.pane ? (shared("kt.chat.panes") ?? {})[f.pane] : null);
+    return agents().find((a) => a.address === term) ?? agents().find((a) => a.focused) ?? null;
   }
 
   // `focused` is each tab's own focused pane: the shown tab's, never another tab's (#86).

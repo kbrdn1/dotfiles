@@ -26,5 +26,11 @@ assert.deepEqual(run(tree("kanban", "chat")).calls, [
   ["layout.select", { stack: "view", child: "thread" }], ["layout.select", { stack: "thread-body", child: "main" }]]);
 // Another layout, without the stacks: nothing.
 assert.deepEqual(run({ id: "root", children: [{ id: "main" }] }), { moved: false, calls: [] });
+// #86 lot 4: thread-body a plain block (the Chat a pane), or a stack left with no `main`: only the page half.
+const block = (page, body) => ({ id: "root", children: [{ id: "view", type: "stack", ...(page ? { active: page } : {}), children: [
+  { id: "thread", children: [body] }, { id: "inbox" }] }] });
+assert.deepEqual(run(block("inbox", { id: "thread-body", type: "block", active: "chat" })).calls, [["layout.select", { stack: "view", child: "thread" }]]);
+assert.deepEqual(run(block(null, { id: "thread-body", type: "block" })), { moved: false, calls: [] });
+assert.deepEqual(run(block(null, { id: "thread-body", type: "stack", active: "chat", children: [{ id: "chat" }, { id: "other" }] })), { moved: false, calls: [] });
 
 console.log("onthread: ok");

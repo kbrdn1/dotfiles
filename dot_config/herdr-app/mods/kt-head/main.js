@@ -162,15 +162,20 @@ function splitRight() {
 // copy only: both copies get them, and the crumbs one is always shown (the sidebar can be hidden).
 // `panel:<child>` shows the right panel on that surface; `attention` shows the first agent that
 // needs you, else the first done; `picker:<group>` opens Search on a group (0 all, 2 projects);
-// `worktree` opens New thread on a new worktree; `close-pane` / `close-tab` ask kt-confirm first;
-// `view` (ctrl-b space) switches the thread between its terminal and its Chat, and from a page brings
-// the thread back on its Chat (view.js), `view:chat` / `view:main` pick one. `split:right|down` (ctrl-b v / s)
+// `worktree` opens New thread on a new worktree; `close-pane` / `close-tab` ask kt-confirm first, but a
+// Chat pane closes at once (#86: nothing is lost, the session stays) and its agent's terminal takes the
+// keyboard; `view` (ctrl-b space) goes between an agent's terminal and its Chat pane, made at its right
+// the first time (view.js, #86 lots 3 and 4), `view:chat` / `view:main` pick one. `split:right|down` (ctrl-b v / s)
 // and `zoom` (ctrl-b z) act on the focused pane once the thread's terminals show (onthread.js, #86 A1),
 // as `close-pane` (ctrl-b x) and the split and drawer buttons do.
 const confirm = (title, detail, label, command) =>
   openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { title, detail, label, danger: true, command } });
-const face = (which) => view(which, { layout, run, setShared, panes, focused });
+// kt-chat's registry of its panes, { [pane]: terminal } (two lines from kt-chat/chat-pane.js: its name
+// and shape; each Chat pane keeps its own line).
+const CHAT_PANES = "kt.chat.panes";
+const chatPanes = () => shared(CHAT_PANES) ?? {};
 const toThread = () => onThread({ layout, run });
+const face = (which) => view(which, { layout, run, panes, focused, agents, registry: chatPanes, toThread });
 // The key bound to an action (shortcuts.js), for a tooltip.
 const keyOf = (...actions) => shortcut(keys(), shared("layout"), ...actions);
 // What gives each panel surface the keyboard (kt-files' panelTab, kt-panel-head): gwm-panel, kt-gwm's
@@ -214,7 +219,11 @@ function route(c, cx) {
   } else if (name === "close-pane") {
     toThread(); // the pane it asks about shows behind the dialog
     const p = panes().find((x) => x.pane === focused()?.pane);
-    if (p) confirm(tr("pane.title"), tr("pane.detail", { name: p.title || p.program?.name || "Terminal" }), tr("close"), { name: "pane.close", args: { pane: p.pane } });
+    if (p?.mod === "kt-chat") {
+      const term = chatPanes()[p.pane];
+      run("pane.close", { pane: p.pane });
+      if (term) run("pane.focus", { terminal: term });
+    } else if (p) confirm(tr("pane.title"), tr("pane.detail", { name: p.title || p.program?.name || "Terminal" }), tr("close"), { name: "pane.close", args: { pane: p.pane } });
   } else if (name === "close-tab") {
     const s = spaces().find((x) => x.active);
     const c = s?.tabs.find((x) => x.active);
@@ -339,12 +348,11 @@ export default class Head extends View {
       .child(text);
   }
 
-  // #54: the thread's face, Terminal | Chat, the shown one raised; a click picks it (view.js), as
-  // ctrl-b space. Nothing in a layout without the thread-body stack.
+  // #54, #86: Terminal | Chat, raised by the focused pane's kind (a Chat pane or not); a click goes there
+  // (view.js), as ctrl-b space. Nothing in a layout without the thread.
   faces(t) {
-    const body = find(layout(), "thread-body");
-    if (!body) return null;
-    const on = (body.active ?? body.children?.[0]?.id) === "chat" ? "chat" : "main";
+    if (!find(layout(), "thread")) return null;
+    const on = panes().find((p) => p.pane === focused()?.pane)?.mod === "kt-chat" ? "chat" : "main";
     const seg = (id, which, name) => own(h_flex().id(id).h(20).px(8).items_center().rounded_full().border(1)
       .font_family(MONO).text_size(10.5).cursor_pointer()
       .border_color(on === which ? t.border : alpha(t.border, "00")).bg(on === which ? t.raised : alpha(t.raised, "00"))
