@@ -3,10 +3,15 @@
 // move (a swap) came out identical. Without them the runner shows Ember: this check is what says so.
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "bun";
-import { calibrate, window, sample, derive, eyes, rgba, POSES, SCALES, OUT } from "./extract.mjs";
+import { calibrate, window, sample, derive, eyes, rgba, homeOf, POSES, SCALES, OUT } from "./extract.mjs";
 
 let failed = 0;
 const ok = (cond, what) => { if (!cond) { failed++; console.error(`FAIL ${what}`); } };
+
+// ---- 0. where the poses go: an empty HERDR_APP_HOME is no home ----
+ok(homeOf({ HERDR_APP_HOME: "", HOME: "/h" }) === "/h/.config/herdr-app", "home: an empty HERDR_APP_HOME falls back");
+ok(homeOf({ HOME: "/h" }) === "/h/.config/herdr-app", "home: unset");
+ok(homeOf({ HERDR_APP_HOME: "/x", HOME: "/h" }) === "/x", "home: set");
 
 // ---- 1. geometry, on a made-up figure: a 24x16-cell block (pitch 10 px) with two 2x2 dark marks ----
 {

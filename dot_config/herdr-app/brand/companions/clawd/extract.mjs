@@ -38,8 +38,9 @@ export const POSES = [...Object.keys(TAKEN), ...Object.keys(DERIVED)];
 export const SCALES = [1, 2, 3, 4];
 const STAND_W = 24, STAND_H = 16; // Clawd standing, arms out, in cells
 
-const home = process.env.HERDR_APP_HOME ?? `${process.env.HOME}/.config/herdr-app`;
-export const OUT = `${home}/data/companions/clawd`;
+/** The Herdr home: HERDR_APP_HOME when set and not empty (an empty one would aim at the root). */
+export const homeOf = (env) => env.HERDR_APP_HOME || `${env.HOME}/.config/herdr-app`;
+export const OUT = `${homeOf(process.env)}/data/companions/clawd`;
 
 // ---------- pure: pixels in, cells out ----------
 
