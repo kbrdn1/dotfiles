@@ -142,6 +142,7 @@ export default class MachineAdd extends View {
   add(target, cx) {
     target = target.trim();
     if (!target || this.state[target] === "adding") return;
+    if (target.startsWith("-")) { this.state[target] = tr("dashTarget", { target }); cx.notify(); return; } // never an option to hc (-oProxyCommand=…): not in machine-add 0.1.16
     this.pending.delete(target);
     this.state[target] = "adding";
     cx.notify();
