@@ -2,7 +2,7 @@
 // which agent the Chat shows, the words of a fold, which turns are drawn and where the view goes
 // when more are. Checked by chat-view.check.mjs.
 
-const isClaude = (a) => a?.program?.key === "claude" || /^claude/.test(a?.app ?? "");
+export const isClaude = (a) => a?.program?.key === "claude" || /^claude/.test(a?.app ?? "");
 
 /**
  * The Chat's agent: the shown tab's Claude agent, the focused pane's first (when the Chat has the
@@ -51,6 +51,12 @@ function find(node, id) {
   return null;
 }
 const shownChild = (stack) => stack?.active ?? stack?.children?.[0]?.id;
+
+/** Does the layout show the thread (stack view on thread, whichever face)? A pane's Chat (#86) needs it. */
+export function threadShown(root) {
+  const page = find(root, "view");
+  return !page || shownChild(page) === "thread";
+}
 
 /** Does the layout show the thread on its Chat face (stack view on thread, thread-body on chat)? */
 export function chatShown(root) {

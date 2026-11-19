@@ -35,10 +35,19 @@
 //
 // Live (#55, live()): while this face shows and the agent works, a delta (`--from end`) every TICK
 // ms, plus one at each status change and on coming back on screen; nothing at rest.
+//
+// As a pane of the tab (#86, lot 2; chat-pane.js): `pane.split {mod: "kt-chat", props: {terminal}}`
+// (kt-head) makes a Chat beside the terminals, following that agent (not the tab's). It finds its own
+// pane, keeps its own line in the registry shared "kt.chat.panes" = { [pane]: terminal }, shows only when its tab and
+// the thread do (no other pane zoomed), takes the keyboard on "focus" and once at its creation;
+// « Ouvrir le terminal » focuses its agent's pane; its agent's terminal gone, « Agent fermé » and
+// Fermer. The stack's copy (thread-body's child chat) works as before until lot 4 takes it out.
 
 import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
-import { agents, focused, panes, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, checking, nextCommand, notify, props, layout, run, openOverlay } from "herdr";
+import { agents, focused, panes, spaces, terminals, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, checking, nextCommand, notify, props, layout, run, openOverlay } from "herdr";
+// #86: kt-chat as a pane of the tab (props: {terminal}), its agent, its pane, the registry (pure).
+import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "./chat-pane.js";
 // #56: the composer (pure, composer.check.mjs); kt-threads' decide.js (a byte-identical copy, with
 // decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser; kt-head's view.js (a
 // byte-identical copy): « Ouvrir le terminal », the thread's other face.
@@ -121,7 +130,9 @@ const lines = (s) => String(s ?? "").replace(/\n+$/, "").split("\n");
 const RECT = () => PathBuilder.fill().move_to("0%", "0%").line_to("100%", "0%").line_to("100%", "100%").line_to("0%", "100%").close().build();
 const paint = (path, c) => globalThis.window.paint_path(path, c).absolute().inset_0();
 const hex2 = (a) => Math.round(Math.min(1, Math.max(0, a)) * 255).toString(16).padStart(2, "0");
-const target = () => pickTarget({ focused, agents, panes });
+// #86: a pane's Chat (props().terminal) follows that agent; the stack's copy, the shown tab's.
+const paneTerminal = () => props()?.terminal ?? null;
+const target = () => (paneTerminal() ? paneTarget({ terminal: paneTerminal(), agents: agents(), terminals: terminals() }) : pickTarget({ focused, agents, panes }));
 const appPath = (p) => (p && p.startsWith(appHome() + "/") ? p.slice(appHome().length + 1) : p);
 
 /** The answer of a turn, as the reader reads it: its prose, joined. */
@@ -147,6 +158,10 @@ export default class Chat extends View {
     this.loadedFor = undefined;
     this.line = null; // the agent's status line (model, effort, ctx_pct), read with its transcript_path
     this.fixed = props()?.file ?? null; // a JSONL shown instead of the agent's
+    // #86: as a pane (props().terminal), its own pane once found (chat-pane.js ownPane), and whether it
+    // took the keyboard at its creation (once).
+    this.paneId = null;
+    this.paneTook = false;
     this.open = new Set(); // opened: f:<turn> fold, s:<step> detail, c:<notice> summary, r:<run> report, k:<code> block
     this.shownSteps = new Map(); // phase id -> steps drawn (STEPS, then MORE at a time)
     this.cur = -1; // the turn cursor (-1: the last)
@@ -567,7 +582,9 @@ export default class Chat extends View {
 
   // « Ouvrir le terminal »: the thread's terminal face, which gets the keyboard (view.js).
   openTerminal() {
-    view("main", { layout, run, setShared, panes, focused });
+    // #86: a pane's Chat gives the keyboard to its agent's terminal, the pane beside it.
+    if (paneTerminal()) run("pane.focus", { terminal: paneTerminal() });
+    else view("main", { layout, run, setShared, panes, focused });
   }
 
   // ---------- the project and its background (#57) ----------
@@ -1593,7 +1610,9 @@ export default class Chat extends View {
           .child(this.label(t, tr("queued")))))), "kc-working");
   }
 
-  empty(t, title, body, retry) {
+  empty(t, title, body, retry, close = false) {
+    // #86: « Fermer » closes this pane (its own, else the focused one: this copy's while it has the keyboard).
+    const closable = close && (Boolean(this.paneId) || this.handle.is_focused());
     return v_flex().flex_1().min_h(0).p(16).gap(10).items_center().justify_center()
       .child(svg(MSG).size(22).text_color(ink(t, 0.35)))
       .child(div().text_size(14).font_semibold().text_color(ink(t, 1)).child(title))
@@ -1601,11 +1620,17 @@ export default class Chat extends View {
       .when(retry, (el) => el.child(h_flex().id("kc-retry").h(26).px(10).gap(6).items_center().rounded(7).bg(ink(t, 0.1))
         .text_size(12).text_color(ink(t, 0.8)).cursor_pointer().hover((s) => s.bg(ink(t, 0.15)))
         .on_click((_e, cx) => { this.load(cx); cx.notify(); })
-        .child(svg(I("refresh-cw")).size(12)).child(tr("retry"))));
+        .child(svg(I("refresh-cw")).size(12)).child(tr("retry"))))
+      .when(closable, (el) => el.child(h_flex().id("kc-close-pane").h(26).px(10).gap(6).items_center().rounded(7).bg(ink(t, 0.1))
+        .text_size(12).text_color(ink(t, 0.8)).cursor_pointer().hover((s) => s.bg(ink(t, 0.15)))
+        .on_click((_e, cx) => { run("pane.close", this.paneId ? { pane: this.paneId } : {}); cx.notify(); })
+        .child(svg(I("x")).size(12)).child(tr("closePane"))));
   }
 
   body(t, cx, tg, keyed) {
     if (!this.fixed && tg.reason === "noAgent") return this.empty(t, tr("empty.noAgent.title"), tr("empty.noAgent.text"));
+    // #86: a pane whose agent's terminal is gone says so, and offers to close.
+    if (!this.fixed && tg.reason === "closed") return this.empty(t, tr("empty.closed.title"), tr("empty.closed.text"), false, true);
     if (!this.fixed && tg.reason === "notClaude") return this.empty(t, tr("empty.notClaude.title"), tr("empty.notClaude.text", { app: tg.app }));
     if (!this.fixed && tg.reason === "remote") return this.empty(t, tr("empty.remote.title"), tr("empty.remote.text", { machine: tg.machine }));
     const want = this.wanted(tg);
@@ -1798,7 +1823,40 @@ export default class Chat extends View {
 
   /** This face is on screen: the layout's thread shows its Chat, or this copy shows a fixed file. */
   isShown() {
-    return Boolean(this.fixed) || chatShown(layout());
+    if (this.fixed) return true;
+    if (!paneTerminal()) return chatShown(layout());
+    // #86, a pane: its tab shown in the shown space, the thread on screen, no other pane zoomed.
+    return paneShown({ pane: this.paneId, agentTab: this.agentTab(), panes: panes(), spaces: spaces(), layout: layout() });
+  }
+
+  // ---------- as a pane of the tab (#86, chat-pane.js) ----------
+
+  /** The tab of this pane's agent (its terminal's pane), or null. */
+  agentTab() {
+    const term = paneTerminal();
+    return term ? panes().find((p) => p.terminal === term)?.tab ?? null : null;
+  }
+
+  /**
+   * A pane's copy finds its own pane, keeps its line in the registry (kt-head, kt-composer read it),
+   * and takes the keyboard once at its creation when its pane is the focused one (a split focuses
+   * it); later, "focus" (pane.go, pane.focus) gives it, as before.
+   */
+  paneSync(cx, keyed) {
+    const term = paneTerminal();
+    const all = panes();
+    const reg = shared(REGISTRY);
+    this.paneId = ownPane({ given: props()?.pane ?? null, known: this.paneId, keyed, focused: focused()?.pane ?? null, registry: reg, panes: all, terminal: term, agentTab: this.agentTab() });
+    if (!this.paneId) return;
+    const next = register(reg, this.paneId, term);
+    if (next !== reg) cx.spawn(async () => setShared(REGISTRY, next));
+    if (!this.paneTook && !keyed && all.find((p) => p.pane === this.paneId)?.focused) cx.spawn(async (cx) => { this.focusIn(); cx.notify(); });
+    this.paneTook = true;
+  }
+
+  /** A pane's copy leaves the registry when its pane goes (at quit too: it comes back at start). */
+  async close() {
+    if (this.paneId) setShared(REGISTRY, unregister(shared(REGISTRY), this.paneId));
   }
 
   render(cx) {
@@ -1820,13 +1878,14 @@ export default class Chat extends View {
     this.live(cx, tg, want);
     if (this.cleanDue && !checking()) this.sweepBg(cx);
     // The thread switched to its Chat face: take the keyboard, once per request, only when the
-    // layout shows this face (a hidden copy doesn't draw anyway).
-    const ask = shared("kt.chat.focus");
+    // layout shows this face (a hidden copy doesn't draw anyway). The stack's copy only (#86).
+    const ask = paneTerminal() ? null : shared("kt.chat.focus");
     if (ask && ask !== this.focusAsked && !checking()) {
       this.focusAsked = ask;
       if (chatShown(layout())) cx.spawn(async (cx) => { this.focusIn(); cx.notify(); });
     }
     const keyed = this.handle.is_focused();
+    if (paneTerminal() && !checking()) this.paneSync(cx, keyed);
     const writes = !this.fixed && Boolean(tg.agent) && !tg.reason;
     const pr = this.project(t, cx, tg);
     const bg = this.background(t, cx, pr);
