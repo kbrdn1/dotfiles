@@ -3,7 +3,7 @@
 import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { merge, breakdown, grid, gridInk, details, mergeLists, curve, current, emptyState, emptyLists, sessionId, CHARS_PER_TOKEN, CHARS_PER } from "./model.js";
+import { merge, breakdown, grid, gridInk, details, mergeLists, curve, current, emptyState, emptyLists, sessionId, CHARS_PER_TOKEN, CHARS_PER, SPREAD } from "./model.js";
 
 const INDEX = join(import.meta.dir, "ctx-index.ts");
 let fails = 0;
@@ -84,7 +84,7 @@ const shape = { system: 400 * C, tools: 100 * C, mcp: { tolaria: 30 * C, docs: 7
 // Each category at its calibrated rate (CHARS_PER): memory 2.2, skills 3, agents 3.3, the rest 4.
 const lists = { ...emptyLists(), skills: { count: 3, entries: [{ name: "a", chars: 60 }, { name: "b", chars: 30 }] }, memory: [{ path: "/h/.claude/CLAUDE.md", type: "User", chars: 110 }],
   agents: { mine: 33, Explore: 9 * C }, builtIn: ["Explore"], mcpInstructions: { tavily: 8 * C } };
-eq("calibration", CHARS_PER, { memory: 2.2, skills: 3, agents: 3.3 });
+eq("calibration", [CHARS_PER, SPREAD], [{ memory: 2.2, skills: 3, agents: 3.3 }, { p90: 0.14, points: 111 }]);
 const now = (tokens, window = 1_000_000) => ({ tokens, window, pct: 0, compacted: null });
 const B = (st, n) => breakdown({ shape: null, lists: emptyLists(), compactions: [], ...st }, now(n));
 eq("breakdown", B({ shape, lists }, 5000).rows, [

@@ -35,7 +35,7 @@ import { viz, runs, inked, capped, faint, color } from "./viz.js";
 import { roll } from "./roll.js";
 import { ring } from "./ring.js";
 import { Vim, keysOf } from "./vim.js";
-import { merge, breakdown, grid, gridInk, details, curve, current, sessionId } from "./model.js";
+import { merge, breakdown, grid, gridInk, details, curve, current, sessionId, SPREAD } from "./model.js";
 
 const tr = makeT(strings);
 const ME = "context"; // this block's id in the layout's "panel-body" stack
@@ -279,7 +279,7 @@ export default class Context extends View {
           .when(b.buffer != null, (el) => el.child(this.legendRow(t, "buffer", b.buffer, now.window, true)))))
       .when(b.noShape, (el) => el.child(this.note(t, tr("noShape"))))
       .when(b.buffer == null, (el) => el.child(this.note(t, tr("noBuffer"), t.dim)))
-      .child(this.note(t, tr("estNote"), t.dim));
+      .child(this.note(t, tr("estNote", { p: Math.round(SPREAD.p90 * 100), n: SPREAD.points }), t.dim));
   }
 
   // A foldable row's head: chevron, swatch, name, what it holds, ≈ tokens. A click folds or unfolds it.

@@ -26,6 +26,12 @@ export const CHARS_PER_TOKEN = 4;
 // low; the skills' listing 25 % low, the agents' 17 %. The rest wasn't comparable (another model's prompt
 // and tools, other MCP servers): CHARS_PER_TOKEN. A calibration knob: measure again before changing it.
 export const CHARS_PER = { memory: 2.2, skills: 3.0, agents: 3.3 };
+// What that calibration leaves item by item, from /context all the same way (2026-11-19: 23 agents and 88
+// skills with a figure; 145 skills shown « < 20 tokens » have none): the 90th percentile of |error|, shown on
+// screen with its points. Median error ~0 by construction (the rates were fitted on the totals); the
+// spread is the honest part. The memory files are fitted on their total alone (/context all lists no
+// file), the rest not at all: no ± for them.
+export const SPREAD = { p90: 0.14, points: 111 };
 export const MAX_TURNS = 4000; // calls kept per transcript, the newest
 export const LIST_MAX = 12; // a list's items shown, the rest « +N »
 // /context's rows in its order (the engine's ids: system_prompt, system_tools, mcp_tools,

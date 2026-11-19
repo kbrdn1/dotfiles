@@ -78,7 +78,7 @@ try {
   try { tree = view.draw(cx); } catch (e) { fails++; console.error(`FAIL draw threw: ${e?.stack ?? e}`); }
   const has = (s) => texts.some((x) => x.includes(s));
   const want = ["Utilisation", "Prompt système", "Outils système", "Outils MCP", "Instructions MCP", "Agents personnalisés", "Fichiers mémoire",
-    "Skills", "Messages", "Espace libre", "Réserve de compaction", "Détail", "tool14", "~/.claude/RULES.md", "again", "Au fil des appels", "compaction vers", "Compaction auto"];
+    "Skills", "Messages", "Espace libre", "Réserve de compaction", "Détail", "tool14", "~/.claude/RULES.md", "again", "Au fil des appels", "compaction vers", "Compaction auto", "± 14 % par élément (p90 sur 111 points)"];
   for (const w of want) if (!has(w)) { fails++; console.error(`FAIL not drawn: « ${w} »`); }
   // After the compaction: only what it re-sent (no skill29, no CLAUDE.md, no deferred tools).
   for (const gone of ["skill29", "CLAUDE.md", "Outils différés"]) if (has(gone)) { fails++; console.error(`FAIL from before the compaction, still drawn: « ${gone} »`); }
