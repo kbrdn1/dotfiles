@@ -3,7 +3,7 @@
 import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { merge, breakdown, curve, current, emptyState, sessionId, CHARS_PER_TOKEN } from "./model.js";
+import { merge, breakdown, grid, gridInk, details, mergeLists, curve, current, emptyState, emptyLists, sessionId, CHARS_PER_TOKEN, CHARS_PER } from "./model.js";
 
 const INDEX = join(import.meta.dir, "ctx-index.ts");
 let fails = 0;
@@ -77,22 +77,83 @@ try {
   rmSync(dir, { recursive: true, force: true });
 }
 
-// 4. The split: estimated from characters, messages the rest of the last call, never below 0.
-const shape = { system: 400 * CHARS_PER_TOKEN, tools: 100 * CHARS_PER_TOKEN, mcp: { tolaria: 30 * CHARS_PER_TOKEN, docs: 70 * CHARS_PER_TOKEN } };
-eq("breakdown", breakdown(shape, 5000), [
-  { key: "system", tokens: 400 }, { key: "tools", tokens: 100 },
-  { key: "mcp", tokens: 100, servers: [{ name: "docs", tokens: 70 }, { name: "tolaria", tokens: 30 }] },
-  { key: "messages", tokens: 4400 }]);
-eq("breakdown no mcp row", breakdown({ system: 4, tools: 4, mcp: {} }, 10).map((r) => r.key), ["system", "tools", "messages"]);
-eq("breakdown messages floor", breakdown(shape, 10).at(-1).tokens, 0);
-eq("breakdown without shape", breakdown(null, 5000), null);
+// 4. The split, /context's rows in its order: estimated from characters, a part of 0 left out, the
+// messages the rest of the last call (never below 0); without a shape, no system prompt nor tools.
+const C = CHARS_PER_TOKEN;
+const shape = { system: 400 * C, tools: 100 * C, mcp: { tolaria: 30 * C, docs: 70 * C } };
+// Each category at its calibrated rate (CHARS_PER): memory 2.2, skills 3, agents 3.3, the rest 4.
+const lists = { ...emptyLists(), skills: { count: 3, entries: [{ name: "a", chars: 60 }, { name: "b", chars: 30 }] }, memory: [{ path: "/h/.claude/CLAUDE.md", type: "User", chars: 110 }],
+  agents: { mine: 33, Explore: 9 * C }, builtIn: ["Explore"], mcpInstructions: { tavily: 8 * C } };
+eq("calibration", CHARS_PER, { memory: 2.2, skills: 3, agents: 3.3 });
+const now = (tokens, window = 1_000_000) => ({ tokens, window, pct: 0, compacted: null });
+const B = (st, n) => breakdown({ shape: null, lists: emptyLists(), compactions: [], ...st }, now(n));
+eq("breakdown", B({ shape, lists }, 5000).rows, [
+  { key: "system", tokens: 400 }, { key: "tools", tokens: 100 }, { key: "mcp", tokens: 100 }, { key: "mcpInstructions", tokens: 8 },
+  { key: "agents", tokens: 10 }, { key: "memory", tokens: 50 }, { key: "skills", tokens: 30 }, { key: "messages", tokens: 4302 }]);
+eq("breakdown: a part of 0 left out", B({ shape: { system: 4, tools: 4, mcp: {} } }, 10).rows.map((r) => r.key), ["system", "tools", "messages"]);
+eq("breakdown: messages floor", B({ shape, lists }, 10).rows.at(-1).tokens, 0);
+eq("breakdown: without a shape", [B({ lists }, 5000).noShape, B({ lists }, 5000).rows.map((r) => r.key)], [true, ["mcpInstructions", "agents", "memory", "skills", "messages"]]);
+// The reserve: the last automatic compaction near the window (967 k on 1 M, seen for real); a manual one
+// and an automatic one far below (409 k: another window) don't count; none: no reserve, all free.
+const cut = (trigger, pre) => ({ at: "2026-11-19T10:00:00Z", trigger, pre, post: 60000 });
+eq("reserve", B({ shape, compactions: [cut("auto", 967196), cut("auto", 968530), cut("manual", 990000), cut("auto", 409000)] }, 600000),
+  { rows: B({ shape }, 600000).rows, noShape: false, threshold: 968530, buffer: 31470, free: 368530 });
+eq("no reserve yet", [B({ shape }, 600000).buffer, B({ shape }, 600000).free], [null, 400000]);
+
+// 4b. The grid, /context's algorithm: 20 × 10 from a 1M window, 10 × 10 below; a row at least a square,
+// its last one partial; the reserve last, the free space before it; past the grid, cut.
+const G = (rows, window, buffer) => grid(rows, window, buffer);
+const g1 = G([{ key: "system", tokens: 3355 }, { key: "messages", tokens: 646426 }], 1_000_000, 31470);
+eq("grid 1M", [g1.cols, g1.rows, g1.squares.length], [20, 10, 200]);
+eq("grid: a small row takes a square, partial", [g1.squares[0].key, Math.round(g1.squares[0].fill * 1000) / 1000], ["system", 0.671]);
+eq("grid: counts", ["system", "messages", "free", "buffer"].map((k) => g1.squares.filter((s) => s.key === k).length), [1, 129, 64, 6]);
+eq("grid: the reserve last", g1.squares.slice(-6).every((s) => s.key === "buffer"), true);
+eq("grid: under half a square, still one", G([{ key: "mcp", tokens: 791 }], 1_000_000, null).squares.filter((s) => s.key === "mcp").length, 1);
+const g3 = G([{ key: "messages", tokens: 990000 }], 1_000_000, 31470);
+eq("grid: the reserve keeps its squares, the rows cut before it", [g3.squares.filter((s) => s.key === "messages").length, g3.squares.filter((s) => s.key === "buffer").length], [194, 6]);
+const g2 = G([{ key: "tools", tokens: 150000 }, { key: "messages", tokens: 100000 }], 200_000, null);
+eq("grid 200 k: 10 × 10, cut at the end", [g2.cols, g2.squares.length, g2.squares.filter((s) => s.key === "tools").length, g2.squares.filter((s) => s.key === "messages").length], [10, 100, 75, 25]);
+
+// The grid's cells: a full square solid, a half-ink one in stripes, a partial one in dots (`inked`, here a
+// stand-in: the left half), the reserve in horizontal stripes, the free space the track, the gaps null.
+const sq = { cols: 5, rows: 1, squares: [{ key: "messages", fill: 1 }, { key: "memory", fill: 1 }, { key: "system", fill: 0.5 }, { key: "buffer", fill: 1 }, { key: "free", fill: 0 }] };
+const gi = gridInk(sq, (k) => (k === "memory" ? 0.5 : 1), (c, _r, tone) => c < 4 * tone);
+const cellsOf = (n) => Array.from({ length: 4 }, (_, r) => Array.from({ length: 4 }, (_, c) => gi.ink(n * 5 + c, r)).join(" "));
+eq("gridInk: size", [gi.cols, gi.rows], [24, 4]);
+eq("gridInk: gaps", [gi.ink(4, 0), gi.ink(0, 4)], [null, null]);
+eq("gridInk: full", cellsOf(0)[0], "messages messages messages messages");
+eq("gridInk: half-ink stripes", [cellsOf(1)[0], cellsOf(1)[3]], ["memory track memory track", "memory track memory track"]);
+eq("gridInk: partial dots", cellsOf(2)[0], "system system track track");
+eq("gridInk: reserve hatched", [cellsOf(3)[0], cellsOf(3)[1]], ["buffer buffer buffer buffer", "track track track track"]);
+eq("gridInk: free", cellsOf(4)[2], "track track track track");
+
+// 4c. The lists: sorted by tokens, 12 then « +N », tags, the built-in agents apart, deferred tools without tokens.
+const many = Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`mcp__srv${i % 2}__t${i}`, (i + 1) * C]));
+const dd = details({ shape: { ...shape, mcpTools: many }, lists: { ...lists, deferred: { mcp__x__a: 10, Monitor: 5 } } });
+eq("details: groups in order", dd.map((d) => d.key), ["mcp", "mcpInstructions", "deferred", "agents", "memory", "skills"]);
+eq("details: mcp sorted, 12 then +3", [dd[0].items.length, dd[0].more, dd[0].items[0], dd[0].servers, dd[0].tokens], [12, 3, { name: "t14", tag: "srv0", tokens: 15 }, 2, 120]);
+eq("details: deferred, no tokens", [dd[2].tokens, dd[2].mcpCount, dd[2].items.map((x) => [x.name, x.tag])], [null, 1, [["a", "x"], ["Monitor", null]]]);
+eq("details: agents without the built-in", [dd[3].items.map((x) => x.name), dd[3].builtIn], [["mine"], 1]);
+eq("details: memory and skills", [dd[4].items[0], dd[5].listed, dd[5].total, dd[5].items.map((x) => x.name)],
+  [{ name: "/h/.claude/CLAUDE.md", tag: "User", tokens: 50 }, 2, 3, ["a", "b"]]);
+eq("details: skills and agents at their rate", [dd[5].items.map((x) => x.tokens), dd[3].items[0].tokens], [[20, 10], 10]);
+eq("details: nothing", details({ shape: null, lists: emptyLists() }), []);
+
+// 4d. mergeLists: an overlay sets and removes over the state, its reset starts over; a compaction (the
+// read's reset) clears the snapshots too; the built-in agents add up.
+const prev = { ...emptyLists(), skills: { count: 1, entries: [] }, agents: { a: 1, b: 2 }, builtIn: ["X"], deferred: { d1: 1 } };
+const ov = (set = {}, removed = [], reset = false) => ({ reset, set, removed });
+eq("mergeLists: overlay", mergeLists(prev, { reset: false, skills: null, memory: null, agents: { ...ov({ c: 3 }, ["a"]), builtIn: ["Y"] }, mcpInstructions: ov(), deferred: ov({}, ["d1"]) }),
+  { skills: { count: 1, entries: [] }, memory: null, agents: { b: 2, c: 3 }, builtIn: ["X", "Y"], mcpInstructions: {}, deferred: {} });
+eq("mergeLists: isInitial", mergeLists(prev, { reset: false, skills: null, memory: null, agents: { ...ov({ z: 1 }, [], true), builtIn: ["Y"] }, mcpInstructions: ov(), deferred: ov() }).agents, { z: 1 });
+eq("mergeLists: a compaction", mergeLists(prev, { reset: true, skills: null, memory: null, agents: { ...ov({}, [], true), builtIn: [] }, mcpInstructions: ov({}, [], true), deferred: ov({}, [], true) }), emptyLists());
 
 // 5. The curve: at most n points, each its bucket's highest, labelled by its first call.
 const turns = Array.from({ length: 10 }, (_, i) => ({ id: i, tokens: i === 4 ? 999 : i }));
 eq("curve buckets", curve(turns, 5), { values: [1, 3, 999, 7, 9], labels: ["1", "3", "5", "7", "9"] });
 eq("curve short", curve(turns.slice(0, 3), 80), { values: [0, 1, 2], labels: ["1", "2", "3"] });
 eq("curve empty", curve([], 80), { values: [], labels: [] });
-eq("empty state", emptyState("/p"), { path: "/p", offset: 0, turns: [], compactions: [], shape: null });
+eq("empty state", emptyState("/p"), { path: "/p", offset: 0, turns: [], compactions: [], shape: null, lists: emptyLists() });
 
 // 6. The context now: the status line's last call, unless a compaction came after it (seen for real: an
 // auto compaction at 10:08 after the last call at 09:13, the line still at 350 k and ctx_pct 0).
@@ -155,6 +216,47 @@ for (const bad of ["../../etc/passwd", "a/b", "*", "x y", "", "$(id)", "abc\n", 
   }
   // The status line carries the top-level sum: the transcript's call wins.
   eq("current: the call over the line", current({ turns: [{ id: "V", at: "2026-11-19T13:00:00Z", tokens: 562916 }], compactions: [] }, lineOf(1121138, 56)).tokens, 562916);
+}
+
+// 10. The lists from the transcript's attachments (#91, /context's lists), in three reads: their lengths
+// only, the deltas as overlays over the state, a compaction starting them over; the session's own
+// attachment (an e-mail) is never parsed, even holding a "usage".
+{
+  const dir = mkdtempSync(join(tmpdir(), "kt-context-lists-"));
+  const f = join(dir, "s.jsonl");
+  const att = (attachment) => line({ type: "attachment", timestamp: "2026-11-19T14:00:00Z", attachment });
+  try {
+    writeFileSync(f, att({ type: "instructions", files: [{ path: "/h/.claude/CLAUDE.md", type: "User", content: "x".repeat(120) }, { path: "/h/m/MEMORY.md", type: "AutoMem", content: "y".repeat(40) }] })
+      + att({ type: "skill_listing", content: "- alpha: does a\n- beta: does b, longer", skillCount: 3, isInitial: true, names: ["alpha", "beta"] })
+      + att({ type: "agent_listing_delta", addedTypes: ["Explore", "mine"], addedLines: ["- Explore: x", "- mine: abcdef"], builtInTypes: ["Explore"], removedTypes: [], isInitial: true })
+      + att({ type: "mcp_instructions_delta", addedNames: ["tavily"], addedBlocks: ["z".repeat(80)], removedNames: [] })
+      + att({ type: "deferred_tools_delta", addedNames: ["mcp__x__a", "Monitor"], addedLines: ["mcp__x__a", "Monitor: watch"], removedNames: [], readdedNames: [] })
+      + line({ type: "assistant", attachment: { type: "session_context", context: { userEmail: "someone@example.com" } }, message: { id: "S", usage: { input_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } })
+      + line(call("q1", "2026-11-19T14:00:01Z", 1, 10, 100)));
+    const r1 = read(f);
+    eq("lists: no session_context", r1.turns.map((x) => x.id), ["q1"]);
+    eq("lists: memory, lengths only", r1.lists.memory, [{ path: "/h/.claude/CLAUDE.md", type: "User", chars: 120 }, { path: "/h/m/MEMORY.md", type: "AutoMem", chars: 40 }]);
+    eq("lists: skills", r1.lists.skills, { count: 3, entries: [{ name: "alpha", chars: 15 }, { name: "beta", chars: 22 }] });
+    eq("lists: no text kept", JSON.stringify(r1.lists).includes("does a") || JSON.stringify(r1.lists).includes("xxxx"), false);
+    const s1 = merge(null, f, r1);
+    eq("lists: state", [s1.lists.agents, s1.lists.builtIn, s1.lists.mcpInstructions, s1.lists.deferred], [{ Explore: 12, mine: 14 }, ["Explore"], { tavily: 80 }, { mcp__x__a: 9, Monitor: 14 }]);
+    // 2: a delta removes, another adds: over the state.
+    appendFileSync(f, att({ type: "agent_listing_delta", addedTypes: ["other"], addedLines: ["- other: q"], builtInTypes: [], removedTypes: ["mine"] })
+      + att({ type: "deferred_tools_delta", addedNames: [], addedLines: [], removedNames: ["Monitor"], readdedNames: [] }));
+    const s2a = merge(s1, f, read(f, s1.offset));
+    eq("lists: overlay", [s2a.lists.agents, s2a.lists.deferred, s2a.lists.memory.length, s2a.lists.skills.count], [{ Explore: 12, other: 10 }, { mcp__x__a: 9 }, 2, 3]);
+    // 2b: the agents' listing sent whole again (isInitial), no compaction: it replaces theirs, nothing else.
+    appendFileSync(f, att({ type: "agent_listing_delta", addedTypes: ["Explore", "z"], addedLines: ["- Explore: x", "- z: zz"], builtInTypes: ["Explore"], removedTypes: [], isInitial: true }));
+    const s2 = merge(s2a, f, read(f, s2a.offset));
+    eq("lists: isInitial replaces the agents", [s2.lists.agents, s2.lists.deferred], [{ Explore: 12, z: 7 }, { mcp__x__a: 9 }]);
+    // 3: a compaction, then a new skill listing: everything else starts over (empty until re-sent).
+    appendFileSync(f, line({ type: "system", subtype: "compact_boundary", timestamp: "2026-11-19T15:00:00Z", compactMetadata: { trigger: "auto", preTokens: 967000, postTokens: 50000 } })
+      + att({ type: "skill_listing", content: "- gamma: g", skillCount: 1, isInitial: true, names: ["gamma"] }));
+    const s3 = merge(s2, f, read(f, s2.offset));
+    eq("lists: a compaction starts over", s3.lists, { ...emptyLists(), skills: { count: 1, entries: [{ name: "gamma", chars: 10 }] } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 if (fails) { console.error(`${fails} failure(s)`); process.exit(1); }

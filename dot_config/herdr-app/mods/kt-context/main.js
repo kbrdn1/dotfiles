@@ -4,13 +4,16 @@
 //   model and effort, and how old the reading is. From ~/.claude/cache/statusline/herdr-<terminal>.json,
 //   written by the status line at each refresh: exact. A compaction since its last call makes it stale
 //   (its ctx_pct reads 0): then the compaction's « after » (model.js current()), said on screen.
-// - The breakdown by category, said ESTIMATED on screen: the last request's shape (its system prompt
-//   blocks, the built-in tools' and the MCP tools' schemas, by server), measured in characters at about
-//   4 a token; the messages the rest of the real total. Without a shape in the transcript (an older
-//   session, another version): a line that says so, never a guess. Memory files and skills aren't split
-//   out: they come in as messages, and only /context tells them apart.
-// - The context over the calls (viz.js area chart), exact from each call's usage, and the compactions
-//   (auto or manual, before and after) as lines under it.
+// - « Utilisation » (#91, as /context draws it, studied in Claude Code 2.1.328): its grid of squares in
+//   dither (model.js grid()) and beside it its rows, said ESTIMATED (« ≈ », the source pill): the system
+//   prompt and the tools from the last request's shape, the MCP instructions, custom agents, memory files
+//   and skills from the transcript's listings since the last compaction (ctx-index.ts `lists`), measured
+//   in characters at about 4 a token; the messages the rest of the real total; the free space, and the
+//   compaction reserve from the threshold the past automatic compactions crossed (none yet: said). Without
+//   a shape (an older session, another version): no system prompt or tools, a line says so.
+// - « Détail »: one foldable row a category, its items sorted by tokens, 12 then « +N » (model.js details()).
+// - The context over the calls (viz.js area chart), folded at first, exact from each call's usage, and the
+//   compactions (auto or manual, before and after) as lines under it.
 // The transcript (soon past readTextFile's 1 MiB) goes through ctx-index.ts (Bun, by exec), from the byte
 // offset read last: only when the status line changed (a call answered), only while Context shows.
 // Follows the focused terminal, else the shown tab's agent (as Flow). Local terminals only.
@@ -18,7 +21,7 @@
 // `kt-context.key:<keys>` gives Context the keyboard: r reads the whole transcript again; [ ] the
 // panel's previous / next tab; esc gives the keyboard back to the terminal; ? the keys.
 
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { focused, panes, spaces, theme, layout, readTextFile, exec, home, appHome, nextCommand, checking, run, openOverlay, shared } from "herdr";
 import { makeT, compact, relative, time } from "./i18n.js";
@@ -28,17 +31,26 @@ import { motionState, frame, enter } from "./motion.js";
 import { panelIn } from "./panel.js";
 import { skeleton, readyFor } from "./skeleton.js";
 // kt-keys' viz.js and roll.js, kt-threads' ring.js (with levels.js, ring.strings.js): byte-identical copies.
-import { viz } from "./viz.js";
+import { viz, runs, inked, capped, faint, color } from "./viz.js";
 import { roll } from "./roll.js";
 import { ring } from "./ring.js";
 import { Vim, keysOf } from "./vim.js";
-import { merge, breakdown, curve, current, sessionId } from "./model.js";
+import { merge, breakdown, grid, gridInk, details, curve, current, sessionId } from "./model.js";
 
 const tr = makeT(strings);
 const ME = "context"; // this block's id in the layout's "panel-body" stack
 const EVERY = 4000; // the status line, while Context shows
 const MONO = "Monaspace Krypton";
-const SERIES = { system: "ansi4", tools: "ansi5", mcp: "ansi6", messages: "accent" };
+// A category's [theme colour, ink tone]. #81's code where it names the category (categories.js: skill
+// ansi4, MCP accent, its instructions the same hue at half ink); /context's other rows have no hue of
+// their own there (the five are taken), so they are neutral, told apart by shade and by ink: the system
+// prompt muted, the system tools dim, the agents dim at half ink, the memory files muted at half ink, the
+// messages the foreground. The free space is the track, the reserve dim hatched.
+const TINT = {
+  system: ["muted", 1], tools: ["dim", 1], mcp: ["accent", 1], mcpInstructions: ["accent", 0.5], agents: ["dim", 0.5],
+  memory: ["muted", 0.5], skills: ["ansi4", 1], messages: ["foreground", 1], free: ["dim", 0], buffer: ["dim", 1], deferred: ["dim", 1],
+};
+const GRID_CELL = 3; // px, a dither cell of the grid: a square is 4 of them, 12 px
 // The panel's tabs in order, and each one's mod: [ / ] show the next one and give it the keyboard.
 const TABS = ["files", "diff", "history", "flow", "crosstalk", "context", "gwm-panel"];
 const TAB_MODS = { files: "kt-files", diff: "kt-diff", history: "kt-history", flow: "kt-flow", crosstalk: "kt-crosstalk", context: "kt-context", "gwm-panel": "kt-gwm" };
@@ -89,6 +101,8 @@ export default class Context extends View {
     this.again = null; // asked while busy: "yes", or "full" (from 0)
     this.shown = false;
     this.showGen = 0;
+    this.open = new Set(); // the unfolded rows: kc-d-<category> (Details), kc-curve; all folded at first
+    this.gridMemo = null; // the grid's paths, built again only when its squares change
     if (checking()) return;
     cx.spawn(async (cx) => {
       for (;;) {
@@ -217,28 +231,113 @@ export default class Context extends View {
             .child([l.model, l.effort, l.updated_at ? tr("readAt", { ago: relative(l.updated_at * 1000) }) : null].filter(Boolean).join(" · ")))));
   }
 
-  split(t, V, now) {
-    const rows = breakdown(this.st?.shape, now.tokens);
-    const card = this.card(t, "kc-split").child(this.title(t, tr("split"), rows ? tr("estimated") : null));
-    if (!rows) return card.child(this.note(t, tr("noSplit")));
-    const total = rows.reduce((n, r) => n + r.tokens, 0) || 1;
-    return card
-      .children(rows.map((r) => V.progress(tr(r.key), r.tokens, {
-        max: total, id: `kc-p-${r.key}`, color: SERIES[r.key],
-        figure: tr("share", { n: compact(r.tokens), p: Math.round((r.tokens / total) * 100) }),
-        detail: r.servers ? r.servers.slice(0, 6).map((s) => `${s.name} ${compact(s.tokens)}`).join(" · ") : null,
-      })))
-      .child(this.note(t, tr("splitHow"), t.dim));
+  // A category's colour in theme `t` (TINT).
+  tint(t, key) {
+    return color(t, (TINT[key] ?? TINT.free)[0]);
+  }
+
+  // /context's grid, in dither (model.js gridInk: full squares solid, half-ink categories in stripes, a
+  // row's partial last square in Bayer dots, the reserve hatched, the free space the track), one path per
+  // category, built again only when the squares change (grid.check.mjs counts its rectangles).
+  gridEl(t, g) {
+    const key = `${g.cols}|${g.squares.map((s) => `${s.key}:${s.fill.toFixed(2)}`).join(",")}`;
+    if (this.gridMemo?.key !== key) {
+      const gi = gridInk(g, (k) => TINT[k]?.[1] ?? 1, inked);
+      const built = capped((c) => ({ rects: runs(gi.cols, gi.rows, gi.ink, c), cell: c }), GRID_CELL);
+      this.gridMemo = { key, paths: built.paths, rects: built.rects.length, w: gi.cols * built.cell, h: gi.rows * built.cell };
+    }
+    const { paths, w, h } = this.gridMemo;
+    return div().id("kc-grid").relative().flex_none().w(w).h(h)
+      .children([...paths].map(([k, p]) => globalThis.window.paint_path(p, k === "track" ? faint(t.dim, 0.25) : this.tint(t, k)).absolute().inset_0()));
+  }
+
+  // A row beside the grid: its swatch (half-tone categories at half ink), its name, ≈ tokens and share.
+  legendRow(t, key, tokens, window, dim = false) {
+    const [_name, tone] = TINT[key] ?? TINT.free;
+    const sw = key === "free" ? faint(t.dim, 0.35) : faint(this.tint(t, key), tone < 1 ? 0.5 : 1);
+    return h_flex().id(`kc-row-${key}`).gap(8).items_center().min_w(0)
+      .child(div().size(9).flex_none().rounded(2).bg(sw))
+      .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(dim ? t.muted : t.foreground).child(tr(key)))
+      .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted)
+        .child(tr("share", { n: compact(tokens), p: Math.round((tokens / window) * 100) })));
+  }
+
+  usage(t, now) {
+    const b = breakdown(this.st, now);
+    const g = grid(b.rows, now.window, b.buffer);
+    return this.card(t, "kc-usage")
+      .child(h_flex().gap(8).items_center()
+        .child(this.title(t, tr("usage"), tr("source")))
+        .child(div().flex_1())
+        .when(b.threshold != null, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim)
+          .child(tr("compactAt", { n: compact(b.threshold) })))))
+      .child(h_flex().flex_wrap().gap(14).items_start()
+        .child(this.gridEl(t, g))
+        .child(v_flex().flex_1().min_w(190).gap(5)
+          .children(b.rows.map((r) => this.legendRow(t, r.key, r.tokens, now.window)))
+          .child(this.legendRow(t, "free", b.free, now.window, true))
+          .when(b.buffer != null, (el) => el.child(this.legendRow(t, "buffer", b.buffer, now.window, true)))))
+      .when(b.noShape, (el) => el.child(this.note(t, tr("noShape"))))
+      .when(b.buffer == null, (el) => el.child(this.note(t, tr("noBuffer"), t.dim)))
+      .child(this.note(t, tr("estNote"), t.dim));
+  }
+
+  // A foldable row's head: chevron, swatch, name, what it holds, ≈ tokens. A click folds or unfolds it.
+  foldHead(t, id, open, name, detail, tokens, swatch) {
+    return h_flex().id(id).gap(8).items_center().min_w(0).py(4).cursor_pointer().rounded(6).hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => { this.open.has(id) ? this.open.delete(id) : this.open.add(id); cx.notify(); })
+      .child(svg(`mods/kt-threads/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none().text_color(t.muted))
+      .when(Boolean(swatch), (el) => el.child(div().size(9).flex_none().rounded(2).bg(swatch)))
+      .child(div().flex_none().text_size(12).font_semibold().text_color(t.foreground).child(name))
+      .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(detail ?? ""))
+      .when(tokens != null, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(`≈ ${compact(tokens)}`)));
+  }
+
+  // What a group holds, in words (model.js details()).
+  holds(d) {
+    if (d.key === "mcp") return `${tr("tools_n", { n: d.count })} · ${tr("servers_n", { n: d.servers })}`;
+    if (d.key === "mcpInstructions") return tr("servers_n", { n: d.count });
+    if (d.key === "deferred") return [tr("outside", { n: d.count }), d.mcpCount ? tr("ofWhichMcp", { n: d.mcpCount }) : null].filter(Boolean).join(" · ");
+    if (d.key === "agents") return [tr("agents_n", { n: d.count }), d.builtIn ? tr("builtInApart", { n: d.builtIn }) : null].filter(Boolean).join(" · ");
+    if (d.key === "memory") return tr("files_n", { n: d.count });
+    if (d.key === "skills") return tr("listed", { listed: d.listed, total: d.total });
+    return "";
+  }
+
+  detailsEl(t) {
+    const groups = details(this.st);
+    if (!groups.length) return null;
+    const h = home();
+    return this.card(t, "kc-details").gap(2)
+      .child(this.title(t, tr("details")))
+      .children(groups.map((d) => {
+        const id = `kc-d-${d.key}`, open = this.open.has(id);
+        const swatch = d.key === "deferred" ? faint(t.dim, 0.5) : faint(this.tint(t, d.key), (TINT[d.key]?.[1] ?? 1) < 1 ? 0.5 : 1);
+        return v_flex()
+          .child(this.foldHead(t, id, open, tr(d.key), this.holds(d), d.tokens, swatch))
+          .when(open, (el) => el.child(v_flex().ml(6).pl(14).border_l(1).border_color(t.border).gap(3).pb(4)
+            .children(d.items.map((x, i) => h_flex().id(`${id}-${i}`).gap(8).items_center().min_w(0)
+              .when(Boolean(x.tag) || d.key === "deferred", (el) => el.child(div().flex_none().h(15).px(5).flex().items_center().rounded(5).border(1).border_color(t.border)
+                .font_family(MONO).text_size(9).text_color(t.muted).child(x.tag ?? tr("system_tag"))))
+              .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.foreground)
+                .child(d.key === "memory" && h && x.name.startsWith(h) ? `~${x.name.slice(h.length)}` : x.name))
+              .when(x.tokens != null, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(`≈ ${compact(x.tokens)}`)))))
+            .when(d.more > 0, (el) => el.child(div().text_size(10.5).text_color(t.dim).child(tr("more", { n: d.more }))))));
+      }));
   }
 
   over(t, V) {
     const turns = this.st?.turns ?? [];
-    const card = this.card(t, "kc-curve").child(this.title(t, tr("curve"), turns.length ? tr("calls", { n: turns.length }) : null));
+    const cuts = this.st?.compactions ?? [];
+    const open = this.open.has("kc-curve");
+    const holds = [turns.length ? tr("calls", { n: turns.length }) : null, cuts.length ? tr("compactions_n", { n: cuts.length }) : null].filter(Boolean).join(" · ");
+    const card = this.card(t, "kc-curve-card").gap(open ? 10 : 0).child(this.foldHead(t, "kc-curve", open, tr("curve"), holds, null, null));
+    if (!open) return card;
     if (!turns.length) return card.child(this.note(t, tr("noCalls")));
     const { values, labels } = curve(turns);
     return card
       .child(V.chart("area", [{ label: tr("title"), values, color: "accent" }], { labels, height: 150, id: "kc-chart" }))
-      .children((this.st.compactions ?? []).slice(-5).map((c, i) => div().id(`kc-cp-${i}`).font_family(MONO).text_size(11).text_color(t.muted)
+      .children(cuts.slice(-5).map((c, i) => div().id(`kc-cp-${i}`).font_family(MONO).text_size(11).text_color(t.muted)
         .child(tr("compaction", { how: tr(c.trigger === "manual" ? "manual" : "auto"), at: time(c.at), pre: compact(c.pre), post: compact(c.post) }))));
   }
 
@@ -284,6 +383,9 @@ export default class Context extends View {
       .child(v_flex().id("kc-body").flex_1().min_h(0).overflow_y_scrollbar().gap(4)
         .when(Boolean(this.err), (el) => el.child(this.card(t, "kc-err").child(this.note(t, tr("readError", { why: this.err }), t.ansi1))))
         .when(!this.st && !this.err, (el) => el.child(this.card(t, "kc-none").child(this.note(t, tr("noTranscript")))))
-        .when(Boolean(this.st), (el) => el.child(this.split(t, V, now)).child(this.over(t, V)))));
+        .when(Boolean(this.st), (el) => el.child(this.usage(t, now)).when(Boolean(this.st.lists), (el) => {
+          const d = this.detailsEl(t);
+          return d ? el.child(d) : el;
+        }).child(this.over(t, V)))));
   }
 }
