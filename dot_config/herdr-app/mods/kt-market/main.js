@@ -18,7 +18,8 @@
 // Keys (vim.js): the page opens typing in the filter (INSERT: ctrl-n/p ↓ ↑ move, enter opens the
 // detail, esc NORMAL). NORMAL: j/k gg/G ctrl-d/u (j past the last row: the next page; k before the
 // first: the previous page, then the filter), / the filter, tab / shift-tab the type, enter/o/l the
-// detail, i inspect (I again, forced), s the sort, O the repo in the browser, y copy (the plan's first
+// detail, i inspect (I again, forced), a Installer (inspects first when it isn't), s the sort, O the
+// repo in the browser, y copy (the plan's first
 // line once inspected, else the id), p Aperçu / Brut, r refresh, ? kt-keys, esc: the filter, then the
 // detail, then as q (back to the thread; a dialog closes).
 // Mod commands (tests): kt-market.focus, key:<keys>, query:<text>, type:<key>, source:<key>,
@@ -34,6 +35,7 @@ import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
 import { split } from "./tiers.js";
 import { rollText } from "./roll.js";
+import { refreshOn } from "./bus.js";
 import { docOf, mdState, view, tabs, target } from "./markdown.js";
 import { makeT, relative, compact } from "./i18n.js";
 import { TYPES, SOURCES, levelOf, code, mcpForm, skillForm } from "./model.js";
@@ -94,9 +96,9 @@ const noImages = (s) => String(s ?? "")
 // ---------- the script ----------
 
 const codeOf = (e) => (/time|délai/i.test(String(e?.message ?? e)) ? "timeout" : e?.code ?? "script");
-/** `bun market.mjs <args>`: its one JSON line, else rejects with a code. */
-async function bun(args, timeout) {
-  const r = await exec(`${home()}/.nix-profile/bin/bun`, [`${appHome()}/mods/kt-market/market.mjs`, ...args], { timeout });
+/** `bun <script> <args>` (market.mjs, else installed.mjs): its one JSON line, else rejects with a code. */
+async function bun(args, timeout, script = "market.mjs") {
+  const r = await exec(`${home()}/.nix-profile/bin/bun`, [`${appHome()}/mods/kt-market/${script}`, ...args], { timeout });
   const last = String(r.stdout ?? "").trim().split("\n").pop() ?? "";
   try { return JSON.parse(last); } catch { throw Object.assign(new Error("bad-output"), { code: r.code === 0 ? "bad-output" : "script" }); }
 }
@@ -137,6 +139,9 @@ export default class Market extends View {
     this.landing = null; // "last": after a previous page, the cursor on its last row
     this.openRow = null; // the detail's row
     this.insp = new Map(); // id -> detail | { pending } | { error }, 30 kept
+    this.inst = null; // installed.mjs: { [id]: { state: installed | update | present, local, available? } }
+    this.instErr = null; // the parts it couldn't read (codes)
+    this.instBusy = false;
     this.md = mdState();
     this.listScroll = ScrollHandle.new();
     this.detailScroll = ScrollHandle.new();
@@ -222,12 +227,34 @@ export default class Market extends View {
       } catch (e) { this.syncErr = codeOf(e); }
       this.syncing = false;
       this.load(cx);
+      this.loadInstalled(cx); // the catalogs moved: their versions against this Mac's
       cx.notify();
     });
   }
 
   refresh(cx) {
     this.sync(cx, true);
+  }
+
+  // What this Mac has (installed.mjs, issue #70 lot 8): read when the page shows, after a sync, on r,
+  // and when Plugins, Skills or MCP change something (the bus, render). No network.
+  async readInstalled() {
+    if (checking()) return;
+    try {
+      const j = await bun([], 90e3, "installed.mjs");
+      this.inst = j.states ?? {};
+      this.instErr = j.errors?.length ? j.errors : null;
+    } catch (e) { this.instErr = [codeOf(e)]; }
+  }
+
+  loadInstalled(cx) {
+    if (this.instBusy || checking()) return;
+    this.instBusy = true;
+    cx.spawn(async (cx) => {
+      await this.readInstalled();
+      this.instBusy = false;
+      cx.notify();
+    });
   }
 
   // The inspection of a row (market.mjs detail): on i or its button only. `force`: again, past the cache.
@@ -295,6 +322,26 @@ export default class Market extends View {
     }
   }
 
+  // Whether Installer is offered for an inspected item: lots 3 to 5 (plugins, MCP, skills), not blocked,
+  // not already on this Mac (lot 8: « present » herdr mods aside).
+  installable(x, d) {
+    const p = d?.plan;
+    const mine = this.inst?.[x.id];
+    if (!p || (mine && mine.state !== "present")) return false;
+    return (x.type === "plugin" && p.route === "kt-plugins") || (x.type === "mcp" && p.route === "kt-mcp" && Boolean(mcpForm(x.name, d.variants?.[0])))
+      || (x.type === "skill" && p.route === "kt-skills" && Boolean(skillForm(p, d.head)));
+  }
+
+  // a (NORMAL): Installer on the detail's item (else the cursor's); not inspected yet: inspect first,
+  // nothing more (the plan is read before an install, never skipped).
+  installKey(cx) {
+    const x = this.openRow ?? this.at(this.rows());
+    if (!x) return;
+    const d = this.insp.get(x.id);
+    if (!d || d.error) return this.inspect(cx, x);
+    if (!d.pending && this.installable(x, d)) this.install(x, d);
+  }
+
   // y: the plan's first line once inspected, else the id.
   copy(x, cx) {
     const d = this.insp.get(x.id);
@@ -321,13 +368,14 @@ export default class Market extends View {
     cx.notify();
   }
 
-  // The page's own keys first (NORMAL: i I s p), then vim's.
+  // The page's own keys first (NORMAL: i I s a p), then vim's.
   press(k, cx) {
     const name = keyOf(k).name;
     if (!this.vim.insert) {
       const row = this.openRow ?? this.at(this.rows());
       if (name === "i" || name === "I") { this.inspect(cx, row, name === "I"); return true; }
       if (name === "s") { this.sort = SORTS[(SORTS.indexOf(this.sort) + 1) % SORTS.length]; this.refilter(cx); return true; }
+      if (name === "a") { this.installKey(cx); return true; }
       if (name === "p" && this.docShown) { this.md.raw = !this.md.raw; return true; }
     }
     return this.keyAct(this.vim.handle(k), cx);
@@ -472,8 +520,11 @@ export default class Market extends View {
         .when(Boolean(this.keyed), (el) => el.child(this.mode(t, typing))))
       .child(div().px(10).child(types))
       .child(div().px(10).child(sources))
-      .when(failed.length > 0 || Boolean(this.err), (el) => el.child(v_flex().px(12).gap(2)
+      .when(failed.length > 0 || Boolean(this.err) || Boolean(this.instErr), (el) => el.child(v_flex().px(12).gap(2)
         .when(Boolean(this.err), (e2) => e2.child(div().text_size(11.5).text_color(t.ansi1).child(tr("queryFailed", { why: errText(this.err) }))))
+        // installed.mjs couldn't read a part: its badges are missing there, not « not installed ».
+        .when(Boolean(this.instErr), (e2) => e2.child(div().text_size(11.5).text_color(t.dim)
+          .child(tr("instFailed", { list: this.instErr.map((c) => tr(`instPart.${c}`) || errText(c)).join(", ") }))))
         .children(failed.map(([k, v]) => div().text_size(11.5).text_color(t.dim)
           .child(tr(v.at ? "sourceFailed" : "sourceFailedNever", { source: tr(`src.${k}`), why: errText(v.error), ago: v.at ? relative(v.at, { bare: true }) : "" }))))));
   }
@@ -519,6 +570,7 @@ export default class Market extends View {
         .child(h_flex().min_w(0).gap(8).items_center()
           .child(div().min_w(0).truncate().font_family(MONO).text_size(13).font_medium().text_color(t.foreground).child(x.name))
           .when(Boolean(x.version), (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(x.version)))
+          .when(Boolean(this.inst?.[x.id]), (el) => el.child(this.stateTag(t, this.inst[x.id].state)))
           .when(lvl !== "info", (el) => el.child(this.levelPill(t, lvl)))
           .when(Boolean(seen), (el) => el.child(svg(OWN("eye")).size(12).flex_none().text_color(t.dim)))
           .child(div().flex_1())
@@ -641,8 +693,10 @@ export default class Market extends View {
     }
     const p = d.plan;
     // Lots 3 to 5: plugins (kt-plugins), MCP servers (kt-mcp), skills (kt-skills); the others show their plan.
-    const installable = (x.type === "plugin" && p?.route === "kt-plugins") || (x.type === "mcp" && p?.route === "kt-mcp" && Boolean(mcpForm(x.name, d.variants?.[0])))
-      || (x.type === "skill" && p?.route === "kt-skills" && Boolean(skillForm(p, d.head)));
+    // Already on this Mac (lot 8): no Installer; « Chez toi » says where it is managed.
+    const mine = this.inst?.[x.id];
+    const have = Boolean(mine) && mine.state !== "present";
+    const installable = this.installable(x, d);
     const note = x.type === "mcp" ? "installNoteMcp" : x.type === "skill" ? "installNoteSkill" : p?.addMarket ? "installCommunity" : "installNote";
     const tip = x.type === "mcp" ? "installTipMcp" : x.type === "skill" ? "installTipSkill" : "installTip";
     const lic = d.repoFacts?.license && d.repoFacts.license !== "NOASSERTION" ? d.repoFacts.license : null;
@@ -663,7 +717,7 @@ export default class Market extends View {
         .when(installable, (el) => el.child(h_flex().pt(2).gap(10).items_center()
           .child(this.chip(t, "ktmk-install", tr("install"), true, () => this.install(x, d), tr(tip)))
           .child(div().flex_1().min_w(0).text_size(11.5).line_height("17px").text_color(t.dim).child(tr(note)))))
-        .when(!installable, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.readOnly")))))
+        .when(!installable, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr(have ? "mine.planHave" : "plan.readOnly")))))
       .child(this.risks(t, d.flags ?? []))
       .children(this.specifics(t, x, d))
       .when(files.length > 0, (el) => el.child(v_flex().gap(6)
@@ -679,6 +733,37 @@ export default class Market extends View {
             const to = target(url, null);
             if (to?.web && /^https:\/\//.test(to.web)) exec("open", [to.web]).catch(() => {});
           } })))));
+  }
+
+  // « Chez toi » (lot 8): what this Mac has of it, the update the catalog offers, where it is managed
+  // (its page: kt-market installs nothing, and neither updates nor removes). A skill: the clone's commit
+  // against the one inspected (its update needs the network: shown once inspected).
+  mine(t, x, st, d) {
+    const l = st.local ?? {};
+    const page = { plugin: "plugins", mcp: "mcp", skill: "skills" }[x.type];
+    const moved = x.type === "skill" && d?.head && l.head && d.head !== l.head;
+    const say = st.state === "update" ? tr("mine.update", { local: l.version ?? tr("unknown"), available: st.available ?? tr("unknown") })
+      : st.state === "present" ? tr("mine.present", { mods: (l.mods ?? []).join(", ") }) : tr("mine.installed");
+    return v_flex().gap(6).px(12).py(10).rounded(12).border(1)
+      .border_color(alpha(st.state === "update" ? t.ansi3 : st.state === "present" ? t.border : t.done, "66"))
+      .child(h_flex().gap(8).items_center().child(this.eyebrow(t, tr("mine.title"))).child(this.stateTag(t, st.state)))
+      .child(div().text_size(12.5).line_height("19px").text_color(t.foreground).child(say))
+      .when(Boolean(l.version) || x.type === "mcp", (el) => el.child(this.pair(t, tr("mine.version"), l.version ?? tr("mine.noVersion"))))
+      .when(Boolean(l.scope), (el) => el.child(this.pair(t, tr("mine.scope"), l.scope)))
+      .when(Boolean(l.name) && x.type !== "plugin", (el) => el.child(this.pair(t, tr("mine.name"), l.name)))
+      .when(x.type === "skill" && l.path != null, (el) => el.child(this.pair(t, tr("mine.path"), l.path || "/")))
+      .when(Boolean(moved), (el) => el.child(div().text_size(12).line_height("18px").text_color(t.ansi3)
+        .child(tr("mine.skillMoved", { local: String(l.head).slice(0, 12), remote: String(d.head).slice(0, 12) }))))
+      .when(Boolean(page), (el) => el.child(h_flex().pt(2).gap(10).items_center()
+        .child(this.chip(t, "ktmk-mine-open", tr(`mine.open.${x.type}`), false, () => run("layout.select", { stack: "view", child: page })))
+        .child(div().flex_1().min_w(0).text_size(11.5).text_color(t.dim).child(tr("mine.where")))));
+  }
+
+  // installed / update / present, as a pill (FILTERS.md: done, ansi3, dim).
+  stateTag(t, s) {
+    const c = s === "update" ? t.ansi3 : s === "present" ? t.dim : t.done;
+    return h_flex().flex_none().h(18).px(7).items_center().rounded_full().border(1).border_color(alpha(c, "4d")).bg(alpha(c, "1a"))
+      .font_family(MONO).text_size(10).text_color(c).child(tr(`tag.${s}`).toUpperCase());
   }
 
   // `solo`: the narrow tier (tiers.js), the detail alone: its × is a way back to the list.
@@ -708,6 +793,7 @@ export default class Market extends View {
       .child(v_flex().id("ktmk-detail").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.detailScroll).px(10).pt(10).pb(16).gap(14)
         .child(div().text_size(13).line_height("19px").text_color(x.description ? t.foreground : t.dim).child(x.description || tr("noDescription")))
         .child(facts)
+        .when(Boolean(this.inst?.[x.id]), (el) => el.child(this.mine(t, x, this.inst[x.id], done ? d : null)))
         .when(!done, (el) => el.child(this.risks(t, x.flags)))
         .child(this.dashed(t))
         .child(this.inspection(t, x, d, cx)));
@@ -716,6 +802,8 @@ export default class Market extends View {
 
   render(cx) {
     this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    // The bus (DATA-SYNC.md): an install, an update or a removal in Plugins, Skills or MCP, shown or not.
+    if (!checking()) refreshOn(this, cx, "installed", ["plugins", "skills", "mcp"], async () => { await this.readInstalled(); });
     const vis = visible();
     if (vis && !checking() && !this.shown) {
       // The thread's terminal is hidden under this page: take the keyboard (typing filters), after the
@@ -730,7 +818,7 @@ export default class Market extends View {
       // Back on the page: the list again past 10 s (DATA-SYNC.md), and the catalogs past their TTL.
       if (Date.now() - this.readAt > FRESH) {
         this.load(cx);
-        this.sync(cx);
+        this.sync(cx); // then installed.mjs, once the catalogs are read
       }
     }
     if (!vis && this.shown && this.handle.is_focused() && !checking()) {

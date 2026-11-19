@@ -253,7 +253,7 @@ export function normalizeHerdr(e, kind) {
   if (e.hasKeys) flags.push("keys-json");
   const auto = AUTOMATION.test(`${e.name ?? ""} ${e.blurb ?? ""}`);
   const preview = https(e.previewUrl)?.startsWith("https://assets.herdr.dev/") ? e.previewUrl : null;
-  return item({
+  const it = item({
     type: kind === "layout" ? "herdr-layout" : "herdr-mod", source: "herdr-dev", native: `${e.owner}/${e.repo}${path ? `/${path}` : ""}`,
     name: clean(e.name ?? e.repo, 80), title: e.name ?? e.repo, description: e.blurb, max: 600, author: e.owner,
     repo: { owner: e.owner, name: e.repo, path, ref: PART.test(e.defaultBranch ?? "") ? e.defaultBranch : null },
@@ -262,6 +262,9 @@ export function normalizeHerdr(e, kind) {
     tags: auto ? ["automation"] : [], flags: SHA.test(e.headCommit ?? "") ? flags : [...flags, "unpinned"],
     route: kind === "layout" ? null : "herdr-thread", why: kind === "layout" ? "layout-readonly" : null,
   });
+  // Its mods' folder names (« déjà installé », installed.js): plain names only, 20 at most.
+  it.mods = names.filter((n) => /^[\w.-]{1,64}$/.test(n)).slice(0, 20);
+  return it;
 }
 
 // ---------- aitmpl (components.json, its loops) ----------

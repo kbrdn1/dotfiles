@@ -134,6 +134,8 @@ const h = (o = {}) => ({ owner: "acme", repo: "herdr-demo", defaultBranch: "main
   previewUrl: "https://assets.herdr.dev/previews/a.png", ...o });
 const h1 = normalizeHerdr(h(), "mod");
 assert.equal(h1.id, "herdr-mod:herdr-dev:acme/herdr-demo/mods-src");
+assert.deepEqual(h1.mods, ["demo-panel"], "its mods' names, for « déjà installé »");
+assert.deepEqual(normalizeHerdr(h({ modNames: ["ok-one", "../escape", "a b"] }), "mod").mods, ["ok-one"], "plain names only");
 assert.deepEqual(h1.pin, { kind: "sha", value: SHA });
 assert.ok(h1.flags.includes("keys-json"));
 assert.ok(h1.tags.includes("automation"), "a scheduling blurb is tagged automation");
