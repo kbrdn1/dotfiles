@@ -112,13 +112,17 @@ Esquisse (la review d'**une** branche reste sérialisée par son broker — norm
 
 ```bash
 CAP=${CODEX_PARALLEL_CAP:-2}        # reviews concurrentes max
-# BRANCHES = liste de chemins de worktrees à reviewer
+# BRANCHES = liste de chemins de worktrees à reviewer ; la sortie de chacun dans SON git dir
+i=0
 for WT in "${BRANCHES[@]}"; do
-  while [ "$(jobs -rp | wc -l)" -ge "$CAP" ]; do wait -n; done
-  ( cd "$WT" && /bin/sh -c "$CHECK_COMMAND" > "review-$(basename "$WT").out" 2>&1 ) &
+  ( cd "$WT" && bash ~/.claude/skills/me/loop/codex-review-pr/check.sh > "$(git rev-parse --path-format=absolute --git-path codex-review.out)" 2>&1 ) &
+  i=$((i + 1)); [ $((i % CAP)) -eq 0 ] && wait   # par lots de CAP : jamais plus de CAP en vol
 done
 wait
-# puis agréger : grep -H 'P0P1P2_COUNT=' review-*.out
+# puis agréger, un verdict par branche
+for WT in "${BRANCHES[@]}"; do grep -H 'P0P1P2_COUNT=' "$(git -C "$WT" rev-parse --path-format=absolute --git-path codex-review.out)"; done
 ```
 
 Chaque sous-review embarque son propre préflight + watchdog anti-wedge (le `check_command` ci-dessus), donc un wedge sur une branche n'entraîne pas les autres. Agréger les `P0P1P2_COUNT=` par branche pour le verdict global.
+
+> ⚠️ Trois pièges que l'esquisse précédente portait (vus le 2026-11-19) : `> "review-<wt>.out"` écrivait dans l'arbre de travail, ce que le hook `no-shell-write` refuse (le git dir de chaque worktree, lui, est permis et ne se commite jamais) ; `$CHECK_COMMAND` n'était défini nulle part ; et `wait -n` n'existe pas dans le zsh du Bash de Claude Code (`job not found: -n`), la boucle de bridage tournait à vide. Des lots de `CAP` suivis d'un `wait` marchent en zsh comme en bash, au prix d'un lot qui attend son plus lent.
