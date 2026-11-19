@@ -79,6 +79,7 @@ export default {
     "hint.conv": "i répondre · y copier · h retour",
     "hint.convV2": "i répondre · r renommer · y copier · h retour",
     pickConv: "Choisissez une conversation.",
+    remote: "Crosstalk lit les sessions de ce Mac seulement : ce thread tourne sur une autre machine.",
     nothing: "Rien à afficher.",
   },
   en: {
@@ -159,6 +160,7 @@ export default {
     "hint.conv": "i reply · y copy · h back",
     "hint.convV2": "i reply · r rename · y copy · h back",
     pickConv: "Pick a conversation.",
+    remote: "Crosstalk reads this Mac's sessions only: this thread runs on another machine.",
     nothing: "Nothing to show.",
   },
 };

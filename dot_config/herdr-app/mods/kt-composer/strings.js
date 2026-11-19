@@ -13,6 +13,8 @@ export default {
     blockers: { one: "{n} bloquant", other: "{n} bloquants" },
     week: "7J",
     day: "j",
+    on: "SUR",
+    remoteLine: "contexte, coût, flow et quota lus sur ce Mac seulement",
   },
   en: {
     "branch.title": "Branch unchanged",
@@ -26,5 +28,7 @@ export default {
     blockers: { one: "{n} blocking", other: "{n} blocking" },
     week: "7D",
     day: "d",
+    on: "ON",
+    remoteLine: "context, cost, flow and quota are read on this Mac only",
   },
 };

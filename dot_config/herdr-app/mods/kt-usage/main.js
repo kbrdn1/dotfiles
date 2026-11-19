@@ -586,6 +586,10 @@ export default class Usage extends View {
       // A row's figures roll while the list stays short (ANIMATIONS.md: not past 12 rows).
       rows.push(this.session(t, a, byT.get(a.address), idx, now, live.length <= 12));
     }
+    // The other machines' Claude sessions (#65): said, by machine, not counted (their files are there).
+    const away = new Map();
+    for (const a of agents()) if (a.app === "claude-code" && a.address.includes("/")) { const m = a.address.split("/")[0]; away.set(m, (away.get(m) ?? 0) + 1); }
+    for (const [m, n] of away) rows.push(div().px(10).text_size(12).text_color(t.dim).child(tr("remoteSessions", { n, m })));
     const sessions = v_flex().gap(10)
       .child(this.eyebrow(t, rollText(this.m, "ku-sessions-n", tr("sessions", { n: live.length }).toUpperCase(), 14)))
       .child(v_flex().gap(4).children(rows));

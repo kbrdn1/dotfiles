@@ -216,4 +216,12 @@ const tagB = M.machineTag(t, "vps-b", { id: "tb", opts: o });
 assert.doesNotMatch(text(tagB), /ROOT/); // not known: no ROOT
 assert.match(tagB.props.tooltip[0], /vps-b : login requis/);
 
+// ---- #65: the note a view shows beside another machine's thread.
+assert.equal(M.machineNote(t, null, "x", { opts: o }), null);
+const note = M.machineNote(t, "vps-a", "ce Mac seulement", { id: "nt", opts: o });
+assert.equal(note.props.id[0], "nt");
+assert.match(text(note), /vps-a/);
+assert.match(text(note), /ce Mac seulement/);
+assert.ok(find(note, (n) => n.props.id?.[0] === "nt-tag"), "its tag inside");
+
 console.log("machines.js: ok");

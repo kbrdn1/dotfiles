@@ -16,6 +16,8 @@
 //   loginOf(name)    `hc machine login <name>` when it needs one, else null
 //   stateWord(name), stateColor(t, status), machineTag(t, name, { id }): a machine as the lists show
 //                    it (a dot, its name, ROOT; its state and account on hover)
+//   machineNote(t, name, text, { id })  a view that shows this Mac only, said beside another machine's
+//                    thread: its tag and `text` on a dashed line (#65)
 //   guard(exec)      exec that rejects at once with isOffline(e) = name when the machine is away;
 //                    a remote call without a timeout gets 10 s (the app's default is 30 s)
 //   guardRead(read)  the same for readTextFile
@@ -144,6 +146,18 @@ export function machineTag(t, name, { id, opts, size = 10.5 } = {}) {
     .child(div().size(6).flex_none().rounded_full().bg(stateColor(t, s.status)))
     .child(name)
     .when(s.root === true, (el) => el.child(div().flex_none().text_color(t.blocked).child("ROOT"))); // i18n: tech
+}
+
+/** What a view shows when the thread or project on screen is another machine's and the view reads this
+ *  Mac only (#65): the machine's tag, then `text` (the mod's own words), on a dashed line. null for this
+ *  computer. `id`: unique where it's drawn. */
+export function machineNote(t, name, text, { id = "machine-note", opts } = {}) {
+  if (local(name)) return null;
+  const { div } = kit;
+  const { h_flex } = base;
+  return h_flex().id(id).flex_none().px(10).py(6).gap(8).items_center().rounded(12).border(1).border_dashed().border_color(t.border)
+    .child(machineTag(t, name, { id: `${id}-tag`, opts }))
+    .child(div().flex_1().min_w(0).text_size(12).line_height("17px").text_color(t.muted).child(text));
 }
 
 /** The machine a guarded call was refused for, else null. */

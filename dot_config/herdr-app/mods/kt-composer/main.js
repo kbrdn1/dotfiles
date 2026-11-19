@@ -242,6 +242,13 @@ export default class SessionLine extends View {
         value((l?.model ?? a.program?.name ?? "agent").toUpperCase()),
         ...(l?.effort ? [label(l.effort.toUpperCase())] : [])]);
     }
+    // An agent on another machine (#65): said, and why the line has nothing else (its statusline, flow and
+    // report files are on that machine; the quota read here is this Mac's account), instead of a bare line.
+    const on = a?.address.includes("/") ? a.address.split("/")[0] : null;
+    if (on) {
+      add("machine", 0, [label(tr("on")), value(on, "muted")]);
+      add("remote", 9, [value(tr("remoteLine"), "dim", 300)]);
+    }
     if (l?.ctx_pct != null) {
       // kt-threads' ring and its thresholds: accent under 60 %, blocked to 85 %, ansi1 above.
       // The ring and its number share one level (levels.js, the status line's context rot): same kind, same window.
@@ -288,7 +295,7 @@ export default class SessionLine extends View {
     if (l?.updated_at && now - l.updated_at > 120) add("stale", 12, [rollingText(ago(now - l.updated_at), `stale-${a.address}`, "muted")], "right");
     // [key (the ids), shown name, window]
     for (const [name, shown, w] of [["5H", "5H", q?.five_hour], ["7J", tr("week"), q?.seven_day]]) {
-      if (!w) continue;
+      if (!w || on) continue; // this Mac's account: not shown beside another machine's agent
       const used = w.used_percentage ?? 0;
       add(`q${name}`, 2, [label(shown), meter(used, `q${name}`, shown), rolling(`${Math.round(used)}%`, `q${name}`, ringColor(theme(), Math.round(used))), ...(w.resets_at ? [label(`reset ${left(w.resets_at - now)}`)] : [])], "right");
     }

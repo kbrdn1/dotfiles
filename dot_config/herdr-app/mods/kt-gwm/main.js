@@ -68,6 +68,9 @@ import { bump, gitTopics, refreshOn } from "./bus.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { makeT, lang, relative } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the note beside another
+// machine's thread (#65).
+import { machineNote } from "./machines.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -357,9 +360,13 @@ export default class Worktrees extends View {
   }
 
   // What this copy shows: { kind: "repo", repo, cwd? } | { kind: "workspace", repos, inRepo }
-  // | { kind: "none", cwd } | { kind: "wait" }.
+  // | { kind: "none", cwd } | { kind: "wait" } | { kind: "remote", machine }: another machine's thread
+  // (#65), whose worktrees aren't read from here (gwm and its daemon run on this Mac); the page can still
+  // show this Mac's projects (the global view).
   scope(cx) {
+    const away = spaces().find((x) => x.active)?.machine ?? null;
     if (this.panel) {
+      if (away) return { kind: "remote", machine: away };
       const cwd = threadCwd();
       if (!cwd) return { kind: "none", cwd: null };
       if (!(cwd in this.repos)) { this.resolve(cwd, cx); return { kind: "wait" }; }
@@ -370,6 +377,7 @@ export default class Worktrees extends View {
       this.spaceId = s?.id ?? null;
       this.global = false;
     }
+    if (away && !this.global) return { kind: "remote", machine: away };
     const folder = s && !s.machine && !isHome(s) ? trim(s.folder) : null;
     if (folder && !(folder in this.repos)) { this.resolve(folder, cx); return { kind: "wait" }; }
     const own = folder ? this.repos[folder] : null;
@@ -1608,6 +1616,18 @@ export default class Worktrees extends View {
     this.shown = vis;
     // Only a shown copy asks for more (gwm status, info, clean): pass cx then.
     const ask = vis && live ? cx : null;
+    if (sc.kind === "remote") return this.remoteView(t, sc);
     return this.panel ? this.panelView(t, sc, ask) : this.pageView(t, sc, ask, cx);
+  }
+
+  // Another machine's thread (#65): said instead of « hors dépôt » (the panel) or this Mac's repos as if
+  // they were its (the page); the page offers this Mac's projects (the global view).
+  remoteView(t, sc) {
+    return v_flex().id(this.panel ? "kg-panel" : "kg-page").size_full().gap(4).text_color(t.foreground)
+      .track_focus(this.handle)
+      .on_key_down((e, cx) => this.key(e, cx))
+      .child(this.box(t).flex_1().items_center().justify_center().gap(12).p(24)
+        .child(machineNote(t, sc.machine, tr("remote.text"), { id: "kg-remote" }))
+        .when(!this.panel, (el) => el.child(this.mini(t, "kg-remote-global", I("layers"), tr("remote.global"), () => { this.global = true; }))));
   }
 }

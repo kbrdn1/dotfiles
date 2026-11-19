@@ -45,6 +45,9 @@ import { ditherBand, TOP } from "./dither.js";
 import { normalize, addr, nextOutbox, titleDone, sendState, unreadOf, groupOf, entryOf, matchPeer, snippet, runsOf, DAY } from "./xt.js";
 import { makeT, date, time, lang } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the note beside another
+// machine's thread (#65).
+import { machineNote } from "./machines.js";
 
 const tr = makeT(strings);
 
@@ -1036,12 +1039,17 @@ export default class Crosstalk extends View {
     const ready = readyFor(this.readFor, src);
     const c = ready && src != null ? this.conv() : null;
     if (!c) this.zone = "list";
+    // The thread on screen is another machine's (#65): Crosstalk reads this Mac's sessions only, said on
+    // top (not once a session was picked by hand).
+    const away = spaces().find((s) => s.active)?.machine ?? null;
+    const note = away && !this.pick ? machineNote(t, away, tr("remote"), { id: "xt-remote" }) : null;
     const root = v_flex().id("kt-crosstalk").size_full().gap(4).text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => {
         const w = size.width / (Number(settings().zoom) || 1);
         if (Math.abs(w - this.width) > 1) { this.width = w; cx.notify(); }
-      });
+      })
+      .when(Boolean(note), (el) => el.child(note));
     const now = Date.now();
     // The conversation fades in as it opens (no rise: the panel doesn't clip it).
     const conv = (w) => enter(this.m, this.convCard(t, c, w), `xt-conv-${this.openSeq}`, { dy: 0 });

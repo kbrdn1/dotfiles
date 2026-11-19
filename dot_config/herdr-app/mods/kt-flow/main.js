@@ -46,6 +46,8 @@ import { nameOf, speak, workflowName, issueOf, flowBranch, phasesOf, details, fi
   checkState, checkMs, tally, checkOrder, duration, runIdOf, logTail, ciLine, taskList } from "./steps.js";
 import { makeT, relative } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): another machine's tag (#65).
+import { machineTag } from "./machines.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 // Where the issue, PR, checks and branch buttons and gi gI gp gP go (pure: links.check.mjs).
 import { target, checksOf, stepKind, stepUrl, inHerdr, toBrowser, toPage, toTab, gLink } from "./links.js";
@@ -1155,12 +1157,15 @@ export default class Flow extends View {
 
   // `term`: the terminal followed now (read for it: readyFor).
   empty(t, term) {
-    const why = !term ? tr("noTerminal") : tr("noFlow", { term });
+    // No local terminal because the thread on screen is another machine's (#65): said, with its tag.
+    const away = !term ? spaces().find((s) => s.active)?.machine ?? null : null;
+    const why = away ? tr("remote") : !term ? tr("noTerminal") : tr("noFlow", { term });
     return v_flex().size_full().gap(4).text_color(t.foreground)
       .when(this.keyed, (el) => el.child(h_flex().flex_none().px(14).pt(6).child(div().flex_1()).child(modePill(t, this.vim))))
       .child(v_flex().flex_1().rounded(16).border(1).border_color(t.border).bg(t.background).items_center().justify_center().gap(12).p(24)
         .child(div().size(44).rounded_full().border(1).border_dashed().border_color(t.input).flex().items_center().justify_center()
           .text_color(t.dim).child(svg("mods/kt-panel-head/workflow.svg").size(18)))
+        .when(Boolean(away), (el) => el.child(machineTag(t, away, { id: "kf-remote" })))
         .child(div().text_size(14).font_medium().child(why))
         .child(div().max_w(380).text_size(12.5).line_height("19px").text_color(t.muted)
           .child(tr("about")))
