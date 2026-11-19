@@ -61,6 +61,12 @@ import {
 } from "./chat-view.js";
 import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markdown.js";
 import { attachmentsOf, photoSize } from "./att-model.js";
+// #93: a turn's assets (its tools' images and files, the files its answer cites: assets.js), and the
+// field's attachments (a drop, a paste, a picked file) and « Citer » (attach.js).
+import { turnAssets } from "./assets.js";
+import { add as addDraft, remove as dropDraft, promptOf, PASTE_DIR, pasteArgs, pasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
+// kt-keys' categories.js (a byte-identical copy, with workflows.js): the pieces' one chip (#81 and #93).
+import { pieceChip } from "./categories.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
 import { motionState, frame, enter, collapse, rows, MS, DY } from "./motion.js";
@@ -126,6 +132,7 @@ const COPY = "mods/kt-diff/copy.svg";
 const SEND = "mods/kt-crosstalk/send.svg";
 const CLAUDE_ICON = "icons/claude.svg";
 const SPIN = "mods/workspace-chrome/spinner.svg";
+const QUOTE = OWN("text-quote"); // #93: « Citer »
 const MSG = "mods/kt-panel-head/messages-square.svg";
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 
@@ -296,6 +303,15 @@ export default class Chat extends View {
     });
     this.composer.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.composer.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
+    // #93: the files waiting above the field (attach.js), a paste or a chooser running, a turn's assets
+    // worked out once per turn and blocks (turnAssets).
+    this.drafts = [];
+    this.pasting = false;
+    this.picking = false;
+    // ponytail: never pruned (a few small objects per turn seen); drop the turns that left `this.turns` if it grows.
+    this.assetsOf = new Map(); // turn id -> { sig, list }
+    // A paste the field found no text in: the Finder's files, else the clipboard's image (attach.js).
+    this.composer.on("paste_other", (_e, cx) => this.paste(cx));
     if (checking()) return;
     cx.spawn(async (cx) => {
       for (;;) {
@@ -698,7 +714,8 @@ export default class Chat extends View {
    */
   send(cx) {
     const a = target().agent;
-    const can = canSend({ status: this.fixed ? null : a?.status ?? null, text: this.draft, sending: this.sending });
+    const atts = this.drafts;
+    const can = canSend({ status: this.fixed ? null : a?.status ?? null, text: this.draft, sending: this.sending, atts: atts.length });
     if (!can.ok) {
       if (can.why === "blocked") this.sendErr = { why: "blocked" };
       cx.notify();
@@ -708,12 +725,17 @@ export default class Chat extends View {
     this.sendErr = null;
     const text = this.draft;
     cx.spawn(async (cx) => {
-      const res = sendResult(await hc(sendArgs(a.address, text)).catch((e) => (e instanceof Error ? e : new Error(String(e)))));
+      // #93: the files above the field go with it, as `@path` (attach.js promptOf; composer.js clean()
+      // keeps a mention at either end apart from hc's envelope).
+      const res = sendResult(await hc(sendArgs(a.address, promptOf(text, atts))).catch((e) => (e instanceof Error ? e : new Error(String(e)))));
       this.sending = false;
       if (res.ok) {
-        // Only what was sent goes (typing meanwhile stays).
+        // Only what was sent goes (typing meanwhile stays, a file added meanwhile too); the sent pieces
+        // go at once, as the text does.
         if (this.composer.value() === text) this.composer.set_value("");
         this.draft = this.composer.value();
+        const went = new Set(atts.map((x) => x.id));
+        this.drafts = this.drafts.filter((x) => !went.has(x.id));
         this.follow = true;
         this.jump = null;
         this.win = win.bottom(this.turns.length);
@@ -722,6 +744,126 @@ export default class Chat extends View {
       } else this.sendErr = res;
       cx.notify();
     });
+  }
+
+  // ---------- the field's attachments and « Citer » (#93) ----------
+
+  /** Files to send with the message (attach.js add: absolute, once each, 10 at most); the field takes the keyboard. */
+  attach(cx, paths, source) {
+    const r = addDraft(this.drafts, paths, source);
+    this.drafts = r.list;
+    if (r.refused.length) notify({ title: tr("attach.refused", { n: r.refused.length }), body: r.refused.slice(0, 3).join("\n"), level: "warning", timeout: 4000 });
+    if (r.added.length && this.composerShown()) this.composer.focus();
+    cx.notify();
+  }
+
+  /**
+   * A paste the field found no text in: files copied in the Finder go as themselves; an image is written
+   * under data/kt-chat/paste (the only copy #93 makes, the 12 newest kept) and goes as that file.
+   */
+  paste(cx) {
+    if (checking() || this.pasting) return;
+    this.pasting = true;
+    const dir = `${appHome()}/${PASTE_DIR}`;
+    const out = `${dir}/${pasteName(Date.now())}`;
+    cx.spawn(async (cx) => {
+      await fs.mkdir(dir, { recursive: true }).catch(() => {});
+      const said = pasted(await exec("/usr/bin/osascript", pasteArgs(out), { timeout: 15000 }).catch((e) => e));
+      this.pasting = false;
+      if (said.files) this.attach(cx, said.files, "paste");
+      else if (said.image) {
+        this.attach(cx, [out], "paste");
+        const keep = new Set(this.drafts.filter((x) => x.path.startsWith(`${dir}/`)).map((x) => x.label));
+        for (const n of pasteSweep(await fs.readdir(dir).catch(() => []), keep)) await fs.unlink(`${dir}/${n}`).catch(() => {});
+      } else if (said.failed) {
+        this.sendErr = { why: "paste" };
+        cx.notify();
+      }
+    });
+  }
+
+  /** The system's file chooser (osascript), in a task of its own: it waits for Kylian, nothing waits on it. */
+  pick(cx) {
+    if (checking() || this.picking) return;
+    this.picking = true;
+    cx.spawn(async (cx) => {
+      const r = picked(await exec("/usr/bin/osascript", pickArgs(tr("attach.pickPrompt")), { timeout: 600000 }).catch((e) => e));
+      this.picking = false;
+      if (r.paths?.length) return this.attach(cx, r.paths, "pick");
+      if (r.error) this.sendErr = { why: "pick", message: r.error };
+      cx.notify();
+    });
+  }
+
+  /** « Citer »: the message, or the part of it copied last (a selection), quoted into the field at its cursor. */
+  cite(cx, text) {
+    const q = quoteOf(text, cx.read_from_clipboard?.());
+    if (!q || !this.composerShown()) return;
+    this.composer.focus();
+    this.composer.replace(q);
+    this.draft = this.composer.value();
+  }
+
+  /**
+   * The files waiting above the field: an image as a 56 square (its thumbnail, chat-att.ts), the rest as
+   * the pieces' one chip (categories.js pieceChip, #81's too), each with its ×; a click opens the viewer
+   * on them. #92's rule for the composer: its height never moves frame by frame (that resizes the
+   * transcript, areaSized redraws the Chat each frame, the followed bottom shakes). So the row takes or
+   * gives its height at once; a piece fades in rising DY.row inside a box of its own size that clips
+   * (rise()'s way, for an inline piece); × fades it out where it stands (goOut(): its place kept, then the
+   * height changes once); a sent message's pieces go at once. Reduced motion: no fade, no timer.
+   */
+  draftView(t, cx) {
+    if (!this.drafts.length) return null;
+    const asAtt = (x) => ({ id: x.id, key: x.path, abs: x.path, name: x.label, ...x.doc }); // the viewer's and the thumbnail's
+    const atts = this.drafts.map(asAtt);
+    const out = (p) => `kc-dr~${p.id}`;
+    const x = (p) => this.iconBtn(t, `kc-dx-${p.id}`, I("x"), tr("attach.remove"), (cx) => this.goOut(cx, out(p), () => { this.drafts = dropDraft(this.drafts, p.id); }), 18);
+    const pop = (p, el) => div().flex_none().overflow_hidden().child(this.out(enter(this.m, el, `kc-dr-${p.id}`, { dy: DY.row }), out(p)));
+    const thumb = (p, i) => {
+      const info = this.attOf(cx, asAtt(p));
+      const src = info?.thumb ? `${ATT_DIR}/${info.thumb}` : null;
+      return div().relative().size(56).rounded(10).overflow_hidden().bg(ink(t, 0.06))
+        .child(div().id(`kc-dp-${p.id}`).size_full().cursor_pointer().on_click((_e, cx) => this.openAtts(cx, atts, i))
+          .when(Boolean(src), (el) => el.child(image(src).size_full()))
+          .when(!src, (el) => el.flex().items_center().justify_center().child(svg(OWN("image")).size(16).text_color(ink(t, 0.35)))))
+        .child(div().absolute().top(2).right(2).rounded(6).bg(alpha(t.background, "cc")).child(x(p)));
+    };
+    const chip = (p, i) => h_flex().gap(2).items_center()
+      .child(div().id(`kc-dc-${p.id}`).cursor_pointer().on_click((_e, cx) => this.openAtts(cx, atts, i)).child(pieceChip(t, p, { dark: Boolean(settings().dark) })))
+      .child(x(p));
+    return h_flex().id("kc-drafts").px(10).pt(10).gap(6).flex_wrap().items_center()
+      .children(this.drafts.map((p, i) => pop(p, p.kind === "image" ? thumb(p, i) : chip(p, i))));
+  }
+
+  /**
+   * Under an answer: what its tools got back, read or wrote, and the files it cites (assets.js turnAssets,
+   * worked out once per turn and blocks), images as #80's photos at 160, the rest as chips; a file not on
+   * the disk (chat-att.ts: « missing ») never shows, one being looked at not yet. A click opens the viewer.
+   */
+  assetsRow(t, cx, turn) {
+    const sig = `${turn.blocks?.length ?? 0}:${(turn.blocks ?? []).filter((b) => b.result).length}`;
+    let got = this.assetsOf.get(turn.id);
+    if (got?.sig !== sig) {
+      const cwd = this.state?.meta?.cwd ?? null;
+      const seen = attachmentsOf(turn.user, turn.files, this.state?.session)
+        .map((a) => (a.ref ? a.key : a.abs ?? (a.path?.startsWith("/") ? a.path : cwd && a.path ? `${cwd}/${a.path}` : null)));
+      got = { sig, list: turnAssets(turn, { session: this.state?.session, cwd, home: home(), seen }).all };
+      this.assetsOf.set(turn.id, got);
+    }
+    const atts = got.list.filter((a) => {
+      if (a.ref) return true;
+      const info = this.attOf(cx, a);
+      return Boolean(info) && !info.busy && !info.error;
+    });
+    if (!atts.length) return null;
+    const own = { id: `${turn.id}-as` }; // its elements' ids, apart from the prompt's attachments'
+    const photos = atts.map((a, i) => (a.kind === "image" ? this.photo(t, cx, own, atts, a, i, 160) : null)).filter(Boolean);
+    const docs = atts.map((a, i) => (a.kind !== "image" ? this.docChip(t, cx, own, atts, a, i) : null)).filter(Boolean);
+    // It fades in once its files are known (motion.js enter: in place, no height of its own moving).
+    return enter(this.m, v_flex().pt(12).gap(8).min_w(0)
+      .when(photos.length > 0, (el) => el.child(h_flex().gap(8).flex_wrap().children(photos)))
+      .when(docs.length > 0, (el) => el.child(h_flex().gap(6).flex_wrap().children(docs))), `kc-as-${turn.id}`, { dy: 0 });
   }
 
   // The blocked agent's request (decide.js reads the bridge's cache, or the screen for a held message):
@@ -1793,7 +1935,9 @@ export default class Chat extends View {
     const id = `a:${turn.id}`;
     const copied = this.copied === id;
     return h_flex().pt(4).pb(12).gap(10).items_center().text_size(12).line_height("16px")
-      .child(h_flex().ml(-4).gap(4).child(this.iconBtn(t, `kc-act-${turn.id}`, copied ? I("check") : COPY, copied ? tr("copied") : tr("copyAnswer"), (cx) => this.copy(cx, id, answer, 2000))))
+      .child(h_flex().ml(-4).gap(4).child(this.iconBtn(t, `kc-act-${turn.id}`, copied ? I("check") : COPY, copied ? tr("copied") : tr("copyAnswer"), (cx) => this.copy(cx, id, answer, 2000)))
+        // #93: into the field, quoted: the part of it copied last (a selection), else all of it.
+        .when(this.composerShown(), (el) => el.child(this.iconBtn(t, `kc-acq-${turn.id}`, QUOTE, tr("cite"), (cx) => this.cite(cx, answer)))))
       .when(Boolean(at), (el) => el.child(h_flex().gap(6).items_center()
         .child(div().size(3).rounded_full().bg(ink(t, 0.25)))
         .child(div().text_color(ink(t, 0.35)).child(time(at)))));
@@ -1884,6 +2028,7 @@ export default class Chat extends View {
         // Monocode shows these on hover; their place stays (no jump).
         .child(h_flex().h(26).pt(4).gap(6).items_center().opacity(hov || copied ? 1 : 0)
           .child(this.iconBtn(t, `kc-uc-${turn.id}`, copied ? I("check") : COPY, tr("copyMessage"), (cx) => this.copy(cx, id, text, 2000)))
+          .when(this.composerShown(), (el) => el.child(this.iconBtn(t, `kc-uq-${turn.id}`, QUOTE, tr("cite"), (cx) => this.cite(cx, text))))
           .when(Boolean(u.at), (el) => el.child(this.label(t, time(u.at))))));
   }
 
@@ -1896,14 +2041,15 @@ export default class Chat extends View {
   // attachments.rs photo_row + photo_size (#80): an image whole in a 240 square, its own shape, radius
   // 16, its thumbnail made by chat-att.ts (480 px, the bounded cache); a quiet square holds its place
   // until then (the square: its size isn't known yet). A click opens the viewer on the message's
-  // attachments, at this one.
-  photo(t, cx, turn, atts, a, i) {
+  // attachments, at this one. `side`: a turn's assets are smaller (#93: 160, radius 12).
+  photo(t, cx, turn, atts, a, i, side = 240) {
     const info = this.attOf(cx, a);
-    const [w, h] = photoSize(info?.w, info?.h);
+    const [w, h] = photoSize(info?.w, info?.h, side);
+    const r = side < 240 ? 12 : 16;
     const src = info?.thumb ? `${ATT_DIR}/${info.thumb}` : null;
-    return div().id(`kc-ph-${turn.id}-${i}`).w(w).h(h).flex_none().rounded(16).overflow_hidden().bg(ink(t, 0.06))
+    return div().id(`kc-ph-${turn.id}-${i}`).w(w).h(h).flex_none().rounded(r).overflow_hidden().bg(ink(t, 0.06))
       .cursor_pointer().on_click((_e, cx) => this.openAtts(cx, atts, i))
-      .when(Boolean(src), (el) => el.child(image(src).size_full().rounded(16)))
+      .when(Boolean(src), (el) => el.child(image(src).size_full().rounded(r)))
       .when(Boolean(info?.error), (el) => el.flex().items_center().justify_center().child(svg(OWN("image")).size(16).text_color(ink(t, 0.35))));
   }
 
@@ -1925,7 +2071,7 @@ export default class Chat extends View {
   attArgv(a, full) {
     const tail = ["--out", `${appHome()}/${ATT_DIR}`, ...(full ? ["--full"] : [])];
     const bun = [`${home()}/.nix-profile/bin/bun`, `${appHome()}/mods/kt-chat/chat-att.ts`];
-    if (a.ref) return this.state?.path ? [...bun, "embedded", this.state.path, "--at", String(a.ref.o), "--n", String(a.ref.n), ...tail] : null;
+    if (a.ref) return this.state?.path ? [...bun, "embedded", this.state.path, "--at", String(a.ref.o), ...(a.ref.tool ? ["--tool", a.ref.tool] : []), "--n", String(a.ref.n), ...tail] : null;
     if (a.abs?.startsWith("/")) return [...bun, "file", a.abs, ...tail];
     return null;
   }
@@ -2036,6 +2182,9 @@ export default class Chat extends View {
       const el = draw(it, n);
       if (el) out.push(el);
     });
+    // #93: what the turn's tools got back or wrote and the files its answer cites, once it is over.
+    const assets = turn.live ? null : this.assetsRow(t, cx, turn);
+    if (assets) out.push(assets);
     if (!turn.live && answerOf(turn)) out.push(this.actions(t, turn));
     const here = keyed && i === (this.cur < 0 ? this.turns.length - 1 : this.cur);
     // #92: a turn that arrived live fades in where it lands (landing()); the others are drawn as they are.
@@ -2213,7 +2362,7 @@ export default class Chat extends View {
     const a = tg.agent;
     const dark = Boolean(settings().dark);
     const m = sendMode(a?.status ?? null);
-    const can = canSend({ status: a?.status ?? null, text: this.draft, sending: this.sending });
+    const can = canSend({ status: a?.status ?? null, text: this.draft, sending: this.sending, atts: this.drafts.length });
     const p = m === "blocked" ? this.decision?.pending : null;
     const pill = (id, label, onClick) => h_flex().id(id).flex_none().h(24).px(8).items_center().rounded(6).bg(ink(t, 0.1))
       .text_size(12).text_color(ink(t, 1)).cursor_pointer().hover((s) => s.bg(ink(t, 0.15)))
@@ -2248,11 +2397,17 @@ export default class Chat extends View {
       .when(can.ok, (el) => el.cursor_pointer().on_click((_e, cx) => { cx.stop_propagation(); this.send(cx); }))
       .child(this.sending ? svg(SPIN).size(14).spin(900) : svg(SEND).size(14))
       .when(can.ok || this.sending, (el) => el.child(div().text_size(12).font_medium().child(label)));
+    // #93: files dropped on the card join the message (their paths, absolute: never a copy); the ones
+    // waiting show above the text (draftView); « + » opens the system's chooser.
+    const drafts = this.draftView(t, cx);
     const card = v_flex().id("kc-card").w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
       .bg(dark ? ink(t, 0.03) : t.background).when(!dark, (el) => el.shadow_sm())
+      .on_drop((e, cx) => this.attach(cx, e.paths, "drop"))
+      .when(Boolean(drafts), (el) => el.child(drafts))
       .child(div().id("kc-field").px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
         .child(Textarea.new(this.composer).w_full().text_size(14).text_color(ink(t, 1))))
       .child(h_flex().px(8).pb(10).gap(4).items_center()
+        .child(this.iconBtn(t, "kc-attach", this.picking || this.pasting ? SPIN : I("plus"), tr("attach.pick"), (cx) => this.pick(cx), 26))
         .when(Boolean(model), (el) => el.child(toolPill(CLAUDE_ICON, [[model, 1], ...(effort ? [[effort, 0.5]] : [])])))
         .when(Boolean(perm), (el) => el.child(toolPill(PERM[perm] ?? OWN("lock"), [[tr(`perm.${perm}`) || perm, 0.7]], full ? FULL_ACCESS : null)))
         .child(div().flex_1())

@@ -123,7 +123,11 @@ function slimPatch(patch: any[], max = 200): Entry[] {
 function result(part: any, tur: any, o: any, off: number, at: number | null): Entry {
   const { text: content, images } = textOf(part.content);
   const e: Entry = { k: "result", o: off, tool: part.tool_use_id, at, ok: !part.is_error, size: content.length };
-  if (images) e.images = images;
+  if (images) {
+    e.images = images;
+    // #93: where each image the tool got back is (a Read of a capture: what the model saw), never its data.
+    e.imgs = imagesOf(part.content);
+  }
   if (typeof tur === "string" || tur == null || typeof tur !== "object") {
     e.text = cap(typeof tur === "string" && tur ? tur : content, 2000);
   } else if ("stdout" in tur || "stderr" in tur) {

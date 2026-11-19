@@ -82,7 +82,7 @@ function chat({ reduced = false } = {}) {
   Object.assign(c, {
     turns: [], win: { from: 0, to: 0 }, hts: new Map(), marks: [], builtLive: false, follow: false, cur: -1, queued: [],
     open: new Set(), shownSteps: new Map(), hover: null, copied: null, md: mdState(), att: new Map(), attQ: [],
-    fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(),
+    fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(), drafts: [], assetsOf: new Map(),
     motion: motionState(), bgMenu: false, bgNote: null, bgBusy: new Set(), line: null, state: ingest(null, read),
   });
   c.rebuild(false);
@@ -180,6 +180,48 @@ const pr = { key: "p", name: "Projet" };
   assert.equal(x.timers.length, 1, "ONE one-shot timer");
   x.timers[0][1](cx());
   assert.equal(c.bgMenu, false, "then it goes");
+}
+
+// ── #93: the field's pieces. The composer's height changes at once when one comes or goes, never frame
+// by frame (it would resize the transcript: areaSized each frame, the followed bottom shaking) ──
+const { add } = await import("./attach.js");
+const pieceBox = (nodes, p) => nodes.find((n) => n.kids.some((kid) => callsOf(kid.__node, "id").some(([v]) => v === `kc-dr-${p.id}`)));
+const pieceOf = (nodes, p) => nodes.find((n) => callsOf(n, "id").some(([v]) => v === `kc-dr-${p.id}`));
+const press = (nodes, id, x) => callsOf(nodes.find((n) => callsOf(n, "id").some(([v]) => v === id)), "on_click").at(-1)[0](null, x);
+{
+  const c = chat();
+  c.drafts = add([], ["/p/cap.png", "/p/devis.pdf"], "drop").list;
+  const nodes = flat(c.draftView(T, cx()));
+  const row = nodes.find((n) => callsOf(n, "id").some(([v]) => v === "kc-drafts"));
+  assert.ok(row && !callsOf(row, "h").length && !transitions(nodes).includes("height"), "no height moves: the row takes its height at once");
+  for (const p of c.drafts) {
+    const piece = pieceOf(nodes, p);
+    assert.deepEqual([callsOf(piece, "top").at(-1), callsOf(piece, "opacity").at(-1)], [[6], [0]], `${p.label}: in from 6 px low, faded`);
+    assert.ok(transitions([piece]).includes("top") && transitions([piece]).includes("opacity"), "native transitions, on the piece only");
+    assert.ok(callsOf(pieceBox(nodes, p), "overflow_hidden").length, "inside a box of its own that clips: it rises over nothing");
+  }
+  // × : it fades out where it stands (its place kept: the height doesn't move), then ONE timer drops it.
+  const x = cx();
+  x.stop_propagation = () => {};
+  press(nodes, `kc-dx-${c.drafts[1].id}`, x);
+  assert.equal(c.drafts.length, 2, "still there while it fades");
+  const going = flat(c.draftView(T, cx()));
+  assert.deepEqual(callsOf(pieceOf(going, c.drafts[1]), "opacity").at(-1), [0], "fading out");
+  assert.ok(!transitions(going).includes("height"), "no height moves while it fades");
+  assert.equal(x.timers.length, 1, "ONE one-shot timer");
+  x.timers[0][1](cx());
+  assert.deepEqual(c.drafts.map((p) => p.label), ["cap.png"], "then it goes: the height changes once");
+}
+{
+  // Reduced motion: no fade, no rise, no timer; × removes it at once.
+  const c = chat({ reduced: true });
+  c.drafts = add([], ["/p/cap.png", "/p/devis.pdf"], "drop").list;
+  const nodes = flat(c.draftView(T, cx()));
+  assert.deepEqual(transitions(nodes), [], "the pieces: no transition");
+  const x = cx();
+  x.stop_propagation = () => {};
+  press(nodes, `kc-dx-${c.drafts[0].id}`, x);
+  assert.deepEqual([c.drafts.map((p) => p.label), x.timers.length], [["devis.pdf"], 0], "gone at once, no timer");
 }
 
 // ── Reduced motion: none of it ──────────────────────────────────────────────
