@@ -55,6 +55,7 @@ import { planClose, planReview, describe, fitAsked } from "./bulk.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
+import { split } from "./tiers.js";
 import { mdState, mdBudget, docOf, view, preview, tabs as mdTabs, rawList, rawScroll } from "./markdown.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { roll, rollText } from "./roll.js";
@@ -166,6 +167,10 @@ export default class Inbox extends View {
     this.cur = null; // the keys' cursor (an item key); null: the first one shown
     this.listScroll = ScrollHandle.new();
     this.filters = filterState();
+    this.rels = filterState(); // the relations' own row, below the wide tier
+    this.width = 1100; // the root's (on_size_change), for its tier (tiers.js)
+    this.tiers = split(this.width);
+    this.solo = "list"; // narrow: the column shown, "list" or "detail" (a click, enter, an open asked)
     this.motion = motionState();
     this.arrivals = 0; // the page's arrivals: each one fades it in again
     this.query = "";
@@ -316,6 +321,7 @@ export default class Inbox extends View {
       this.zone = "list";
       this.items = load(this.listKey())?.items ?? [];
       this.select(a.item ?? item(a.kind, { number: req.number }, req.repo), cx);
+      this.solo = "detail"; // narrow: the item asked for, not the list
       if (a.tab) this.tab = a.tab;
       this.cur = a.key;
       this.reveal = true;
@@ -1057,10 +1063,12 @@ export default class Inbox extends View {
       this.setRel(rels[(rels.indexOf(this.rel) + (a === "panel-next" ? 1 : rels.length - 1)) % rels.length], cx);
     } else if (a === "open" || a === "right" || a === "submit") {
       // On the PR already open, l / enter / o go into its Code tab (History's way into a commit's files).
-      if (x && a !== "submit" && x.key === this.sel?.key && x.kind === "pr") this.codeIn(null);
+      // Narrow (tiers.js), the list alone: they show its detail first.
+      if (x && a !== "submit" && x.key === this.sel?.key && x.kind === "pr" && !(this.tiers.solo && this.solo === "list")) this.codeIn(null);
       else if (x) {
         this.cur = x.key;
         this.select(x, cx);
+        this.solo = "detail";
       }
     } else if (a === "open-alt") { if (x?.url) exec("open", [x.url]).catch(() => {}); }
     else if (a === "yank") { if (x) this.copyLink(x, cx); }
@@ -1069,7 +1077,8 @@ export default class Inbox extends View {
     else if (a === "escape" && this.query) {
       this.query = "";
       this.cur = null;
-    } else if (a === "escape" || a === "quit") run("layout.select", { stack: "view", child: "thread" });
+    } else if (a === "escape" && this.tiers.solo && this.solo === "detail") this.solo = "list"; // narrow: back to the list
+    else if (a === "escape" || a === "quit") run("layout.select", { stack: "view", child: "thread" });
     else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } });
     else return false;
     return true;
@@ -1150,7 +1159,7 @@ export default class Inbox extends View {
       // ⌘-click toggles, ⇧-click a range (select.js); a plain click empties the selection and opens.
       .when(!gone, (el) => el.cursor_pointer().on_click((e, cx) => {
         this.cur = x.key;
-        if (!this.multi.click(e.modifiers, x.key, order)) this.select(x, cx);
+        if (!this.multi.click(e.modifiers, x.key, order)) { this.select(x, cx); this.solo = "detail"; }
         cx.notify();
       }))
       .child(h_flex().h(18).gap(7).items_center()
@@ -1213,20 +1222,19 @@ export default class Inbox extends View {
           .on_click((_e, cx) => { this.refresh(cx); cx.notify(); })
           .child(svg(I("refresh-cw")).size(13).when(loading, (el) => el.spin(900))),
       ]);
-    const filters = filterRow({
-      id: "kti-filters", state: this.filters, t, bg: t.background, reduced: Boolean(shared("kt.reducedMotion")),
-      items: [
-        ...KINDS.map((k) => ({ key: k ?? "all", label: tr(`kind.${k ?? "all"}`), count: count(k), tint: k ? KIND_TINT[k] : null })),
-        ...RELS.map((r) => ({ key: r, label: tr(`rel.${r}`), tint: REL_TINT[r], group: "rel" })),
-      ],
-      active: [this.kind ?? "all", this.rel],
-      onPick: (key, cx) => {
-        if (KINDS.some((k) => (k ?? "all") === key)) {
-          this.kind = key === "all" ? null : key;
-          this.cur = null;
-        } else this.setRel(this.rel === key ? null : key, cx);
-      },
-    });
+    const kinds = KINDS.map((k) => ({ key: k ?? "all", label: tr(`kind.${k ?? "all"}`), count: count(k), tint: k ? KIND_TINT[k] : null }));
+    const rels = RELS.map((r) => ({ key: r, label: tr(`rel.${r}`), tint: REL_TINT[r], group: "rel" }));
+    const pick = (key, cx) => {
+      if (KINDS.some((k) => (k ?? "all") === key)) {
+        this.kind = key === "all" ? null : key;
+        this.cur = null;
+      } else this.setRel(this.rel === key ? null : key, cx);
+    };
+    const row = (id, state, items, active) => filterRow({ id, state, t, bg: t.background, reduced: Boolean(shared("kt.reducedMotion")), items, active, onPick: pick });
+    // Wide: one row, types | relations. Narrower (tiers.js): the relations on a row of their own, each
+    // row still scrolling sideways (FILTERS.md).
+    const filters = this.tiers.tier === "wide" ? row("kti-filters", this.filters, [...kinds, ...rels], [this.kind ?? "all", this.rel])
+      : v_flex().gap(6).child(row("kti-filters", this.filters, kinds, this.kind ?? "all")).child(row("kti-rels", this.rels, rels, this.rel));
     const controls = this.card(t).flex_none()
       .child(head)
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(tint, "4d")))
@@ -1235,8 +1243,7 @@ export default class Inbox extends View {
       .child(h_flex().gap(8).items_center()
         .child(h_flex().id("kti-filter").flex_1().min_w(0).h(34).px(13).gap(8).items_center().rounded_full().border(1)
           .border_color(typing ? alpha(t.accent, "99") : t.border).when(typing, (el) => el.bg(alpha(t.accent, "24"))).cursor_text()
-          .track_focus(this.handle)
-          .on_key_down((e, cx) => this.key(e, cx))
+          // The keyboard is the page root's (render): narrow, the detail alone, this field isn't drawn.
           // A press, not on_click: on the element holding the keyboard, GPUI turns Space and Enter into a click.
           .on_mouse_down("left", (_e, cx) => { this.vim.edit(); this.handle.focus(); cx.notify(); })
           .child(svg(I("search")).size(14).flex_none().text_color(t.dim))
@@ -1260,7 +1267,9 @@ export default class Inbox extends View {
         .children(rows),
       () => v_flex().py(4).child(S.list(6, { h: 66, icon: 0, lines: [0.35, 0.85], px: 16, gap_y: 2 })), { grow: true }))
       .when(Boolean(bar), (el) => el.child(bar));
-    return v_flex().w(400).flex_none().h_full().min_h(0).gap(4).child(controls).child(list);
+    // The column (tiers.js): 400 px wide, narrower (medium), or the page's width (narrow, alone).
+    const { tier, list: w, solo } = this.tiers;
+    return (solo ? v_flex().flex_1().min_w(0) : v_flex().w(tier === "wide" ? 400 : w).flex_none()).h_full().min_h(0).gap(4).child(controls).child(list);
   }
 
   // ---------- right ----------
@@ -1299,8 +1308,13 @@ export default class Inbox extends View {
     const conflict = data?.mergeable === "CONFLICTING";
     const err = this.actionError?.key === x.key ? this.actionError.text : null;
     // The detail's head: the item's state icon over the scope's dither, what it is, where, its state.
+    // Narrow (tiers.js), the detail alone: a way back to the list (esc too).
+    const back = this.tiers.solo && h_flex().id("kti-back").size(30).flex_none().items_center().justify_center().rounded_full().border(1).border_color(t.border)
+      .bg(alpha(t.background, "e6")).text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("back"))
+      .on_click((_e, cx) => { this.solo = "list"; cx.notify(); })
+      .child(svg(I("chevron-left")).size(13));
     const head = this.band(t, "detail", this.tint(t), lk.icon, t[lk.color], `${x.kind === "pr" ? "Pull request" : "Issue"} #${x.number}`, // i18n: tech
-      [x.repo, tr("updated", { ago: ago(data?.updatedAt ?? x.updatedAt) })].filter(Boolean).join(" · "), [this.tag(t, t[lk.color], lk.label)]);
+      [x.repo, tr("updated", { ago: ago(data?.updatedAt ?? x.updatedAt) })].filter(Boolean).join(" · "), [this.tag(t, t[lk.color], lk.label), back].filter(Boolean));
     return this.card(t).flex_none()
       .child(head)
       .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(alpha(this.tint(t), "4d")))
@@ -1446,7 +1460,8 @@ export default class Inbox extends View {
     const nChecks = (d.checks ?? []).length;
     const tabs = [["summary", "Summary"], ["code", `Code · ${data.changedFiles ?? 0}`], ["checks", `Checks · ${nChecks}`]]; // i18n: tech
     return card
-      .child(h_flex().flex_none().px(12).py(10).gap(6).items_center()
+      // A narrow card: the tabs, then Aperçu / Brut, go to the next line rather than out of it.
+      .child(h_flex().flex_none().flex_wrap().px(12).py(10).gap(6).items_center()
         .children(tabs.map(([id, label]) => this.chip(t, `kti-tab-${id}`, label, this.tab === id, () => { this.tab = id; })))
         .when(this.tab === "summary" && Boolean(md), (el) => el.child(div().flex_1()).child(md)))
       .child(this.dashed(t))
@@ -1513,10 +1528,20 @@ export default class Inbox extends View {
     if (this.zone === "code" && (this.vim.insert || this.tab !== "code" || this.sel?.kind !== "pr")) this.zone = "list";
     const t = theme();
     this.V = viz(t, this.m, { roll });
+    // The width's tier (tiers.js): list and detail side by side, or one of them (narrow: the list, or
+    // the detail once an item is opened; the Code zone is the detail's).
+    this.tiers = split(this.width);
+    if (this.tiers.solo && this.zone === "code") this.solo = "detail";
+    const one = this.tiers.solo ? (this.sel && this.solo === "detail" ? "detail" : "list") : null;
     // No frame of its own: the work card around it paints the background. Each arrival fades the
-    // page in (no rise: the stack doesn't clip).
-    return enter(this.m, h_flex().size_full().gap(4).text_color(t.foreground)
-      .child(this.left(t, cx))
-      .child(this.right(t, cx)), `kti-page-${this.arrivals}`, { dy: 0 });
+    // page in (no rise: the stack doesn't clip), and so does a tier change (narrow: list <-> detail);
+    // the selection and the scrolls (their handles) stay.
+    return div().id("kti-root").size_full()
+      .track_focus(this.handle)
+      .on_key_down((e, cx) => this.key(e, cx))
+      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
+      .child(enter(this.m, h_flex().size_full().gap(4).text_color(t.foreground)
+        .when(one !== "detail", (el) => el.child(this.left(t, cx)))
+        .when(one !== "list", (el) => el.child(this.right(t, cx))), `kti-page-${this.arrivals}-${this.tiers.tier}${one ? `-${one}` : ""}`, { dy: 0 }));
   }
 }
