@@ -1,6 +1,7 @@
 // bun ~/.config/herdr-app/mods/kt-mods/model.check.mjs : kt-mods' pure side, on the real layout (read only).
-import { readFileSync } from "fs";
-import { homedir } from "os";
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { homedir, tmpdir } from "os";
+import { join } from "path";
 import { SAFE, SHARED, groupOf, shippedOf, headerOf, firstSentence, describe, layoutRefs, openersIn, keyRefs, rootChoices, setRootKey, deletePlan } from "./model.js";
 
 const eq = (got, want, what) => {
@@ -63,10 +64,45 @@ eq(deletePlan("/m/zz", ["/m/zz/a.js", "/m/zz/d/b.svg"], ["/m/zz/d"]), { files: [
 eq(deletePlan("/m/zz", ["/m/zz/../kt-keys/vim.js"], []), null, "escape refused");
 eq(deletePlan("/m/zz", ["/m/zzz/a.js"], []), null, "sibling refused");
 // SHARED watches every shared module, each with its reference mod, and that reference holds the file.
-const MODS = `${homedir()}/.config/herdr-app/mods`;
+// KT_MODS_DIR: another mods folder (the mutation run: a mirror with one copy altered must fail).
+const MODS = process.env.KT_MODS_DIR ?? `${homedir()}/.config/herdr-app/mods`;
 for (const f of ["ring.js", "ring.strings.js", "levels.js", "band.js", "select.js", "diffview.js", "diff.js", "reread.js", "icons.js", "companion-logo.js", "markdown.js", "markdown.strings.js", "machines.js", "machines.strings.js", "shortcuts.js", "tiers.js", "panel.js", "projtile.js", "projects.js", "companion.js", "tree.js"]) {
   eq(typeof SHARED[f], "string", `${f} watched`);
   eq(readFileSync(`${MODS}/${SHARED[f]}/${f}`, "utf8").length > 0, true, `${f}: its reference ${SHARED[f]} holds it`);
+}
+
+// Every copy of every SHARED module, in every mod folder (committed or not: kt-context too), byte for byte
+// against its reference: the first divergence, or null. Names alone (above) let a drifted copy through.
+function firstDrift(mods, shared) {
+  const names = readdirSync(mods, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  for (const [file, ref] of Object.entries(shared)) {
+    const src = join(mods, ref, file);
+    if (!existsSync(src)) return { file, ref, mod: ref, why: "no reference" };
+    const want = readFileSync(src);
+    for (const mod of names) {
+      if (mod === ref) continue;
+      const p = join(mods, mod, file);
+      if (existsSync(p) && !readFileSync(p).equals(want)) return { file, ref, mod, why: "differs" };
+    }
+  }
+  return null;
+}
+const drift = firstDrift(MODS, SHARED);
+if (drift) throw new Error(`shared copy: ${drift.mod}/${drift.file} ${drift.why} from ${drift.ref}/${drift.file} (cp it from there, then cmp)`);
+
+// The comparison itself, on a throwaway tree: equal copies pass, one byte altered or a missing
+// reference is the first divergence.
+const tmp = mkdtempSync(join(tmpdir(), "kt-mods-shared-"));
+try {
+  for (const m of ["kt-keys", "kt-a", "kt-b"]) mkdirSync(join(tmp, m));
+  for (const m of ["kt-keys", "kt-a", "kt-b"]) writeFileSync(join(tmp, m, "vim.js"), "export const x = 1;\n");
+  eq(firstDrift(tmp, { "vim.js": "kt-keys" }), null, "equal copies pass");
+  writeFileSync(join(tmp, "kt-b", "vim.js"), "export const x = 2;\n");
+  eq(firstDrift(tmp, { "vim.js": "kt-keys" }), { file: "vim.js", ref: "kt-keys", mod: "kt-b", why: "differs" }, "an altered copy is the divergence");
+  rmSync(join(tmp, "kt-keys", "vim.js"));
+  eq(firstDrift(tmp, { "vim.js": "kt-keys" })?.why, "no reference", "a reference gone is one too");
+} finally {
+  rmSync(tmp, { recursive: true, force: true });
 }
 
 console.log("model: ok");

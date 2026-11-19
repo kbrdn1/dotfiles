@@ -103,6 +103,11 @@ function twig(t, { h, x, last, color, rest }) {
     .child(div().absolute().top(mid - 8).left(x).w(x).h(9).border_l(1).border_b(1).rounded_bl(8).border_color(color));
 }
 const treeLine = (t) => alpha(t.foreground, settings().dark ? "38" : "4d");
+// blocked is 4.1:1 on light (FILTERS.md, #81): there its words stay foreground and its hue goes on a
+// dot, an icon or a border; dark keeps the hued words.
+const lightWarn = (t, c) => Boolean(c) && c === t.blocked && !settings().dark;
+const warnInk = (t, c) => (lightWarn(t, c) ? t.foreground : c);
+const warnDot = (t, c) => (lightWarn(t, c) ? div().size(6).flex_none().rounded_full().bg(c) : null);
 
 export default class Workflow extends View {
   init(_props, cx) {
@@ -357,7 +362,7 @@ export default class Workflow extends View {
   // kbrdn.dev `.tag`: pill, border 30% / fill 10% of its own color.
   tag(t, color, text) {
     return h_flex().flex_none().h(18).px(7).items_center().rounded_full().border(1).border_color(alpha(color, "4d")).bg(alpha(color, "1a"))
-      .text_color(color).font_family(MONO).text_size(10).child(String(text).toUpperCase());
+      .text_color(warnInk(t, color)).font_family(MONO).text_size(10).child(String(text).toUpperCase());
   }
 
   // A small round icon button; it keeps its click from the row.
@@ -410,7 +415,8 @@ export default class Workflow extends View {
     const fact = (id, label, value, color, tip) => v_flex().id(id).flex_1().min_w(150).gap(2).px(10).py(6)
       .when(Boolean(tip), (el) => el.tooltip(tip))
       .child(this.eyebrow(t, label, t.dim))
-      .child(div().truncate().font_family(MONO).text_size(11.5).text_color(color ?? t.foreground).child(value));
+      .child(h_flex().gap(6).items_center().min_w(0).children([warnDot(t, color)].filter(Boolean))
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(warnInk(t, color) ?? t.foreground).child(value)));
     const items = SECS.map(([key, tint]) => ({ key, label: tr(`sec.${key}`), tint, count: this.count(key) }));
     const seg = filterRow({ id: "ktw-seg", t, state: this.filt, active: this.sec, items, reduced: Boolean(shared("kt.reducedMotion")),
       onPick: (k) => { this.sec = k; this.cur = null; } });
@@ -655,7 +661,8 @@ export default class Workflow extends View {
     const key = (k, color) => div().when(!narrow, (el) => el.w(170).flex_none()).pt(1).font_family(MONO).text_size(11).text_color(color ?? t.dim).child(k);
     const kv = (k, v, color) => pairBox()
       .child(key(k))
-      .child(div().flex_1().min_w(0).font_family(MONO).text_size(12).text_color(color ?? t.foreground).child(mask(v ?? "—")));
+      .children([warnDot(t, color)?.mt(5)].filter(Boolean))
+      .child(div().flex_1().min_w(0).font_family(MONO).text_size(12).text_color(warnInk(t, color) ?? t.foreground).child(mask(v ?? "—")));
     const chip = (text, color) => div().flex_none().px(8).py(3).rounded(8).border(1).border_color(alpha(color ?? t.border, "66")).bg(alpha(color ?? t.dim, "14"))
       .font_family(MONO).text_size(11).text_color(t.foreground).child(mask(text));
     if (!s) {

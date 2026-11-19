@@ -27,7 +27,7 @@
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, InputState, Input } from "gpui-base";
-import { theme, props, closeOverlay, openOverlay, notify, nextCommand, checking, pickFolder, home, shared } from "herdr";
+import { theme, props, closeOverlay, openOverlay, notify, nextCommand, checking, pickFolder, home, shared, settings } from "herdr";
 import { summary, isRepo, isGitUrl, isPluginId, split, under, why } from "./plugins.js";
 import { claude, shown, inspect, marketplaces, offeredPlugins, folderInfo } from "./data.js";
 import { Vim, keysOf, step } from "./vim.js";
@@ -54,6 +54,12 @@ const GLYPH = { browse: "layers", marketplace: "plus", folder: "folder", manual:
 const RISKY = ["hooks", "mcp", "mods"]; // strings.js' risky.<key>
 const PARTS = ["skills", "commands", "agents", "hooks", "mcp", "mods", "lsp"]; // strings.js' part.<key>
 const comps = (c) => summary(c, (k, n) => tr(`comp.${k}`, { n }));
+// blocked is 4.1:1 on light (FILTERS.md, #81): there a warning's words stay foreground and its hue goes on
+// a dot; dark keeps the hued words.
+const warnInk = (t) => (settings().dark ? t.blocked : t.foreground);
+const warnLine = (t, text) => h_flex().gap(6).items_start()
+  .when(!settings().dark, (el) => el.child(div().size(6).mt(6).flex_none().rounded_full().bg(t.blocked)))
+  .child(div().flex_1().min_w(0).text_size(12.5).line_height("18px").text_color(warnInk(t)).child(text));
 
 // A catalog entry's source for people.
 const srcLabel = (s) => (typeof s === "string" ? s
@@ -406,10 +412,10 @@ export class Add {
   }
 
   // A dialog: a veil, the card (20) centered, its inner card (16): Crosstalk's band (the page's
-  // ansi5 dither, cut inside the inner card's border), the intro, body, foot. The card fades in and
-  // rises 6 px when it opens (enter(), inside the veil, which clips).
+  // dither, neutral like the page since #81, cut inside the inner card's border), the intro, body, foot.
+  // The card fades in and rises 6 px when it opens (enter(), inside the veil, which clips).
   frame(t, w, h, body, foot) {
-    const tint = t.ansi5;
+    const tint = t.muted;
     const head = band(t, "ktp-add-band", tint, {
       w: this.headW, onW: (w2, cx) => { this.headW = w2; cx.notify(); },
       mark: pulse(this.m, markTile(t, I(GLYPH[this.view] ?? "plus"), tint, this.running ? t.working : null), Boolean(this.running)),
@@ -477,7 +483,7 @@ export class Add {
       .child(warning(t, risky.length ? tr("riskyThird", { list: risky.map((k) => tr(`risky.${k}`, { n: parts[k].length })).join(", "), third: THIRD() }) : THIRD()))
       // While the plugin is read: a part's eyebrow and its chips as bars (skeleton.js), then the parts fade in.
       .child(((S) => S.swap(`ktp-pv-${x.id}`, pv !== "…", () => v_flex().gap(10).children(PARTS.filter((k) => parts?.[k]?.length).map((k) => v_flex().gap(6)
-          .child(eyebrow(t, `${tr(`part.${k}`)} · ${parts[k].length}`, RISKY.includes(k) ? t.blocked : t.muted))
+          .child(eyebrow(t, `${tr(`part.${k}`)} · ${parts[k].length}`, RISKY.includes(k) ? warnInk(t) : t.muted))
           .child(h_flex().flex_wrap().gap(6).children(parts[k].map((c) => chip(t, `ktp-pv-${x.id}-${k}-${c}`, c, false, null))))))
         .when(!comps(parts), (el) => el.child(div().text_size(12.5).text_color(t.dim)
           .child(x.remote ? tr("compsRemote") : tr("noPartsFolder")))),
@@ -556,7 +562,7 @@ export class Add {
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12).text_color(this.folder ? t.foreground : t.dim).child(this.folder ? tilde(this.folder) : tr("noFolder")))))
       .when(this.kind === "directory" && Boolean(this.info?.market), (el) => el.child(div().text_size(12.5).text_color(t.muted)
         .child(tr("mk.info", { name: this.info.market.name ?? "?", plugins: tr("plugins", { n: this.info.plugins.length }) }))))
-      .when(Boolean(s.why), (el) => el.child(div().text_size(12.5).text_color(t.blocked).child(s.why)))
+      .when(Boolean(s.why), (el) => el.child(warnLine(t, s.why)))
       .child(this.commandLine(t, args))
       .child(div().text_size(12).text_color(t.dim).child(tr("mk.note")));
     return this.frame(t, 600, null, body, this.foot(t, tr("add"), !args, s.why || tr("mk.tip")));
@@ -574,15 +580,13 @@ export class Add {
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12).text_color(this.folder ? t.foreground : t.dim).child(this.folder ? tilde(this.folder) : tr("noFolder"))))
       .when(Boolean(this.folder) && !this.info, (el) => el.child(empty(t, tr("readingFolder")).p(0)))
       .when(Boolean(lone), (el) => el.child(v_flex().gap(8)
-        .child(div().text_size(12.5).line_height("18px").text_color(t.blocked)
-          .child(tr("lone", { name: this.info.plugin?.name ?? tr("thisPlugin") })))
+        .child(warnLine(t, tr("lone", { name: this.info.plugin?.name ?? tr("thisPlugin") })))
         .child(pill(t, "ktp-folder-copy", tr("copyPluginDir"), OWN("copy"), (cx) => {
           const cmd = shown(["--plugin-dir", { path: this.folder }]);
           cx.write_to_clipboard(cmd);
           notify({ title: tr("copied"), body: cmd, level: "success", timeout: 2000 });
         }))))
-      .when(Boolean(this.info) && !this.info.market && !this.info.plugin, (el) => el.child(div().text_size(12.5).text_color(t.blocked)
-        .child(tr("neither"))))
+      .when(Boolean(this.info) && !this.info.market && !this.info.plugin, (el) => el.child(warnLine(t, tr("neither"))))
       .when((this.info?.plugins.length ?? 0) > 1, (el) => el.child(v_flex().gap(6).child(eyebrow(t, tr("itsPlugins", { n: this.info.plugins.length })))
         .child(h_flex().flex_wrap().gap(6).children(this.info.plugins.map((e, i) => chip(t, `ktp-folder-p-${e.name}`, e.name, i === this.choice, () => { this.choice = i; }))))))
       .when(Boolean(x), (el) => el.child(this.previewPane(t, x, pv)).child(this.commandLine(t, args)));
@@ -597,7 +601,7 @@ export class Add {
     const W = this.size?.width ?? 1200, H = this.size?.height ?? 900;
     const body = v_flex().id("ktp-manual-body").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.side).px(16).pb(14).gap(12)
       .child(this.fieldBox(t, "square-pen"))
-      .when(Boolean(m.why), (el) => el.child(div().text_size(12.5).text_color(t.blocked).child(m.why)))
+      .when(Boolean(m.why), (el) => el.child(warnLine(t, m.why)))
       .when(Boolean(m.note), (el) => el.child(div().text_size(12.5).text_color(t.dim).child(m.note)))
       .when(this.items === null, (el) => el.child(empty(t, tr("readingCatalogsCap")).p(0)))
       .when(Boolean(m.x), (el) => el.child(this.previewPane(t, m.x, pv)))

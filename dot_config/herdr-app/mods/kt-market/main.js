@@ -29,7 +29,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { exec, theme, layout, props, home, appHome, notify, nextCommand, closeOverlay, shared, checking, openOverlay, run, spaces, panes } from "herdr";
+import { exec, theme, layout, props, home, appHome, notify, nextCommand, closeOverlay, shared, checking, openOverlay, run, spaces, panes, settings } from "herdr";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
@@ -66,6 +66,11 @@ const SOURCE_TINT = { official: null, community: null, known: null, "mcp-registr
 const LEVELS = ["blocking", "danger", "warn", "info"];
 const PARTS = ["skills", "commands", "agents", "hooks", "mods", "mcp", "lsp"];
 const levelColor = (t, l) => ({ blocking: t.ansi1, danger: t.ansi1, warn: t.blocked, info: t.dim })[l] ?? t.dim;
+// blocked is 4.1:1 on light (FILTERS.md, #81): there its words stay foreground and its hue goes on a
+// dot, an icon or a border; dark keeps the hued words.
+const lightWarn = (t, c) => Boolean(c) && c === t.blocked && !settings().dark;
+const warnInk = (t, c) => (lightWarn(t, c) ? t.foreground : c);
+const warnDot = (t, c) => (lightWarn(t, c) ? div().size(6).mt(6).flex_none().rounded_full().bg(c) : null);
 
 // ---------- words for the script's codes ----------
 
@@ -474,8 +479,8 @@ export default class Market extends View {
 
   // A mono block on t.raised, one line per row.
   block(t, text, color) {
-    return v_flex().flex_none().rounded(12).border(1).border_color(t.border).bg(t.raised).px(12).py(10)
-      .font_family(MONO).text_size(11.5).line_height("18px").text_color(color ?? t.foreground)
+    return v_flex().flex_none().rounded(12).border(1).border_color(lightWarn(t, color) ? alpha(color, "66") : t.border).bg(t.raised).px(12).py(10)
+      .font_family(MONO).text_size(11.5).line_height("18px").text_color(warnInk(t, color) ?? t.foreground)
       .children(String(text).split("\n").map((l) => div().child(l || " ")));
   }
 
@@ -489,7 +494,7 @@ export default class Market extends View {
   levelPill(t, l) {
     const c = levelColor(t, l);
     return h_flex().flex_none().h(18).px(7).gap(5).items_center().rounded_full().border(1).border_color(alpha(c, "4d")).bg(alpha(c, "1a"))
-      .text_color(c).font_family(MONO).text_size(10).child(div().size(6).rounded_full().bg(c)).child(tr(`level.${l}`).toUpperCase());
+      .text_color(warnInk(t, c)).font_family(MONO).text_size(10).child(div().size(6).rounded_full().bg(c)).child(tr(`level.${l}`).toUpperCase());
   }
 
   chip(t, id, label, on, onClick, tip) {
@@ -663,7 +668,8 @@ export default class Market extends View {
   pair(t, label, value, color) {
     return h_flex().gap(10).items_start()
       .child(this.eyebrow(t, label, t.dim).w(104).flex_none().pt(1))
-      .child(div().flex_1().min_w(0).font_family(MONO).text_size(12).text_color(color ?? (value ? t.foreground : t.dim)).child(value || tr("unknown")));
+      .children([warnDot(t, color)].filter(Boolean))
+      .child(div().flex_1().min_w(0).font_family(MONO).text_size(12).text_color(warnInk(t, color) ?? (value ? t.foreground : t.dim)).child(value || tr("unknown")));
   }
 
   // Risks, the gravest first: a dot in the level's color, the sentence.
@@ -701,7 +707,8 @@ export default class Market extends View {
             .when(i > 0 && d.plan?.route === "kt-mcp" && Boolean(mcpForm(x.name, v)), (el) => el
               .child(this.chip(t, `ktmk-install-v${i}`, tr("installVariant"), false, () => this.install(x, d, i), tr("installTipMcp")))))
           .child(this.block(t, JSON.stringify(v.config, null, 2)))
-          .children(v.flags.map((f) => div().text_size(11.5).text_color(levelColor(t, levelOf([f]))).child(flagText(f)))))));
+          .children(v.flags.map((f) => { const c = levelColor(t, levelOf([f])); return h_flex().gap(6).items_start().children([warnDot(t, c)].filter(Boolean))
+            .child(div().text_size(11.5).text_color(warnInk(t, c)).child(flagText(f))); })))));
     }
     if (x.type === "skill" && d.skillPath != null) out.push(this.pair(t, tr("skillPath"), d.skillPath || "/"));
     if ((x.type === "herdr-mod" || x.type === "herdr-layout") && (d.mods || d.layouts)) {
@@ -768,8 +775,8 @@ export default class Market extends View {
         .when(herdrTask != null, (el) => el.child(v_flex().pt(4).gap(6)
           .child(this.eyebrow(t, tr("herdrTask"), t.dim))
           .child(this.block(t, herdrTask))
-          .child(h_flex().gap(8).items_start().px(12).py(10).rounded(12).border(1).border_color(alpha(t.ansi3, "66"))
-            .child(svg(I("circle-alert")).size(13).flex_none().mt(2).text_color(t.ansi3))
+          .child(h_flex().gap(8).items_start().px(12).py(10).rounded(12).border(1).border_color(alpha(t.blocked, "66"))
+            .child(svg(I("circle-alert")).size(13).flex_none().mt(2).text_color(t.blocked))
             .child(div().flex_1().min_w(0).text_size(12).line_height("18px").text_color(t.foreground).child(tr("herdrWarn"))))
           .when(Boolean(activeSpace()?.machine), (e2) => e2.child(div().text_size(11.5).text_color(t.dim).child(tr("herdrLocalOnly"))))))
         .when(herdr && p?.route === "herdr-thread" && herdrTask == null, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("herdrNoTask"))))
@@ -808,25 +815,27 @@ export default class Market extends View {
     const say = st.state === "update" ? tr("mine.update", { local: l.version ?? tr("unknown"), available: st.available ?? tr("unknown") })
       : st.state === "present" ? tr("mine.present", { mods: (l.mods ?? []).join(", ") }) : tr("mine.installed");
     return v_flex().gap(6).px(12).py(10).rounded(12).border(1)
-      .border_color(alpha(st.state === "update" ? t.ansi3 : st.state === "present" ? t.border : t.done, "66"))
+      .border_color(alpha(st.state === "update" ? t.blocked : st.state === "present" ? t.border : t.done, "66"))
       .child(h_flex().gap(8).items_center().child(this.eyebrow(t, tr("mine.title"))).child(this.stateTag(t, st.state)))
       .child(div().text_size(12.5).line_height("19px").text_color(t.foreground).child(say))
       .when(Boolean(l.version) || x.type === "mcp", (el) => el.child(this.pair(t, tr("mine.version"), l.version ?? tr("mine.noVersion"))))
       .when(Boolean(l.scope), (el) => el.child(this.pair(t, tr("mine.scope"), l.scope)))
       .when(Boolean(l.name) && x.type !== "plugin", (el) => el.child(this.pair(t, tr("mine.name"), l.name)))
       .when(x.type === "skill" && l.path != null, (el) => el.child(this.pair(t, tr("mine.path"), l.path || "/")))
-      .when(Boolean(moved), (el) => el.child(div().text_size(12).line_height("18px").text_color(t.ansi3)
-        .child(tr("mine.skillMoved", { local: String(l.head).slice(0, 12), remote: String(d.head).slice(0, 12) }))))
+      .when(Boolean(moved), (el) => el.child(h_flex().gap(6).items_start().children([warnDot(t, t.blocked)].filter(Boolean))
+        .child(div().flex_1().min_w(0).text_size(12).line_height("18px").text_color(warnInk(t, t.blocked))
+          .child(tr("mine.skillMoved", { local: String(l.head).slice(0, 12), remote: String(d.head).slice(0, 12) })))))
       .when(Boolean(page), (el) => el.child(h_flex().pt(2).gap(10).items_center()
         .child(this.chip(t, "ktmk-mine-open", tr(`mine.open.${x.type}`), false, () => run("layout.select", { stack: "view", child: page })))
         .child(div().flex_1().min_w(0).text_size(11.5).text_color(t.dim).child(tr("mine.where")))));
   }
 
-  // installed / update / present, as a pill (FILTERS.md: done, ansi3, dim).
+  // installed / update / present, as a pill (FILTERS.md: done, blocked, dim).
   stateTag(t, s) {
-    const c = s === "update" ? t.ansi3 : s === "present" ? t.dim : t.done;
+    // An update waits for an action: the warning state (blocked), not the workflows' ansi3 (#81).
+    const c = s === "update" ? t.blocked : s === "present" ? t.dim : t.done;
     return h_flex().flex_none().h(18).px(7).items_center().rounded_full().border(1).border_color(alpha(c, "4d")).bg(alpha(c, "1a"))
-      .font_family(MONO).text_size(10).text_color(c).child(tr(`tag.${s}`).toUpperCase());
+      .font_family(MONO).text_size(10).text_color(warnInk(t, c)).child(tr(`tag.${s}`).toUpperCase());
   }
 
   // `solo`: the narrow tier (tiers.js), the detail alone: its × is a way back to the list.

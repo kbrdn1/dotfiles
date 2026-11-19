@@ -16,8 +16,8 @@
 // Data sync (DATA-SYNC.md, bus.js): every action bumps "plugins" (and "skills" / "mcp" when the
 // plugin brings some); the page listens to "plugins", watches ~/.claude/plugins' two JSON files for
 // changes made outside Herdr, and re-reads when shown again after 10 s; never on a timer.
-// Look (DESIGN-REFERENCE.md): Crosstalk's 60 px band over the pixel dither (ansi5; a detail: its
-// marketplace's tint), cut inside the card's border; filters.js's row; motion.js (ANIMATIONS.md):
+// Look (DESIGN-REFERENCE.md): Crosstalk's 60 px band over the pixel dither (neutral, #81; a detail:
+// its marketplace's, neutral too), cut inside the card's border; filters.js's row; motion.js (ANIMATIONS.md):
 // the page and a detail fade in, a marketplace's rows open and close on their height in order
 // (rows(): a fold, an unfold, a filter), the bulk bar rises, the rows an action runs on breathe.
 // Selection (select.js): ⌘-click toggles a row, ⇧-click a range, the box left of a row toggles it.
@@ -66,7 +66,8 @@ const MEASURE = 620; // the README's column: ~80 characters of 13.5 px Inter
 const FRESH = 10e3; // the page shown again re-reads a list older than this (DATA-SYNC.md)
 const SEGS = ["all", "on", "off", "updates"]; // strings.js' seg.<key>
 // FILTERS.md's tints for Plugins (« Tous » neutral); marketplaces: ui.js marketTint().
-const SEG_TINT = { on: "done", off: "dim", updates: "ansi3" };
+// Updates wait for an action: the warning state (blocked), not the workflows' ansi3 (#81: one hue, one meaning).
+const SEG_TINT = { on: "done", off: "dim", updates: "blocked" };
 const RELOAD = () => tr("reload");
 const SYNCED = "synced"; // claude.ai's plugins: a scope and a "marketplace" of their own
 const VERB = (kind) => tr(`verb.${kind}`);
@@ -502,14 +503,15 @@ export default class Plugins extends View {
     openOverlay({ mod: "kt-plugins", kind: "popup", frame: "none", width: 300, height: 286, at, props: { view: "menu" } });
   }
 
-  // Crosstalk's head (DESIGN-REFERENCE.md): the page's dither (ansi5, Plugins' tint) behind the
+  // Crosstalk's head (DESIGN-REFERENCE.md): the page's dither (neutral since #81) behind the
   // mark, the title, a mono subtitle (the counters) and icon buttons; then the filter and one filter
   // row (states, then marketplaces after a rule: filters.js).
   header(t, q, shown) {
     const m = this.m;
     const away = spaces().find((s) => s.active)?.machine ?? null;
     const typing = this.keyed && this.vim.insert;
-    const tint = t.ansi5;
+    // The page is no category of the agent (#81: one hue, one meaning; ansi5 is the automations'): neutral, as Marketplaces.
+    const tint = t.muted;
     const on = this.items.filter((x) => x.enabled).length;
     const ups = this.items.filter((x) => x.update).length;
     const filtered = this.query.trim() || this.seg !== "all" || this.market;
@@ -529,7 +531,7 @@ export default class Plugins extends View {
       ...markets.map((mk) => ({ key: `mk:${mk}`, label: mk === SYNCED ? "claude.ai" : mk, count: q.filter((x) => x.market === mk && this.matches(x, this.seg, null)).length,
         tint: marketTint(mk, this.markets), group: "market" })),
     ];
-    const dot = this.running ? t.working : ups ? t.ansi3 : t.done;
+    const dot = this.running ? t.working : ups ? t.blocked : t.done;
     return card(t).flex_none()
       .child(band(t, "ktp-band", tint, { m: this.m,
         w: this.headW, onW: (w, cx) => { this.headW = w; cx.notify(); },

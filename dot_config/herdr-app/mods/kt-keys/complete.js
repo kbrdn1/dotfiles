@@ -227,9 +227,10 @@ export const keysOf = (text) => (typeable(text) ? [...String(text)].map((c) => (
  * How the draft leaves: { via: "send" } (hc send: a message; `by: "agent"` when it opens with a skill
  * the agent invokes itself), { via: "keys", keys, confirm } (a built-in, typed), or { via: "none",
  * why: "untypable" } (a built-in hc keys can't type). builtins: BUILTINS (or the merged list's).
- * say: the agent's herdr-bridge takes text into its input box, no envelope (kbrdn-herdr#8, bridge
- * 0.4): then a /command runs natively, accents and ":" included, and the hybrid route goes. The one
- * point to change: the caller passes say once the bridge says it can (main.js reads that, not here).
+ * say: the agent's herdr-bridge 0.5.0 takes text into its input box, no envelope (kbrdn-herdr#8,
+ * merged in 96478dd): then a /command runs natively, accents and ":" included, and the hybrid route
+ * goes. The one point to change: the caller passes say once the bridge can, i.e. its
+ * <address>.saytoken.json is fresh for this session (main.js reads that, not here).
  */
 export function routeOf(draft, { builtins = BUILTINS, say = false } = {}) {
   const text = String(draft ?? "").trim();
