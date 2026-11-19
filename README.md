@@ -10,7 +10,7 @@
 
 Welcome to my dotfiles repository! This repository is managed using [chezmoi](https://www.chezmoi.io/), a tool designed to manage your dotfiles across multiple machines.
 
-<img width="1512" alt="Preview: Herdr 2 with the kbrdn mods" src="preview.png">
+<img width="1512" alt="Preview of the desktop" src="preview.png">
 
 ## Table of Contents 📚
 
