@@ -9,7 +9,12 @@
 //                             filtered, sparse, bounded), the scans, the plan, the licence -> detail/<hash>.json
 // Everything downloaded is untrusted: model.js cleans it; nothing from a repo is run (git with no hooks,
 // no LFS smudge, no prompt; links never followed); only https URLs; values go to programs as argv.
-// Reads kt-plugins' components() and kt-skills' frontmatter() (pure modules, imported read-only).
+// Cross-mod imports (accepted by the lead for pure modules, 2026-11-19): ../kt-plugins/plugins.js
+// (components(): a plugin's parts from its files and JSON) and ../kt-skills/frontmatter.js
+// (frontmatter(): a SKILL.md's meta and body), read-only, not copied. model.check.mjs imports both and
+// checks the shapes this file relies on: a change of their signatures fails it.
+// GitHub: the licence and stars through `gh api` (Kylian's login, read only, one GET per inspection,
+// cached 7 days), the keyless API without gh; commits through `git ls-remote`.
 
 import { mkdir, readFile, writeFile, rename, rm, readdir, lstat, mkdtemp, stat } from "node:fs/promises";
 import {
@@ -141,7 +146,8 @@ async function syncMarkets(meta) {
 // Anthropic's community catalog, when Claude Code doesn't know it yet: its commit, then the catalog at it.
 async function syncCommunity(meta) {
   const repo = { owner: "anthropics", name: "claude-plugins-community" };
-  const sha = (await getText(`https://api.github.com/repos/${repo.owner}/${repo.name}/commits/main`, { accept: "application/vnd.github.sha" })).text.trim();
+  // The commit by git (no API call, no rate limit).
+  const sha = (await git(["ls-remote", `https://github.com/${repo.owner}/${repo.name}.git`, "refs/heads/main"], { timeout: 30e3 })).out.split(/\s/)[0];
   if (!/^[0-9a-f]{40}$/.test(sha)) throw Object.assign(new Error("bad-sha"), { code: "bad-sha" });
   if (sha === meta.community?.head) return { count: meta.community.count, cached: true };
   const r = await getJson(`https://raw.githubusercontent.com/${repo.owner}/${repo.name}/${sha}/.claude-plugin/marketplace.json`);
@@ -294,17 +300,31 @@ async function findItem(id) {
   return ((await readJson(`${DATA}/live/${f}`))?.items ?? []).find((x) => x.id === id) ?? null;
 }
 
-// GitHub's facts on a repo, without a key (60 requests an hour), cached 7 days.
+// gh where it is installed (exec's PATH lacks the nix profile); null: not installed.
+const GH = [`${HOME}/.nix-profile/bin/gh`, "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
+async function ghBin() {
+  for (const p of GH) if (await stat(p).catch(() => null)) return p;
+  return null;
+}
+
+// GitHub's facts on a repo (licence, stars, archived, last push): ONE `gh api` GET per inspection, with
+// Kylian's login and read only (decision 4, PROPOSAL.md §7); without gh or when it fails, the keyless
+// API (60 requests an hour). Cached 7 days either way. owner/name come checked by model.js' github().
 async function repoFacts(repo) {
   if (!repo) return { facts: null, error: null };
   const file = `${DATA}/gh/${repo.owner}__${repo.name}.json`;
   const c = await readJson(file);
   if (c && now() - Date.parse(c.at) < GH_TTL) return { facts: c.facts, error: null };
   try {
-    const r = await getJson(`https://api.github.com/repos/${repo.owner}/${repo.name}`, { accept: "application/vnd.github+json" });
-    const j = r.json ?? {};
+    let j = null, via = "api";
+    const bin = await ghBin();
+    if (bin) {
+      const r = await run(bin, ["api", "--method", "GET", `repos/${repo.owner}/${repo.name}`], { timeout: 20e3, env: { GH_PROMPT_DISABLED: "1", NO_COLOR: "1" } });
+      if (r.code === 0) { try { j = JSON.parse(r.out); via = "gh"; } catch {} }
+    }
+    if (!j) j = (await getJson(`https://api.github.com/repos/${repo.owner}/${repo.name}`, { accept: "application/vnd.github+json" })).json ?? {};
     const facts = { license: j.license?.spdx_id ?? null, license_name: clean(j.license?.name ?? "", 80) || null, stars: j.stargazers_count ?? null,
-      archived: Boolean(j.archived), pushed_at: j.pushed_at ?? null, default_branch: j.default_branch ?? null };
+      archived: Boolean(j.archived), pushed_at: j.pushed_at ?? null, default_branch: j.default_branch ?? null, via };
     await writeJson(file, { at: new Date().toISOString(), facts });
     return { facts, error: null };
   } catch (e) { return { facts: c?.facts ?? null, error: why(e) }; }
@@ -495,7 +515,10 @@ async function inspectHerdr(it, d) {
 async function inspectLoop(it, d) {
   const { owner, name, path } = it.repo;
   let sha = null;
-  try { sha = (await getText(`https://api.github.com/repos/${owner}/${name}/commits/HEAD`, { accept: "application/vnd.github.sha" })).text.trim(); } catch (e) { d.errors.push(`pin:${why(e)}`); }
+  // The commit by git (no API call: the inspection's one GitHub request is the licence's).
+  const ls = await git(["ls-remote", `https://github.com/${owner}/${name}.git`, "HEAD"], { timeout: 30e3 });
+  if (ls.code === 0) sha = ls.out.split(/\s/)[0];
+  else d.errors.push("pin:fetch-failed");
   if (!/^[0-9a-f]{40}$/.test(sha ?? "")) sha = null;
   const r = await getText(`https://raw.githubusercontent.com/${owner}/${name}/${sha ?? "HEAD"}/${path}`, { accept: "text/plain" });
   const fm = frontmatter(r.text);

@@ -272,6 +272,24 @@ const many = Array.from({ length: 130 }, (_, i) => normalizeSkillsSh({ source: "
 assert.equal(query(many, { limit: 500 }).rows.length, 60, "never more than 60 rows");
 assert.equal(query(many, { sort: "popular" }).rows[0].name, "s129");
 
+// ── the other mods' pure modules market.mjs imports (not copied): their shapes, as it uses them ──
+const { components } = await import("../kt-plugins/plugins.js");
+const { frontmatter } = await import("../kt-skills/frontmatter.js");
+assert.equal(typeof components, "function", "kt-plugins/plugins.js still exports components()");
+assert.equal(typeof frontmatter, "function", "kt-skills/frontmatter.js still exports frontmatter()");
+const comps = components("/p", ["/p/skills/demo/SKILL.md", "/p/commands/sub/go.md", "/p/agents/helper.md", "/p/README.md"],
+  { hooks: [{ hooks: { Stop: [], PreToolUse: [] } }, { modules: ["./hooks/m.ts"] }], mcp: [{ mcpServers: { srv: { command: "npx" } } }], lsp: [{ lspServers: { ls: {} } }] });
+assert.deepEqual(comps, { skills: ["demo"], commands: ["sub:go"], agents: ["helper"], hooks: ["Stop", "PreToolUse"], mods: ["hooks/m.ts"], mcp: ["srv"], lsp: ["ls"] },
+  "components(dir, files, { hooks, mcp, lsp }) -> { skills, commands, agents, hooks, mods, mcp, lsp }");
+assert.deepEqual(pluginFlags(comps, [{ command: "npx", args: ["-y", "x"] }]), ["hooks:Stop,PreToolUse", "mods", "plugin-mcp", "plugin-lsp", "unpinned"]);
+const fm = frontmatter("---\nname: demo-skill\nallowed-tools: Read, Bash\nhooks: x\n---\n\n# Demo\n");
+assert.equal(fm.meta?.name, "demo-skill", "frontmatter(text) -> { meta, body }");
+assert.ok(String(fm.body).includes("# Demo"));
+assert.deepEqual(scanSkill([{ path: "s/SKILL.md" }], fm.meta), ["bash-tool", "skill-hooks"]);
+assert.equal(findSkill([{ path: "skills/x/SKILL.md", name: String(frontmatter("---\nname: other-id\n---\n").meta.name) }], "other-id"), "skills/x");
+const loopFm = frontmatter("---\nname: l\ninterval: 10m\nstop-condition: Green.\ncomponents: [agent:a/b]\n---\n\n```\n/loop 10m \"go\"\n```\n");
+assert.deepEqual(loopRecipe(loopFm.body, loopFm.meta), { interval: "10m", stop: "Green.", components: ["agent:a/b"], prompt: '/loop 10m "go"' });
+
 assert.ok(LIVE.has("mcp-registry") && LIVE.has("skills-sh") && !LIVE.has("herdr-dev"));
 assert.equal(SOURCES.length, 7);
 assert.ok(TYPES.includes("automation"));
