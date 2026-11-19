@@ -27,6 +27,6 @@
 
 - [ ] `chezmoi diff <chemins>` verifie
 - [ ] `chezmoi apply --dry-run <chemins>` sans erreur (jamais d'apply sans chemin)
-- [ ] Checks des mods touches (`bun <mod>/*.check.mjs`, `bun test` pour les `*.test.mjs` bun:test)
+- [ ] Checks des mods touches : chaque `<mod>/*.check.mjs` lancé un par un (`for f in <mod>/*.check.mjs; do bun "$f"; done`, `bun` n'en lance qu'un par appel), `bun test` pour les `*.test.mjs` bun:test
 - [ ] Config testee localement
 - [ ] Pas de regression sur les autres configs
