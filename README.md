@@ -131,7 +131,7 @@ held to that by `model.check.mjs`.
 | Accueil (home) | `kt-hub` | The agents' activity and their time per day and project (after Apple's Screen Time), the GitHub year, a per-project view, what runs now, what is next, the machines |
 | Inbox | `kt-inbox` | Pull requests and reviews waiting, their checks drawn as dithered graphs |
 | Kanban | `kt-kanban` | Agent threads as cards: columns, swimlanes, filters, saved views, actions on a card |
-| Chat | `kt-chat` | A thread's transcript, live, with a composer that writes to the agent (`ctrl-b space` toggles Terminal and Chat) |
+| Chat | `kt-chat` | A thread's transcript, live, with a composer that writes to the agent; it opens in a pane beside the agent's terminal (`ctrl-b space` opens it, goes there and back) |
 | Workflow | `kt-workflow` | The git workflow of `WORKFLOW.md`, and a session dedicated to configuring it |
 | Skills, MCP, Plugins | `kt-skills`, `kt-mcp`, `kt-plugins` | What is installed, with a Preview / Raw markdown view |
 | Automatisations | `kt-automation` | The `me:loop:*` loops and the Herdr automations |
