@@ -15,11 +15,13 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, run, theme, shared, setShared, openOverlay, closeOverlay, props, home, checking, nextCommand, settings } from "herdr";
+import { spaces, run, theme, shared, setShared, openOverlay, closeOverlay, props, home, checking, nextCommand, settings, notify } from "herdr";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, sheet, leave, leaving, rows } from "./motion.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine header's state (#64).
+import { stateOf, stateWord, stateColor, loginOf } from "./machines.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -108,6 +110,15 @@ export default class ProjectPicker extends View {
     if (leaving(this.motion, "pp")) return;
     show("thread");
     run("space.new", { folder: e.folder, name: e.name, machine: e.machine ?? "" });
+    this.dismiss(cx);
+  }
+
+  // A machine header's « + » (#64): a project on that machine, a shell in its home (space.new {machine},
+  // kbrdn-spaces' +), never an agent.
+  onMachine(m, cx) {
+    if (leaving(this.motion, "pp")) return;
+    show("thread");
+    run("space.new", { machine: m });
     this.dismiss(cx);
   }
 
@@ -312,7 +323,7 @@ export default class ProjectPicker extends View {
         ...(hit(s.name, s.branch, s.machine) ? [{ s, kid: false, e: this.entryOf(s, reg) }] : []),
         ...kids.filter((k) => hit(k.name, k.branch, k.machine)).map((k) => ({ s: k, kid: true, e: null })),
       ]);
-      if (shown.length && groups.length > 1) list.push({ key: `head:${m ?? ""}`, head: (m ?? tr("thisComputer")).toUpperCase(), n: shown.length });
+      if (shown.length && groups.length > 1) list.push({ key: `head:${m ?? ""}`, head: (m ?? tr("thisComputer")).toUpperCase(), n: shown.length, machine: m });
       for (const x of shown) list.push({ key: `space:${x.s.id}`, on: x.s.active, drag: x.kid ? null : x.e?.id, open: (cx) => this.select(x.s, cx), draw: (c) => this.projectLine(t, x.s, x.kid, x.e, c) });
     });
     const gone = closed.map((e, i) => ({ e, i })).filter(({ e }) => hit(e.name, e.machine));
@@ -347,10 +358,33 @@ export default class ProjectPicker extends View {
     const { list, foot, lines, q } = this.model(t);
     // 24 px (6 + 16 + 2): the height stays a sum of whole lines (kt-threads' formula). The section's
     // name, how many lines it has, a dashed rule (h 0: it adds nothing to the height).
-    const eyebrow = (text, n) => h_flex().flex_none().h(24).px(8).pt(6).pb(2).gap(8).items_center().font_family(MONO).text_size(10.5).line_height("16px")
+    // Another machine's header (#64, kbrdn-spaces' model, still 24 px): its state's dot, ROOT, its state
+    // in a word (a login's copies the command), a linger warning (opens machine-add), and « + » (a
+    // project there) while it answers.
+    const machineBits = (m) => {
+      const st = stateOf(m);
+      const login = loginOf(m);
+      const word = stateWord(m);
+      return [
+        st.root === true && div().id(`pp-root-${m}`).flex_none().px(4).rounded(4).bg(alpha(t.blocked, "24")).text_color(t.blocked).text_size(9.5)
+          .tooltip(tr("machine.rootTip", { m })).child("ROOT"), // i18n: tech
+        word && div().id(`pp-state-${m}`).flex_none().text_color(st.status === "login" ? t.blocked : t.muted)
+          .when(Boolean(login), (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground)).tooltip(tr("machine.loginTip", { login }))
+            .on_click((_e, cx) => { cx.write_to_clipboard(login); notify({ title: tr("copied"), body: login, level: "success", timeout: 2000 }); }))
+          .child(word),
+        st.linger === false && div().id(`pp-linger-${m}`).flex_none().text_color(t.blocked).cursor_pointer().tooltip(tr("machine.lingerTip"))
+          .on_click(() => { closeOverlay(props().overlay); openOverlay({ mod: "machine-add", kind: "dialog", width: 560 }); }).child("⚠"),
+      ].filter(Boolean);
+    };
+    const eyebrow = (text, n, m) => h_flex().flex_none().h(24).px(8).pt(6).pb(2).gap(8).items_center().font_family(MONO).text_size(10.5).line_height("16px")
+      .when(Boolean(m), (el) => el.child(div().size(6).flex_none().rounded_full().bg(stateColor(t, stateOf(m).status))))
       .child(div().flex_none().text_color(t.dim).child(text))
       .when(n != null, (el) => el.child(div().flex_none().text_color(t.muted).child(String(n))))
-      .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(alpha(t.border, "99")));
+      .when(Boolean(m), (el) => el.children(machineBits(m)))
+      .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(alpha(t.border, "99")))
+      .when(Boolean(m) && stateOf(m).reachable, (el) => el.child(div().id(`pp-add-${m}`).flex_none().px(4).rounded(4).text_color(t.muted)
+        .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tr("machine.addTip", { m }))
+        .on_click((_e, cx) => this.onMachine(m, cx)).child("+")));
     // Nothing to list, said plainly: what the filter missed, or that there is nothing yet.
     const empty = v_flex().id("pp-empty").flex_none().px(9).py(10).gap(4)
       .child(h_flex().gap(8).items_center()
@@ -373,7 +407,7 @@ export default class ProjectPicker extends View {
     let child = 0;
     const items = rows(m, cx, "pp-items", list, (x) => x.key, (x, slot) => {
       const at = child++;
-      if (!x.open) return eyebrow(x.head, x.n);
+      if (!x.open) return eyebrow(x.head, x.n, x.machine);
       const i = slot < 0 ? -1 : lineOf.get(slot);
       // The cursor's line comes into view once after it moved.
       if (this.reveal && i === this.cur) this.scroll.scroll_to_item(at);

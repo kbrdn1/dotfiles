@@ -23,6 +23,9 @@ import { motionState, frame, sheet, leave, leaving } from "./motion.js";
 import { ditherBand, TOP } from "./dither.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): another machine as a tag, its
+// state's dot, ROOT, its state and account on hover (#64).
+import { machineTag } from "./machines.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -465,6 +468,7 @@ export default class Search extends View {
               .h(16)
               .gap(10)
               .items_center()
+              .when(Boolean(r.w.machine), (el) => el.child(machineTag(t, r.w.machine, { id: `kp-mt-${r.c.id}` })))
               .child(h_flex().flex_none().max_w(330).min_w(0).overflow_hidden().items_center().font_family(MONO).text_size(10.5).text_color(t.dim)
                 .children(meta.flatMap((x, i) => (i ? [dot(), x] : [x]))))
               .when(Boolean(why), (el) => el.child(why.flex_1().text_size(11.5).text_color(t.muted))),
@@ -489,7 +493,7 @@ export default class Search extends View {
       return this.line(t, r, on, H.closed)
         .child(div().opacity(0.5).child(this.mark(t, r)))
         .child(this.hl(t, r.name, m[0]).flex_1().text_size(13).text_color(t.dim))
-        .when(Boolean(r.e.machine), (el) => el.child(mono(t.dim, r.e.machine)))
+        .when(Boolean(r.e.machine), (el) => el.child(machineTag(t, r.e.machine, { id: `kp-mt-${r.key}` })))
         .child(mono(t.dim, tr("closed")));
     }
     const s = r.s;
@@ -497,7 +501,7 @@ export default class Search extends View {
       .child(this.mark(t, r))
       .child(this.hl(t, r.name, m[0]).flex_none().max_w(220).text_size(13).text_color(s.active ? t.foreground : t.muted))
       .child(h_flex().flex_1().min_w(0).font_family(MONO).text_size(10.5).text_color(t.dim).child(this.hl(t, r.branch, m[1])))
-      .when(Boolean(s.machine), (el) => el.child(div().flex_none().px(6).rounded_full().bg(t.raised).font_family(MONO).text_size(10.5).text_color(t.dim).child(s.machine)))
+      .when(Boolean(s.machine), (el) => el.child(machineTag(t, s.machine, { id: `kp-mt-${r.key}` })))
       .children(["working", "blocked", "done"].filter((st) => s.tabs.some((c) => c.status === st)).map((st) => div().size(6).rounded(3).flex_none().bg(t[st])))
       .child(mono(t.muted, String(s.tabs.length)))
       .when(s.active, (el) => el.child(mono(t.accent, tr("here"))));

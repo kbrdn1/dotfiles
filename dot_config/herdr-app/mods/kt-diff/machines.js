@@ -8,9 +8,14 @@
 // never `host`, `id`, `target`, `via` nor `session`, never a `temporary` machine, set only when
 // it changed. Everyone else reads it here:
 //
-//   stateOf(name)    { name, local, layout, state, why, root, linger, version, reachable, status }
+//   stateOf(name)    { name, local, layout, state, why, root, account, linger, version, reachable,
+//                    status }
 //   reachable(name)  this computer, or layout "ready" and not known to be away
 //   isRoot(name)     true / false, null when it isn't known
+//   machineList()    every other machine, by name, as stateOf describes it
+//   loginOf(name)    `hc machine login <name>` when it needs one, else null
+//   stateWord(name), stateColor(t, status), machineTag(t, name, { id }): a machine as the lists show
+//                    it (a dot, its name, ROOT; its state and account on hover)
 //   guard(exec)      exec that rejects at once with isOffline(e) = name when the machine is away;
 //                    a remote call without a timeout gets 10 s (the app's default is 30 s)
 //   guardRead(read)  the same for readTextFile
@@ -86,7 +91,7 @@ const local = (name) => name == null || name === "";
  *  or a machine the app doesn't know). A state not published yet (the first 15 s) leaves the
  *  layout alone to decide. */
 export function stateOf(name, { layouts = host.machines?.() ?? [], published = host.shared?.(KEY) ?? [] } = {}) {
-  if (local(name)) return { name: null, local: true, layout: "ready", state: "connected", why: null, root: false, linger: null, version: null, reachable: true, status: "local" };
+  if (local(name)) return { name: null, local: true, layout: "ready", state: "connected", why: null, root: false, account: null, linger: null, version: null, reachable: true, status: "local" };
   const layout = layouts.find((m) => m.name === name)?.layout ?? null;
   const p = (published ?? []).find((m) => m.name === name) ?? null;
   const state = p?.state ?? null;
@@ -98,6 +103,7 @@ export function stateOf(name, { layouts = host.machines?.() ?? [], published = h
   return {
     name, local: false, layout, state, why: p?.why ?? null,
     root: p ? (p.logout_linger_user == null ? null : p.logout_linger_user === "root") : null,
+    account: p?.logout_linger_user ?? null,
     linger: p?.keeps_running_after_logout ?? null, version: p?.version ?? null,
     reachable: status === "ready", status,
   };
@@ -105,6 +111,40 @@ export function stateOf(name, { layouts = host.machines?.() ?? [], published = h
 
 export const reachable = (name, opts) => stateOf(name, opts).reachable;
 export const isRoot = (name, opts) => stateOf(name, opts).root;
+
+/** Every other machine (published or with a layout), by name, as stateOf describes it. */
+export function machineList({ layouts = host.machines?.() ?? [], published = host.shared?.(KEY) ?? [] } = {}) {
+  const names = [...new Set([...(published ?? []).map((m) => m.name), ...layouts.map((m) => m.name)].filter((n) => !local(n)))].sort();
+  return names.map((n) => stateOf(n, { layouts, published }));
+}
+
+/** What to run when a machine needs a login, else null. */
+export const loginOf = (name, opts) => (stateOf(name, opts).status === "login" ? `hc machine login ${name}` : null); // i18n: tech
+
+/** A machine's state in a word ("login requis", "injoignable", "connexion…"); "" when it answers. */
+export function stateWord(name, opts) {
+  const { status } = stateOf(name, opts);
+  return status === "ready" || status === "local" ? "" : tr(`word.${status}`);
+}
+
+/** The dot of a state: answers (done), login (blocked), loading (working), away (dim). */
+export const stateColor = (t, status) => ({ ready: t.done, local: t.done, login: t.blocked, loading: t.working }[status] ?? t.dim);
+
+/** A machine as a small tag: its state's dot, its name, ROOT when it logs in as root; on hover, its
+ *  state, its account and what ROOT means. null for this computer. `id`: unique where it's drawn. */
+export function machineTag(t, name, { id, opts, size = 10.5 } = {}) {
+  if (local(name)) return null;
+  const s = stateOf(name, opts);
+  const { div } = kit;
+  const { h_flex } = base;
+  const tip = [s.reachable ? tr("tip.ready", { name }) : tr(`state.${s.status}`, { name }),
+    s.account ? tr("tip.account", { account: s.account }) : null, s.root === true ? tr("tip.root") : null].filter(Boolean).join(" · ");
+  return h_flex().id(id ?? `machine-tag-${name}`).flex_none().gap(5).items_center().px(6).rounded_full().bg(t.raised)
+    .font_family(MONO).text_size(size).text_color(s.reachable ? t.dim : t.muted).tooltip(tip)
+    .child(div().size(6).flex_none().rounded_full().bg(stateColor(t, s.status)))
+    .child(name)
+    .when(s.root === true, (el) => el.child(div().flex_none().text_color(t.blocked).child("ROOT"))); // i18n: tech
+}
 
 /** The machine a guarded call was refused for, else null. */
 export const isOffline = (e) => e?.offline ?? null;
@@ -147,7 +187,7 @@ export function notice(t, name, { id = "machine-notice", opts } = {}) {
   if (s.reachable) return null;
   const { div } = kit;
   const { h_flex, v_flex } = base;
-  const login = s.status === "login" ? `hc machine login ${name}` : null; // i18n: tech
+  const login = loginOf(name, opts);
   const dot = s.status === "login" ? t.blocked : s.status === "loading" ? t.working : t.dim;
   return v_flex().id(id).gap(6).px(12).py(10).rounded(12).border(1).border_color(t.border).bg(t.raised)
     .child(h_flex().gap(8).items_center()

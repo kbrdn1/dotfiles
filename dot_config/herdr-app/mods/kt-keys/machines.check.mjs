@@ -191,4 +191,29 @@ assert.equal(toasts.at(-1).body, "hc machine login vps-b");
 assert.match(text(M.notice(t, "vps-d", { opts: o })), /vps-d : connexion…/);
 assert.match(M.localOnly("vps-a"), /vps-a/);
 
+// ---- #64: the list, the account, the login, the word and the tag.
+assert.deepEqual(M.machineList(o).map((s) => [s.name, s.status]),
+  [["vps-a", "ready"], ["vps-b", "login"], ["vps-c", "away"], ["vps-d", "loading"], ["vps-e", "away"], ["vps-f", "ready"]]);
+assert.equal(M.stateOf("vps-a", o).account, "root");
+assert.equal(M.stateOf("vps-c", o).account, "deploy");
+assert.equal(M.stateOf(null, o).account, null);
+assert.equal(M.loginOf("vps-b", o), "hc machine login vps-b");
+assert.equal(M.loginOf("vps-a", o), null);
+assert.equal(M.stateWord("vps-a", o), "");
+assert.equal(M.stateWord("vps-b", o), "login requis");
+assert.equal(M.stateWord("vps-c", o), "injoignable");
+assert.equal(M.stateWord("vps-d", o), "connexion…");
+assert.equal(M.stateColor({ ...t, done: "ok" }, "ready"), "ok");
+assert.equal(M.stateColor(t, "login"), "x");
+assert.equal(M.stateColor(t, "away"), "d");
+assert.equal(M.machineTag(t, null, { opts: o }), null);
+const tagA = M.machineTag(t, "vps-a", { id: "tg", opts: o });
+assert.equal(tagA.props.id[0], "tg");
+assert.match(text(tagA), /vps-a/);
+assert.match(text(tagA), /ROOT/); // logs in as root
+assert.match(tagA.props.tooltip[0], /vps-a : connectée · compte root · root : /);
+const tagB = M.machineTag(t, "vps-b", { id: "tb", opts: o });
+assert.doesNotMatch(text(tagB), /ROOT/); // not known: no ROOT
+assert.match(tagB.props.tooltip[0], /vps-b : login requis/);
+
 console.log("machines.js: ok");

@@ -68,7 +68,7 @@ import * as fs from "fs/promises";
 import * as model from "./threads-model.js";
 import * as io from "./threads-io.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine away refuses at once (#61).
-import { guard, reachable } from "./machines.js";
+import { guard, reachable, machineTag } from "./machines.js";
 import { longLived } from "./pr-pick.js";
 import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices, sliced, onBoard, locate, move, atCard, parseQuery, matchQuery,
   costOf, stepLimit, viewsOf, currentView, dirty, saveView, addView, duplicateView, renameView, deleteView, stepView, checkSteps, SNOOZES, wakeAt,
@@ -1300,6 +1300,8 @@ export default class Kanban extends View {
       h_flex().h(16).gap(6).items_center()
         .child(this.mark(t, th.project, 12))
         .child(fv("project", div().flex_none().max_w(96).truncate().font_family(MONO).text_size(10).text_color(t.muted).child(th.project.name.toUpperCase())))
+        // Another machine: its tag (machines.js: its state's dot, ROOT; state and account on hover).
+        .when(Boolean(th.space?.machine), (el) => el.child(machineTag(t, th.space.machine, { id: `kk-mt-${key}`, size: 10 })))
         .when(Boolean(th.branch), (el) => el
           .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
           .child(fv("branch", div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch)))),
@@ -1592,6 +1594,7 @@ export default class Kanban extends View {
           .child(h_flex().min_w(0).gap(6).items_center()
             .child(this.mark(t, th.project, 12))
             .child(div().flex_none().max_w(110).truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(th.project.name.toUpperCase()))
+            .when(Boolean(th.space?.machine), (el) => el.child(machineTag(t, th.space.machine, { id: `kk-dr-mt-${key}` })))
             .when(Boolean(th.branch), (el) => el
               .child(svg(I(th.worktree ? "folder-tree" : "git-branch")).size(11).flex_none().text_color(t.dim))
               .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(th.branch)))

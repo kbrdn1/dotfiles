@@ -11,6 +11,11 @@ export default {
     noMatchText: "Rien ne correspond à « {q} » : ni un nom, ni une branche, ni une machine. Efface le filtre pour tout revoir.",
     noProjectText: "Aucun space ouvert, rien au registre. « Nouveau projet » ouvre un dossier : il s'ajoute ici.",
     filter: "Filtrer",
+    "machine.rootTip": "{m} se connecte en root : un agent lancé là-bas a tous les droits sur la machine",
+    "machine.loginTip": "Copier « {login} », à lancer dans un terminal de ce Mac",
+    "machine.lingerTip": "Ses programmes s'arrêtent à la déconnexion : la commande de l'administrateur (machine-add)",
+    "machine.addTip": "Nouveau projet sur {m}, dans son dossier personnel : un terminal, pas d'agent",
+    copied: "Copié",
   },
   en: {
     closed: "CLOSED",
@@ -23,5 +28,10 @@ export default {
     noMatchText: "Nothing matches “{q}”: no name, branch or machine. Clear the filter to see everything again.",
     noProjectText: "No space open and nothing in the registry. “New project” opens a folder and adds it here.",
     filter: "Filter",
+    "machine.rootTip": "{m} logs in as root: an agent started there has every right on the machine",
+    "machine.loginTip": "Copy “{login}”, to run in a terminal on this Mac",
+    "machine.lingerTip": "Its programs stop at logout: the administrator's command (machine-add)",
+    "machine.addTip": "New project on {m}, in its home folder: a terminal, no agent",
+    copied: "Copied",
   },
 };
