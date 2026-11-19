@@ -205,6 +205,7 @@ export default class Chat extends View {
     this.bgMenu = false;
     this.bgNote = null; // { busy } | { err } of the last image chosen
     this.cleanDue = true; // sweepBg() at the next render: once at start, then after each setting
+    this.bgKeys = null; // the projects kt.chat.backgrounds had at the last render (#88: one gone elsewhere sweeps too)
     this.scroll = ScrollHandle.new();
     this.md = mdState();
     this.motion = motionState();
@@ -1926,6 +1927,15 @@ export default class Chat extends View {
       this.load(cx);
     }
     this.live(cx, tg, want);
+    // #88: a project deleted by force (kt-projects) leaves kt.chat.backgrounds from outside this copy: its
+    // last texture is forgotten and data/kt-chat swept, as after a setting changed here.
+    const bgAll = shared(BG) ?? {};
+    const bgKeys = Object.keys(bgAll).join("\n");
+    if (bgKeys !== this.bgKeys) {
+      for (const k of this.bgLast.keys()) if (!(k in bgAll)) this.bgLast.delete(k);
+      this.bgKeys = bgKeys;
+      this.cleanDue = true;
+    }
     if (this.cleanDue && !checking()) this.sweepBg(cx);
     // The thread switched to its Chat face: take the keyboard, once per request, only when the
     // layout shows this face (a hidden copy doesn't draw anyway). The stack's copy only (#86).
