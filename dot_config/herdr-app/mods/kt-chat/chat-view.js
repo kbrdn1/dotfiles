@@ -52,10 +52,15 @@ function find(node, id) {
 }
 const shownChild = (stack) => stack?.active ?? stack?.children?.[0]?.id;
 
-/** Does the layout show the thread (stack view on thread)? A pane's Chat (#86) needs it. */
-export function threadShown(root) {
+/** ctrl-b space's stamp (shared "kt.chat.focus", kt-head's view.js) is a new request this copy takes now:
+ *  one it hasn't taken, and its face on screen (a stamp seen while the face is still hidden waits). */
+export const takesFocus = (ask, asked, shown) => Boolean(ask) && ask !== asked && shown;
+
+/** Does the layout show the thread on its Chat face (stack view on thread, thread-body on chat)? */
+export function chatShown(root) {
+  const body = find(root, "thread-body");
   const page = find(root, "view");
-  return !page || shownChild(page) === "thread";
+  return shownChild(body) === "chat" && (!page || shownChild(page) === "thread");
 }
 
 /**

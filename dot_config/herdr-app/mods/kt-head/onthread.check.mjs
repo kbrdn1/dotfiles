@@ -26,7 +26,8 @@ assert.deepEqual(run(tree("kanban", "chat")).calls, [
   ["layout.select", { stack: "view", child: "thread" }], ["layout.select", { stack: "thread-body", child: "main" }]]);
 // Another layout, without the stacks: nothing.
 assert.deepEqual(run({ id: "root", children: [{ id: "main" }] }), { moved: false, calls: [] });
-// #86 lot 4: thread-body a plain block (the Chat a pane), or a stack left with no `main`: only the page half.
+// A layout whose thread-body is a plain block (#86 lots 3-4, before the face came back), or a stack with
+// no `main`: only the page half.
 const block = (page, body) => ({ id: "root", children: [{ id: "view", type: "stack", ...(page ? { active: page } : {}), children: [
   { id: "thread", children: [body] }, { id: "inbox" }] }] });
 assert.deepEqual(run(block("inbox", { id: "thread-body", type: "block", active: "chat" })).calls, [["layout.select", { stack: "view", child: "thread" }]]);

@@ -2,7 +2,7 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, childOf, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects, hazeRows } from "./chat-view.js";
+import { pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects, hazeRows } from "./chat-view.js";
 import strings from "./strings.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
@@ -40,6 +40,24 @@ assert.equal(tallyText({ ...base, order: ["agent", "other"], agents: 1, others: 
 // The head is child 0, the first turn drawn child 1; 10 more drawn above, the old first is child 11.
 assert.equal(childOf(20, 20), 1);
 assert.equal(childOf(20, 10), 11);
+
+// ── The Chat face shown (#54, back with #86: it takes the keyboard on ctrl-b space only then) ───
+const lay = (body, page) => ({ id: "root", children: [{ id: "view", ...(page ? { active: page } : {}), children: [
+  { id: "thread", children: [{ id: "thread-body", type: "stack", ...(body ? { active: body } : {}), children: [{ id: "main" }, { id: "chat" }] }] },
+  { id: "inbox" }] }] });
+assert.equal(chatShown(lay("chat", "thread")), true);
+assert.equal(chatShown(lay("chat")), true, "the stack view's first child is the thread");
+assert.equal(chatShown(lay("main", "thread")), false);
+assert.equal(chatShown(lay()), false, "thread-body shows main by default");
+assert.equal(chatShown(lay("chat", "inbox")), false, "a page covers the thread");
+assert.equal(chatShown({ id: "root", children: [] }), false, "another layout");
+assert.equal(chatShown({ id: "root", children: [{ id: "thread-panes", type: "block" }] }), false, "the panes' block of #86 lots 3-4: no face");
+// ctrl-b space's stamp: taken once, and only with the face on screen (view.js writes it before the
+// switch: seen while still hidden, it waits for the face instead of being spent without the keyboard).
+assert.equal(takesFocus(1000, null, true), true, "a new stamp, the face shown: the keyboard");
+assert.equal(takesFocus(1000, 1000, true), false, "taken already");
+assert.equal(takesFocus(1000, null, false), false, "the face still hidden: it waits");
+assert.equal(takesFocus(null, null, true), false, "no stamp");
 
 // ── The live tail's moves (#55) ─────────────────────────────────────────────
 const at = (o) => liveStep({ shown: true, wasShown: true, status: "idle", lastStatus: "idle", hasState: true, fixed: null, ...o });

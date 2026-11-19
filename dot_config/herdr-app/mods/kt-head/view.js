@@ -1,16 +1,15 @@
-// The thread's Chat (#86, lots 3 and 4): a pane of the agent's tab, beside its terminal (kt-chat in a
-// pane, props {terminal}), where #54 had it as the thread-body stack's second face. `ctrl-b space` and the
-// crumbs' Terminal | Chat:
-// - on an agent's terminal: its Chat pane in that tab, focused; none yet, one made at its right
-//   (pane.split right, mod kt-chat, props {terminal}). The new pane takes the keyboard itself (kt-chat's
-//   paneSync): Herdr focuses the pane a split makes but sends its mod no "focus";
-// - on a Chat pane: back to its agent's terminal, nothing closed;
-// - a shell with no agent, or no pane focused: nothing.
-// First the thread's terminals on screen (toThread: onthread.js, from a page or the old Chat face).
-// Which Chat serves which agent: kt-chat's registry shared "kt.chat.panes" = { [pane]: terminal }
-// (kt-chat/chat-pane.js), only its lines whose pane is there, a kt-chat, in the same tab (a crash leaves
-// lines behind). `view(arg, deps)`: "" alternates, "chat" / "main" pick. Answers the face now focused,
-// "chat" or "main", or null. Pure, its herdr calls passed in: view.check.mjs.
+// The thread's two faces (#54, back with #86: Kylian wants the Chat in place of the tab's panes, not
+// beside them): the layout's stack thread-body shows the tab's panes (child main) or the Chat (child
+// chat, kt-chat, the shown tab's agent). `ctrl-b space` and the crumbs' Terminal | Chat. #86's splits
+// from a page or this face stay (onthread.js): the panes come back on screen first.
+//
+// `view(arg, deps)`: "" alternates, "chat" / "main" pick. From a page that covers the thread (the
+// stack view on Skills, Inbox…), "" brings the thread back on its Chat face. The Chat gets the
+// keyboard through shared "kt.chat.focus" (kt-chat reads it when it draws: a mod can't send another
+// one a command; a new stamp also fades the face in), written before the switch so the face's first
+// draw has it. Back on the panes, no motion: the keyboard to the agent's pane (the focused pane's
+// agent, else the tab's first agent; none: the tab's focused pane). Answers the child shown, or null
+// without the stack (another layout). Pure, its herdr calls passed in: view.check.mjs.
 
 export function find(node, id) {
   if (node?.id === id) return node;
@@ -21,31 +20,25 @@ export function find(node, id) {
   return null;
 }
 
-/** The Chat pane of `terminal` in `tab`, from the registry, if it is there; else null. */
-export function chatOf(registry, panes, terminal, tab) {
-  const reg = registry && typeof registry === "object" ? registry : {};
-  return Object.keys(reg).find((p) => reg[p] === terminal && panes.some((x) => x.pane === p && x.mod === "kt-chat" && x.tab === tab)) ?? null;
-}
+const shownChild = (stack) => stack?.active ?? stack?.children?.[0]?.id;
 
-export function view(arg, { layout, run, panes, focused, agents, registry, toThread }) {
-  if (!find(layout(), "thread")) return null; // another layout: no thread
-  toThread();
-  const all = panes();
-  const here = all.find((p) => p.pane === focused()?.pane);
-  if (!here) return null;
-  const reg = registry() ?? {};
-  if (here.mod === "kt-chat") {
-    if (arg === "chat") return "chat";
-    const term = reg[here.pane];
-    if (!term) return null; // not registered yet (its first render): nothing to go back to
-    run("pane.focus", { terminal: term });
-    return "main";
+export function view(arg, { layout, run, setShared, panes, focused, agents, now = Date.now }) {
+  const root = layout();
+  const stack = find(root, "thread-body");
+  if (stack?.type !== "stack") return null;
+  const page = find(root, "view");
+  const covered = Boolean(page) && shownChild(page) !== "thread";
+  if (covered) run("layout.select", { stack: "view", child: "thread" });
+  const to = arg === "chat" || arg === "main" ? arg : covered ? "chat" : shownChild(stack) === "chat" ? "main" : "chat";
+  if (to === "chat") setShared("kt.chat.focus", now());
+  run("layout.select", { stack: "thread-body", child: to });
+  if (to === "main") {
+    const tab = focused()?.tab;
+    const here = panes().find((p) => p.tab === tab && p.focused && p.terminal);
+    const mine = agents().filter((a) => a.tab === tab);
+    const agent = mine.find((a) => a.address === here?.terminal) ?? mine[0];
+    if (agent) run("pane.focus", { terminal: agent.address });
+    else if (here) run("pane.focus", { pane: here.pane });
   }
-  if (arg === "main") return "main";
-  const term = here.terminal;
-  if (!term || !agents().some((a) => a.address === term)) return null;
-  const chat = chatOf(reg, all, term, here.tab);
-  if (chat) run("pane.focus", { pane: chat });
-  else run("pane.split", { direction: "right", pane: here.pane, mod: "kt-chat", props: { terminal: term } });
-  return "chat";
+  return to;
 }
