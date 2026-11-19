@@ -42,7 +42,7 @@ import { makeT, num } from "./i18n.js";
 import strings from "./strings.js";
 import { ditherBand, TOP, ALL } from "./dither.js"; // the shared band (DESIGN-REFERENCE.md), tinted per provider
 import { skeleton } from "./skeleton.js";
-import { usageSummary } from "./summary.js";
+import { usageSummary, freshWeek } from "./summary.js";
 
 const tr = makeT(strings);
 speak(makeT); // data.js' words follow kt.lang too
@@ -509,17 +509,20 @@ export default class Usage extends View {
     const items = [{ kind: "card", id: "claude" }];
     // The weekly limit first: on Ultra (Max 20x, verified) it is the only one, Anthropic removed the
     // 5h window late October 2026 (five_hour null). A five_hour that comes back shows beside it.
-    // The usage endpoint's answer (cached 2 min) when the GET answered; the statusLine otherwise.
+    // The week: the newer of the usage endpoint's answer (cached 2 min) and the statusLine's reading
+    // (summary.js freshWeek): a statusLine watch brings a newer week without a GET.
     const api = this.data.api;
     const u = api?.usage;
-    const [five, slWeek] = claudeWindows(q, now);
-    const week = u?.week ?? slWeek;
+    const [five] = claudeWindows(q, now);
+    const week = freshWeek(api, q, now);
+    const newer = Boolean(u?.week) && !week.missing && week.at != null && week.at !== Math.floor((api?.at ?? 0) / 1000);
     left.push(this.eyebrow(t, tr("limits")));
     left.push(this.window(t, "ku-g-claude-7j", week, { why: tr("notGivenNow"), name: tr("weekQuota"), main: true }, now));
     left.push(div().px(10).font_family(MONO).text_size(10.5).text_color(api?.error ? t.blocked : t.dim).child(
       api?.error ? tr("api.error", { error: tr(`err.${api.error}`, { status: api.status }) })
         : u ? tr("api.read", { ago: ago(Math.floor(api.at / 1000), now), cached: api.cached ? tr("api.cached") : "",
-          severity: u.week?.severity ? tr("api.severity", { severity: u.week.severity }) : "" })
+          severity: u.week?.severity && !newer ? tr("api.severity", { severity: u.week.severity }) : "" })
+          + (newer ? tr("api.newer", { ago: ago(week.at, now) }) : "")
           : tr("api.notYet")));
     // Fable's weekly limit, and its share of the week, as the endpoint gives them.
     if (u?.scoped) left.push(this.window(t, "ku-p-claude-fable", u.scoped, {

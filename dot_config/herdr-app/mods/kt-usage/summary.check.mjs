@@ -32,7 +32,8 @@ const d = {
 const s = usageSummary(d, MID);
 ok(s.v === 1 && s.at === AT, "v 1, at in unix s (d.at)");
 ok(s.claude.plan === "Ultra", "plan");
-ok(s.claude.week.used === 78 && s.claude.week.severity === "normal" && s.claude.week.resets === 1795546800, "week: the endpoint's over the statusLine's");
+ok(s.claude.week.used === 78 && s.claude.week.severity === "normal" && s.claude.week.resets === 1795546800, "week: the endpoint's over a statusLine file without updated_at");
+ok(s.claude.week.at === AT, "week.at: the endpoint's reading time, unix s");
 ok(s.claude.fable.name === "Fable" && s.claude.fable.used === 3 && s.claude.fable.active === false, "fable");
 ok(s.claude.share.name === "Fable" && s.claude.share.used === 1 && s.claude.share.of === 50, "Fable's share");
 ok(s.claude.day.usd === 12.51 && s.claude.day.sessions === 2, `today's cost to the cent, yesterday left out (${JSON.stringify(s.claude.day)})`);
@@ -41,6 +42,18 @@ ok(s.codex.five.used === 76 && s.codex.five.resets === AT - 60, "a passed reset 
 ok(s.codex.week.used === 12, "codex week");
 const json = JSON.stringify(s);
 ok(!/rollout|someone|token|Bearer|herdr-t\d/.test(json), "no path, no file name, no token");
+
+// The newer reading wins (seen 2026-11-19: the endpoint said 2 % at 01:51 right after a reset on
+// claude.ai, the statusLine 21 % at 06:12 in the same window; the older GET kept winning).
+const sl = (updated_at, used = 21) => ({ ...d.claude, quota: { seven_day: { used_percentage: used, resets_at: AT + 86400 }, updated_at } });
+const newer = usageSummary({ ...d, claude: sl(AT + 600) }, MID);
+ok(newer.claude.week.used === 21 && newer.claude.week.at === AT + 600 && newer.claude.week.severity === null, "an endpoint answer older than the statusLine's reading loses");
+const older = usageSummary({ ...d, claude: sl(AT - 600) }, MID);
+ok(older.claude.week.used === 78 && older.claude.week.at === AT, "an endpoint answer newer than the statusLine's reading wins");
+ok(usageSummary({ ...d, claude: sl(AT) }, MID).claude.week.used === 78, "same second: the endpoint's (it carries the severity)");
+const lower = usageSummary({ ...d, claude: sl(AT + 600, 3) }, MID);
+ok(lower.claude.week.used === 3, "newer and lower still wins (a reset keeps the window)");
+ok(usageSummary({ ...d, claude: sl(AT + 600) }, MID).claude.fable.used === 3, "the rest stays the endpoint's");
 
 // The statusLine's week when the endpoint failed; nothing invented when nothing is there.
 const fb = usageSummary({ ...d, api: { at: AT * 1000, error: "network" }, codex: { present: false, reading: null } }, MID);

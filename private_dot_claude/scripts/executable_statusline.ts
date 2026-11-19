@@ -274,6 +274,10 @@ if (process.env.HC_TERMINAL_ID) {
   // response. In the same window (resets_at), a fresh reading replaces the shown one, even lower: a
   // reset on claude.ai lowers the week and keeps its resets_at, so "usage only rises" doesn't hold. A
   // replayed reading never replaces anything. A later window always wins, an earlier one never comes back.
+  // Known gap (2026-11-19, left on purpose): a session's first reading counts as fresh, so an idle session
+  // whose session cache is gone but still holds a reading from before a reset (96 % seen in a cache) would
+  // write it back once, in the same window. Rare, and a first reading higher than the shown one can be
+  // genuine: no heuristic guard; the next fresh reading of an active session corrects it.
   // Checked by statusline-quota.test.sh.
   if (data.rate_limits) {
     const file = join(CACHE_DIR, "herdr-quota.json");
