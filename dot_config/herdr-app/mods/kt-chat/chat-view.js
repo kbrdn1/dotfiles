@@ -141,6 +141,34 @@ export function bgSettings(raw) {
   };
 }
 
+// What chat-bg.ts writes in data/kt-chat: a kept source, a dithered texture. Nothing else there is ours.
+const SRC = /^src-([0-9a-f]{8})\.png$/;
+const TEX = /^bg-([0-9a-f]{8})-(\d+)-(photo|[0-9a-f]{6})\.png$/;
+
+/**
+ * The files of data/kt-chat no setting refers to any more (shared kt.chat.backgrounds), to unlink one
+ * by one. Kept: each setting's source (src-<hash>.png) and its texture at its cell: « photo », or any
+ * tint for « project » (the project's color isn't in the setting, and it may change). Only names in
+ * chat-bg.ts' two patterns are ever listed.
+ */
+export function orphans(names, all) {
+  const keep = { src: new Set(), tex: [] };
+  for (const raw of Object.values(all ?? {})) {
+    const s = bgSettings(raw);
+    const h = s?.src?.split("/").pop()?.match(SRC)?.[1];
+    if (!h) continue;
+    keep.src.add(h);
+    keep.tex.push({ h, cell: String(s.cell), photo: s.color === "photo" });
+  }
+  return (names ?? []).filter((n) => {
+    const src = n.match(SRC);
+    if (src) return !keep.src.has(src[1]);
+    const tex = n.match(TEX);
+    if (!tex) return false;
+    return !keep.tex.some((k) => k.h === tex[1] && k.cell === tex[2] && (k.photo ? tex[3] === "photo" : tex[3] !== "photo"));
+  });
+}
+
 // Monocode's background_fade (crates/monocode-core/src/project_appearance.rs), for a conversation
 // and for an empty one: 1 at the top, gone by 72 % of the view's height.
 const FADE = {

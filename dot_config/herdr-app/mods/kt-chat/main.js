@@ -35,7 +35,7 @@ import { view } from "./view.js";
 import { ingest, prepend, build, tally, foldedSteps, trim, pendingQueue } from "./chat-model.js";
 import {
   pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep,
-  projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES,
+  projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, orphans,
 } from "./chat-view.js";
 import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markdown.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
@@ -45,6 +45,7 @@ import { skeleton, readyFor } from "./skeleton.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { makeT, duration, time, num } from "./i18n.js";
 import strings from "./strings.js";
+import * as fs from "fs/promises";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -140,6 +141,7 @@ export default class Chat extends View {
     this.bgBusy = new Set();
     this.bgMenu = false;
     this.bgNote = null; // { busy } | { err } of the last image chosen
+    this.cleanDue = true; // sweepBg() at the next render: once at start, then after each setting
     this.scroll = ScrollHandle.new();
     this.md = mdState();
     this.motion = motionState();
@@ -527,6 +529,29 @@ export default class Chat extends View {
     if (patch === null) delete all[key];
     else all[key] = { ...(all[key] ?? {}), ...patch };
     setShared(BG, all);
+    this.cleanDue = true; // the next render sweeps data/kt-chat
+  }
+
+  /**
+   * The disk was full once (ENOSPC): each image, cell or color tried leaves a 2048 px PNG. Once a
+   * setting changes (and once when this copy starts), the files no setting refers to go, one unlink
+   * each, only names chat-bg.ts writes (chat-view.js orphans()); the cache forgets them.
+   */
+  sweepBg(cx) {
+    // Not while a texture is being made (its file exists before its setting), and never without the
+    // settings themselves: an absent key could read as « nothing is referred to ».
+    if (this.bgNote?.busy || this.bgBusy.size) return;
+    const all = shared(BG);
+    this.cleanDue = false;
+    if (!all || typeof all !== "object") return;
+    const dir = `${appHome()}/data/kt-chat`;
+    cx.spawn(async () => {
+      const names = await fs.readdir(dir).catch(() => []);
+      for (const n of orphans(names, all)) {
+        await fs.unlink(`${dir}/${n}`).catch(() => {});
+        for (const [k, v] of this.bgDone) if (v.path?.endsWith(`/${n}`) || v.src?.endsWith(`/${n}`)) this.bgDone.delete(k);
+      }
+    });
   }
 
   /** chat-bg.ts on `src`: { src, path, w, h } or throws. */
@@ -1304,6 +1329,7 @@ export default class Chat extends View {
       this.load(cx);
     }
     this.live(cx, tg, want);
+    if (this.cleanDue && !checking()) this.sweepBg(cx);
     // The thread switched to its Chat face: take the keyboard, once per request, only when the
     // layout shows this face (a hidden copy doesn't draw anyway).
     const ask = shared("kt.chat.focus");

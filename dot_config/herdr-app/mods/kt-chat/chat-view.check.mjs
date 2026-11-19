@@ -2,7 +2,7 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink } from "./chat-view.js";
+import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans } from "./chat-view.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
 const claude = (address, tab) => ({ address, tab, program: { key: "claude", name: "Claude Code" }, app: "claude-code" });
@@ -121,6 +121,29 @@ assert.deepEqual(bgSettings({ src: "/d/src-1.png", w: 10, h: 20 }), { src: "/d/s
 assert.deepEqual(bgSettings({ src: "s", cell: 6, color: "project", opacity: 0.9, scope: "empty" }), { src: "s", w: null, h: null, cell: 6, color: "project", opacity: 0.65, scope: "empty" });
 assert.equal(bgSettings({ src: "s", cell: 3, opacity: 0.01 }).cell, 2);
 assert.equal(bgSettings({ src: "s", opacity: 0.01 }).opacity, 0.05);
+
+// The clean-up of data/kt-chat: what no setting refers to, in chat-bg.ts' names only.
+const dir = [
+  "src-aaaaaaaa.png", "bg-aaaaaaaa-2-photo.png", "bg-aaaaaaaa-4-photo.png", "bg-aaaaaaaa-2-d4825d.png",
+  "src-bbbbbbbb.png", "bg-bbbbbbbb-4-d4825d.png", "bg-bbbbbbbb-4-112233.png", "bg-bbbbbbbb-4-photo.png", "bg-bbbbbbbb-2-d4825d.png",
+  "src-cccccccc.png", "bg-cccccccc-2-photo.png",
+  "notes.json", "zed-req-1.json", "bg-cccccccc.png", "src-CCCCCCCC.png", "src-cccccccc.png.tmp",
+];
+const settingsNow = {
+  one: { src: "/h/.config/herdr-app/data/kt-chat/src-aaaaaaaa.png", cell: 2, color: "photo" },
+  two: { src: "/h/.config/herdr-app/data/kt-chat/src-bbbbbbbb.png", cell: 4, color: "project" },
+  three: { src: "/h/.config/herdr-app/data/kt-chat/src-aaaaaaaa.png", cell: 2, color: "photo" },
+};
+assert.deepEqual(orphans(dir, settingsNow), [
+  "bg-aaaaaaaa-4-photo.png", "bg-aaaaaaaa-2-d4825d.png", // another cell, another color than the setting's
+  "bg-bbbbbbbb-4-photo.png", "bg-bbbbbbbb-2-d4825d.png", // « project » keeps its tints at its cell only
+  "src-cccccccc.png", "bg-cccccccc-2-photo.png", // no setting refers to that image any more
+], "a source shared by two projects stays; nothing outside the two name patterns is ever listed");
+assert.deepEqual(orphans(dir, {}).filter((n) => !/^(src|bg)-[0-9a-f]{8}/.test(n)), [], "never a file of another shape");
+assert.equal(orphans(dir, {}).length, 11, "no setting at all: every texture and source of ours");
+assert.deepEqual(orphans(["src-aaaaaaaa.png"], { x: { src: "src-aaaaaaaa.png", cell: 3 } }), [], "a setting's defaults count (cell 3 is read as 2)");
+assert.deepEqual(orphans(["src-aaaaaaaa.png"], { x: { cell: 2 } }), ["src-aaaaaaaa.png"], "a setting without a source refers to nothing");
+assert.deepEqual(orphans(null, settingsNow), []);
 
 assert.equal(fadeAt(0), 1);
 assert.equal(fadeAt(0.18), 1);
