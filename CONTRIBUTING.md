@@ -61,7 +61,8 @@ Les versions sont datées : `vAAAA.MM.JJ`, et `vAAAA.MM.JJ.1` pour une deuxième
 2. PR `dev` → `main`, mergée en merge commit
 3. Tag **après** le merge, sur le merge commit de `main` : `git tag vAAAA.MM.JJ && git push origin vAAAA.MM.JJ`
 4. Release GitHub : `gh release create vAAAA.MM.JJ --title vAAAA.MM.JJ --notes-file changelogs/AAAA.MM.JJ.md`
-5. Remettre `dev` à jour avec `main` (fast-forward)
+
+`dev` n'a pas à être réaligné sur `main` ensuite : le merge commit de `main` n'apporte rien de neuf, et la PR `dev` → `main` suivante se fusionne sans conflit. Ouvrir cette PR juste après le commit du changelog évite qu'un lot arrivé entre-temps parte sans être listé.
 
 Une release est un instantané : la corriger après coup passe par `gh release edit --notes-file`.
 
