@@ -43,7 +43,66 @@ def table(rows: list[tuple[str, ...]], headers: tuple[str, ...]) -> list[str]:
     return out
 
 
-# --- herdr ------------------------------------------------------------------
+# --- Herdr 2 (herdr-app) ----------------------------------------------------
+def herdr_app_labels() -> dict[str, str]:
+    """Les libellés français de l'aide de Herdr (kt-keys/strings.js, clés `g.<commande>`)."""
+    txt = read(HOME / ".config/herdr-app/mods/kt-keys/strings.js")
+    if txt is None:
+        return {}
+    fr = re.search(r"^\s*fr:\s*\{(.*?)^\s*en:\s*\{", txt, re.S | re.M)
+    if not fr:
+        return {}
+    return {m.group(1): m.group(2).replace('\\"', '"')
+            for m in re.finditer(r'"g\.([^"]+)":\s*"((?:[^"\\]|\\.)*)"', fr.group(1))}
+
+
+def printable(s: str) -> str:
+    """Un caractère de contrôle (ESC, ^W… des `send:`) écrit en `\\x1b` : le document reste lisible."""
+    return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in s)
+
+
+def herdr_app_id(value) -> str:
+    """Une entrée de keys.json -> l'identifiant que kt-keys nomme : `layout.select:<child>`, `mod.open:<name>`."""
+    if isinstance(value, str):
+        return printable(value)
+    if isinstance(value, dict):
+        cmd, args = value.get("command", "?"), value.get("args") or {}
+        sub = args.get("child") or args.get("name")
+        return f"{cmd}:{sub}" if sub else cmd
+    return str(value)
+
+
+def herdr_app() -> list[str]:
+    txt = read(HOME / ".config/herdr-app/keys.json")
+    if txt is None:
+        return []
+    try:
+        keys = json.loads(txt)
+    except json.JSONDecodeError as e:
+        print(f"keys.json illisible: {e}", file=sys.stderr)
+        return []
+    labels = herdr_app_labels()
+    # La layout « glass » est une copie de kbrdn-threads (mêmes touches) : une seule table suffit.
+    sections = [("global", "Partout"), ("terminal", "Dans un terminal"),
+                ("layout:kbrdn-threads", "Layout kbrdn-threads"), ("mod:kt-picker", "Recherche (kt-picker)")]
+    out = ["## Herdr 2 : l'application et les mods kbrdn", "",
+           "Le quotidien : Herdr 2 (`~/.config/herdr-app`) et la layout `kbrdn-threads`. Prefix = `ctrl-b`.",
+           "Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le même `keys.json`.", ""]
+    for name, title in sections:
+        entries = keys.get(name)
+        if not isinstance(entries, dict) or not entries:
+            continue
+        rows = []
+        for bind, value in entries.items():
+            ident = herdr_app_id(value)
+            rows.append((f"`{bind}`", labels.get(ident, ""), f"`{ident}`"))
+        out += [f"### {title}", ""]
+        out += table(rows, ("Touche", "Action", "Commande"))
+        out += [""]
+    return out
+
+
+# --- herdr 1 (TUI) ----------------------------------------------------------
 def herdr() -> list[str]:
     txt = read(HOME / ".config/herdr/config.toml")
     if txt is None:
@@ -72,8 +131,8 @@ def herdr() -> list[str]:
         groups.setdefault(current, []).append(
             (f"`{bind}`", action.replace("_", " "), note)
         )
-    out = ["## herdr — multiplexeur", "",
-           "Le multiplexeur au quotidien. Prefix = `ctrl+b`.", "",
+    out = ["## herdr 1 : le multiplexeur en TUI", "",
+           "La version terminal, avant Herdr 2. Prefix = `ctrl+b`.", "",
            "> herdr **rejette en silence** tout binding direct qui intercepterait la frappe :",
            "> une lettre seule doit être préfixée. Le fichier de travail des remaps est",
            "> `~/.config/herdr/keymaps-remap.md`.", ""]
@@ -102,7 +161,7 @@ def tmux() -> list[str]:
             continue
         cmd = re.sub(r"\s+", " ", cmd)[:60]
         rows.append((f"`{key}`", tbl or "prefix", f"`{cmd}`"))
-    out = ["## tmux — multiplexeur historique", "",
+    out = ["## tmux : multiplexeur historique", "",
            f"Remplacé par herdr au quotidien, gardé pour les sessions existantes. "
            f"Prefix = `{prefix.group(1) if prefix else 'C-b'}`. "
            "Config générée par home-manager (`nix-config/home.nix`), pas par chezmoi.", ""]
@@ -166,7 +225,7 @@ def zed() -> list[str]:
         ctx = b.get("context", "(global)")
         rows = [(f"`{k}`", f"`{json.dumps(v) if isinstance(v, list) else v}`")
                 for k, v in binds.items()]
-        out += [f"<details><summary><code>{ctx}</code> — {len(rows)} bindings</summary>", ""]
+        out += [f"<details><summary><code>{ctx}</code> : {len(rows)} bindings</summary>", ""]
         out += table(rows, ("Touche", "Action"))
         out += ["", "</details>", ""]
     return out
@@ -177,7 +236,7 @@ def aerospace() -> list[str]:
     txt = read(HOME / ".config/aerospace/aerospace.toml")
     if txt is None:
         return []
-    out = ["## AeroSpace — gestionnaire de fenêtres", ""]
+    out = ["## AeroSpace : gestionnaire de fenêtres", ""]
     for mode in re.finditer(r"^\[mode\.([a-z-]+)\.binding\]$(.*?)(?=^\[|\Z)", txt, re.S | re.M):
         name, body = mode.group(1), mode.group(2)
         rows = []
@@ -207,11 +266,11 @@ def ghostty() -> list[str]:
 
 
 def main() -> int:
-    sections = [herdr(), aerospace(), nvim(), zed(), tmux(), ghostty()]
+    sections = [herdr_app(), herdr(), aerospace(), nvim(), zed(), tmux(), ghostty()]
     body = [
         "# Raccourcis clavier",
         "",
-        "> ⚠️ **Fichier généré.** Ne pas l'éditer à la main — relancer",
+        "> ⚠️ **Fichier généré.** Ne pas l'éditer à la main : relancer",
         "> `python3 scripts/gen-keybindings.py`, qui relit les configs de la machine.",
         "> Le README n'en garde qu'un pointeur : les tableaux recopiés à la main",
         "> dérivaient à chaque changement de config.",

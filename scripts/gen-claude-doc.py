@@ -11,6 +11,7 @@ pilote le déclenchement côté Claude). On n'en garde que la première phrase :
 reste est du matériel de matching, pas de la doc pour un humain.
 """
 
+import json
 import os
 import re
 import sys
@@ -19,6 +20,36 @@ from pathlib import Path
 HOME = Path.home()
 CLAUDE = HOME / ".claude"
 OUT = Path(__file__).resolve().parent.parent / "CLAUDE-CODE.md"
+# La source chezmoi de ~/.claude dans ce dépôt : le document ne liste que ce qu'elle versionne.
+REPO_CLAUDE = Path(__file__).resolve().parent.parent / "private_dot_claude"
+CHEZMOI_PREFIXES = ("exact_", "private_", "readonly_", "empty_", "executable_", "symlink_", "encrypted_")
+
+
+def source_name(name: str) -> str:
+    """Le nom qu'un fichier de la source chezmoi prend dans $HOME (préfixes retirés, dot_ en point)."""
+    changed = True
+    while changed:
+        changed = False
+        for p in CHEZMOI_PREFIXES:
+            if name.startswith(p):
+                name, changed = name[len(p):], True
+    if name.endswith(".tmpl"):
+        name = name[:-5]
+    return "." + name[4:] if name.startswith("dot_") else name
+
+
+def in_repo(path: Path) -> bool:
+    """Un fichier ou dossier de ~/.claude est-il versionné dans ce dépôt ? Lancé hors du dépôt (pas de
+    source à côté), rien n'est filtré."""
+    if not REPO_CLAUDE.is_dir():
+        return True
+    cur = REPO_CLAUDE
+    for part in path.relative_to(CLAUDE).parts:
+        hit = next((c for c in cur.iterdir() if source_name(c.name) == part), None) if cur.is_dir() else None
+        if hit is None:
+            return False
+        cur = hit
+    return True
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -49,16 +80,18 @@ def frontmatter(path: Path) -> dict[str, str]:
 def summary(desc: str, limit: int = 160) -> str:
     """Première phrase utile, triggers retirés."""
     if not desc:
-        return "—"
+        return "-"
     # indicateurs de bloc YAML (`>-`, `|`, `>`) : le parseur minimal les laisse passer
     desc = re.sub(r"^[>|][+-]?\s*", "", desc).strip()
     desc = re.split(r"\s*(?:Triggers?|À utiliser)\s*:", desc)[0]
+    # le document est public : pas de tiret cadratin, un deux-points à sa place
+    desc = re.sub(r"\s*—\s*", " : ", desc)
     # première phrase, en évitant de couper sur les points d'abréviations courantes
     parts = re.split(r"(?<=[a-zé0-9\)»])\.\s+(?=[A-ZÀ-Ý])", desc)
     s = parts[0].strip().rstrip(".")
     if len(s) > limit:
         s = s[:limit].rsplit(" ", 1)[0] + "…"
-    return s.replace("|", "\\|") or "—"
+    return s.replace("|", "\\|") or "-"
 
 
 def skill_name(d: Path, fm: dict[str, str]) -> str:
@@ -80,14 +113,19 @@ def collect_skills() -> tuple[list, list, list]:
         return mine, own, linked
     for entry in sorted(root.iterdir(), key=lambda p: p.name.lower()):
         if entry.is_symlink():
+            # Des installations tierces, que le dépôt ne versionne pas et que le document compte à part.
             target = os.readlink(entry)
             linked.append((entry.name, target))
+            continue
+        if not in_repo(entry):
             continue
         if not entry.is_dir():
             continue
         if entry.name == "me":
             # skills/me/<name>/SKILL.md, et skills/me/loop/<name>/SKILL.md
             for sk in sorted(entry.rglob("SKILL.md")):
+                if not in_repo(sk.parent):
+                    continue
                 fm = frontmatter(sk)
                 mine.append((skill_name(sk.parent, fm), summary(fm.get("description", ""))))
             continue
@@ -104,9 +142,14 @@ def collect_md(sub: str) -> list[tuple[str, str]]:
         return []
     rows = []
     for f in sorted(root.rglob("*.md")):
+        if not in_repo(f):
+            continue
         rel = f.relative_to(root).with_suffix("")
         fm = frontmatter(f)
-        name = fm.get("name") or str(rel).replace(os.sep, ":")
+        path_name = str(rel).replace(os.sep, ":")
+        # Une commande s'invoque par son chemin (commands/me/merge.md -> /me:merge), quel que soit son
+        # `name:` ; un agent, lui, par le `name:` de son frontmatter.
+        name = path_name if sub == "commands" else (fm.get("name") or path_name)
         rows.append((name, summary(fm.get("description", ""))))
     return rows
 
@@ -121,6 +164,38 @@ def table(rows, headers) -> list[str]:
     return out + [""]
 
 
+INTERPRETERS = {"bun", "bash", "sh", "zsh", "node", "deno", "python3"}
+
+
+def collect_hooks() -> list[str]:
+    """Les hooks déclarés dans settings.json (pas les fichiers du dossier hooks/, où vivent aussi
+    leurs checks et listes, et d'où un hook peut manquer) : « Événement : script », le nom du script
+    seulement, jamais son chemin."""
+    try:
+        cfg = json.loads((CLAUDE / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out = []
+    for event, groups in (cfg.get("hooks") or {}).items():
+        for group in groups or []:
+            for hook in (group or {}).get("hooks") or []:
+                # Le document est public : ni variable d'environnement (un jeton y passe), ni URL, ni
+                # chemin. Seuls le programme et le nom du fichier qu'il lance sortent.
+                words = [w.strip("'\"") for w in str(hook.get("command", "")).split() if "=" not in w]
+                words = [w for w in words if "://" not in w]
+                if not words:
+                    continue
+                paths = [Path(w).name for w in words if "/" in w]
+                program = words[0] if re.fullmatch(r"[A-Za-z0-9._-]+", words[0]) else ""
+                if program in INTERPRETERS or "/" in words[0]:
+                    script = paths[0] if paths else program
+                else:
+                    script = " ".join(x for x in [program, *paths[-1:]] if x)
+                if script:
+                    out.append(f"{event} : {script}")
+    return out
+
+
 def main() -> int:
     if not CLAUDE.is_dir():
         print(f"{CLAUDE} introuvable", file=sys.stderr)
@@ -130,13 +205,12 @@ def main() -> int:
     agents = collect_md("agents")
     styles = sorted(p.stem for p in (CLAUDE / "output-styles").glob("*")) \
         if (CLAUDE / "output-styles").is_dir() else []
-    hooks = sorted(p.name for p in (CLAUDE / "hooks").glob("*")) \
-        if (CLAUDE / "hooks").is_dir() else []
+    hooks = collect_hooks()
 
     b = [
-        "# Claude Code — inventaire de la config",
+        "# Claude Code : inventaire de la config",
         "",
-        "> ⚠️ **Fichier généré.** Ne pas l'éditer à la main — relancer",
+        "> ⚠️ **Fichier généré.** Ne pas l'éditer à la main : relancer",
         "> `python3 scripts/gen-claude-doc.py`, qui relit `~/.claude`.",
         "",
         "La méthode de travail elle-même est décrite dans",
@@ -152,7 +226,7 @@ def main() -> int:
         f"| Commandes | {len(commands)} |",
         f"| Agents | {len(agents)} |",
         "",
-        "## Skills `me:*` — ma méthode de travail",
+        "## Skills `me:*` : ma méthode de travail",
         "",
         "Les procédures maison : workflows git, boucles auto-cadencées, bootstrap projet,",
         "génération de documents. Ce sont elles que `RULES.md` et `WORKFLOW.md` citent.",
@@ -169,7 +243,7 @@ def main() -> int:
         b += [
             "## Skills liés (non versionnés)",
             "",
-            f"{len(linked)} symlinks vers des installations tierces — le dépôt ne les",
+            f"{len(linked)} symlinks vers des installations tierces : le dépôt ne les",
             "embarque pas, il faut réinstaller la source pour les retrouver. Le lien dit",
             "d'où ils viennent.",
             "",

@@ -1,6 +1,8 @@
 {
   "eyebrow": "chezmoi source",
   "wordmark": "dotfiles",
+  "logo": "docs/_assets/logo.svg",
+  "logoLight": "docs/_assets/logo-light.svg",
   "tagline": "Nix installs the tools.<br>chezmoi writes the config.",
   "buttons": [
     {
@@ -54,6 +56,6 @@
     "ghostty · tmux · zed · nvim",
     "3 age-encrypted secrets"
   ],
-  "install": "chezmoi init https://github.com/kbrdn1/dotfiles.git && chezmoi apply",
+  "install": "chezmoi init --apply --branch main kbrdn1",
   "footer": "github.com/kbrdn1/dotfiles · Shell · MIT"
 }

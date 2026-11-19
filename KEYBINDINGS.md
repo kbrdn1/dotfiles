@@ -1,13 +1,182 @@
 # Raccourcis clavier
 
-> ⚠️ **Fichier généré.** Ne pas l'éditer à la main — relancer
+> ⚠️ **Fichier généré.** Ne pas l'éditer à la main : relancer
 > `python3 scripts/gen-keybindings.py`, qui relit les configs de la machine.
 > Le README n'en garde qu'un pointeur : les tableaux recopiés à la main
 > dérivaient à chaque changement de config.
 
-## herdr — multiplexeur
+## Herdr 2 : l'application et les mods kbrdn
 
-Le multiplexeur au quotidien. Prefix = `ctrl+b`.
+Le quotidien : Herdr 2 (`~/.config/herdr-app`) et la layout `kbrdn-threads`. Prefix = `ctrl-b`.
+Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le même `keys.json`.
+
+### Partout
+
+| Touche | Action | Commande |
+|---|---|---|
+| `cmd-q` |  | `app.quit` |
+| `cmd-h` |  | `app.hide` |
+| `cmd-alt-h` |  | `app.hide_others` |
+| `cmd-m` |  | `window.minimize` |
+| `cmd-t` |  | `tab.new` |
+| `cmd-w` |  | `tab.close` |
+| `ctrl-tab` | Thread suivant | `tab.next` |
+| `ctrl-shift-tab` | Thread précédent | `tab.prev` |
+| `cmd-shift-]` | Thread suivant | `tab.next` |
+| `cmd-shift-[` | Thread précédent | `tab.prev` |
+| `cmd-alt-]` | Projet suivant | `space.next` |
+| `cmd-alt-[` | Projet précédent | `space.prev` |
+| `cmd-]` | Agent suivant | `agent.next` |
+| `cmd-[` | Agent précédent | `agent.prev` |
+| `cmd-shift-l` |  | `layout.switch` |
+| `cmd-n` | Nouveau projet | `space.new` |
+| `cmd-p` |  | `mod.open:picker` |
+| `cmd-shift-p` |  | `app.palette` |
+| `cmd-,` | Réglages | `app.settings` |
+| `cmd-d` |  | `pane.split:right` |
+| `cmd-shift-d` |  | `pane.split:down` |
+| `cmd-shift-w` |  | `pane.close` |
+| `cmd-shift-enter` |  | `pane.zoom` |
+| `cmd-alt-left` | Aller à gauche : pane, sidebar | `pane.go:left` |
+| `cmd-alt-right` | Aller à droite : pane, panneau | `pane.go:right` |
+| `cmd-alt-up` | Aller en haut | `pane.go:up` |
+| `cmd-alt-down` | Aller en bas | `pane.go:down` |
+| `cmd-alt-shift-left` |  | `pane.swap:left` |
+| `cmd-alt-shift-right` |  | `pane.swap:right` |
+| `cmd-alt-shift-up` |  | `pane.swap:up` |
+| `cmd-alt-shift-down` |  | `pane.swap:down` |
+| `f2` |  | `tab.rename` |
+| `shift-f2` |  | `space.rename` |
+| `cmd-/` |  | `app.help` |
+| `cmd-shift-/` |  | `app.help` |
+| `cmd-b` |  | `layout.toggle:sidebar` |
+| `cmd-=` |  | `app.zoom_in` |
+| `cmd-+` |  | `app.zoom_in` |
+| `cmd--` |  | `app.zoom_out` |
+| `cmd-0` |  | `app.zoom_reset` |
+| `cmd-1` |  | `tab.select:1` |
+| `cmd-2` |  | `tab.select:2` |
+| `cmd-3` |  | `tab.select:3` |
+| `cmd-4` |  | `tab.select:4` |
+| `cmd-5` |  | `tab.select:5` |
+| `cmd-6` |  | `tab.select:6` |
+| `cmd-7` |  | `tab.select:7` |
+| `cmd-8` |  | `tab.select:8` |
+| `cmd-9` |  | `tab.select:9` |
+| `ctrl-1` |  | `space.select:1` |
+| `ctrl-2` |  | `space.select:2` |
+| `ctrl-3` |  | `space.select:3` |
+| `ctrl-4` |  | `space.select:4` |
+| `ctrl-5` |  | `space.select:5` |
+| `ctrl-6` |  | `space.select:6` |
+| `ctrl-7` |  | `space.select:7` |
+| `ctrl-8` |  | `space.select:8` |
+| `ctrl-9` |  | `space.select:9` |
+
+### Dans un terminal
+
+| Touche | Action | Commande |
+|---|---|---|
+| `cmd-f` |  | `terminal.search` |
+| `cmd-a` |  | `terminal.select_all` |
+| `cmd-c` |  | `terminal.copy` |
+| `cmd-v` |  | `terminal.paste` |
+| `ctrl-v` |  | `terminal.paste_image` |
+| `alt-left` |  | `send:\x1bb` |
+| `alt-right` |  | `send:\x1bf` |
+| `alt-backspace` |  | `send:\x17` |
+| `cmd-left` |  | `send:\x01` |
+| `cmd-right` |  | `send:\x05` |
+| `cmd-backspace` |  | `send:\x15` |
+
+### Layout kbrdn-threads
+
+| Touche | Action | Commande |
+|---|---|---|
+| `ctrl-b h` | Aller à gauche : pane, sidebar | `pane.go:left` |
+| `ctrl-h` | Aller à gauche : pane, sidebar | `pane.go:left` |
+| `ctrl-l` | Aller à droite : pane, panneau | `pane.go:right` |
+| `ctrl-b j` | Aller en bas | `pane.go:down` |
+| `ctrl-b k` | Aller en haut | `pane.go:up` |
+| `ctrl-b l` | Aller à droite : pane, panneau | `pane.go:right` |
+| `ctrl-b v` | Scinder à droite (le thread revient d'abord à l'écran) | `kt-head.split:right` |
+| `ctrl-b s` | Scinder en bas (le thread revient d'abord à l'écran) | `kt-head.split:down` |
+| `ctrl-b x` | Fermer le pane (confirmé ; un Chat se ferme sans confirmation) | `kt-head.close-pane` |
+| `ctrl-b z` | Zoomer le pane | `kt-head.zoom` |
+| `cmd-d` | Scinder à droite (le thread revient d'abord à l'écran) | `kt-head.split:right` |
+| `cmd-shift-d` | Scinder en bas (le thread revient d'abord à l'écran) | `kt-head.split:down` |
+| `cmd-shift-enter` | Zoomer le pane | `kt-head.zoom` |
+| `ctrl-b c` | Nouveau thread | `mod.open:kt-new` |
+| `ctrl-b n` | Thread suivant | `tab.next` |
+| `ctrl-b b` | Thread précédent | `tab.prev` |
+| `ctrl-b 1` |  | `tab.select:1` |
+| `ctrl-b 2` |  | `tab.select:2` |
+| `ctrl-b 3` |  | `tab.select:3` |
+| `ctrl-b 4` |  | `tab.select:4` |
+| `ctrl-b 5` |  | `tab.select:5` |
+| `ctrl-b 6` |  | `tab.select:6` |
+| `ctrl-b 7` |  | `tab.select:7` |
+| `ctrl-b 8` |  | `tab.select:8` |
+| `ctrl-b 9` |  | `tab.select:9` |
+| `ctrl-b shift-t` | Renommer le thread | `kt-head.rename:tab` |
+| `ctrl-b shift-x` | Fermer le thread (confirmé) | `kt-head.close-tab` |
+| `ctrl-b shift-c` | Nouveau projet | `space.new` |
+| `ctrl-b shift-n` | Projet suivant | `space.next` |
+| `ctrl-b shift-b` | Projet précédent | `space.prev` |
+| `ctrl-b shift-w` | Renommer le projet | `kt-head.rename:space` |
+| `ctrl-b w` | Search sur les projets | `kt-head.picker:2` |
+| `ctrl-b g` | Search, tout | `kt-head.picker:0` |
+| `ctrl-b shift-g` | Nouveau thread dans un worktree | `kt-head.worktree` |
+| `ctrl-b shift-h` | Page Accueil | `layout.select:hub` |
+| `ctrl-b shift-o` | Page Worktrees | `layout.select:gwm` |
+| `ctrl-b shift-i` | Page Notes | `layout.select:notes` |
+| `ctrl-b shift-s` | Page Kanban | `layout.select:kanban` |
+| `ctrl-b shift-j` | Agent suivant | `agent.next` |
+| `ctrl-b shift-k` | Agent précédent | `agent.prev` |
+| `ctrl-b o` | L'agent qui attend (sinon le premier terminé) | `kt-head.attention` |
+| `ctrl-b ?` | Cette aide | `mod.open:kt-keys` |
+| `cmd-/` | Cette aide | `mod.open:kt-keys` |
+| `cmd-shift-/` | Cette aide | `mod.open:kt-keys` |
+| `ctrl-b ;` | Réglages | `app.settings` |
+| `ctrl-b shift-v` | Montrer / masquer la sidebar (son contenu glisse) | `kt-head.side-toggle` |
+| `ctrl-b p` | Montrer / masquer le panneau (son contenu glisse) | `kt-head.panel-toggle` |
+| `ctrl-b i` | Page Inbox | `layout.select:inbox` |
+| `ctrl-b shift-a` | Page Workflow | `layout.select:workflow` |
+| `ctrl-b shift-m` | Console des mods | `mod.open:kt-mods` |
+| `ctrl-b shift-l` | Machines : les autres machines, leurs connexions, en ajouter une | `mod.open:kt-machines` |
+| `ctrl-b a` | Page Skills | `layout.select:skills` |
+| `ctrl-b m` | Page MCP | `layout.select:mcp` |
+| `ctrl-b u` | Page Plugins | `layout.select:plugins` |
+| `ctrl-b shift-u` |  | `layout.select:automation` |
+| `ctrl-b shift-e` | Page Marketplaces | `layout.select:market` |
+| `ctrl-b t` | Retour au thread | `layout.select:thread` |
+| `ctrl-b space` | Le Chat de l'agent, en pane à côté de son terminal : l'ouvrir ou y aller, et revenir au terminal | `kt-head.view` |
+| `ctrl-b f` | Panneau sur Files | `kt-head.panel:files` |
+| `ctrl-b d` | Panneau sur Changes | `kt-head.panel:diff` |
+| `ctrl-b y` | Panneau sur History | `kt-head.panel:history` |
+| `ctrl-b e` | Panneau sur Flow | `kt-head.panel:flow` |
+| `ctrl-b r` | Panneau sur Crosstalk | `kt-head.panel:crosstalk` |
+| `ctrl-b ctrl-b` |  | `send:\x02` |
+| `cmd-t` | Nouveau thread | `mod.open:kt-new` |
+| `cmd-p` |  | `mod.open:kt-picker` |
+| `cmd-w` | Fermer le thread (confirmé) | `kt-head.close-tab` |
+| `cmd-shift-w` | Fermer le pane (confirmé ; un Chat se ferme sans confirmation) | `kt-head.close-pane` |
+| `cmd-b` | Montrer / masquer la sidebar (son contenu glisse) | `kt-head.side-toggle` |
+| `f2` | Renommer le thread | `kt-head.rename:tab` |
+| `shift-f2` | Renommer le projet | `kt-head.rename:space` |
+
+### Recherche (kt-picker)
+
+| Touche | Action | Commande |
+|---|---|---|
+| `cmd-1` |  | `kt-picker.filter:1` |
+| `cmd-2` |  | `kt-picker.filter:2` |
+| `cmd-3` |  | `kt-picker.filter:3` |
+| `cmd-4` |  | `kt-picker.filter:4` |
+
+## herdr 1 : le multiplexeur en TUI
+
+La version terminal, avant Herdr 2. Prefix = `ctrl+b`.
 
 > herdr **rejette en silence** tout binding direct qui intercepterait la frappe :
 > une lettre seule doit être préfixée. Le fichier de travail des remaps est
@@ -93,7 +262,7 @@ Le multiplexeur au quotidien. Prefix = `ctrl+b`.
 | `prefix+o` | open notification target |  |
 | `prefix+shift+v` | toggle sidebar |  |
 
-## AeroSpace — gestionnaire de fenêtres
+## AeroSpace : gestionnaire de fenêtres
 
 ### mode `main`
 
@@ -261,7 +430,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 355 bindings, groupés par contexte tels que Zed les évalue.
 
-<details><summary><code>(global)</code> — 6 bindings</summary>
+<details><summary><code>(global)</code> : 6 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -274,7 +443,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Workspace</code> — 15 bindings</summary>
+<details><summary><code>Workspace</code> : 15 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -296,7 +465,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>(ProjectPanel && not_editing)</code> — 37 bindings</summary>
+<details><summary><code>(ProjectPanel && not_editing)</code> : 37 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -340,7 +509,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Terminal</code> — 14 bindings</summary>
+<details><summary><code>Terminal</code> : 14 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -361,7 +530,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Terminal && !menu</code> — 62 bindings</summary>
+<details><summary><code>Terminal && !menu</code> : 62 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -430,7 +599,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Editor</code> — 18 bindings</summary>
+<details><summary><code>Editor</code> : 18 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -455,7 +624,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Editor && VimControl && !VimWaiting && !menu</code> — 172 bindings</summary>
+<details><summary><code>Editor && VimControl && !VimWaiting && !menu</code> : 172 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -634,7 +803,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Editor && VimControl && vim_mode == visual</code> — 2 bindings</summary>
+<details><summary><code>Editor && VimControl && vim_mode == visual</code> : 2 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -643,7 +812,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>(GitPanel && ChangesList)</code> — 23 bindings</summary>
+<details><summary><code>(GitPanel && ChangesList)</code> : 23 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -673,7 +842,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>GitPanel</code> — 3 bindings</summary>
+<details><summary><code>GitPanel</code> : 3 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -683,7 +852,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>CommitEditor > Editor</code> — 3 bindings</summary>
+<details><summary><code>CommitEditor > Editor</code> : 3 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -693,7 +862,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-## tmux — multiplexeur historique
+## tmux : multiplexeur historique
 
 Remplacé par herdr au quotidien, gardé pour les sessions existantes. Prefix = `C-a`. Config générée par home-manager (`nix-config/home.nix`), pas par chezmoi.
 
