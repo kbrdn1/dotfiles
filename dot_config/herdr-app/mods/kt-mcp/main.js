@@ -62,6 +62,9 @@ import { refreshOn } from "./bus.js";
 import { METHODS } from "./add.js";
 import { makeT, relative } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the note beside another
+// machine's thread (#65).
+import { machineNote } from "./machines.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -693,6 +696,7 @@ export default class Mcp extends View {
   }
 
   header(t, q, shown) {
+    const away = spaces().find((s) => s.active)?.machine ?? null;
     const typing = this.keyed && this.vim.insert;
     const proj = this.proj();
     const filtered = this.query.trim() || this.seg !== "all" || this.stateF;
@@ -729,6 +733,8 @@ export default class Mcp extends View {
           iconBtn(t, "ktm-b-refresh", I("refresh-cw"), this.busy ? tr("readingTip") : tr("refreshTip"), (cx) => { if (!checking()) this.reload(cx); }),
           iconBtn(t, "ktm-b-more", "mods/kt-crosstalk/ellipsis.svg", tr("moreTip"), () => { this.more = !this.more; }, this.more)] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.accent, "4d")))
+      // The thread on screen is another machine's (#65): this page lists this Mac's servers, said.
+      .when(Boolean(away), (el) => el.child(div().px(10).child(machineNote(t, away, tr("remote"), { id: "ktm-remote" }))))
       .child(h_flex().px(10).flex_wrap().gap(8).items_center()
         .child(where)
         .when(Boolean(this.scope), (el) => el.child(globalPill))

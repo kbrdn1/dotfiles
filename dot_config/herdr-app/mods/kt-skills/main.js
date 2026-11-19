@@ -62,6 +62,9 @@ import { bump, refreshOn } from "./bus.js";
 import { METHODS } from "./add.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the note beside another
+// machine's thread (#65).
+import { machineNote } from "./machines.js";
 
 const tr = makeT(strings);
 
@@ -619,6 +622,7 @@ export default class Skills extends View {
   }
 
   header(t, q, shown) {
+    const away = spaces().find((s) => s.active)?.machine ?? null;
     const typing = this.keyed && this.vim.insert;
     const skills = this.items.filter((x) => x.kind === "skill").length;
     const filtered = this.query.trim() || this.seg !== "all";
@@ -641,6 +645,8 @@ export default class Skills extends View {
           iconBtn(t, "kts-b-refresh", I("refresh-cw"), this.busy ? tr("analysingTip") : tr("refreshTip"), (cx) => { if (!checking()) this.scan(cx); }),
           iconBtn(t, "kts-b-more", "mods/kt-crosstalk/ellipsis.svg", tr("moreTip"), () => { this.more = !this.more; }, this.more)] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi4, "4d")))
+      // The thread on screen is another machine's (#65): this page lists this Mac's skills, said.
+      .when(Boolean(away), (el) => el.child(machineNote(t, away, tr("remote"), { id: "kts-remote" })))
       .child(h_flex().flex_wrap().gap(4).items_center()
         // The filter: the keys' ring (and the ink) while typing in it; the mode beside it.
         .child(h_flex().id("kts-filter").w(280).max_w_full().h(36).px(12).gap(8).items_center().rounded(12).border(1)

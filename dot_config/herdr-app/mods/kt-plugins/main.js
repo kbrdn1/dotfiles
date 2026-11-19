@@ -57,6 +57,9 @@ import { split } from "./tiers.js";
 import { rollText } from "./roll.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the note beside another
+// machine's thread (#65).
+import { machineNote } from "./machines.js";
 
 const tr = makeT(strings);
 const MEASURE = 620; // the README's column: ~80 characters of 13.5 px Inter
@@ -504,6 +507,7 @@ export default class Plugins extends View {
   // row (states, then marketplaces after a rule: filters.js).
   header(t, q, shown) {
     const m = this.m;
+    const away = spaces().find((s) => s.active)?.machine ?? null;
     const typing = this.keyed && this.vim.insert;
     const tint = t.ansi5;
     const on = this.items.filter((x) => x.enabled).length;
@@ -540,6 +544,8 @@ export default class Plugins extends View {
         ],
       }))
       .child(bandRule(tint))
+      // The thread on screen is another machine's (#65): this page lists this Mac's plugins, said.
+      .when(Boolean(away), (el) => el.child(div().px(4).pt(4).child(machineNote(t, away, tr("remote"), { id: "ktp-remote" }))))
       .child(h_flex().p(4).gap(8).items_center()
         // 240 px, down to 120 on a narrow page (the pills beside it scroll).
         .child(h_flex().id("ktp-filter").w(240).min_w(120).h(36).px(12).gap(8).items_center().rounded(12).border(1)

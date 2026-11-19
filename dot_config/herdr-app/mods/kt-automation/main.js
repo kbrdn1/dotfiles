@@ -35,6 +35,9 @@ import { exec, hc, readTextFile, theme, spaces, panes, agents, terminals, run, l
 import { classify, loopDef, isCale, running, iteration, targets, launch, luau, PR_LOOPS, TASK, intents, tilde, trimSlash } from "./auto.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the note beside another
+// machine's thread (#65).
+import { machineNote } from "./machines.js";
 import { session, showSession, dedicated } from "./session.js";
 import { METHODS, NAME } from "./add.js";
 import { AddForm } from "./form.js";
@@ -619,6 +622,7 @@ export default class Automation extends View {
 
   header(t, live) {
     const d = this.d;
+    const away = spaces().find((x) => x.active)?.machine ?? null;
     const s = session(NAME);
     const count = { loops: d?.loops.length ?? null, herdr: d?.scripts.length ?? null };
     const seg = filterRow({ id: "kta-seg", t, state: this.filt, active: this.sec, reduced: Boolean(shared("kt.reducedMotion")),
@@ -645,6 +649,8 @@ export default class Automation extends View {
           div().w(4).flex_none(),
           sessionBtn] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi5, "4d")))
+      // The thread on screen is another machine's (#65): this page lists this Mac's loops and automations.
+      .when(Boolean(away), (el) => el.child(div().px(10).child(machineNote(t, away, tr("remote"), { id: "kta-remote" }))))
       .when(this.busy || Boolean(this.error), (el) => el.child(h_flex().px(10).gap(8).items_center()
         .when(this.busy, (e2) => e2.child(pulse(this.m, div().font_family(MONO).text_size(11).text_color(t.dim).child(tr("scanning")), true)))
         .when(Boolean(this.error), (e2) => e2.child(div().min_w(0).truncate().text_size(12).text_color(t.ansi1).child(tr("readError", { error: this.error }))))))
