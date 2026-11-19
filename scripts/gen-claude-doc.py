@@ -106,7 +106,10 @@ def collect_md(sub: str) -> list[tuple[str, str]]:
     for f in sorted(root.rglob("*.md")):
         rel = f.relative_to(root).with_suffix("")
         fm = frontmatter(f)
-        name = fm.get("name") or str(rel).replace(os.sep, ":")
+        path_name = str(rel).replace(os.sep, ":")
+        # Une commande s'invoque par son chemin (commands/me/merge.md -> /me:merge), quel que soit son
+        # `name:` ; un agent, lui, par le `name:` de son frontmatter.
+        name = path_name if sub == "commands" else (fm.get("name") or path_name)
         rows.append((name, summary(fm.get("description", ""))))
     return rows
 
