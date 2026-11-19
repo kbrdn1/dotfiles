@@ -366,8 +366,18 @@ export function build(entries, opts = {}) {
  * message whose lines span two turns (never seen): then build() itself, whole.
  */
 export function buildInc(entries, { live = false, cache = new Map() } = {}) {
-  const starts = [];
-  for (let i = 0; i < entries.length; i++) if (entries[i].k === "user" && entries[i].turn) starts.push(i);
+  // An opener written again opens nothing (merge() leaves the copy out): its turn, or the one it lands
+  // in, goes on, and the copy is left out there like any line written twice.
+  const starts = [], opened = new Set();
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (e.k !== "user" || !e.turn) continue;
+    if (e.uuid) {
+      if (opened.has(e.uuid)) continue;
+      opened.add(e.uuid);
+    }
+    starts.push(i);
+  }
   if (starts[0] !== 0 && entries.length) starts.unshift(0);
   const segs = starts.length;
   // One pass over every entry, in order: where each line first is, which turn each tool is in when a

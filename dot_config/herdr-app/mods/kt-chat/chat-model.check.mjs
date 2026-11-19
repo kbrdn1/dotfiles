@@ -375,6 +375,12 @@ const same = (entries, live, cache) => {
   assert.equal(again[1].blocks.filter((b) => b.role === "prose").length, 2, "a line written again in a later turn counts in the first one only");
   same([...base, said("b3", 8, "ma2", "le message de A, continué")], true, cache);
   same([res(0, "x1", "un résultat sans son outil"), ...base], false, new Map());
+  // A turn's opener written twice (cold review, pass 2, point 5): build() leaves the copy out and its
+  // turn goes on, in its own turn as in a later one; never a turn more under an id already there.
+  const twice = same([said("h", 0, "mh", "avant"), u("A", 1), said("a1", 2, "ma1", "un"), { ...u("A", 1), o: 3 }, said("a2", 4, "ma3", "deux")], true, new Map());
+  assert.deepEqual(twice.map((t) => t.id), ["head-0", "A"]);
+  const later = same([...base, { ...base[0], o: 9 }, said("b4", 10, "mb4", "encore B")], true, cache);
+  assert.deepEqual(later.map((t) => t.id), ["A", "B"]);
 }
 {
   // Random reads, ticks and trims on one cache.
