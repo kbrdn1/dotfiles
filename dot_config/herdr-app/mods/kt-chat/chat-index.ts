@@ -79,8 +79,8 @@ const tag = (text: string, name: string) => text.match(new RegExp(`<${name}>([\\
  * but continues the turn. Older lines without it: a user message that is not injected (isMeta),
  * not tool results, not an interruption, not a command's output.
  */
-export function startsTurn(o: any, text: string): boolean {
-  if (o.type !== "user" || o.isCompactSummary || o.isSidechain) return false;
+export function startsTurn(o: any, text: string, side = false): boolean {
+  if (o.type !== "user" || o.isCompactSummary || (o.isSidechain && !side)) return false;
   if (o.turnPosition) return true;
   if (o.isMeta) return false;
   const c = o.message?.content;
@@ -170,8 +170,10 @@ function result(part: any, tur: any, o: any, off: number, at: number | null): En
 }
 
 /** One JSONL line → 0..n entries (a user line can carry several tool results). */
-export function normalize(o: any, off: number, meta: Meta, home: string, exists: (p: string) => boolean = existsSync): Entry[] {
-  if (o.isSidechain) return [];
+export function normalize(o: any, off: number, meta: Meta, home: string, exists: (p: string) => boolean = existsSync, side = false): Entry[] {
+  // A sub-agent's lines are sidechain ones: left out of the session's transcript, read in a sub-agent's
+  // own file (#58, `side`).
+  if (o.isSidechain && !side) return [];
   const at = Date.parse(o.timestamp) || null;
   if (o.sessionId && !meta.session) meta.session = o.sessionId;
   if (o.cwd) meta.cwd = o.cwd;
@@ -226,7 +228,7 @@ export function normalize(o: any, off: number, meta: Meta, home: string, exists:
         const body = ["local-command-stdout", "local-command-stderr", "bash-stdout", "bash-stderr"].map((t) => tag(text, t)).filter(Boolean).join("\n");
         return out.concat({ k: "notice", o: off, uuid: o.uuid, at, kind: "command", text: cap(body.replace(ANSI, ""), 2000) });
       }
-      const turn = startsTurn(o, text);
+      const turn = startsTurn(o, text, side);
       if (!text.trim() && !images) return out;
       if (o.isMeta && !turn) return out;
       const e: Entry = { k: "user", o: off, uuid: o.uuid, at, turn, text: "" };
@@ -281,7 +283,7 @@ export function normalize(o: any, off: number, meta: Meta, home: string, exists:
   return [];
 }
 
-export type Options = { from?: number; size?: number; lastTurns?: number; budget?: number; maxEntries?: number; home?: string; path?: string; exists?: (p: string) => boolean; tail?: string };
+export type Options = { from?: number; size?: number; lastTurns?: number; budget?: number; maxEntries?: number; home?: string; path?: string; exists?: (p: string) => boolean; tail?: string; side?: boolean };
 
 // #59, a rewind: Claude Code keeps the abandoned branch in the file and writes the new prompt with
 // the parentUuid of the message it went back to. Every line of the conversation is a link of that
@@ -356,7 +358,7 @@ export function index(bytes: Uint8Array, opts: Options = {}) {
       bad++;
       continue;
     }
-    const got = normalize(o, off, meta, opts.home ?? "", opts.exists);
+    const got = normalize(o, off, meta, opts.home ?? "", opts.exists, Boolean(opts.side));
     for (const e of got) entries.push(e);
     if (o.uuid && !o.isSidechain) link(o.uuid, o.parentUuid ?? o.logicalParentUuid ?? null, off, got.some((e) => e.k === "user" && e.turn && e.uuid === o.uuid));
   }
@@ -415,6 +417,6 @@ if (import.meta.main) {
   const bytes = new Uint8Array(await file.slice(from, Math.max(from, to)).arrayBuffer());
   const t = args.indexOf("--tail");
   const tail = t >= 0 && args[t + 1] && !args[t + 1].startsWith("--") ? args[t + 1] : undefined;
-  const out = index(bytes, { from, size, lastTurns: num("--last-turns"), budget: num("--budget"), maxEntries: num("--max-entries"), home: process.env.HOME ?? "", path, tail });
+  const out = index(bytes, { from, size, lastTurns: num("--last-turns"), budget: num("--budget"), maxEntries: num("--max-entries"), home: process.env.HOME ?? "", path, tail, side: args.includes("--sidechain") });
   process.stdout.write(JSON.stringify(out));
 }

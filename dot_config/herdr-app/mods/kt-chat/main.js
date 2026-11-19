@@ -55,7 +55,7 @@ import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "
 // decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser.
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
-import { ingest, prepend, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue } from "./chat-model.js";
+import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals } from "./chat-model.js";
 import {
   pickTarget, tallyText, childOf, liveStep,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
@@ -293,6 +293,9 @@ export default class Chat extends View {
     this.going = new Set();
     this.lastLedge = {};
     this.subsKnown = new Map();
+    // #58: the sub-agents' own transcripts read so far (agent id -> { state, turns, done, busy, err,
+    // shown }), each read when its line unfolds, then live while it runs and stays open.
+    this.subRuns = new Map();
     this.memos = {};
     this.scroll = ScrollHandle.new();
     this.md = mdState();
@@ -562,12 +565,13 @@ export default class Chat extends View {
    * drawn as it is: enter() with its id marked shown. Its place is taken at once in the flow (the
    * scroll's height doesn't move, a followed bottom stays put): the rise is inside a box that clips, so
    * nothing goes over a neighbour. Once it has come in, it leaves `fresh` (a window change brings it back
-   * as it is). `el`: a div / h_flex / v_flex with no id of its own.
+   * as it is). `el`: a div / h_flex / v_flex with no id of its own. `fresh`: the set of what arrived
+   * (the turns' by default; a sub-agent's own, #58).
    */
-  landing(el, key, id) {
+  landing(el, key, id, fresh = this.fresh) {
     const wid = `kc-in-${id}`;
-    if (this.fresh.has(key) && this.m.shown.has(wid)) this.fresh.delete(key);
-    if (!this.fresh.has(key)) this.m.shown.add(wid);
+    if (fresh.has(key) && this.m.shown.has(wid)) fresh.delete(key);
+    if (!fresh.has(key)) this.m.shown.add(wid);
     // The rise is clipped below, never on the sides: the clipping box has ROOM px of room left and right
     // (a row drawn a little out to the left keeps its edge: a sub-agent's head, ml(-6); a copy button,
     // ml(-4)). It is stretched by a column flex, as those rows are: its negative margins widen it.
@@ -1847,22 +1851,30 @@ export default class Chat extends View {
 
   /**
    * A16: a fold's cost in rows: each phase's header and the steps it shows (the opened details among
-   * them, line by line, as detail() caps them), each prose block, each sub-agent's row and opened report.
+   * them, line by line, as detail() caps them), each prose block, each sub-agent's row and opened report
+   * (#58: or, its own transcript read, the items it shows of it).
    */
   foldCost(turn) {
     const f = turn.fold;
     let c = 0;
-    for (let n = f.start; n <= f.end; n++) {
-      const it = turn.items[n];
-      if (it.type === "activity") {
-        const shown = it.steps.slice(it.steps.length - Math.min(it.steps.length, this.shownSteps.get(it.id) ?? STEPS));
-        c += FOLD_HEAD + shown.length;
-        for (const b of shown) if (this.open.has(`s:${b.id}`)) c += this.detailRows(b);
-      } else if (it.type === "subagents") {
-        for (const b of it.runs) c += 1 + (this.open.has(`r:${b.id}`) ? Math.min(LINES, lines(b.result?.text).length) : 0);
-      } else if (it.type === "block") c += PROSE_ROWS;
-    }
+    for (let n = f.start; n <= f.end; n++) c += this.itemCost(turn.items[n]);
     return c;
+  }
+
+  /** A16: one item's rows, as foldCost() counts them. */
+  itemCost(it) {
+    if (it.type === "activity") {
+      const shown = it.steps.slice(it.steps.length - Math.min(it.steps.length, this.shownSteps.get(it.id) ?? STEPS));
+      return FOLD_HEAD + shown.length + shown.reduce((c, b) => c + (this.open.has(`s:${b.id}`) ? this.detailRows(b) : 0), 0);
+    }
+    if (it.type === "subagents") {
+      return it.runs.reduce((c, b) => {
+        if (!this.open.has(`r:${b.id}`)) return c + 1;
+        const own = this.ownOf(b);
+        return c + 1 + (own ? own.items.reduce((k, x) => k + this.itemCost(x), 0) : Math.min(LINES, lines(b.result?.text).length));
+      }, 0);
+    }
+    return it.type === "block" ? PROSE_ROWS : 0;
   }
 
   /** A16: the rows a step's opened detail draws (its text's lines, a command's, a diff's), as detail() caps them. */
@@ -2047,7 +2059,10 @@ export default class Chat extends View {
   // open: its mark in its color, its name at ink 0.75, model and state at 12 ink 0.4, a chevron.
   // `branch` (#90, in a fold's tree): { last, rest }, each row on its own branch, the last row's ending the
   // trunk when `last`; its head keeps its ml(-6) inside the branch's box.
-  subagents(t, item, branch = null) {
+  // #58: unfolded, its own transcript (subagents/agent-<id>.jsonl, read on demand, live while it runs):
+  // the last items of its last turn, under the rail; its report as before while that isn't read, or
+  // when it can't be.
+  subagents(t, item, branch = null, cx = null) {
     const n = item.runs.length;
     const onBranch = (el, k) => (branch ? hang(t, v_flex().min_w(0).child(el), { h: 28, last: branch.last && k === n - 1, rest: branch.rest }) : el);
     const row = (b) => {
@@ -2055,6 +2070,10 @@ export default class Chat extends View {
       const c = agentColor(t, a.color);
       const id = `r:${b.id}`;
       const open = this.open.has(id);
+      const run = a.id ? this.subRuns.get(a.id) : null;
+      if (open && a.id && !run && cx) this.readSub(cx, a.id);
+      if (run) run.shown = open;
+      const own = open ? this.ownOf(b) : null;
       const name = a.name || b.input?.name || b.input?.description || b.title || b.name;
       const sub = [b.input?.type ?? a.type, a.model, tr(`sub.${b.state ?? "running"}`)].filter(Boolean).join(" · ");
       const head = h_flex().id(`kc-sub-${b.id}`).ml(-6).px(6).py(4).gap(8).items_center().min_w(0).rounded(6).cursor_pointer()
@@ -2065,12 +2084,77 @@ export default class Chat extends View {
           .when(b.state === "running", (el) => el.loop("opacity", { from: 0.55, to: 1, period: 1600 })).child(name))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(ink(t, 0.4)).child(sub))
         .child(svg(I(open ? "chevron-down" : "chevron-right")).size(14).flex_none().text_color(ink(t, 0.35)));
-      return open && b.result?.text
+      const body = own ? this.subBody(t, cx, own, run) : open && b.result?.text ? this.mono(t, b.result.text) : null;
+      return body
         ? v_flex().min_w(0).child(head).child(div().relative().pl(20).pb(8)
-          .child(div().absolute().left(6).top(0).bottom(8).w(1).bg(ink(t, 0.14))).child(this.mono(t, b.result.text)))
+          .child(div().absolute().left(6).top(0).bottom(8).w(1).bg(ink(t, 0.14))).child(body))
         : head;
     };
     return v_flex().min_w(0).children(item.runs.map((b, k) => onBranch(row(b), k)));
+  }
+
+  /** #58: what a sub-agent's line shows of its own transcript once read (chat-model.js subItems), else null. */
+  ownOf(b) {
+    const id = b.result?.agent?.id;
+    const run = id ? this.subRuns.get(id) : null;
+    return run?.turns ? subItems(run.turns, 8, id) : null;
+  }
+
+  /**
+   * #58: a sub-agent's last items, as the transcript draws them, with how many came before. Those its
+   * read brought (run.fresh, subArrivals()) come in once as a live turn's do (landing(): fade, 6 px rise
+   * in a box that clips, no height moving); drawn again later, as they are.
+   */
+  subBody(t, cx, own, run) {
+    const fresh = (run.fresh ??= new Set());
+    return v_flex().min_w(0)
+      .when(own.more > 0, (el) => el.child(div().py(2).text_size(12).text_color(ink(t, 0.45)).child(tr("sub.earlier", { n: own.more }))))
+      .children(own.items.map((it) => {
+        const el = this.item(t, cx, it, { live: own.turn.live, top: 8 });
+        return el && this.landing(div().w_full().min_w(0).child(el), it.id, it.id, fresh);
+      }).filter(Boolean));
+  }
+
+  /**
+   * #58: a sub-agent's own transcript (chat-model.js subPath: beside its session's), read when its line
+   * unfolds: its last 2 turns within a small budget (its own lead's brief opens its turn). Again, from
+   * where it stopped, every BRIDGE ms while it runs and its line stays open (watchBridge()), until its
+   * .meta.json says finished. Missing or unreadable: its line keeps its report. A redraw only when
+   * something came.
+   */
+  readSub(cx, id, delta = false) {
+    const p = subPath(this.state?.path, id);
+    const was = this.subRuns.get(id);
+    if (!p || was?.busy || (delta && (!was?.state || was.done))) return;
+    this.subRuns.set(id, { ...(was ?? {}), busy: true });
+    cx.spawn(async (cx) => {
+      const r = this.subRuns.get(id) ?? {};
+      let next = { ...r, busy: false };
+      try {
+        const args = [`${appHome()}/mods/kt-chat/chat-index.ts`, p.file, "--sidechain", "--last-turns", "2", "--budget", "200000", "--max-entries", "400"];
+        if (delta) args.push("--from", String(r.state.end));
+        const res = await exec(`${home()}/.nix-profile/bin/bun`, args, { timeout: 20000 });
+        const out = res.code === 0 ? JSON.parse(res.stdout) : null;
+        let done = Boolean(r.done);
+        try {
+          done = Boolean(JSON.parse((await readTextFile(p.meta)) ?? "{}").finished);
+        } catch {
+          // no meta yet: as before
+        }
+        if (!out || out.error) next.err = true;
+        else {
+          const state = delta ? ingest(r.state, out) : ingest(null, out);
+          const grew = !r.state || state.entries.length !== r.state.entries.length || done !== r.done;
+          const turns = grew || !r.turns ? build(state.entries, { live: !done }) : r.turns;
+          next = { state, turns, fresh: subArrivals(r.turns, turns, id, r.fresh), busy: false, done, shown: r.shown, grew };
+        }
+      } catch {
+        next.err = true;
+      }
+      if (this.subRuns.get(id) !== r) return; // another agent meanwhile (cleared)
+      this.subRuns.set(id, next);
+      if (!delta || next.grew || next.err) cx.notify();
+    });
   }
 
   // tools.rs:84-136: a milestone (compaction, interruption, a background task): an icon of 14 at ink
@@ -2285,7 +2369,7 @@ export default class Chat extends View {
 
   item(t, cx, it, ctx) {
     if (it.type === "activity") return this.activity(t, it, ctx.live);
-    if (it.type === "subagents") return this.subagents(t, it, ctx.branch);
+    if (it.type === "subagents") return this.subagents(t, it, ctx.branch, cx);
     const b = it.block;
     if (b.role === "prose") return this.prose(t, cx, b, ctx.top);
     if (b.role === "notice") return this.notice(t, b);
@@ -2886,6 +2970,9 @@ export default class Chat extends View {
       this.bridgeTicker = cx.timer.every(BRIDGE, (cx) => {
         this.watchBridge(cx);
         if (this.bridgeTicker) this.readBridge(cx, target().agent?.address);
+        // #58: a sub-agent's transcript open under its line, while it runs: what it wrote since.
+        // Not read yet (its file not there yet, a failed read): read whole again.
+        if (this.bridgeTicker) for (const [id, r] of this.subRuns) if (r.shown && !r.done) this.readSub(cx, id, Boolean(r.state));
       });
     } else if (!on && this.bridgeTicker) {
       this.bridgeTicker.cancel();
@@ -3143,6 +3230,7 @@ export default class Chat extends View {
       this.fresh.clear(); // another agent's turns land as they are (#92)
       this.liveItems = null;
       this.foldAt = null;
+      this.subRuns.clear(); // its sub-agents are another session's (#58)
       this.load(cx);
     }
     this.live(cx, tg, want);

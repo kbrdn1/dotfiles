@@ -90,7 +90,7 @@ function chat({ reduced = false } = {}) {
   Object.assign(c, {
     turns: [], win: { from: 0, to: 0 }, hts: new Map(), marks: [], builtLive: false, follow: false, cur: -1, queued: [],
     open: new Set(), shownSteps: new Map(), hover: null, copied: null, md: mdState(), att: new Map(), attQ: [],
-    fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(), drafts: [],
+    fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(), subRuns: new Map(), drafts: [],
     motion: motionState(), bgMenu: false, bgNote: null, bgBusy: new Set(), line: null, state: ingest(null, read),
   });
   c.rebuild(false);
@@ -402,6 +402,77 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
     const below = nodes.filter((n) => callsOf(n, "border_l").length && callsOf(n, "bottom").length && !callsOf(n, "rounded_bl").length && callsOf(n, "top").some(([v]) => v === 10));
     assert.equal(below.length, 2, "the trunk goes on under the first two, ends at the last (the fold's last item)");
   }
+}
+
+// ── #58: a sub-agent's line unfolded shows its own transcript once read, its report until then ──
+{
+  const { build } = await import("./chat-model.js");
+  const c = chat();
+  c.state = { ...c.state, path: "/p/s.jsonl" };
+  const sc = (o) => JSON.stringify({ isSidechain: true, agentId: "a1", sessionId: "s-sc", timestamp: "2026-01-03T10:00:00.000Z", ...o });
+  const side = new TextEncoder().encode([
+    sc({ type: "user", uuid: "sc-u1", parentUuid: null, message: { role: "user", content: "Lis le module." } }),
+    sc({ type: "assistant", uuid: "sc-m1", parentUuid: "sc-u1", message: { id: "m-sc1", role: "assistant", model: "model-x", content: [{ type: "tool_use", id: "sc-t1", name: "Read", input: { file_path: "/w/a.js" } }] } }),
+    sc({ type: "user", uuid: "sc-r1", parentUuid: "sc-m1", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "sc-t1", content: "export const a = 1" }] } }),
+    sc({ type: "assistant", uuid: "sc-m2", parentUuid: "sc-r1", message: { id: "m-sc2", role: "assistant", model: "model-x", content: [{ type: "text", text: "Il exporte a." }] } }),
+  ].join("\n") + "\n");
+  const own = build(index(side, { from: 0, size: side.length, side: true, exists: () => false }).entries);
+  const b = { role: "tool", id: "tu-9", name: "Agent", kind: "agent", state: "ok", input: { description: "lecteur" }, result: { agent: { id: "a1", name: "lecteur" }, text: "RAPPORT" } };
+  const turn = { id: "ts", user: null, blocks: [], live: false, fold: { start: 0, end: 0 },
+    items: [{ type: "subagents", id: "ss", runs: [b] }, { type: "block", id: "ans2", block: { role: "prose", id: "ans2", text: "fin" } }] };
+  c.turns = [turn];
+  c.win = { from: 0, to: 1 };
+  c.open.add("f:ts");
+  c.open.add("r:tu-9");
+  const drawn = () => { const x = cx(); x.spawned = 0; x.spawn = () => { x.spawned++; }; return { x, nodes: flat(c.turn(T, x, turn, 0, false)) }; };
+  const ids = (nodes) => nodes.flatMap((n) => callsOf(n, "id").map(([v]) => v));
+  // Unfolded, not read yet: its report, and one read of its transcript asked.
+  let r = drawn();
+  assert.equal(r.x.spawned, 1, "unfolded: its transcript read once (readSub)");
+  assert.ok(c.subRuns.get("a1")?.busy, "and marked busy: no second read meanwhile");
+  assert.ok(!ids(r.nodes).includes("kc-st-sc-t1"), "until it is read: the report, as before");
+  assert.equal(c.itemCost(turn.items[0]), 2, "its cost: its row and its report's one line");
+  // Read: its own last items under the rail (its Read step), no new read.
+  c.subRuns.set("a1", { turns: own, done: true });
+  r = drawn();
+  assert.equal(r.x.spawned, 0, "read: nothing asked again");
+  assert.ok(ids(r.nodes).includes("kc-st-sc-t1"), "its own work drawn, step by step");
+  assert.ok(c.ownOf(b).items.every((it) => it.id.startsWith("sub:a1:")), "its items' ids are its own: none can be one of the session's");
+  assert.equal(c.subRuns.get("a1").shown, true, "open: followed while it runs (watchBridge)");
+  assert.equal(c.itemCost(turn.items[0]), 1 + 3 + 5, "its cost: its row, then what it shows (a phase of one step, a prose block): the budget sees it");
+  // Read without arrivals (drawn before): as it is, no motion.
+  const landOf = (nodes, it) => nodes.find((n) => callsOf(n, "id").some(([v]) => v === `kc-in-${it.id}`));
+  let items = c.ownOf(b).items;
+  assert.deepEqual(items.map((it) => [callsOf(landOf(r.nodes, it), "top").at(-1), callsOf(landOf(r.nodes, it), "opacity").at(-1)]), items.map(() => [[0], [1]]), "nothing arrived: in place, at once");
+  // What its read brought (subArrivals): each comes in once, fading and rising 6 px inside a box that
+  // clips, as a live turn's items do; no height moves.
+  const { subArrivals } = await import("./chat-model.js");
+  c.subRuns.set("a1", { turns: own, done: false, fresh: subArrivals(null, own, "a1") });
+  c.motion = motionState(); // never drawn yet, as a read's new items are
+  c.m = frame(c.motion, false);
+  r = drawn();
+  items = c.ownOf(b).items;
+  for (const it of items) {
+    const land = landOf(r.nodes, it);
+    assert.deepEqual([callsOf(land, "top").at(-1), callsOf(land, "opacity").at(-1)], [[6], [0]], `${it.type}: in from 6 px low, faded`);
+    const box = r.nodes.find((n) => n.kids.some((kid) => kid.__node === land));
+    assert.ok(callsOf(box, "overflow_hidden").length, "inside a box that clips");
+  }
+  assert.ok(!transitions(r.nodes).includes("height"), "no height moves");
+  // Its first layout (the cue), then drawn again: in place, and no longer waiting.
+  for (const it of items) c.m.shown.add(`kc-in-${it.id}`);
+  r = drawn();
+  assert.deepEqual(items.map((it) => callsOf(landOf(r.nodes, it), "opacity").at(-1)), items.map(() => [1]), "then at its place");
+  assert.equal(c.subRuns.get("a1").fresh.size, 0, "once: folded and unfolded later, it lands as it is");
+  // Reduced motion: no transition.
+  c.subRuns.set("a1", { turns: own, done: false, fresh: subArrivals(null, own, "a1") });
+  c.m = frame(c.motion, true);
+  assert.deepEqual(transitions(drawn().nodes), [], "reduced motion: none");
+  c.m = frame(c.motion, false);
+  // Folded again: not followed any more.
+  c.open.delete("r:tu-9");
+  drawn();
+  assert.equal(c.subRuns.get("a1").shown, false);
 }
 
 // ── Cold review, point 5: back on an agent, no ledge of its own fades from before its data is read ──

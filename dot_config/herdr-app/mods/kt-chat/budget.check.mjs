@@ -82,7 +82,7 @@ function chat(entries, { live = false } = {}) {
   Object.assign(c, {
     turns: [], win: { from: 0, to: 0 }, hts: new Map(), marks: [], builtLive: false, follow: false, cur: -1, queued: [],
     open: new Set(), shownSteps: new Map(), hover: null, copied: null, md: mdState(), att: new Map(), attQ: [],
-    fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(), drafts: [], assetsOf: new Map(),
+    fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(), subRuns: new Map(), drafts: [], assetsOf: new Map(),
     motion: motionState(), bgMenu: false, bgNote: null, bgBusy: new Set(), line: null,
     state: ingest(null, { path: "/f", session: "s", start: 0, end: 1e6, size: 1e6, more: false, entries, meta: {} }),
   });

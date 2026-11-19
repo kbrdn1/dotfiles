@@ -523,6 +523,41 @@ export function arrivals(was, turns, live, seen) {
   return { fresh, seen: live && last ? { turn: last.id, ids: new Set(last.items.map((it) => it.id)) } : null };
 }
 
+/**
+ * A sub-agent's own transcript (#58), beside its session's: `<session>/subagents/agent-<id>.jsonl`, its
+ * `.meta.json` next to it (what Claude Code writes). null for an id that isn't a plain name (no path
+ * goes out of that folder) or a session that isn't a .jsonl.
+ */
+export function subPath(session, id) {
+  if (!session || !/\.jsonl$/.test(session) || !/^[A-Za-z0-9_-]{1,128}$/.test(String(id ?? ""))) return null;
+  const file = `${session.replace(/\.jsonl$/, "")}/subagents/agent-${id}.jsonl`;
+  return { file, meta: file.replace(/\.jsonl$/, ".meta.json") };
+}
+
+/**
+ * What a sub-agent's line shows unfolded (#58): the items of its last turn (its work, its words), the
+ * last `max` of them; null when its transcript gave none (the line keeps its report, as before). Their
+ * ids and their blocks' are made its own (`sub:<agent>:`): built from another file, an id made of an
+ * offset (a notice's, a note's) could be one of the session's too. Steps keep theirs (tool ids, uuids).
+ */
+export function subItems(turns, max = 8, agent = "") {
+  const last = turns?.[turns.length - 1];
+  const list = last?.items ?? [];
+  const own = (x) => `sub:${agent}:${x}`;
+  const items = list.slice(-max).map((it) => ({ ...it, id: own(it.id), ...(it.block ? { block: { ...it.block, id: own(it.block.id) } } : {}) }));
+  return list.length ? { turn: last, items, more: Math.max(0, list.length - max) } : null;
+}
+
+/**
+ * #58: the items a sub-agent's read brought (subItems' ids), to fade in once: the first read's all (they
+ * take the report's place), then each delta's new ones; those still waiting to be drawn stay.
+ */
+export function subArrivals(was, turns, agent, waiting = new Set()) {
+  const ids = (t) => (t ? subItems(t, 8, agent)?.items.map((it) => it.id) ?? [] : []);
+  const before = new Set(ids(was));
+  return new Set(ids(turns).filter((x) => waiting.has(x) || !before.has(x)));
+}
+
 /** Every step inside a fold (sub-agents keep their own rows, outside the count). */
 export function foldedSteps(list, f) {
   return list.slice(f.start, f.end + 1).flatMap((it) => (it.type === "activity" ? it.steps : it.type === "block" ? [it.block] : []));

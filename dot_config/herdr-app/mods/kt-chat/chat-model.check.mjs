@@ -3,7 +3,7 @@
 // turns, items, fold, tally, queue, ingest) on chat-fixture.jsonl, an invented session.
 import assert from "node:assert/strict";
 import { index, startsTurn, strip, normalize } from "./chat-index.ts";
-import { arrivals, build, buildInc, classify, fold, foldTree, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
+import { arrivals, build, buildInc, classify, fold, foldTree, foldedSteps, ingest, items, merge, pendingQueue, prepend, subArrivals, subItems, subPath, tally, toolKind, toolTitle, trim } from "./chat-model.js";
 
 const all = new Uint8Array(await Bun.file(new URL("./chat-fixture.jsonl", import.meta.url)).arrayBuffer());
 const run = (from = 0, to = all.length, opts = {}) => index(all.subarray(from, to), { from, size: all.length, path: "/f.jsonl", home: "/w", ...opts });
@@ -449,6 +449,46 @@ const same = (entries, live, cache) => {
   // ingest keeps the chain's last link for the next delta.
   assert.equal(ingest(null, rw).tail, "r-m3");
   assert.equal(ingest(ingest(null, { ...rw, tail: "r-s1" }), { ...goingOn, path: "/rw.jsonl", session: "s-rw", start: rw.end, end: rw.end + 1, entries: [] }).tail, goingOn.tail);
+}
+
+// ── #58, a sub-agent's own transcript ───────────────────────────────────────
+{
+  assert.deepEqual(subPath("/h/.claude/projects/-w/s-1.jsonl", "a0749"), { file: "/h/.claude/projects/-w/s-1/subagents/agent-a0749.jsonl", meta: "/h/.claude/projects/-w/s-1/subagents/agent-a0749.meta.json" });
+  assert.equal(subPath("/p/s.jsonl", "aexample-0000").file, "/p/s/subagents/agent-aexample-0000.jsonl", "a teammate's id, with its name");
+  for (const bad of ["../x", "a/b", "", null, "a b", "x".repeat(200)]) assert.equal(subPath("/p/s.jsonl", bad), null, `an id that isn't a plain name: ${bad}`);
+  assert.equal(subPath("/p/s.txt", "a1"), null, "a session that isn't a .jsonl");
+  // Its lines are sidechain ones: left out of the session, read with `side`.
+  const sc = (o) => JSON.stringify({ isSidechain: true, agentId: "a1", sessionId: "s-sc", timestamp: "2026-01-03T10:00:00.000Z", ...o });
+  const lines = [
+    sc({ type: "user", uuid: "sc-u1", parentUuid: null, message: { role: "user", content: "Lis le module et dis ce qu'il exporte." } }),
+    sc({ type: "assistant", uuid: "sc-m1", parentUuid: "sc-u1", message: { id: "m-sc1", role: "assistant", model: "model-x", content: [{ type: "tool_use", id: "sc-t1", name: "Read", input: { file_path: "/w/a.js" } }] } }),
+    sc({ type: "user", uuid: "sc-r1", parentUuid: "sc-m1", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "sc-t1", content: "export const a = 1" }] } }),
+    sc({ type: "assistant", uuid: "sc-m2", parentUuid: "sc-r1", message: { id: "m-sc2", role: "assistant", model: "model-x", content: [{ type: "text", text: "Il exporte `a`." }] } }),
+  ];
+  const bytes = new TextEncoder().encode(lines.join("\n") + "\n");
+  assert.equal(index(bytes, { from: 0, size: bytes.length, exists: () => false }).entries.length, 0, "in the session's read: none of them");
+  const out = index(bytes, { from: 0, size: bytes.length, side: true, exists: () => false });
+  const turns = build(out.entries);
+  assert.equal(turns.length, 1, "the lead's brief opens its turn");
+  const shown = subItems(turns);
+  assert.deepEqual(shown.items.map((it) => it.type), ["activity", "block"], "its work, then its words");
+  assert.equal(shown.items[1].block.text, "Il exporte `a`.");
+  // Its ids made its own: an offset's id (a notice) from its file could be the session's.
+  const scoped = subItems([{ items: [{ type: "block", id: "n120", block: { role: "notice", id: "n120" } }, shown.items[0]] }], 8, "a1");
+  assert.deepEqual(scoped.items.map((it) => [it.id, it.block?.id ?? null]), [["sub:a1:n120", "sub:a1:n120"], [`sub:a1:${shown.items[0].id}`, null]], "items and blocks prefixed");
+  assert.deepEqual(scoped.items[1].steps.map((b) => b.id), ["sc-t1"], "its steps keep theirs (tool ids)");
+  // What a read brought, to fade in once: the first read's all, then a delta's new ones only.
+  const first = build(out.entries.slice(0, 3));
+  const ids = (s) => [...s].sort();
+  assert.deepEqual(ids(subArrivals(null, first, "a1")), ids(subItems(first, 8, "a1").items.map((it) => it.id)), "first read: all of it (it takes the report's place)");
+  const more = subArrivals(first, turns, "a1");
+  assert.deepEqual(ids(more), [shown.items[1].id.replace("sub::", "sub:a1:")], "a delta: its new item only, not the step already there");
+  assert.deepEqual(ids(subArrivals(turns, turns, "a1", more)), ids(more), "not drawn yet: still waiting");
+  assert.equal(subArrivals(turns, turns, "a1").size, 0, "nothing new: nothing comes in");
+  assert.equal(subItems([]), null, "no transcript: the line keeps its report");
+  assert.equal(subItems(build(out.entries.slice(0, 1))), null, "only the brief read so far: nothing to show yet");
+  const many = { items: Array.from({ length: 12 }, (_, i) => ({ type: "block", id: `b${i}` })) };
+  assert.deepEqual([subItems([many], 8).items.length, subItems([many], 8).more], [8, 4], "bounded: the last 8, and how many more");
 }
 
 console.log("chat-model ok");
