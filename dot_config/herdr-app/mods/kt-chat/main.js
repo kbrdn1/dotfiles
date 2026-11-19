@@ -21,7 +21,13 @@
 // cache swept to its own names; a click opens kt-viewer on the message's attachments.
 //
 // Keys (focusable): j k turns, gg G, ctrl-d ctrl-u, o / enter fold, y copy the turn's answer, r
-// reread, i write. `kt-chat.file:<path>` shows that JSONL instead (tests), `file:` back.
+// reread, i write, [ ] Kylian's message before / after (the timeline, #85). `kt-chat.file:<path>`
+// shows that JSONL instead (tests), `file:` back; `kt-chat.tl:hover:<n>` / `tl:jump:<n>` / `tl:off`
+// hover or jump to the timeline's n-th message (captures: never the focus).
+//
+// The timeline (#85, timeline.js): Monocode's prompt outline, a bar per message Kylian typed on the
+// right edge of the transcript, the one on screen lit, a card on hover, a click or [ ] to it. No
+// scroll offset is exposed: the rows report their heights, a wheel event the pointer's place.
 //
 // Live (#55, live()): while this face shows and the agent works, a delta (`--from end`) every TICK
 // ms, plus one at each status change and on coming back on screen; nothing at rest.
@@ -46,6 +52,7 @@ import { attachmentsOf, photoSize } from "./att-model.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
 import { motionState, frame, enter } from "./motion.js";
+import { TL, marks as markList, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, anchorH, stepMark, ownerOf } from "./timeline.js";
 import { skeleton, readyFor } from "./skeleton.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { makeT, duration, time, num } from "./i18n.js";
@@ -143,6 +150,20 @@ export default class Chat extends View {
     this.show = SHOW; // turns drawn (the last ones)
     this.follow = true; // stuck to the bottom until the reader scrolls up
     this.reveal = null; // a child to bring into view after the next layout
+    // The timeline (#85): Kylian's messages (timeline.js marks, made in rebuild), the scroll area's
+    // rows' heights (col() id -> design px) and its own, the message lit (its id; the last while
+    // following) and whether its turn starts above the view, the bar hovered and its card, a jump
+    // waiting for its rows' heights (a turn id), and the half of a wheel event already in (wheel()).
+    this.marks = [];
+    this.hts = new Map();
+    this.vh = 0;
+    this.tlId = null;
+    this.tlAbove = false;
+    this.tlHover = -1;
+    this.tlOpen = false;
+    this.tlOpening = false;
+    this.jump = null;
+    this.wheelAt = null;
     this.width = 640;
     this.size = null; // { w, h } of this card, in design px (the background's)
     this.hover = null; // the row under the pointer, for what Monocode shows on hover
@@ -207,6 +228,7 @@ export default class Chat extends View {
           this.loadedFor = undefined;
         } else if (name === "refresh") this.load(cx);
         else if (name === "background") this.bgMenu = !this.bgMenu;
+        else if (name === "tl") this.tlCommand(arg);
         cx.notify();
       }
     });
@@ -347,6 +369,10 @@ export default class Chat extends View {
       turn.tally = turn.fold ? tally(foldedSteps(turn.items, turn.fold)) : null;
       for (const it of turn.items) if (it.type === "activity") it.tally = tally(it.steps);
     }
+    // The timeline's messages, here rather than in render; the heights of turns gone (trim) go too.
+    this.marks = markList(this.turns);
+    const rows = new Set(this.turns.map((t) => `kc-turn-${t.id}`));
+    for (const k of this.hts.keys()) if (k.startsWith("kc-turn-") && !rows.has(k)) this.hts.delete(k);
   }
 
   /** The first turn drawn: the last `this.show` of them. */
@@ -417,6 +443,10 @@ export default class Chat extends View {
       this.follow = to === n - 1;
       if (to < this.first()) this.show = n - to; // the cursor draws the turns it reaches
       this.reveal = childOf(to, this.first());
+      this.jump = null; // a jump still waiting for its rows: this move wins
+      // No wheel measures this scroll: the timeline lights the cursor's message.
+      this.tlId = this.marks[ownerOf(this.marks, to)]?.id ?? null;
+      this.tlAbove = false;
     };
     switch (a) {
       case "down":
@@ -427,6 +457,15 @@ export default class Chat extends View {
       case "half-up":
         if (n) move(step(a, at, n, this.vim.count, 10));
         return true;
+      // [ ] (vim.js's panel-prev / panel-next: the Chat isn't in the panel): Kylian's message before /
+      // after the one on screen, a count too; back to the top of the one on screen first when it
+      // starts above the view (vim's `{`).
+      case "panel-prev":
+      case "panel-next": {
+        const to = stepMark(this.marks.length, this.tlIndex(), this.tlAbove, a === "panel-next" ? 1 : -1, this.vim.count);
+        if (to >= 0) this.jumpTo(to);
+        return true;
+      }
       case "open": {
         const turn = this.turns[at];
         if (turn?.fold) this.toggle(`f:${turn.id}`);
@@ -697,6 +736,163 @@ export default class Chat extends View {
     return [btn, panel];
   }
 
+  // ---------- the timeline (#85, timeline.js) ----------
+
+  zoom() {
+    return Number(settings().zoom) || 1;
+  }
+
+  /** The message lit: the last while following the bottom, else the one measured or jumped to. */
+  tlIndex() {
+    const n = this.marks.length;
+    if (!n) return -1;
+    if (this.follow) return n - 1;
+    const k = this.marks.findIndex((m) => m.id === this.tlId);
+    return k < 0 ? n - 1 : k;
+  }
+
+  /**
+   * To the k-th message: its turn drawn (as the cursor does), the cursor on it, then its top at the
+   * view's top once its rows are measured (body(): the anchor). A note goes to its turn's top.
+   */
+  jumpTo(k) {
+    const m = this.marks[k];
+    if (!m) return;
+    this.cur = m.i;
+    this.follow = false;
+    if (m.i < this.first()) this.show = this.turns.length - m.i;
+    this.jump = m.turn;
+    this.reveal = null;
+    this.tlId = m.id;
+    this.tlAbove = false;
+  }
+
+  /** `tl:hover:<n>` (its card open, no delay), `tl:jump:<n>`, `tl:off`: the captures' pointer. */
+  tlCommand(arg) {
+    const [what, at] = String(arg).split(":");
+    const k = Number(at);
+    if (what === "off") {
+      this.tlHover = -1;
+      this.tlOpen = false;
+    } else if (Number.isInteger(k) && k >= 0 && k < this.marks.length) {
+      if (what === "hover") {
+        this.tlHover = k;
+        this.tlOpen = true;
+      } else if (what === "jump") this.jumpTo(k);
+    }
+  }
+
+  // The pointer on a bar: the ripple follows at once, the card waits out a pass-through (OPEN, one
+  // timer per entry on the rail).
+  hoverMark(cx, k) {
+    if (this.tlHover === k) return;
+    this.tlHover = k;
+    cx.notify();
+    if (this.tlOpen || this.tlOpening) return;
+    this.tlOpening = true;
+    cx.timer.after(TL.OPEN, (cx) => {
+      this.tlOpening = false;
+      if (this.tlHover >= 0 && !this.tlOpen) {
+        this.tlOpen = true;
+        cx.notify();
+      }
+    });
+  }
+
+  closeCard(cx) {
+    if (this.tlHover < 0 && !this.tlOpen) return;
+    this.tlHover = -1;
+    this.tlOpen = false;
+    cx.notify();
+  }
+
+  /** A row's height (design px). A redraw only when a jump waits for it. */
+  measured(id, size, cx) {
+    const h = size.height / this.zoom();
+    if (Math.abs((this.hts.get(id) ?? -9) - h) < 0.5) return;
+    this.hts.set(id, h);
+    if (this.jump != null) cx.notify();
+  }
+
+  /** The scroll area's rows, top to bottom (as body() draws them): { tops: turn id -> top, at: row id -> top, end, known }. */
+  geom() {
+    const turns = this.turns.slice(this.first());
+    const ids = ["kc-head", ...turns.map((t) => `kc-turn-${t.id}`), ...(this.builtLive ? ["kc-working"] : [])];
+    // The end mark: 1 px, never measured.
+    const o = offsets([...ids.map((id) => this.hts.get(id)), 1], TOP_INSET);
+    const at = new Map(ids.map((id, k) => [id, o.tops[k]]));
+    return { at, tops: new Map(turns.map((t) => [t.id, at.get(`kc-turn-${t.id}`)])), end: o.end, known: o.known };
+  }
+
+  /**
+   * One wheel event reaches the row under the pointer (`row`: its id) and the scroll area (`row`
+   * null), in either order (timeline.js pairWheel): once both halves are in, the offset it leaves, then
+   * the message on screen; a redraw only when that changes.
+   */
+  wheel(cx, row, ev) {
+    if (!ev.local_position) return;
+    const { keep, pair: w } = pairWheel(this.wheelAt, { row, px: ev.position.x, py: ev.position.y, y: ev.local_position.y, dy: ev.delta.y });
+    this.wheelAt = keep;
+    if (!w || !this.marks.length || this.vh <= 0) return;
+    const g = this.geom();
+    if (!g.known || !g.at.has(w.id)) return;
+    const z = this.zoom();
+    // The area's padding (TOP_INSET above, 8 under) is part of what scrolls.
+    const scrollTop = wheelTop({ top: g.at.get(w.id), inRow: w.inRow / z, inView: w.inView / z, dy: w.dy / z, max: g.end + 8 - this.vh });
+    const cur = this.follow ? -1 : this.marks.findIndex((m) => m.id === this.tlId);
+    const r = activeAt({ marks: this.marks, tops: g.tops, first: this.first(), scrollTop, vh: this.vh, end: g.end + 8, follow: this.follow, cur });
+    const id = this.marks[r.k]?.id ?? null;
+    if (id !== this.tlId || r.above !== this.tlAbove) {
+      this.tlId = id;
+      this.tlAbove = r.above;
+      cx.notify();
+    }
+  }
+
+  /**
+   * outline.rs:165-333: the rail, 16 px from the right edge, centred; a bar per message (2 high, 11
+   * wide, 24 lifted under the pointer and its neighbours less, ink 0.15, 0.85 lit), in a stack that
+   * fits min(330, 75 % of the view); the card at its left (288, padding 12, radius 12, 14/19.25, two
+   * lines). Hidden under 928 px or two messages.
+   */
+  rail(t) {
+    const list = this.marks, n = list.length;
+    if (n < TL.MIN || this.width < TL.MIN_W || this.vh <= 0) return null;
+    const active = this.tlIndex();
+    const { start, end, gap } = barStack(n, active, Math.min(TL.STACK_MAX, Math.floor(this.vh * TL.SHARE)));
+    const hov = this.tlHover >= start && this.tlHover < end ? this.tlHover : -1;
+    const row = TL.BAR_H + gap;
+    const bars = [];
+    for (let k = start; k < end; k++) {
+      const m = list[k];
+      const lit = hov >= 0 ? k === hov : k === active;
+      // The wave reaches the outer bars a beat after the hovered one; back at rest, all at once.
+      const p = { duration: TL.MS, delay: hov >= 0 ? Math.min(Math.abs(k - hov), TL.RIPPLE) * TL.STEP : 0, easing: "ease-out" };
+      let bar = div().id(`kc-tlb-${m.id}`).h(TL.BAR_H).w(TL.BAR_W + (TL.BAR_LIFT - TL.BAR_W) * barLift(k, hov)).rounded_full()
+        .bg(ink(t, 1)).opacity(lit ? TL.LIT : TL.IDLE);
+      if (!this.m.reduced) bar = bar.transition("width", p).transition("opacity", p);
+      bars.push(h_flex().id(`kc-tl-${m.id}`).w_full().h(row).flex_none().items_center().justify_end().cursor_pointer()
+        .on_hover((h, cx) => { if (h) this.hoverMark(cx, k); })
+        .on_click((_e, cx) => { this.jumpTo(k); cx.notify(); })
+        .child(bar));
+    }
+    let card = null;
+    if (this.tlOpen && hov >= 0) {
+      const m = list[hov];
+      const text = clampText(m.text || (m.images ? tr("images", { n: m.images }) : tr("tl.empty")), { lines: 2, cols: TL.CARD_COLS }).text;
+      // Centred on its bar, whatever its height (one line or two): a band around it that centres it.
+      const mid = (hov - start) * row + row / 2;
+      card = h_flex().absolute().right(TL.BAR_LIFT + TL.CARD_GAP).top(mid - 60).h(120).items_center()
+        .child(enter(this.m, div().w(TL.CARD_W).p(TL.CARD_PAD).rounded(12).border(1).border_color(ink(t, 0.1)).bg(t.popover).shadow_lg()
+          .child(div().max_h(TL.CARD_LINE * 2).overflow_hidden().text_size(14).line_height(`${TL.CARD_LINE}px`).text_color(ink(t, 1)).child(text)), "kc-tl-card", { dy: 0 }));
+    }
+    return h_flex().absolute().top(0).bottom(0).right(TL.RIGHT).items_center()
+      .child(v_flex().id("kc-tl").relative().w(TL.BAR_LIFT).items_end()
+        .on_hover((h, cx) => { if (!h) this.closeCard(cx); })
+        .children(bars)
+        .when(Boolean(card), (el) => el.child(card)));
+  }
+
   // ---------- pieces (Monocode's values) ----------
 
   toggle(id) {
@@ -704,9 +900,14 @@ export default class Chat extends View {
     else this.open.add(id);
   }
 
-  /** Wraps a row of the scroll area in the reading column: centred, COLUMN wide at most. */
+  /**
+   * Wraps a row of the scroll area in the reading column: centred, COLUMN wide at most. The timeline
+   * (#85) learns its height, and the pointer's place in it under a wheel event (wheel()).
+   */
   col(el, id) {
     return h_flex().id(id).w_full().flex_none().justify_center()
+      .on_size_change((size, cx) => this.measured(id, size, cx))
+      .on_scroll_wheel((ev, cx) => this.wheel(cx, id, ev))
       .child(v_flex().w_full().max_w(COLUMN).px(COLUMN_PAD).min_w(0).child(el));
   }
 
@@ -1334,20 +1535,44 @@ export default class Chat extends View {
     if (this.builtLive) children.push(this.working(t));
     // The 1 px end mark: revealing it shows the bottom of a last turn taller than the view.
     children.push(div().flex_none().h(1));
+    const last = children.length - 1;
+    // The timeline's jump (#85), once the rows above its turn are measured: an anchor at the turn's top,
+    // a view tall (never past the end), after the end mark (the turns' child indices stay): the
+    // smallest scroll that reveals it puts its top at the view's top, from above as from below.
+    if (this.jump != null) {
+      const g = this.geom();
+      const y = g.tops.get(this.jump);
+      if (!this.turns.some((x) => x.id === this.jump)) this.jump = null;
+      else if (g.known && y != null && this.vh > 0) {
+        children.push(div().absolute().left(0).top(y).w(1).h(anchorH({ y, end: g.end, vh: this.vh })));
+        this.scroll.scroll_to_item(children.length - 1);
+        this.jump = null;
+        this.reveal = null;
+      }
+    }
     if (this.reveal != null) {
-      this.scroll.scroll_to_item(this.reveal === "bottom" ? children.length - 1 : Math.min(this.reveal, children.length - 1));
+      this.scroll.scroll_to_item(this.reveal === "bottom" ? last : Math.min(this.reveal, last));
       this.reveal = null;
     }
+    const rail = this.rail(t);
     return div().relative().flex_1().min_h(0).flex().flex_col()
       .child(v_flex().id("kc-scroll").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).pt(TOP_INSET).pb(8)
+        .on_size_change((size, cx) => {
+          const h = size.height / this.zoom();
+          if (Math.abs(h - this.vh) > 0.5) { this.vh = h; cx.notify(); }
+        })
         // Scrolling up leaves the bottom: new turns no longer pull the view down (G or the button bring it back).
-        .on_scroll_wheel((ev, cx) => { if (ev.delta.y > 0 && this.follow) { this.follow = false; cx.notify(); } })
+        .on_scroll_wheel((ev, cx) => {
+          if (ev.delta.y > 0 && this.follow) { this.follow = false; cx.notify(); }
+          this.wheel(cx, null, ev);
+        })
         .children(children))
+      .when(Boolean(rail), (el) => el.child(rail))
       // transcript.rs:5986-6062, « jump to bottom »: 30 round, border 0.1, ground 0.04, chevron 16 at 0.7.
       .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(8).left(0).right(0).justify_center()
         .child(h_flex().id("kc-bottom").size(30).rounded_full().items_center().justify_center().border(1).border_color(ink(t, 0.1))
           .bg(ink(t, 0.04)).cursor_pointer().tooltip(tr("bottom")).text_color(ink(t, 0.7)).hover((s) => s.text_color(ink(t, 1)))
-          .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.reveal = "bottom"; cx.notify(); })
+          .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.jump = null; this.reveal = "bottom"; cx.notify(); })
           .child(svg(I("chevron-down")).size(16)))));
   }
 
@@ -1487,6 +1712,11 @@ export default class Chat extends View {
       this.loadedFor = want;
       this.open.clear();
       this.shownSteps.clear();
+      this.hts.clear();
+      this.tlId = null;
+      this.jump = null;
+      this.tlHover = -1;
+      this.tlOpen = false;
       this.load(cx);
     }
     this.live(cx, tg, want);

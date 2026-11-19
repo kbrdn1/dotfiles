@@ -1,0 +1,166 @@
+// timeline.js: the Chat's timeline (#85), Monocode's prompt outline (github.com/hardbeat920/monocode,
+// MIT, crates/monocode-gpui/src/transcript/outline.rs): a bar per message Kylian typed, on the right
+// edge of the transcript; the one on screen lit, a card with its first line on hover, a click (or
+// [ ]) brings it to the top of the view. Pure, no herdr: checked under bun (timeline.check.mjs).
+//
+// No scroll offset is exposed (gpui-kit.d.ts ScrollHandle: scroll_to_item only, the smallest scroll):
+// where each turn is comes from the heights its row reports (on_size_change), the offset from a wheel
+// event (the pointer's place in the row under it and in the view), and a jump puts a transient anchor
+// a view tall at the turn's top, which that smallest scroll brings to the top whichever way it goes.
+
+export const TL = {
+  MIN: 2, // MIN_PROMPTS (outline.rs:14): fewer messages, no rail
+  BAR_H: 2, BAR_W: 11, BAR_LIFT: 24, // :15-17, a bar's height, its width at rest and lifted
+  IDLE: 0.15, LIT: 0.85, // :18-19, its ink at rest and lit
+  STEP: 18, MS: 200, // :20-21, the ripple's beat and the transition (ease-out: bezier(0, 0, .58, 1), :43)
+  GAP: 10, GAP_MIN: 1, STACK_MAX: 330, SHARE: 0.75, // :22-25, the gap shrinks before the stack slides
+  MIN_W: 928, NEAR_END: 16, RIPPLE: 2, // :27-30, the pane width under which it hides; the bottom's slack
+  RIGHT: 16, // :328, from the transcript's right edge
+  OPEN: 25, CARD_W: 288, CARD_PAD: 12, CARD_GAP: 10, // :12-13, :297-304, the card waits out a pass-through
+  CARD_LINE: 19.25, CARD_COLS: 34, // :290-293, 14 px text, two lines (its 262 px hold ~34 characters of Inter)
+};
+
+/** A message's first non-empty line, its spaces collapsed (prompt_label, outline.rs:378-384); "" when none. */
+export function label(text) {
+  for (const line of String(text ?? "").split("\n")) {
+    const s = line.trim().split(/\s+/).join(" ");
+    if (s) return s;
+  }
+  return "";
+}
+
+/**
+ * The messages Kylian typed, in order: a turn's prompt (not another agent's message, a task's notice
+ * or a line the harness injected: `from` or `meta`), its / and ! commands, then what he sent while the
+ * agent worked (a note without `from`). Each: { i: its turn, turn: its id, id, text, images, note }.
+ * A note has no place of its own in the scroll area: its jump goes to its turn's top.
+ */
+export function marks(turns) {
+  const out = [];
+  turns.forEach((t, i) => {
+    const u = t.user;
+    if (u && !u.from && !u.meta) {
+      const text = u.cmd ? [u.cmd.name, u.cmd.args].filter(Boolean).join(" ") : u.text;
+      out.push({ i, turn: t.id, id: t.id, text: label(text), images: u.images ?? 0, note: false });
+    }
+    for (const b of t.blocks ?? []) {
+      if (b.role === "note" && !b.from && b.text?.trim()) out.push({ i, turn: t.id, id: b.id, text: label(b.text), images: 0, note: true });
+    }
+  });
+  return out;
+}
+
+/** At most `max` bars: the window slides to keep the active one inside, the newest preferred (bar_window, :386-395). */
+export function barWindow(count, active, max) {
+  if (count <= max) return [0, count];
+  const newest = count - max;
+  const start = active == null || active < 0 ? newest : Math.min(active, newest);
+  return [start, start + max];
+}
+
+/** One bar per message while they fit `budget` px, the gap shrinking first; past that, a window (bar_stack, :397-411). */
+export function barStack(count, active, budget) {
+  const fit = Math.max(1, Math.floor((budget + TL.GAP_MIN) / (TL.BAR_H + TL.GAP_MIN)));
+  const [start, end] = barWindow(count, active, fit);
+  const shown = end - start;
+  const gap = shown > 1 ? Math.min(TL.GAP, Math.max(TL.GAP_MIN, Math.floor((budget - shown * TL.BAR_H) / (shown - 1)))) : 0;
+  return { start, end, gap };
+}
+
+/** The dock's lift: 1 on the hovered bar, tapering to 0 past the ripple (bar_lift, :413-423). */
+export function barLift(index, hover) {
+  if (hover == null || hover < 0) return 0;
+  const d = Math.abs(index - hover);
+  return d > TL.RIPPLE ? 0 : (TL.RIPPLE + 1 - d) / (TL.RIPPLE + 1);
+}
+
+/**
+ * Where the scroll area's children are, from their heights (undefined: not measured yet), the first
+ * at `inset` (the area's top padding). { tops, end, known }: each one's top, the bottom of the last,
+ * whether every height was known (if not, nothing after the first unknown is right).
+ */
+export function offsets(heights, inset = 0) {
+  const tops = [];
+  let y = inset, known = true;
+  for (const h of heights) {
+    tops.push(y);
+    if (!(h >= 0)) known = false;
+    y += h >= 0 ? h : 0;
+  }
+  return { tops, end: y, known };
+}
+
+/**
+ * The scroll offset after a wheel event, from the row under the pointer: its top in the content, the
+ * pointer in it and in the view (all as painted before this event), less the event's delta (> 0 goes
+ * up), within [0, max].
+ */
+export function wheelTop({ top, inRow, inView, dy, max }) {
+  return Math.max(0, Math.min(Math.max(0, max), top + inRow - inView - dy));
+}
+
+/**
+ * A wheel event reaches the row under the pointer and the scroll area, in an order the host chooses:
+ * each half is kept (the latest of each kind) until both halves of one event are in, the same pointer.
+ * `half`: { row (the row's id, absent for the area's half), px, py (the pointer, window), y (the
+ * pointer in the row or the view), dy }. Answers { keep, pair }: what to keep for the next half, and
+ * once complete { id, inRow, inView, dy } for wheelTop.
+ */
+export function pairWheel(kept, half) {
+  const next = half.row != null ? { ...kept, row: half } : { ...kept, view: half };
+  const { row, view } = next;
+  if (row && view && row.px === view.px && row.py === view.py) return { keep: null, pair: { id: row.row, inRow: row.y, inView: view.y, dy: view.dy } };
+  return { keep: next, pair: null };
+}
+
+/**
+ * The message on screen (measure_active, :101-125): following the bottom, or within NEAR_END of it,
+ * the last; else the first whose turn starts in the view, else the last one above it. `tops`: turn id
+ * -> its top (a drawn turn); a turn before `first` isn't drawn: above. A note shares its turn's place:
+ * the turn's first message stands for it, unless `cur` (the one lit now) is of that turn. Answers
+ * { k, above }: its index (-1: none), and whether its turn starts above the view (`[` goes back to it).
+ */
+export function activeAt({ marks: list, tops, first = 0, scrollTop, vh, end, follow = false, cur = -1 }) {
+  const n = list.length;
+  if (!n) return { k: -1, above: false };
+  if (follow || end - (scrollTop + vh) <= TL.NEAR_END) return { k: n - 1, above: false };
+  let above = -1, hit = -1;
+  for (let k = 0; k < n; k++) {
+    const m = list[k];
+    const y = m.i < first ? -Infinity : tops.get(m.turn);
+    if (y == null) break; // not measured: below, like every later one
+    if (y < scrollTop) { above = k; continue; }
+    if (y >= scrollTop + vh) break;
+    hit = k;
+    break;
+  }
+  let k = hit >= 0 ? hit : above >= 0 ? above : 0;
+  while (k > 0 && list[k - 1].turn === list[k].turn) k--;
+  if (cur >= 0 && cur < n && list[cur].turn === list[k].turn) k = cur;
+  return { k, above: hit < 0 && above >= 0 };
+}
+
+/** The jump's anchor: a view tall, never past the content's end (it would lengthen the scroll). */
+export const anchorH = ({ y, end, vh }) => Math.max(1, Math.min(vh, end - y));
+
+/**
+ * [ ] by `count`: the message before or after `at`. Going back from a message whose turn starts above
+ * the view, the first step is that message's own top (vim's `{`). -1 without messages.
+ */
+export function stepMark(n, at, above, dir, count = 1) {
+  if (n <= 0) return -1;
+  const from = at < 0 || at >= n ? n - 1 : at;
+  const to = dir < 0 ? from - (above ? count - 1 : count) : from + count;
+  return Math.max(0, Math.min(n - 1, to));
+}
+
+/** The message a turn belongs to: that turn's first, else the last before it (0 when none is). */
+export function ownerOf(list, turnIndex) {
+  let best = -1;
+  for (let k = 0; k < list.length; k++) {
+    if (list[k].i === turnIndex) return k;
+    if (list[k].i > turnIndex) break;
+    best = k;
+  }
+  return Math.max(0, best);
+}

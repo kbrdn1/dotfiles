@@ -136,6 +136,7 @@ const TABLE = {
     ["enter / o", "pg.hubProj", "pg.hubPage"],
     ["r", "pg.hubIndex", "pg.hubPage"],
     ["q / esc", "pg.hubBack", "pg.hubPage"],
+    ["[ / ]", "pg.chatPrompt", "Chat"],
     ["q", "r.back"],
     ["esc", "pg.clear"],
     ["ctrl-n / ctrl-p", "pg.insertMove", "INSERT"],
