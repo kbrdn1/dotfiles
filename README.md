@@ -401,10 +401,9 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 
 4. **Clone and Apply Dotfiles**
 ```bash
-chezmoi init --branch main https://github.com/kbrdn1/dotfiles.git
-chezmoi apply
+chezmoi init --apply --branch main kbrdn1
 ```
-`--branch main` installs the latest release; `dev` is the work in progress.
+`kbrdn1` is short for `https://github.com/kbrdn1/dotfiles.git`; `--branch main` installs the latest release, `dev` is the work in progress.
 
 5. **Install Nix & Home Manager** (CLI tools, shell, aliases — see [MIGRATION_NIX.md](MIGRATION_NIX.md))
 ```bash
