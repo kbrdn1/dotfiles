@@ -43,6 +43,7 @@ import { makeT, relative, compact } from "./i18n.js";
 import { TYPES, SOURCES, levelOf, code, mcpForm, skillForm, typeCount, pinOf } from "./model.js";
 import { loopForm, loopPrompt } from "./loops.js";
 import { threadArgs } from "./herdr.js";
+import { tintOf } from "./categories.js";
 import strings from "./strings.js";
 
 const tr = makeT(strings);
@@ -53,12 +54,15 @@ const OWN = (n) => `mods/kt-market/${n}.svg`;
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const PAGE = 60;
 const FRESH = 10e3;
-const TINT = "ansi3"; // the page's (DESIGN-REFERENCE.md: one hue per page)
+// One hue, one meaning (categories.js, #81): the page carries none of its own (a store of every
+// category), so its band is neutral; a type or a source takes its category's hue, and what is no
+// category of the agent (a plugin, a marketplace, herdr.dev's pieces) stays neutral.
+const pageColor = (t) => t.muted;
 const SORTS = ["relevance", "popular", "recent"];
 const LIVE = new Set(["mcp-registry", "skills-sh"]);
-const GLYPH = { plugin: I("puzzle"), mcp: I("plug"), skill: I("sparkles"), "herdr-mod": OWN("blocks"), "herdr-layout": I("layout-list"), loop: OWN("repeat"), automation: I("workflow") };
-const TYPE_TINT = { plugin: "ansi5", mcp: "accent", skill: "ansi4", "herdr-mod": "ansi2", "herdr-layout": "ansi6", loop: "ansi3", automation: "done" };
-const SOURCE_TINT = { official: "ansi5", community: "ansi4", known: "ansi6", "mcp-registry": "accent", "skills-sh": "ansi2", "herdr-dev": "done", aitmpl: "ansi3" };
+const GLYPH = { plugin: I("puzzle"), mcp: I("plug"), skill: I("sparkles"), "herdr-mod": OWN("blocks"), "herdr-layout": I("layout-list"), loop: OWN("repeat"), automation: I("refresh-cw") };
+const TYPE_TINT = { plugin: null, mcp: tintOf("mcp"), skill: tintOf("skill"), "herdr-mod": null, "herdr-layout": null, loop: tintOf("loop"), automation: tintOf("automation") };
+const SOURCE_TINT = { official: null, community: null, known: null, "mcp-registry": tintOf("mcp"), "skills-sh": tintOf("skill"), "herdr-dev": null, aitmpl: tintOf("loop") };
 const LEVELS = ["blocking", "danger", "warn", "info"];
 const PARTS = ["skills", "commands", "agents", "hooks", "mods", "mcp", "lsp"];
 const levelColor = (t, l) => ({ blocking: t.ansi1, danger: t.ansi1, warn: t.blocked, info: t.dim })[l] ?? t.dim;
@@ -551,12 +555,12 @@ export default class Market extends View {
       .children(SORTS.map((k) => this.chip(t, `ktmk-sort-${k}`, tr(`sort.${k}`), this.sort === k, (cx) => { this.sort = k; this.refilter(cx); }, tr("sortTip"))));
     return v_flex().id("ktmk-head").relative().flex_none().px(4).pb(12).gap(10).rounded(16).border(1).border_color(t.border).bg(t.background)
       .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
-      .children([dither(this.headW, 60, 16, t[TINT])].filter(Boolean))
-      .child(bandRow(t, { m: this.m, color: t[TINT], icon: OWN("store"), title: "Marketplaces", sub: [count, this.freshness()], // i18n: tech
+      .children([dither(this.headW, 60, 16, pageColor(t))].filter(Boolean))
+      .child(bandRow(t, { m: this.m, color: pageColor(t), icon: OWN("store"), title: "Marketplaces", sub: [count, this.freshness()], // i18n: tech
         buttons: [
           pulse(this.m, iconBtn(t, "ktmk-b-refresh", I("refresh-cw"), this.syncing ? tr("syncingTip") : tr("refreshTip"), (cx) => this.refresh(cx), this.syncing), this.syncing),
           iconBtn(t, "ktmk-b-keys", I("keyboard"), tr("keysTip"), () => openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } }))] }))
-      .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t[TINT], "4d")))
+      .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(pageColor(t), "4d")))
       .child(h_flex().px(10).flex_wrap().gap(8).items_center()
         .child(field).child(sorts)
         .when(Boolean(this.keyed), (el) => el.child(this.mode(t, typing))))
@@ -830,7 +834,7 @@ export default class Market extends View {
     const d = this.insp.get(x.id);
     const done = Boolean(d && !d.pending && !d.error);
     const lvl = done ? d.level : x.level;
-    const tint = t[TYPE_TINT[x.type]] ?? t.accent;
+    const tint = t[TYPE_TINT[x.type]] ?? t.muted;
     this.docShown = false;
     const facts = v_flex().gap(6)
       .child(this.pair(t, tr("fact.source"), [x.repo, pinText(x, done ? d : null)].filter(Boolean).join(" ")))
