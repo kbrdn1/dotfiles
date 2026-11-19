@@ -54,7 +54,7 @@ import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
 import { view } from "./view.js";
-import { ingest, prepend, build, tally, foldedSteps, foldTree, trim, pendingQueue } from "./chat-model.js";
+import { ingest, prepend, build, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue } from "./chat-model.js";
 import {
   pickTarget, tallyText, childOf, chatShown, liveStep,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
@@ -64,7 +64,7 @@ import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markd
 import { attachmentsOf, photoSize } from "./att-model.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
-import { motionState, frame, enter, collapse, MS } from "./motion.js";
+import { motionState, frame, enter, collapse, rows, MS, DY } from "./motion.js";
 // #84, the composer's ledges: the agent's tasks and sub-agents from its herdr-bridge file (shelf.js),
 // drawn as the sidebar draws its sub-agents: kt-threads' branches (tree.js) and companions
 // (companion-logo.js, a byte-identical copy).
@@ -78,7 +78,7 @@ import { roll } from "./roll.js";
 import { TL, marks as markList, barStack, barLift, cardTop, offsets, pairWheel, wheelDy, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 // #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
 import * as win from "./turn-window.js";
-import { skeleton, readyFor } from "./skeleton.js";
+import { skeleton, readyFor, still } from "./skeleton.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { makeT, duration, time, num, relative } from "./i18n.js";
 import strings from "./strings.js";
@@ -236,6 +236,17 @@ export default class Chat extends View {
     this.tasksOpen = new Set();
     this.agentsOpen = new Set();
     this.subOpen = null;
+    // #92: what arrived live and fades in where it lands (turn ids, the live turn's item ids; noteFresh),
+    // the live turn's items at the last build, and the fold the reader opened or closed last ({ id, at }:
+    // its items open or close on their height, rows(); a fold drawn again later lands as it is).
+    this.fresh = new Set();
+    this.liveItems = null;
+    this.foldAt = null;
+    // #92: what goes away fading out (goOut()), a ledge's last state while it does (its data went), and
+    // the sub-agents each ledge knew at the last render (one new fades in).
+    this.going = new Set();
+    this.lastLedge = {};
+    this.subsKnown = new Map();
     this.memos = {};
     this.scroll = ScrollHandle.new();
     this.md = mdState();
@@ -438,6 +449,72 @@ export default class Chat extends View {
     this.marks = markList(this.turns);
     const rows = new Set(this.turns.map((t) => `kc-turn-${t.id}`));
     for (const k of this.hts.keys()) if (k.startsWith("kc-turn-") && !rows.has(k)) this.hts.delete(k);
+    this.noteFresh(was, live);
+  }
+
+  /**
+   * #92: what arrived live, to fade in where it lands (turn()): a turn after the last one this build
+   * found, an item new in the live turn. Never on a first build, an older read (it comes above) or
+   * another agent's (the last turn known isn't there); ids of turns gone are let go.
+   */
+  noteFresh(was, live) {
+    this.fresh ??= new Set(); // a bare instance too (scroll.check.mjs builds one without init)
+    const a = arrivals(was, this.turns, live, this.liveItems);
+    for (const id of a.fresh) this.fresh.add(id);
+    this.liveItems = a.seen;
+    if (!this.fresh.size) return;
+    // Only what is still there: the turns', and the items of the last ones (where arrivals are).
+    const here = new Set(this.turns.map((t) => t.id));
+    for (const t of this.turns.slice(-2)) for (const it of t.items) here.add(it.id);
+    for (const id of this.fresh) if (!here.has(id)) this.fresh.delete(id);
+  }
+
+  /**
+   * #92: an element that comes in as the popups do (fades in, rises DY.row) when it arrived live, else
+   * drawn as it is: enter() with its id marked shown. Its place is taken at once in the flow (the
+   * scroll's height doesn't move, a followed bottom stays put): the rise is inside a box that clips, so
+   * nothing goes over a neighbour. Once it has come in, it leaves `fresh` (a window change brings it back
+   * as it is). `el`: a div / h_flex / v_flex with no id of its own.
+   */
+  landing(el, key, id) {
+    const wid = `kc-in-${id}`;
+    if (this.fresh.has(key) && this.m.shown.has(wid)) this.fresh.delete(key);
+    if (!this.fresh.has(key)) this.m.shown.add(wid);
+    return div().w_full().min_w(0).overflow_hidden().child(enter(this.m, el, wid, { dy: DY.row }));
+  }
+
+  /**
+   * #92: a block coming in as the popups do (fades in, rises DY.row) inside a box that clips: its place
+   * taken at once, nothing over a neighbour. `going`: the name it goes away under (out(), goOut()).
+   */
+  rise(el, id, going = null) {
+    return div().w_full().min_w(0).overflow_hidden().child(this.out(enter(this.m, el, id, { dy: DY.row }), going));
+  }
+
+  /** #92: a block going away (goOut()): it fades out where it stands (MS.leave, ease-in), still drawn. */
+  out(el, going) {
+    return going && this.going?.has(going) ? el.opacity(0).transition("opacity", { duration: MS.leave, easing: "ease-in" }) : el;
+  }
+
+  /**
+   * #92: lets `id` go: drawn fading out (out()) for MS.leave, then ONE cx.timer.after runs `drop` (what
+   * stops drawing it) and redraws: motion.js leave()'s way, for a block of the page. Reduced motion: at
+   * once. `inRender`: called while rendering (a ledge whose data went), which draws it fading already.
+   */
+  goOut(cx, id, drop, { inRender = false } = {}) {
+    if (this.m.reduced) {
+      drop();
+      if (!inRender) cx.notify();
+      return;
+    }
+    if (this.going.has(id)) return;
+    this.going.add(id);
+    if (!inRender) cx.notify();
+    cx.timer.after(MS.leave + 40, (cx) => {
+      if (!this.going.delete(id)) return; // came back meanwhile
+      drop();
+      cx.notify();
+    });
   }
 
   /** The first turn drawn (turn-window.js: [from, to), CAP turns at most). */
@@ -562,7 +639,10 @@ export default class Chat extends View {
       }
       case "open": {
         const turn = this.turns[at];
-        if (turn?.fold) this.toggle(`f:${turn.id}`);
+        if (turn?.fold) {
+          this.toggle(`f:${turn.id}`);
+          this.foldAt = { id: turn.id, at: Date.now() }; // #92: its items open or close on their height
+        }
         return true;
       }
       case "yank": {
@@ -1251,7 +1331,9 @@ export default class Chat extends View {
         .when(has, (el) => el.cursor_pointer().hover((s) => s.text_color(ink(t, 0.8))).on_click((_e, cx) => { this.toggle(id); cx.notify(); }))
         .child(svg(I("minus")).size(14).flex_none())
         .child(div().flex_1().min_w(0).truncate().child(b.ms ? tr("think.ms", { d: duration(b.ms) }) : tr("think")));
-      return has && this.open.has(id) ? v_flex().min_w(0).child(el).child(div().pl(20).pb(8).child(this.mono(t, b.text, ink(t, 0.48)))) : el;
+      // #92: its text opens and closes on its height (motion.js collapse).
+      const body = has ? collapse(this.m, `kc-thb-${b.id}`, this.open.has(id), () => div().pl(20).pb(8).child(this.mono(t, b.text, ink(t, 0.48)))) : null;
+      return body ? v_flex().min_w(0).child(el).child(body) : el;
     }
     if (b.role === "note") {
       return h_flex().id(`kc-st-${b.id}`).py(4).gap(6).items_center().min_w(0).text_size(14).line_height("20px")
@@ -1273,7 +1355,8 @@ export default class Chat extends View {
       .when(Boolean(text), (el) => el.child(tgt))
       .child(div().flex_1())
       .when(Boolean(this.stateMark(t, b.state, b.id)), (el) => el.child(this.stateMark(t, b.state, b.id)));
-    const d = this.open.has(id) ? this.detail(t, b) : null;
+    // #92: its detail opens and closes on its height (motion.js collapse).
+    const d = collapse(this.m, `kc-sd-${b.id}`, this.open.has(id), () => this.detail(t, b) ?? div());
     return d ? v_flex().min_w(0).child(row).child(d) : row;
   }
 
@@ -1529,7 +1612,7 @@ export default class Chat extends View {
       .when(kids, (el) => el.child(stem(treeLine(t), { top: 31 })))
       .tooltip(turn.tally ? tallyText(turn.tally, tr) : text)
       .on_hover((h, cx) => this.setHover(cx, `w:${turn.id}`, h))
-      .on_click((_e, cx) => { this.toggle(`f:${turn.id}`); cx.notify(); })
+      .on_click((_e, cx) => { this.toggle(`f:${turn.id}`); this.foldAt = { id: turn.id, at: Date.now() }; cx.notify(); })
       .child(this.tile(t, TILE.claude, hov || opened ? I(opened ? "chevron-down" : "chevron-right") : CLAUDE_ICON))
       .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("20px").text_color(ink(t, hov ? 0.8 : 0.5)).child(text));
   }
@@ -1705,35 +1788,54 @@ export default class Chat extends View {
     if (op) out.push(op);
     const f = turn.fold;
     const opened = f && this.open.has(`f:${turn.id}`);
-    let top = 12; // the first prose block of the message
     // #90: the fold as a tree (chat-model.js foldTree): its items hang under the header on its branches
     // (tree.js hang), the bend at their first line's middle (a step's or a tile's row 28, a prose block's
     // first line under its margin); inside a closed fold only the sub-agents (Monocode pins them outside).
     const tree = foldTree(turn.items, f, opened);
-    const rest = treeLine(t);
-    const kids = [];
+    const inFold = (n) => Boolean(f) && n >= f.start && n <= f.end;
+    // Each item's top margin as drawn, in order: a prose block's 12 for the message's first, 16 after one
+    // drawn, 4 right under the fold.
+    const tops = [];
+    let top = 12;
     turn.items.forEach((it, n) => {
-      if (f && n === f.start) out.push(this.workedLine(t, turn, opened, tree.stem));
-      const inFold = Boolean(f) && n >= f.start && n <= f.end;
-      if (!inFold || tree.kids.includes(n)) {
-        const at = f && n === f.end + 1 ? 4 : top;
-        const el = this.item(t, cx, it, { live: turn.live, top: at });
-        const prose = it.type === "block" && it.block.role === "prose";
-        if (prose) top = 16;
-        if (el && inFold) {
-          const running = it.type === "activity" && turn.live && it.steps.some((b) => b.state === "running");
-          kids.push(hang(t, el, { h: prose ? 2 * (at + 12) : 28, last: n === tree.last, color: running ? this.branchColor(t, "running") : null, rest }));
-        } else if (el) out.push(el);
+      tops[n] = f && n === f.end + 1 ? 4 : top;
+      if ((!inFold(n) || tree.kids.includes(n)) && it.type === "block" && it.block.role === "prose") top = 16;
+    });
+    // #92: the live turn's items fade in where they land as they come (landing()).
+    const draw = (it, n) => {
+      const el = this.item(t, cx, it, { live: turn.live, top: tops[n] });
+      return el && turn.live ? this.landing(div().w_full().min_w(0).child(el), it.id, it.id) : el;
+    };
+    // #92: the fold's items open and close on their height, in order (motion.js rows()), right after the
+    // reader opened or closed it; drawn again later (a window change), it lands as it is. The last row
+    // while the bottom is followed doesn't move: the bottom would chase it, a render a frame.
+    const rest = treeLine(t);
+    const moved = this.foldAt?.id === turn.id && Date.now() - this.foldAt.at < 1000 && !(this.follow && i === this.end() - 1);
+    const kids = f ? rows(moved ? this.m : still(this.m), cx, `kc-fk-${turn.id}`, tree.kids, (n) => String(turn.items[n]?.id ?? n), (n) => {
+      const it = turn.items[n];
+      const el = it ? draw(it, n) : null;
+      if (!el) return div();
+      const prose = it.type === "block" && it.block.role === "prose";
+      const running = it.type === "activity" && turn.live && it.steps.some((b) => b.state === "running");
+      return hang(t, el, { h: prose ? 2 * (tops[n] + 12) : 28, last: n === tree.last, color: running ? this.branchColor(t, "running") : null, rest });
+    }) : [];
+    turn.items.forEach((it, n) => {
+      if (f && n === f.start) {
+        out.push(this.workedLine(t, turn, opened, kids.length > 0));
+        if (kids.length) out.push(v_flex().min_w(0).children(kids));
       }
-      if (f && n === f.end && kids.length) out.push(v_flex().min_w(0).children(kids));
+      if (inFold(n)) return;
+      const el = draw(it, n);
+      if (el) out.push(el);
     });
     if (!turn.live && answerOf(turn)) out.push(this.actions(t, turn));
     const here = keyed && i === (this.cur < 0 ? this.turns.length - 1 : this.cur);
+    // #92: a turn that arrived live fades in where it lands (landing()); the others are drawn as they are.
     return this.col(v_flex().relative().w_full().min_w(0).pb(8)
       // The keyboard's turn: a short 2 × 16 accent tick in the column's margin, at its top (a mark as
-      // tall as the turn ran through a long turn like a rule).
+      // tall as the turn ran through a long turn like a rule). Outside the turn's clipping box.
       .when(here, (el) => el.child(div().absolute().left(-14).top(8).w(2).h(16).rounded_full().bg(t.accent)))
-      .children(out), `kc-turn-${turn.id}`);
+      .child(this.landing(v_flex().w_full().min_w(0).children(out), turn.id, `t-${turn.id}`)), `kc-turn-${turn.id}`);
   }
 
   head(t) {
@@ -2292,6 +2394,9 @@ export default class Chat extends View {
       this.jump = null;
       this.tlHover = -1;
       this.tlOpen = false;
+      this.fresh.clear(); // another agent's turns land as they are (#92)
+      this.liveItems = null;
+      this.foldAt = null;
       this.load(cx);
     }
     this.live(cx, tg, want);

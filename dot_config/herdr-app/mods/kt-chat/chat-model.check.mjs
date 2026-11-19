@@ -3,7 +3,7 @@
 // turns, items, fold, tally, queue, ingest) on chat-fixture.jsonl, an invented session.
 import assert from "node:assert/strict";
 import { index, startsTurn, strip, normalize } from "./chat-index.ts";
-import { build, classify, fold, foldTree, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
+import { arrivals, build, classify, fold, foldTree, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
 
 const all = new Uint8Array(await Bun.file(new URL("./chat-fixture.jsonl", import.meta.url)).arrayBuffer());
 const run = (from = 0, to = all.length, opts = {}) => index(all.subarray(from, to), { from, size: all.length, path: "/f.jsonl", home: "/w", ...opts });
@@ -214,6 +214,17 @@ assert.deepEqual(foldTree(work, wf, true), { kids: [0, 1, 2, 3, 4], last: 4, ste
 assert.deepEqual(foldTree(work, wf, false), { kids: [2], last: 2, stem: true }, "closed: only the sub-agents it keeps, which are then the last");
 assert.deepEqual(foldTree([a("1"), p("ans")], fold([a("1"), p("ans")]), false), { kids: [], last: -1, stem: false }, "closed, no sub-agent: the header alone, no trunk");
 assert.equal(foldTree([p("ans")], null, true), null, "nothing folds");
+// arrivals() (#92): what fades in where it lands, only what came live.
+const T = (id, ...its) => ({ id, items: its.map((x) => ({ id: x })) });
+const arrAB = [T("A", "a1"), T("B", "b1")];
+const arr0 = arrivals([], arrAB, true, null);
+assert.deepEqual(arr0.fresh, [], "a first build: nothing fades");
+assert.deepEqual([arr0.seen.turn, [...arr0.seen.ids]], ["B", ["b1"]], "the live turn's items, for the next build");
+assert.deepEqual(arrivals(["A", "B"], [...arrAB, T("C", "c1")], true, arr0.seen).fresh, ["C"], "a new turn after the last one known: it fades, not its items");
+assert.deepEqual(arrivals(["A", "B"], [T("A", "a1"), T("B", "b1", "b2", "b3")], true, arr0.seen).fresh, ["b2", "b3"], "new items of the live turn");
+assert.deepEqual(arrivals(["A", "B"], [T("Z", "z1"), ...arrAB], true, arr0.seen).fresh, [], "an older read lands above: nothing");
+assert.deepEqual(arrivals(["A", "B"], [T("X", "x1"), T("Y", "y1")], true, arr0.seen).fresh, [], "another session's turns: nothing");
+assert.deepEqual(arrivals(["A", "B"], [T("A", "a1"), T("B", "b1", "b2")], false, arr0.seen), { fresh: [], seen: null }, "not live: no item arrives, nothing kept");
 // items(): empty prose is dropped; a failed sub-agent keeps its row even settled.
 const failed = { role: "tool", id: "x", kind: "agent", state: "error" };
 assert.deepEqual(items([{ role: "prose", id: "e", text: "  " }, failed]).map((i) => i.type), ["subagents"]);

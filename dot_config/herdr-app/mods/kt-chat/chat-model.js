@@ -421,6 +421,21 @@ export function foldTree(list, f, opened) {
   return { kids, last: kids.length ? kids[kids.length - 1] : -1, stem: kids.length > 0 };
 }
 
+/**
+ * What arrived live (#92), to fade in where it lands: the turns after the last one of the previous
+ * build (`was`: its turn ids), and in a live last turn the previous build had too (`seen`: { turn, ids }),
+ * its new items. Nothing on a first build, an older read (it comes above) or another session's (the last
+ * turn known isn't there). `seen` for the next build: the live turn's item ids.
+ */
+export function arrivals(was, turns, live, seen) {
+  const ids = turns.map((t) => t.id);
+  const k = was.length ? ids.indexOf(was[was.length - 1]) : -1;
+  const fresh = k >= 0 ? ids.slice(k + 1) : [];
+  const last = turns[turns.length - 1];
+  if (live && last && seen?.turn === last.id) for (const it of last.items) if (!seen.ids.has(it.id)) fresh.push(it.id);
+  return { fresh, seen: live && last ? { turn: last.id, ids: new Set(last.items.map((it) => it.id)) } : null };
+}
+
 /** Every step inside a fold (sub-agents keep their own rows, outside the count). */
 export function foldedSteps(list, f) {
   return list.slice(f.start, f.end + 1).flatMap((it) => (it.type === "activity" ? it.steps : it.type === "block" ? [it.block] : []));
