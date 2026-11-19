@@ -88,8 +88,8 @@ function projectColor(t, folder) {
 }
 const CACHE = () => `${home()}/.claude/cache/herdr`;
 // The panel's tabs in order, and each one's mod: [ / ] show the next one and give it the keyboard.
-const TABS = ["files", "diff", "history", "flow", "crosstalk", "gwm-panel"];
-const TAB_MODS = { files: "kt-files", diff: "kt-diff", history: "kt-history", flow: "kt-flow", crosstalk: "kt-crosstalk", "gwm-panel": "kt-gwm" };
+const TABS = ["files", "diff", "history", "flow", "crosstalk", "context", "gwm-panel"];
+const TAB_MODS = { files: "kt-files", diff: "kt-diff", history: "kt-history", flow: "kt-flow", crosstalk: "kt-crosstalk", context: "kt-context", "gwm-panel": "kt-gwm" };
 // The keyboard follows a moment later: a `<mod>.focus` sent at once reaches no copy (the new tab
 // isn't shown yet) and the app gives the keyboard back to the terminal.
 function panelTab(dir, cx) {

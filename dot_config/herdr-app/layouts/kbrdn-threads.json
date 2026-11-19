@@ -136,6 +136,7 @@
                 { "id": "history", "type": "block", "content": { "mod": "kt-history" } },
                 { "id": "flow", "type": "block", "content": { "mod": "kt-flow" } },
                 { "id": "crosstalk", "type": "block", "content": { "mod": "kt-crosstalk" } },
+                { "id": "context", "type": "block", "content": { "mod": "kt-context" } },
                 { "id": "gwm-panel", "type": "block", "content": { "mod": "kt-gwm", "props": { "view": "panel" } } }
               ]
             }

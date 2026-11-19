@@ -1,5 +1,5 @@
 // The top of kbrdn Threads' right panel: Files, Changes, History, Flow,
-// Crosstalk and GWM (kt-gwm's panel view) as kbrdn.dev segments (they pick the child of the layout's
+// Crosstalk, Context and GWM (kt-gwm's panel view) as kbrdn.dev segments (they pick the child of the layout's
 // "panel-body" stack; the shown one sits on the ink; narrow, the others keep
 // only their icon), and close (hides the "panel" column). Add a surface: a
 // block in that stack and a segment here. Changes is the stack's "diff" child.
@@ -25,17 +25,18 @@ const SURFACES = [
   ["history", "History", "mods/kt-panel-head/history.svg"],
   ["flow", "Flow", "mods/kt-panel-head/workflow.svg"],
   ["crosstalk", "Crosstalk", "mods/kt-panel-head/messages-square.svg"],
+  ["context", "Context", "mods/kt-panel-head/gauge.svg"],
   ["gwm-panel", "GWM", "mods/kt-threads/git-branch.svg"],
 ];
 // What gives each surface the keyboard after a click on its segment (#78), as [ ] do (kt-files' panelTab):
 // a moment later, the new child shown; gwm-panel: kt-gwm's panel copy only (its page copy may show too).
-const FOCUS = { files: "kt-files.focus", diff: "kt-diff.focus", history: "kt-history.focus", flow: "kt-flow.focus", crosstalk: "kt-crosstalk.focus", "gwm-panel": "kt-gwm.panel-focus" };
+const FOCUS = { files: "kt-files.focus", diff: "kt-diff.focus", history: "kt-history.focus", flow: "kt-flow.focus", crosstalk: "kt-crosstalk.focus", context: "kt-context.focus", "gwm-panel": "kt-gwm.panel-focus" };
 const MONO = "Monaspace Krypton";
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 // Below this width the segments that aren't shown drop their label (icon + tooltip):
-// the six labelled ones need ~590 px, the panel is 560.
-const WIDE = 600;
+// the seven labelled ones need ~690 px (estimated from the six's ~590, to measure), the panel is 560.
+const WIDE = 700;
 
 function find(node, id) {
   if (!node) return null;

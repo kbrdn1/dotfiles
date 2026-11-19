@@ -39,7 +39,7 @@ const ORDER = ["pane.go:left", "pane.go:right", "pane.go:down", "pane.go:up", "k
   "space.next", "space.prev", "kt-head.rename:space", "kt-head.picker:2", "kt-head.picker:0", "kt-head.worktree", "agent.next", "agent.prev",
   "kt-head.attention", "layout.select:thread", "layout.select:hub", "layout.select:inbox", "layout.select:kanban", "layout.select:skills", "layout.select:mcp", "layout.select:plugins",
   "layout.select:market", "layout.select:workflow", "layout.select:gwm", "layout.select:notes", "kt-head.side-toggle", "kt-head.panel-toggle", "kt-head.panel:files",
-  "kt-head.panel:diff", "kt-head.panel:history", "kt-head.panel:flow", "kt-head.panel:crosstalk", "mod.open:kt-keys", "mod.open:kt-mods", "mod.open:kt-machines",
+  "kt-head.panel:diff", "kt-head.panel:history", "kt-head.panel:flow", "kt-head.panel:crosstalk", "kt-head.panel:context", "mod.open:kt-keys", "mod.open:kt-mods", "mod.open:kt-machines",
   "app.settings", "send"];
 
 // The groups held here: [keys, what, where]. Keys: names separated by spaces, "/" between choices.
@@ -153,7 +153,7 @@ const TABLE = {
   ],
   panel: [
     ["ctrl-b l", "pn.focus"],
-    ["ctrl-b f / d / y / e / r", "pn.tabs"],
+    ["ctrl-b f / d / y / e / r / q", "pn.tabs"],
     ["[ / ]", "pn.tab"],
     ["j / k", "r.line"],
     ["gg / G", "r.ends"],

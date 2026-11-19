@@ -180,7 +180,7 @@ const face = (which) => view(which, { layout, run, panes, focused, agents, regis
 const keyOf = (...actions) => shortcut(keys(), shared("layout"), ...actions);
 // What gives each panel surface the keyboard (kt-files' panelTab, kt-panel-head): gwm-panel, kt-gwm's
 // panel copy only (`kt-gwm.focus` would reach its page copy too).
-const PANEL_FOCUS = { files: "kt-files.focus", diff: "kt-diff.focus", history: "kt-history.focus", flow: "kt-flow.focus", crosstalk: "kt-crosstalk.focus", "gwm-panel": "kt-gwm.panel-focus" };
+const PANEL_FOCUS = { files: "kt-files.focus", diff: "kt-diff.focus", history: "kt-history.focus", flow: "kt-flow.focus", crosstalk: "kt-crosstalk.focus", context: "kt-context.focus", "gwm-panel": "kt-gwm.panel-focus" };
 // `panel-toggle` (ctrl-b p) and `panel:<surface>` open and close the right panel through panel.js (#73),
 // `side-toggle` (ctrl-b shift-v) the left sidebar. `rename:tab` / `rename:space` (ctrl-b shift-t / f2,
 // ctrl-b shift-w / shift-f2) ask the shown thread's or project's name in kt-prompt, never Herdr's own prompt.

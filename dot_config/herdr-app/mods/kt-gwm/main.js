@@ -83,7 +83,7 @@ const G = (name) => `mods/kt-gwm/${name}.svg`;
 const PAGE = "gwm"; // in the "view" stack
 const PANEL = "gwm-panel"; // in the "panel-body" stack
 // The right panel's tabs, in order, and their mods: [ / ] go round them.
-const PANEL_TABS = [["files", "kt-files"], ["diff", "kt-diff"], ["history", "kt-history"], ["flow", "kt-flow"], ["crosstalk", "kt-crosstalk"], [PANEL, "kt-gwm"]];
+const PANEL_TABS = [["files", "kt-files"], ["diff", "kt-diff"], ["history", "kt-history"], ["flow", "kt-flow"], ["crosstalk", "kt-crosstalk"], ["context", "kt-context"], [PANEL, "kt-gwm"]];
 const TICK = 15e3;
 const STATUS_TTL = 10 * 60e3;
 const INFO_TTL = 5 * 60e3;
