@@ -335,5 +335,15 @@ assert.throws(() => X.run(cfg));
 assert.equal(readFileSync(`${cfg.out}/archive.json`, "utf8"), "{", "left as it was");
 assert.ok(!existsSync(`${cfg.out}/lock`));
 
+// A folder not known this pass (chezmoi missing: resolve says null) isn't kept: the next pass asks again.
+{
+  let asked = 0;
+  const ctx = { home: HOME, reg: [], scratch: /^\/nowhere\//, cwds: {}, projects: {}, resolve: () => (asked++, null) };
+  assert.equal(X.attribute(`${HOME}/.config/tool`, null, ctx), "other");
+  assert.equal(X.attribute(`${HOME}/.config/tool`, "o/r", ctx), "gh:o/r", "its session's PR repo, as a folder of no repo");
+  assert.ok(!(`${HOME}/.config/tool` in ctx.cwds), "not kept");
+  assert.equal(asked, 2, "asked each time");
+}
+
 rmSync(D, { recursive: true, force: true }); // its own mkdtemp
 console.log("index.check: ok");

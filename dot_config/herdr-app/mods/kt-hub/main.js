@@ -148,7 +148,7 @@ export default class Hub extends View {
     this.cur = "now";
     this.reveal = false;
     this.width = 1000;
-    this.widthAt = 0; // when the width last moved (SETTLE_MS)
+    this.widthAt = null; // when the width last moved (SETTLE_MS); null: not measured yet, no image before it
     this.headW = 0;
     this.shown = false;
     this.tick = null;
@@ -271,7 +271,7 @@ export default class Hub extends View {
       this.tr.slot.set(slot, { name, w, h });
       return { path: `${TRAME_DIR}/${name}`, w, h };
     }
-    if (this.tr.listed && Date.now() - this.widthAt >= SETTLE_MS) this.tr.queue.set(name, build);
+    if (this.tr.listed && this.widthAt != null && Date.now() - this.widthAt >= SETTLE_MS) this.tr.queue.set(name, build);
     const last = this.tr.slot.get(slot);
     return last && this.tr.have.has(last.name) ? { path: `${TRAME_DIR}/${last.name}`, w: last.w, h: last.h } : null;
   }
@@ -1086,7 +1086,7 @@ export default class Hub extends View {
     const flowName = (f) => `${String(f.repo ?? "").split("/").pop()}#${f.issue ?? "?"}`; // i18n: tech
     // The chart's new values wait a render when other paths were built in this one (built()): the old ones
     // are still in viz.js' memo, so drawing them costs nothing.
-    const want = { active: W.active, merged: W.merged, labels: W.starts.map((s) => tr("flows.weekOf", { date: date(s) })), half };
+    const want = { active: W.active, merged: W.merged, labels: W.starts.map((s) => date(s, { year: false })), half };
     const key = JSON.stringify(want);
     if (this.heavy >= 3 && this.chartKey !== key) {
       if (this.builds > 0 && this.chartLast) this.later = true;
@@ -1359,14 +1359,17 @@ export default class Hub extends View {
     }
     const pr = this.pv;
     const kids = pr ? this.projectBody(t, pr, this.width) : this.globalRows(t, this.width);
+    // The top row is taller than the page: scroll_to_item leaves a child already in sight where it is, so
+    // the top (row 0) is a child of no height before it (gg, the page shown again).
     if (this.reveal) {
       const i = this.rowOf?.[this.cur];
-      if (i != null && i < kids.length) this.scroll.scroll_to_item(i);
+      if (i != null && i < kids.length) this.scroll.scroll_to_item(i ? i + 1 : 0);
       this.reveal = false;
     }
     // The view's key in the id: global and each project fade in when they come.
     return enter(this.m, v_flex().flex_1().min_h(0), `hub-in-${pr?.key ?? "global"}`, { dy: 0 })
-      .child(v_flex().id("hub-body").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().track_scroll(this.scroll).pb(16).gap(8).children(kids));
+      .child(v_flex().id("hub-body").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().track_scroll(this.scroll).pb(16).gap(8)
+        .child(div().h(0).mb(-8)).children(kids));
   }
 
   render(cx) {
@@ -1379,8 +1382,10 @@ export default class Hub extends View {
         else this.waiting = true;
       });
       if (vis && !this.shown) {
-        // Shown again: the keyboard (NORMAL) once the app has settled its own focus, the tick, a pass
-        // when the last is over a minute old (the old summary stays shown meanwhile).
+        // Shown again: at the top, the keyboard (NORMAL) once the app has settled its own focus, the tick,
+        // a pass when the last is over a minute old (the old summary stays shown meanwhile).
+        this.cur = null; // the view's first section, below
+        this.reveal = true;
         cx.timer.after(150, (cx) => {
           if (visible() && !this.handle.is_focused()) this.focusIn(cx);
           cx.notify();
@@ -1407,7 +1412,7 @@ export default class Hub extends View {
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => {
-        if (size.width === this.width) return;
+        if (size.width === this.width && this.widthAt != null) return;
         this.width = size.width;
         this.widthAt = Date.now();
         // The images wait for the width to settle: one timer per resize, to draw them once it has.

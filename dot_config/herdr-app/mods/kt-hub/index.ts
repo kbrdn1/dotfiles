@@ -104,7 +104,8 @@ function merge(into: Bucket, b: Bucket & { sess?: Record<string, string> }) {
 // ---------------------------------------------------------------- attribution
 
 type Reg = { folder: string; name: string }[];
-type Resolved = { root: string; slug: string | null } | 0;
+// null: not known this pass (chezmoi missing), asked again next time; 0: no repo, kept.
+type Resolved = { root: string; slug: string | null } | 0 | null;
 
 export function registryOf(shared: any): Reg {
   const list = Array.isArray(shared?.["kt.projects"]) ? shared["kt.projects"] : [];
@@ -118,8 +119,12 @@ export function regMatch(path: string, reg: Reg) {
   return best;
 }
 
+// chezmoi by its path in Nix's profile: Herdr's exec has a PATH without ~/.nix-profile ("chezmoi not
+// found" in the app, fine from a shell). run() fills it.
+let BINS: Record<string, string> = {};
+
 function sh(cmd: string, args: string[]) {
-  const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 10e3 });
+  const r = spawnSync(BINS[cmd] ?? cmd, args, { encoding: "utf8", timeout: 10e3 });
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
@@ -171,7 +176,10 @@ export function attribute(cwd: string, prRepo: string | null, ctx: Ctx): string 
   if (cwd === ctx.home) return note(ctx, ctx.home, "home", "Home");
   if ((ctx.scratch ?? TMP).test(cwd)) return note(ctx, "other", "other", "other");
   let r = ctx.cwds[cwd];
-  if (r === undefined) r = ctx.cwds[cwd] = ctx.resolve(cwd);
+  if (r == null) {
+    r = ctx.resolve(cwd);
+    if (r !== null) ctx.cwds[cwd] = r;
+  }
   // A repo's name: GitHub's (the chezmoi source folder is kbrdn1/dotfiles), else its folder's.
   if (r) return regMatch(r.root, ctx.reg) ? attribute(r.root, null, ctx) : note(ctx, r.root, "repo", r.slug?.split("/")[1] ?? basename(r.root), r.slug);
   const byName = byFolderName(cwd, ctx);
@@ -733,11 +741,17 @@ export function run(cfg: Cfg) {
     try { shared = JSON.parse(readFileSync(cfg.shared, "utf8")); } catch {}
     const chez = new Map<string, boolean>();
     let chezRoot: Resolved | undefined;
-    // git and chezmoi must run: a folder resolved to nothing is kept so in the archive.
-    if (!cfg.resolve) for (const bin of ["git", "chezmoi"]) if (!sh(bin, ["--version"])) throw new Error(`${bin} not found`);
+    // git must run: a folder resolved to nothing is kept so in the archive. Without chezmoi, a folder
+    // outside any repo stays unknown (null, not kept) until a pass that has it.
+    const nix = `${cfg.home}/.nix-profile/bin/chezmoi`;
+    BINS = existsSync(nix) ? { chezmoi: nix } : {};
+    if (!cfg.resolve && !sh("git", ["--version"])) throw new Error("git not found");
+    const chezOk = !cfg.resolve && sh("chezmoi", ["--version"]) != null;
     const resolve = cfg.resolve ?? ((cwd: string) => {
       const r = gitRoot(cwd);
-      if (r || !existsSync(cwd) || !chezmoiManaged(cwd, cfg.home, chez)) return r;
+      if (r || !existsSync(cwd)) return r;
+      if (!chezOk) return null;
+      if (!chezmoiManaged(cwd, cfg.home, chez)) return r;
       return (chezRoot ??= gitRoot(sh("chezmoi", ["source-path"]) ?? ""));
     });
     const ctx: Ctx = { home: cfg.home, reg: registryOf(shared), scratch: cfg.scratch, cwds: A.cwds, resolve, projects: A.projects };
