@@ -22,7 +22,9 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, setShared, settings, panes } from "herdr";
-import { week, ranked, projectRows, year, years, now, delta, localDay, dayShift, familyOf } from "./model.js";
+import { week, ranked, projectRows, year, years, now, byMachine, delta, localDay, dayShift, familyOf } from "./model.js";
+// kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the other machines and their state (#66).
+import { machineList, machineTag, stateOf, stateWord } from "./machines.js";
 import { ghArgs, parseYear, stale, githubYear } from "./github.js";
 import { keyOf as folderKey, projectWeek, projectYear, projectYears, weekPrs, weekChecks, prListArgs } from "./project.js";
 import { PATH, path as flowPath, byWorkflow, nextFlows, nextPlanIssues, recentMerges, parseHistory } from "./recent.js";
@@ -515,7 +517,8 @@ export default class Hub extends View {
       .children([dither(this.headW, 60, 16, tint)].filter(Boolean))
       .child(bandRow(t, { m: this.m, color: tint, icon: I("house"), title: this.pv ? tr("titleProject", { name: this.pv.name }) : tr("title"),
         dot: this.running ? t.working : this.err ? t.ansi1 : null,
-        sub: [`${date(at)} · ${time(at)}`, state],
+        // #66: the archived figures are this Mac's (its transcripts), said once there are other machines.
+        sub: [`${date(at)} · ${time(at)}`, state, machineList().length ? tr("index.local") : null],
         buttons: [seg, refresh] }));
   }
 
@@ -540,7 +543,27 @@ export default class Hub extends View {
         .hover((s) => s.bg(alpha(dot, "24"))).tooltip(tr("now.goTip", { name: n.go.tab_name || n.go.space_name || n.go.address }))
         .on_click((_e, cx) => { cx.stop_propagation(); this.go(n.go); })
         .child(tr("now.go")).child(svg(I("chevron-right")).size(12))));
-    return this.section(t, "now", tr("now.title"), null, line);
+    // #66: with other machines, the live agents of each, its state beside it (machines.js); nothing read
+    // there, only agents()' addresses. A machine that doesn't answer says so instead of its counts.
+    const others = machineList();
+    if (!others.length) return this.section(t, "now", tr("now.title"), null, line);
+    const rows = byMachine(agents(), others.map((m) => m.name)).map((g) => {
+      const s = g.name == null ? null : others.find((m) => m.name === g.name) ?? stateOf(g.name);
+      const word = g.name == null ? "" : stateWord(g.name);
+      const counts = [g.working && tr("now.working", { n: g.working }), g.blocked && tr("now.blocked", { n: g.blocked }), g.done && tr("now.done", { n: g.done })].filter(Boolean);
+      const text = word || (counts.length ? counts.join(" · ") : g.total ? tr("now.idle", { n: g.total }) : tr("now.noAgent"));
+      return h_flex().id(`hub-now-m-${g.name ?? "local"}`).h(26).px(4).gap(10).items_center().rounded(8)
+        .when(Boolean(g.go), (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)).tooltip(tr("now.goTip", { name: g.go.tab_name || g.go.address }))
+          .on_click((_e, cx) => { cx.stop_propagation(); this.go(g.go); }))
+        .child(div().w(150).flex_none().flex().child(g.name == null
+          ? h_flex().gap(5).items_center().px(6).rounded_full().bg(t.raised).font_family(MONO).text_size(10.5).text_color(t.dim)
+            .child(div().size(6).flex_none().rounded_full().bg(t.done)).child(tr("now.thisMac"))
+          : machineTag(t, g.name, { id: `hub-now-tag-${g.name}` })))
+        .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(word ? t.muted : counts.length ? t.foreground : t.dim).child(text))
+        .when(Boolean(s && !s.reachable && s.status === "login"), (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim)
+          .child(`hc machine login ${g.name}`))); // i18n: tech
+    });
+    return this.section(t, "now", tr("now.title"), null, v_flex().gap(4).child(line).child(v_flex().gap(2).pl(2).children(rows)));
   }
 
   // ---------- this week ----------

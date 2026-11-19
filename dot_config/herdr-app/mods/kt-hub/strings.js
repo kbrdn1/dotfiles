@@ -19,6 +19,10 @@ export default {
     "now.none": "Rien ne tourne",
     "now.go": "Y aller",
     "now.goTip": "Le thread de {name}",
+    "now.thisMac": "Ce Mac",
+    "now.idle": { one: "{n} agent au repos", other: "{n} agents au repos" },
+    "now.noAgent": "aucun agent",
+    "index.local": "stats de ce Mac",
 
     "week.title": "Cette semaine",
     "week.sub": "depuis lundi, contre les mêmes jours de la semaine dernière",
@@ -168,6 +172,10 @@ export default {
     "now.none": "Nothing running",
     "now.go": "Go",
     "now.goTip": "{name}'s thread",
+    "now.thisMac": "This Mac",
+    "now.idle": { one: "{n} agent idle", other: "{n} agents idle" },
+    "now.noAgent": "no agent",
+    "index.local": "this Mac's stats",
 
     "week.title": "This week",
     "week.sub": "since Monday, against the same days last week",

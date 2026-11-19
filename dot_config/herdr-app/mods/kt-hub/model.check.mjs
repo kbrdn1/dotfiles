@@ -79,4 +79,11 @@ assert.deepEqual(M.now(ag), { working: 1, blocked: 1, done: 1, go: ag[2] });
 assert.equal(M.now([ag[0]]).go, ag[0]);
 assert.equal(M.now([]).go, null);
 
+// #66: by machine, from the address's prefix; this computer first, a machine without agents keeps its row.
+assert.equal(M.machineOf("vps/t3"), "vps");
+assert.equal(M.machineOf("t3"), null);
+const mixed = [{ address: "t1", status: "working" }, { address: "vps/t2", status: "blocked" }, { address: "vps/t4", status: "working" }, { address: "box/t9", status: "idle" }];
+assert.deepEqual(M.byMachine(mixed, ["vps", "far"]).map((g) => [g.name, g.total, g.working, g.blocked, g.go?.address ?? null]),
+  [[null, 1, 1, 0, "t1"], ["vps", 2, 1, 1, "vps/t2"], ["far", 0, 0, 0, null], ["box", 1, 0, 0, null]]);
+
 console.log("model.check: ok");

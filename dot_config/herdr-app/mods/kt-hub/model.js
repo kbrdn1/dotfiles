@@ -128,3 +128,18 @@ export function now(agents) {
   const go = by("blocked")[0] ?? by("done")[0] ?? by("working")[0] ?? null;
   return { working: by("working").length, blocked: by("blocked").length, done: by("done").length, go };
 }
+
+/** An agent's machine, from its address: "vps/t3" is vps's, a bare "t3" this computer's (null). */
+export const machineOf = (address) => (String(address ?? "").includes("/") ? String(address).split("/")[0] : null);
+
+/** #66: Now by machine: this computer first, then `names` (the other machines, in their order), each with
+ * now() of its agents; an agent of a machine not named still gets its row. */
+export function byMachine(agents, names = []) {
+  const groups = new Map([[null, []], ...names.map((n) => [n, []])]);
+  for (const a of agents ?? []) {
+    const m = machineOf(a.address);
+    if (!groups.has(m)) groups.set(m, []);
+    groups.get(m).push(a);
+  }
+  return [...groups].map(([name, list]) => ({ name, total: list.length, ...now(list) }));
+}
