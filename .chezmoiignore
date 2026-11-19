@@ -145,9 +145,6 @@
 .config/herdr-app/layouts/kbrdn-threads.png
 .config/herdr-app/layouts/.state
 .config/herdr-app/brand/companions/out
-# La tuile locale du projet kbrdn-herdr reprend la marque de Herdr (le belier) :
-# elle reste sur cette machine. La source garde la version dessinee par nous.
-.config/herdr-app/brand/projects/kbrdn-herdr.svg
 .config/herdr-app/data
 .config/herdr-app/telemetry
 .config/herdr-app/shared.json
