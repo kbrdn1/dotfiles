@@ -63,6 +63,9 @@ import {
   foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
 import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markdown.js";
+// #82: the references in the transcript (refs.js), opened in Herdr; a panel tab shown first (panel.js).
+import { refsState, ensure as ensureRefs, refsOf, linkify, parseRef, plan as refPlan, githubUrl, labelOf, refKey, kindFrom } from "./refs.js";
+import { showColumn } from "./panel.js";
 import { attachmentsOf, photoSize } from "./att-model.js";
 // #93: a turn's assets (its tools' images and files, the files its answer cites: assets.js), and the
 // field's attachments (a drop, a paste, a picked file) and « Citer » (attach.js).
@@ -154,6 +157,10 @@ const CLAUDE_ICON = "icons/claude.svg";
 const SPIN = "mods/workspace-chrome/spinner.svg";
 const QUOTE = OWN("text-quote"); // #93: « Citer »
 const MSG = "mods/kt-panel-head/messages-square.svg";
+// #82: a reference's chip, its kind's icon; GitHub's mark (kt-gwm's) on its second button.
+const REF_ICON = { issue: I("git-pull-request"), commit: I("git-commit"), file: I("file-text"), branch: I("git-branch"), worktree: I("folder-tree") };
+const GITHUB = "mods/kt-gwm/github.svg";
+const MAX_REFS = 8; // chips under one answer
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 
 // ── Monocode's values (crates/monocode-gpui/src, 09d0443) ───────────────────
@@ -2241,7 +2248,7 @@ export default class Chat extends View {
         .when((from?.count ?? 1) > 1, (el) => el.child(div().flex_none().h(16).px(6).flex().items_center().rounded_full()
           .bg(ink(t, 0.08)).text_size(10.5).text_color(ink(t, 0.6)).child(String(from.count)))))
       .when(Boolean(shown), (el) => el.child(div().min_w(0).overflow_hidden().text_size(13).line_height("20px").text_color(ink(t, 0.78))
-        .child(TextView.markdown(`kc-nb-${id}${open ? "-all" : ""}`, shown).selectable(true))))
+        .child(TextView.markdown(`kc-nb-${id}${open ? "-all" : ""}`, this.linked(null, shown)).selectable(true).on_link_click((url, cx) => this.link(url, cx)))))
       .when(Boolean(folded?.cut), (el) => el.child(this.moreLink(t, `kc-nm-${id}`, open, () => this.toggle(`o:${id}`))));
   }
 
@@ -2330,17 +2337,100 @@ export default class Chat extends View {
    */
   prose(t, cx, b, top) {
     const doc = docOf(this.md, b.text, { meta: false });
-    const md = (k, text) => TextView.markdown(`kc-md-${b.id}#${k}`, text).selectable(true).on_link_click((url) => this.link(url));
+    // #82: its references as links (linked()); a click on one goes to Herdr (link()).
+    const md = (k, text) => TextView.markdown(`kc-md-${b.id}#${k}`, this.linked(cx, text)).selectable(true).on_link_click((url, cx) => this.link(url, cx));
     return v_flex().w_full().min_w(0).overflow_hidden().pt(top).gap(16).text_size(14).line_height("24px").text_color(ink(t, 0.78))
       .children(doc.segs.map((s, k) => (s.kind === "code" ? this.codeBlock(t, cx, `${b.id}#${k}`, s)
         : s.kind === "alert" ? div().ml(4).pl(16).border_l(4).border_color(ink(t, 0.2)).child(md(k, s.text))
           : md(k, s.text))));
   }
 
-  // A web link opens in the browser; a path in the prose is left alone (no viewer chosen yet).
-  link(url) {
+  // A reference (#82, herdr-ref:) opens its Herdr view (openRef); a web link opens in the browser; a
+  // path written as a link is left alone (a path in the text is a reference when it's in the repo).
+  link(url, cx) {
+    const r = parseRef(url);
+    if (r) return void this.openRef(r, cx);
     const to = linkTarget(url, this.state?.meta?.cwd ?? null);
     if (to?.web) exec("open", [to.web]).catch(() => {});
+  }
+
+  // #82: the thread's folder, where its references are looked for (refs.js); none without a transcript.
+  // The facts per cwd (refs.js refsState) and the linked segments' memo, made on first use.
+  refsCwd() {
+    this.refs ??= refsState();
+    this.linkedMemo ??= new Map();
+    return this.state?.meta?.cwd ?? null;
+  }
+
+  // #82: a prose segment with its references as links (refs.js linkify), those checked against the
+  // thread's repo only: an absent or ambiguous one stays text. What a render misses is asked in ONE task
+  // after it (refs.js ensure), then a redraw; `cx` null (a notice): only what is known already. Memoized
+  // per text and facts' version (bounded).
+  linked(cx, text) {
+    const cwd = this.refsCwd();
+    if (!cwd || !text) return text;
+    const key = `${this.refs.v}\0${cwd}\0${text}`;
+    const hit = this.linkedMemo.get(key);
+    if (hit !== undefined) return hit;
+    const [cands, rs] = refsOf(this.refs, cwd, text, home());
+    if (cands.length && cx) ensureRefs(this.refs, cx, cwd, cands, { exec, checking, home });
+    const out = cands.length ? linkify(text, cands, rs) : text;
+    if (this.linkedMemo.size > 400) this.linkedMemo.delete(this.linkedMemo.keys().next().value);
+    this.linkedMemo.set(key, out);
+    return out;
+  }
+
+  // #82: a reference opened in Herdr. Its receiver's shared key first (it reads it in its render), then
+  // its page (the main "view" stack) or its panel tab (the column shown first, panel.js). An issue's kind
+  // (Inbox needs it) asked of GitHub on the click, an issue when gh can't say. Nothing opens without a click.
+  openRef(r, cx) {
+    const go = (kind) => {
+      const p = refPlan(r, kind);
+      setShared(p.key, { ...p.value, at: Date.now() });
+      if (p.page) run("layout.select", { stack: "view", child: p.page });
+      else {
+        showColumn("panel", cx);
+        run("layout.select", { stack: "panel-body", child: p.panel });
+      }
+    };
+    if (r.kind !== "issue") return void go();
+    cx.spawn(async () => {
+      const out = await exec("gh", ["api", `repos/${r.repo}/issues/${r.number}`, "--jq", ".pull_request"], { timeout: 5000 }).catch(() => null);
+      go(kindFrom(out?.code === 0 ? out.stdout : ""));
+    });
+  }
+
+  // #82: under an answer, a chip per reference it names (once each, in order, MAX_REFS at most): its
+  // kind's icon and its label, a click to its Herdr view, and GitHub's page as a second button when it
+  // has one (an issue or a PR, a commit). Its own row, between #93's assets and the answer's actions:
+  // nothing overlaps; a file already among the assets (the same path) isn't a second chip. Fades in once
+  // when its first chip is known (motion.js enter).
+  refChips(t, cx, turn) {
+    const cwd = this.refsCwd();
+    const text = answerOf(turn);
+    if (!cwd || !text) return null;
+    const [cands, rs] = refsOf(this.refs, cwd, text, home());
+    if (cands.length) ensureRefs(this.refs, cx, cwd, cands, { exec, checking, home });
+    const assets = new Set((turn.assets ?? []).map((a) => a.abs).filter(Boolean));
+    const seen = new Set();
+    const list = [];
+    for (const r of rs) {
+      if (!r || seen.has(refKey(r)) || list.length >= MAX_REFS || (r.kind === "file" && assets.has(r.path))) continue;
+      seen.add(refKey(r));
+      list.push(r);
+    }
+    if (!list.length) return null;
+    const chip = (r, i) => {
+      const gh = githubUrl(r);
+      return h_flex().id(`kc-ref-${turn.id}-${i}`).h(24).pl(8).pr(gh ? 2 : 8).gap(6).items_center().min_w(0).rounded(8)
+        .border(1).border_color(ink(t, 0.1)).bg(ink(t, 0.04)).cursor_pointer().hover((s) => s.bg(ink(t, 0.08)))
+        .tooltip(tr(`ref.open.${r.kind}`))
+        .on_click((_e, cx) => { this.openRef(r, cx); cx.notify(); })
+        .child(svg(REF_ICON[r.kind]).size(12).flex_none().text_color(ink(t, 0.5)))
+        .child(div().max_w(220).truncate().font_family(CODE).text_size(12).text_color(ink(t, 0.75)).child(labelOf(r)))
+        .when(Boolean(gh), (el) => el.child(this.iconBtn(t, `kc-refgh-${turn.id}-${i}`, GITHUB, tr("ref.github"), () => exec("open", [gh]).catch(() => {}), 20)));
+    };
+    return enter(this.m, h_flex().flex_wrap().gap(6).pt(8), `kc-refs-${turn.id}`, { dy: 0 }).children(list.map(chip));
   }
 
   // transcript.rs:2165-2455 + response_actions.rs: under the answer, always shown: copy (a check for
@@ -2604,7 +2694,11 @@ export default class Chat extends View {
     // #93: what the turn's tools got back or wrote and the files its answer cites, once it is over.
     const assets = turn.live ? null : this.assetsRow(t, cx, turn);
     if (assets) out.push(assets);
-    if (!turn.live && answerOf(turn)) out.push(this.actions(t, turn));
+    if (!turn.live && answerOf(turn)) {
+      const refs = this.refChips(t, cx, turn); // #82: its own row, under the assets
+      if (refs) out.push(refs);
+      out.push(this.actions(t, turn));
+    }
     const here = keyed && i === (this.cur < 0 ? this.turns.length - 1 : this.cur);
     // #92: a turn that arrived live fades in where it lands (landing()); the others are drawn as they are.
     return this.col(v_flex().relative().w_full().min_w(0).pb(8)
