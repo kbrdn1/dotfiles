@@ -694,6 +694,10 @@ export default class Threads extends View {
         .child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))
         .child(div().truncate().text_size(12).font_medium().text_color(t.blocked).child(tr("needsYou")));
     }
+    // An agent on another machine (#65): its live line (herdr-bridge's file) is on that machine, not read
+    // from here; said where this computer's agent would show its action or answer, instead of nothing.
+    const on = lead?.terminal?.includes("/") ? lead.terminal.split("/")[0] : null;
+    if (on && (c.status === "working" || c.status === "done")) return div().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(tr("liveRemote", { m: on }));
     const text = c.status === "working" ? l?.action?.what : c.status === "done" ? l?.answer : null;
     return text ? div().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(`↳ ${text}`) : null;
   }
