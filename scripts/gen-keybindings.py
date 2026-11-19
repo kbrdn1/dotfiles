@@ -56,10 +56,15 @@ def herdr_app_labels() -> dict[str, str]:
             for m in re.finditer(r'"g\.([^"]+)":\s*"((?:[^"\\]|\\.)*)"', fr.group(1))}
 
 
+def printable(s: str) -> str:
+    """Un caractère de contrôle (ESC, ^W… des `send:`) écrit en `\\x1b` : le document reste lisible."""
+    return "".join(c if c.isprintable() else f"\\x{ord(c):02x}" for c in s)
+
+
 def herdr_app_id(value) -> str:
     """Une entrée de keys.json -> l'identifiant que kt-keys nomme : `layout.select:<child>`, `mod.open:<name>`."""
     if isinstance(value, str):
-        return value
+        return printable(value)
     if isinstance(value, dict):
         cmd, args = value.get("command", "?"), value.get("args") or {}
         sub = args.get("child") or args.get("name")
