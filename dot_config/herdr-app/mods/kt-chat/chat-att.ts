@@ -118,7 +118,8 @@ if (import.meta.main) {
     const st = statSync(target!);
     const key = `${target}:${st.mtimeMs}:${st.size}`;
     const k = kindOf(target);
-    if (k.kind !== "image" && k.kind !== "pdf") { out({ kind: k.kind, lang: k.lang ?? null, bytes: st.size }); process.exit(0); }
+    // #93: a folder (a piece can be one) says so: its card shows no size.
+    if (k.kind !== "image" && k.kind !== "pdf") { out({ kind: k.kind, lang: k.lang ?? null, bytes: st.size, ...(st.isDirectory() ? { dir: true } : {}) }); process.exit(0); }
     const th = cacheName("th", key, "webp");
     // A PDF's thumbnail is its first page's, the page kept: the viewer opens on it.
     const first = k.kind === "pdf" ? `${dir}/${cacheName("pdf", key, "png", 1)}` : target!;

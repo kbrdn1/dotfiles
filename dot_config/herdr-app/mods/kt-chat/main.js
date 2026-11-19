@@ -64,11 +64,11 @@ import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markd
 // #82: the references in the transcript (refs.js), opened in Herdr; a panel tab shown first (panel.js).
 import { refsState, ensure as ensureRefs, refsOf, linkify, parseRef, plan as refPlan, githubUrl, labelOf, chipsOf, kindFrom } from "./refs.js";
 import { showColumn } from "./panel.js";
-import { attachmentsOf, photoSize } from "./att-model.js";
+import { attachmentsOf, photoSize, extOf, familyOf, tileOf, CARD, colsFor, gridW, gridPlan } from "./att-model.js";
 // #93: a turn's assets (its tools' images and files, the files its answer cites: assets.js), and the
 // field's attachments (a drop, a paste, a picked file) and « Citer » (attach.js).
 import { turnAssets } from "./assets.js";
-import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
+import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
 // kt-keys' categories.js (a byte-identical copy, with workflows.js): the pieces' one chip (#81 and #93).
 import { pieceChip, classify } from "./categories.js";
 // #81: the field's completions (/ # @): completer.js' menu over kt-keys' complete.js (byte-identical
@@ -224,7 +224,7 @@ export default class Chat extends View {
     // starts this copy: its stamp is written just before).
     const stamp = shared("kt.chat.focus");
     this.focusAsked = stamp && Date.now() - stamp > 2000 ? stamp : null;
-    this.open = new Set(); // opened: f:<turn> fold, s:<step> detail, c:<notice> summary, r:<run> report, k:<code> block
+    this.open = new Set(); // opened: f:<turn> fold, s:<step> detail, c:<notice> summary, r:<run> report, k:<code> block, p:<grid> pieces (« +N »)
     this.shownSteps = new Map(); // phase id -> steps drawn (STEPS, then MORE at a time)
     this.cur = -1; // the turn cursor (-1: the last)
     this.win = { from: 0, to: 0 }; // the turns drawn, [from, to) (turn-window.js, #59)
@@ -360,6 +360,7 @@ export default class Chat extends View {
     // #93: the files waiting above the field (attach.js), a paste or a chooser running (a turn's assets are
     // worked out in rebuild(), on the turn).
     this.drafts = [];
+    this.pieceHover = null; // the field's card under the pointer: its × shows (pieceCard), apart from this.hover
     this.pasting = false;
     this.picking = false;
     // A paste the field found no text in: the Finder's files, else the clipboard's image (attach.js).
@@ -842,6 +843,7 @@ export default class Chat extends View {
       this.draft = this.composer.value();
       const went = new Set(atts.map((x) => x.id));
       this.drafts = this.drafts.filter((x) => !went.has(x.id));
+      if (!this.drafts.length) this.open.delete("p:drafts"); // the next pieces start on two rows again
       this.follow = true;
       this.jump = null;
       this.win = win.bottom(this.turns.length);
@@ -1076,6 +1078,18 @@ export default class Chat extends View {
   }
 
   /**
+   * Files dropped anywhere on the face, transcript included (Kylian: not only on the field). With the
+   * background's panel open, an image among them goes to the background (the panel says so); otherwise,
+   * or with no image, they join the message, when there is an agent to write to.
+   */
+  dropped(cx, paths, pr) {
+    const img = this.bgMenu && pr ? paths.find((x) => IMAGE.test(x)) : null;
+    if (img) this.importBg(cx, pr, img);
+    else if (this.composerShown()) return this.attach(cx, paths, "drop");
+    cx.notify();
+  }
+
+  /**
    * A paste the field found no text in: files copied in the Finder go as themselves; an image is written
    * under data/kt-chat/paste (the only copy #93 makes, the 12 newest kept) and goes as that file.
    */
@@ -1123,13 +1137,13 @@ export default class Chat extends View {
   }
 
   /**
-   * The files waiting above the field: an image as a 56 square (its thumbnail, chat-att.ts), the rest as
-   * the pieces' one chip (categories.js pieceChip, #81's too), each with its ×; a click opens the viewer
-   * on them. #92's rule for the composer: its height never moves frame by frame (that resizes the
-   * transcript, areaSized redraws the Chat each frame, the followed bottom shakes). So the row takes or
-   * gives its height at once; a piece fades in rising DY.row inside a box of its own size that clips
-   * (rise()'s way, for an inline piece); × fades it out where it stands (goOut(): its place kept, then the
-   * height changes once); a sent message's pieces go at once. Reduced motion: no fade, no timer.
+   * The files waiting above the field, as cards (pieceCard), each with its × while hovered; a click opens
+   * the viewer on them; two rows until « +N » shows them all. #92's rule for the composer: its height never
+   * moves frame by frame (that resizes the transcript, areaSized redraws the Chat each frame, the followed
+   * bottom shakes). So the grid takes or gives its height at once (« +N » too); a piece fades in rising
+   * DY.row inside a box of its own size that clips (rise()'s way, for an inline piece); × fades it out where
+   * it stands (goOut(): its place kept, then the height changes once); a sent message's pieces go at once.
+   * Reduced motion: no fade, no timer.
    */
   draftView(t, cx) {
     if (!this.drafts.length) return null;
@@ -1137,38 +1151,99 @@ export default class Chat extends View {
     const atts = this.drafts.map(asAtt);
     const out = (p) => `kc-dr~${p.id}`;
     const x = (p) => this.iconBtn(t, `kc-dx-${p.id}`, I("x"), tr("attach.remove"), (cx) => this.goOut(cx, out(p), () => { this.drafts = dropDraft(this.drafts, p.id); }), 18);
-    const pop = (p, el) => div().flex_none().overflow_hidden().child(this.out(enter(this.m, el, `kc-dr-${p.id}`, { dy: DY.row }), out(p)));
-    const thumb = (p, i) => {
-      const info = this.attOf(cx, asAtt(p));
-      const src = info?.thumb ? `${ATT_DIR}/${info.thumb}` : null;
-      return div().relative().size(56).rounded(10).overflow_hidden().bg(ink(t, 0.06))
-        .child(div().id(`kc-dp-${p.id}`).size_full().cursor_pointer().on_click((_e, cx) => this.openAtts(cx, atts, i))
-          .when(Boolean(src), (el) => el.child(image(src).size_full()))
-          .when(!src, (el) => el.flex().items_center().justify_center().child(svg(OWN("image")).size(16).text_color(ink(t, 0.35)))))
-        .child(div().absolute().top(2).right(2).rounded(6).bg(alpha(t.background, "cc")).child(x(p)));
-    };
-    const chip = (p, i) => h_flex().gap(2).items_center()
-      .child(div().id(`kc-dc-${p.id}`).cursor_pointer().on_click((_e, cx) => this.openAtts(cx, atts, i)).child(pieceChip(t, p, { dark: Boolean(settings().dark) })))
-      .child(x(p));
-    return h_flex().id("kc-drafts").px(10).pt(10).gap(6).flex_wrap().items_center()
-      .children(this.drafts.map((p, i) => pop(p, p.kind === "image" ? thumb(p, i) : chip(p, i))));
+    // enter() gives the motion's id to a box around the card: the card keeps its own id and handlers.
+    const pop = (p, el) => div().flex_none().overflow_hidden().child(this.out(enter(this.m, div().child(el), `kc-dr-${p.id}`, { dy: DY.row }), out(p)));
+    const w = Math.min(this.width || COLUMN, COLUMN) - 42; // the card's inside: composerView's px 10 and border 1, this row's px 10
+    return div().id("kc-drafts").px(10).pt(10)
+      .child(this.pieceGrid(t, "p:drafts", this.drafts.length, w, (i) => pop(this.drafts[i], this.pieceCard(t, cx, `kc-pc-${this.drafts[i].id}`, atts, i, { x: x(this.drafts[i]) }))));
   }
 
   /**
    * Under an answer: what its tools got back, read or wrote, and the files it cites (`turn.assets`, worked
-   * out in rebuild(): render only reads it; a cited file the indexer didn't find on the disk isn't there),
-   * images as #80's photos at 160, the rest as chips. A click opens the viewer. Known with its turn, it
-   * comes as its turn does (landing()): no motion of its own.
+   * out in rebuild(): render only reads it; a cited file the indexer didn't find on the disk isn't there).
+   * One image alone as #80's photo at 160; more, or one that isn't an image, as cards (pieceCard), two rows
+   * until « +N ». A click opens the viewer. Known with its turn, it comes as its turn does (landing()): no
+   * motion of its own.
    */
   assetsRow(t, cx, turn) {
     const atts = turn.assets ?? [];
     if (!atts.length) return null;
     const own = { id: `${turn.id}-as` }; // its elements' ids, apart from the prompt's attachments'
-    const photos = atts.map((a, i) => (a.kind === "image" ? this.photo(t, cx, own, atts, a, i, 160) : null)).filter(Boolean);
-    const docs = atts.map((a, i) => (a.kind !== "image" ? this.docChip(t, cx, own, atts, a, i) : null)).filter(Boolean);
-    return v_flex().id(`kc-as-${turn.id}`).pt(12).gap(8).min_w(0)
-      .when(photos.length > 0, (el) => el.child(h_flex().gap(8).flex_wrap().children(photos)))
-      .when(docs.length > 0, (el) => el.child(h_flex().gap(6).flex_wrap().children(docs)));
+    const w = Math.min(this.width || COLUMN, COLUMN) - 2 * COLUMN_PAD;
+    const local = this.localFiles();
+    const body = atts.length === 1 && atts[0].kind === "image" ? this.photo(t, cx, own, atts, atts[0], 0, 160)
+      : this.pieceGrid(t, `p:${own.id}`, atts.length, w, (i) => this.pieceCard(t, cx, `kc-pc-${own.id}-${i}`, atts, i, { drag: local }));
+    return v_flex().id(`kc-as-${turn.id}`).pt(12).min_w(0).child(body);
+  }
+
+  /**
+   * #93: a piece's one card, wherever it shows (Kylian: one format for all): CARD (188 × 48), its 36
+   * square on the left, an image's thumbnail cut to it (cover), else its family's dithered tile (tiles/,
+   * pre-rendered by brand/piece-tiles.py: an asset read as it is, never worked out here) with its
+   * extension over it; its name cut in the middle, « type · size » under it (a folder: no size). A click
+   * opens the viewer at it. `x`: the field's ×, shown while the card is hovered, in its corner (the box
+   * its rise clips in holds it); `drag`: a file on this computer can be dragged onto a terminal
+   * (drag_paths: Herdr takes such a drag nowhere else).
+   */
+  pieceCard(t, cx, id, atts, i, { x = null, drag = false } = {}) {
+    const a = atts[i];
+    const info = this.attOf(cx, a);
+    const dir = Boolean(info?.dir);
+    const fam = familyOf(a.name, a.kind, { dir });
+    const ext = extOf(a.name);
+    const meta = [fam.type ? tr(`att.${fam.type}`) : fam.ext, info?.bytes != null && !dir ? sizeText(info.bytes) : null].filter(Boolean).join(" · ");
+    const S = 36;
+    const thumb = a.kind === "image" && info?.thumb ? `${ATT_DIR}/${info.thumb}` : null;
+    const r = info?.w > 0 && info?.h > 0 ? info.w / info.h : 1;
+    const [w, h] = r >= 1 ? [S * r, S] : [S, S / r];
+    const square = div().relative().size(S).flex_none().rounded(8).overflow_hidden()
+      .when(Boolean(thumb), (el) => el.child(image(thumb).absolute().left((S - w) / 2).top((S - h) / 2).w(w).h(h)))
+      .when(!thumb, (el) => el.child(image(tileOf(fam.tile, Boolean(settings().dark))).absolute().left(0).top(0).size(S))
+        .child(h_flex().absolute().left(0).top(0).size(S).items_center().justify_center()
+          .child(dir || !ext ? svg(I(dir ? "folder" : "file")).size(16).text_color(ink(t, 0.85))
+            : div().text_size(9.5).font_bold().text_color(ink(t, 0.9)).child(ext.toUpperCase().slice(0, 5)))));
+    const hov = Boolean(x) && this.pieceHover === id;
+    return h_flex().id(id).relative().w(CARD.w).h(CARD.h).flex_none().gap(10).pl(5).pr(10).items_center().rounded(10)
+      .bg(ink(t, 0.06)).border(1).border_color(ink(t, 0.08)).cursor_pointer().hover((s) => s.bg(ink(t, 0.1)))
+      .on_click((_e, cx) => this.openAtts(cx, atts, i))
+      .when(Boolean(x), (el) => el.on_hover((on, cx) => {
+        const next = on ? id : this.pieceHover === id ? null : this.pieceHover;
+        if (next !== this.pieceHover) { this.pieceHover = next; cx.notify(); }
+      }))
+      .when(drag && Boolean(a.abs?.startsWith("/")), (el) => el.drag_paths([a.abs]))
+      .child(square)
+      .child(v_flex().flex_1().min_w(0)
+        .child(div().min_w(0).overflow_hidden().whitespace_nowrap().text_ellipsis_middle().text_size(12.5).line_height("16px").text_color(ink(t, 1))
+          .child(isPasteName(a.name) ? tr("att.pasted") : a.name))
+        .when(Boolean(meta), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("14px").text_color(ink(t, 0.5)).child(meta))))
+      .when(hov, (el) => el.child(div().absolute().top(5).right(5).rounded(6).bg(alpha(t.background, "cc")).child(x)));
+  }
+
+  /** « +N »: the grid's last place, the rest of its pieces in it; a click shows them all (one height change). */
+  moreCard(t, id, n, onOpen) {
+    return h_flex().id(id).w(CARD.w).h(CARD.h).flex_none().gap(8).items_center().justify_center().rounded(10)
+      .border(1).border_dashed().border_color(ink(t, 0.18)).cursor_pointer().hover((s) => s.bg(ink(t, 0.06)))
+      .on_click((_e, cx) => { cx.stop_propagation(); onOpen(); cx.notify(); })
+      .child(div().text_size(15).font_semibold().text_color(ink(t, 1)).child(tr("pieces.more", { n })))
+      .child(div().text_size(11.5).text_color(ink(t, 0.5)).child(tr("pieces.all")));
+  }
+
+  /**
+   * #93: `n` pieces as a grid of cards (`card(i)` draws the i-th): as many columns as `w` px hold, at
+   * most that wide (max_w: a guess a few px too wide only costs a row), two rows until « +N » opens it
+   * all (`key` in this.open). `end`: on the right (a sent message's).
+   */
+  pieceGrid(t, key, n, w, card, { end = false } = {}) {
+    const cols = colsFor(w);
+    const plan = gridPlan(n, cols, this.open.has(key));
+    const cells = Array.from({ length: plan.shown }, (_, i) => card(i));
+    if (plan.more) cells.push(this.moreCard(t, `kc-more-${key}`, plan.more, () => this.open.add(key)));
+    return h_flex().max_w(gridW(cols)).flex_wrap().gap(CARD.gap).when(end, (el) => el.justify_end()).children(cells);
+  }
+
+  /** Whether the shown agent's files are on this computer (a remote one's address is `machine/tN`): only those drag. */
+  localFiles() {
+    return !String(target().agent?.address ?? "").includes("/");
   }
 
   // The blocked agent's request (decide.js reads the bridge's cache, or the screen for a held message):
@@ -2505,27 +2580,31 @@ export default class Chat extends View {
     const open = this.open.has(`o:${turn.id}`);
     const folded = clampText(text, { lines: 4, cols: 76 });
     const shown = open || !folded.cut ? text : folded.text;
-    // #80: the message's attachments (att-model.js), its images as photos above the bubble, its other
-    // files as chips in it (attachments.rs split_photos); an index from before #80 (a count, no `imgs`)
-    // keeps its « N images » chip.
+    // #80: the message's attachments (att-model.js), above the bubble. #93: one image alone keeps its
+    // photo (240); more pieces, or one that isn't an image, are cards (pieceCard) on the right, two rows
+    // until « +N », with no motion of their own (they come with their turn). An index from before #80 (a
+    // count, no `imgs`) keeps its « N images » chip.
     const cwd = this.state?.meta?.cwd ?? null;
     const atts = attachmentsOf(u, turn.files, this.state?.session).map((a) => ({ ...a, abs: a.abs ?? (a.path?.startsWith("/") ? a.path : cwd && a.path ? `${cwd}/${a.path}` : null) }));
-    const photos = atts.map((a, i) => (a.kind === "image" ? this.photo(t, cx, turn, atts, a, i) : null)).filter(Boolean);
-    const docs = atts.map((a, i) => (a.kind !== "image" ? this.docChip(t, cx, turn, atts, a, i) : null)).filter(Boolean);
-    if (!u.imgs && u.images) docs.unshift(this.chip(t, OWN("image"), tr("images", { n: u.images })));
+    const lone = atts.length === 1 && atts[0].kind === "image" ? this.photo(t, cx, turn, atts, atts[0], 0) : null;
+    const room = Math.min(BUBBLE_MAX, Math.min(this.width || COLUMN, COLUMN) - 2 * COLUMN_PAD - BUBBLE_ROW_PAD);
+    const local = atts.length && !lone ? this.localFiles() : false;
+    const grid = atts.length && !lone
+      ? this.pieceGrid(t, `p:${turn.id}`, atts.length, room, (i) => this.pieceCard(t, cx, `kc-pc-${turn.id}-${i}`, atts, i, { drag: local }), { end: true })
+      : null;
+    const legacy = !u.imgs && u.images ? this.chip(t, OWN("image"), tr("images", { n: u.images })) : null;
     const hov = this.hover === id;
     const copied = this.copied === id;
     const row = () => h_flex().gap(6).flex_wrap().justify_end().max_w(BUBBLE_MAX);
     return h_flex().id(`kc-u-${turn.id}`).pt(4).pl(BUBBLE_ROW_PAD).w_full().min_w(0).justify_end()
       .on_hover((h, cx) => this.setHover(cx, id, h))
       .child(v_flex().items_end().max_w(BUBBLE_MAX).min_w(0)
-        .when(photos.length > 0, (el) => el.child(row().mb(8).children(photos)))
-        .when(docs.length > 0 && !text.trim(), (el) => el.child(row().mb(8).children(docs)))
+        .when(Boolean(lone || legacy), (el) => el.child(row().mb(8).children([lone, legacy].filter(Boolean))))
+        .when(Boolean(grid), (el) => el.child(grid.mb(8)))
         .when(Boolean(text.trim()), (el) => el.child(div().id(`kc-ub-${turn.id}`).max_w(BUBBLE_MAX).min_w(0).overflow_hidden()
-          .px(12).py(8).rounded(pill && !docs.length ? 18 : 12).bg(ink(t, 0.1))
+          .px(12).py(8).rounded(pill ? 18 : 12).bg(ink(t, 0.1))
           .text_size(14).line_height("20px").text_color(ink(t, 1))
           .when(Boolean(u.cmd), (el) => el.font_family(CODE).text_size(13))
-          .when(docs.length > 0, (el) => el.child(h_flex().mb(6).gap(6).flex_wrap().children(docs)))
           .child(u.cmd ? text : TextView.markdown(`kc-ut-${turn.id}${open ? "-all" : ""}`, shown).selectable(true))))
         .when(folded.cut, (el) => el.child(this.more(t, `kc-um-${turn.id}`, open, () => this.toggle(`o:${turn.id}`))))
         // Monocode shows these on hover; their place stays (no jump).
@@ -2554,20 +2633,6 @@ export default class Chat extends View {
       .cursor_pointer().on_click((_e, cx) => this.openAtts(cx, atts, i))
       .when(Boolean(src), (el) => el.child(image(src).size_full().rounded(r)))
       .when(Boolean(info?.error), (el) => el.flex().items_center().justify_center().child(svg(OWN("image")).size(16).text_color(ink(t, 0.35))));
-  }
-
-  // A file of the message (#80): a chip (attachments.rs:272-311), its type's icon, its name, then its
-  // kind and size at 0.45 (Kylian: « nom, type, taille »); a click opens the viewer at it.
-  docChip(t, cx, turn, atts, a, i) {
-    const info = this.attOf(cx, a);
-    const meta = [tr(`att.${a.kind}`), info?.bytes != null ? sizeText(info.bytes) : null].filter(Boolean).join(" · ");
-    const icon = a.kind === "pdf" || a.kind === "markdown" || a.kind === "text" ? I("file-text") : a.kind === "code" ? I("square-pen") : I("file");
-    return h_flex().id(`kc-dc-${turn.id}-${i}`).p(4).pr(8).gap(6).items_center().rounded(6).bg(ink(t, 0.06)).text_size(11)
-      .cursor_pointer().hover((s) => s.bg(ink(t, 0.1)))
-      .on_click((_e, cx) => this.openAtts(cx, atts, i))
-      .child(svg(icon).size(16).flex_none().text_color(ink(t, 0.5)))
-      .child(div().min_w(0).max_w(140).truncate().text_color(ink(t, 0.7)).child(a.name))
-      .when(Boolean(meta), (el) => el.child(div().flex_none().text_color(ink(t, 0.45)).child(meta)));
   }
 
   /** chat-att.ts's argv for an attachment (by argv, never a shell): from the transcript or its file. */
@@ -2923,8 +2988,8 @@ export default class Chat extends View {
       .when(can.ok, (el) => el.cursor_pointer().on_click((_e, cx) => { cx.stop_propagation(); this.send(cx); }))
       .child(this.sending ? svg(SPIN).size(14).spin(900) : svg(SEND).size(14))
       .when(can.ok || this.sending, (el) => el.child(div().text_size(12).font_medium().child(label)));
-    // #93: files dropped on the card join the message (their paths, absolute: never a copy); the ones
-    // waiting show above the text (draftView); « + » opens the system's chooser.
+    // #93: files dropped on the face join the message (dropped(): their paths, absolute, never a copy); the
+    // ones waiting show above the text (draftView); « + » opens the system's chooser.
     const drafts = this.draftView(t, cx);
     // #81: a completed piece's wave (menu.js: three dither crests crossing the field in its category's
     // hue, then a workflow's rail of its steps), under the text, in the field's box that clips: nothing
@@ -2936,7 +3001,6 @@ export default class Chat extends View {
     if (fx && !waves.length && !railEl) this.wave = null;
     const card = v_flex().id("kc-card").w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
       .bg(dark ? ink(t, 0.03) : t.background).when(!dark, (el) => el.shadow_sm())
-      .on_drop((e, cx) => this.attach(cx, e.paths, "drop"))
       .when(Boolean(drafts), (el) => el.child(drafts))
       .child(div().id("kc-field").relative().overflow_hidden().px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
         .children(waves)
@@ -3380,7 +3444,7 @@ export default class Chat extends View {
     return div().id("kt-chat").relative().size_full().rounded(16)
       .overflow_hidden().text_color(ink(t, 1))
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
-      .on_drop((ev, cx) => { const p = (ev?.paths ?? []).find((x) => IMAGE.test(x)); if (p && pr) { this.importBg(cx, pr, p); cx.notify(); } })
+      .on_drop((ev, cx) => this.dropped(cx, ev?.paths ?? [], pr))
       .on_size_change((size, cx) => {
         const z = Number(settings().zoom) || 1;
         const w = size.width / z, h = size.height / z;

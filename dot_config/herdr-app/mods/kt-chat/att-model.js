@@ -39,6 +39,51 @@ export function kindOf(name, media) {
   return { kind: "other" };
 }
 
+// #93: a piece's card (main.js pieceCard), the same in the field, a sent message and a turn's assets.
+// Its family says which dithered tile its square takes (tiles/<family>-<dark|light>.svg, pre-rendered by
+// brand/piece-tiles.py: never worked out in render) and the type its card says. Beside kindOf, not in it:
+// kindOf routes #80's previews and the viewer, which a .docx or a .csv don't change.
+const DOC = new Set(["doc", "docx", "odt", "rtf", "pages"]);
+const SHEET = new Set(["csv", "tsv", "xls", "xlsx", "ods", "numbers"]);
+export const FAMILIES = ["doc", "sheet", "text", "code", "image", "other"];
+
+/**
+ * { tile: one of FAMILIES, type: the att.<type> string, or null with `ext` (the extension, said as is:
+ * never « Fichier » when there is one) }. `dir`: a folder (chat-att.ts says so), its tile plain.
+ */
+export function familyOf(name, kind, { dir = false } = {}) {
+  const ext = extOf(name);
+  if (dir) return { tile: "other", type: "folder" };
+  if (kind === "image") return { tile: "image", type: "image" };
+  if (kind === "pdf") return { tile: "doc", type: "pdf" };
+  if (DOC.has(ext)) return { tile: "doc", type: "doc" };
+  if (SHEET.has(ext)) return { tile: "sheet", type: "sheet" };
+  if (kind === "markdown") return { tile: "text", type: "markdown" };
+  if (kind === "text") return { tile: "text", type: "text" };
+  if (kind === "code") return { tile: "code", type: "code" };
+  return ext ? { tile: "other", type: null, ext: ext.toUpperCase() } : { tile: "other", type: "other" };
+}
+
+/** A tile's file (an asset under the app's home), for the appearance shown. */
+export const tileOf = (tile, dark) => `mods/kt-chat/tiles/${tile}-${dark ? "dark" : "light"}.svg`;
+
+/** The card's size and the grid's gap: 188 so that BUBBLE_MAX (576) holds 3 exactly. */
+export const CARD = { w: 188, h: 48, gap: 6 };
+/** The columns `w` px hold (1 at least). */
+export const colsFor = (w) => Math.max(1, Math.floor((Number(w) + CARD.gap) / (CARD.w + CARD.gap)));
+/** The widest a grid of `cols` columns is. */
+export const gridW = (cols) => cols * (CARD.w + CARD.gap) - CARD.gap;
+
+/**
+ * What a grid of `cols` columns shows of `n` pieces: two rows at most, the last place then « +N » (the
+ * rest); `open` (a click on it), all of them. { shown, more }.
+ */
+export function gridPlan(n, cols, open) {
+  const slots = Math.max(1, cols) * 2;
+  if (open || n <= slots) return { shown: n, more: 0 };
+  return { shown: slots - 1, more: n - slots + 1 };
+}
+
 /** Bytes a base64 string decodes to. */
 export const b64bytes = (d) => (d ? Math.floor((d.length * 3) / 4) - (d.endsWith("==") ? 2 : d.endsWith("=") ? 1 : 0) : 0);
 

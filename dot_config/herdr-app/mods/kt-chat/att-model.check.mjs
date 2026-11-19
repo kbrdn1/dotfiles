@@ -1,6 +1,8 @@
 // bun att-model.check.mjs: attachments' kinds, the index's image refs, the cache's names and bounds.
 import assert from "node:assert/strict";
-import { attachmentsOf, b64bytes, cacheName, hash8, imageAt, imagesOf, isCacheName, kindOf, photoSize, sweepPlan } from "./att-model.js";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { attachmentsOf, b64bytes, cacheName, colsFor, FAMILIES, familyOf, gridPlan, gridW, hash8, imageAt, imagesOf, isCacheName, kindOf, photoSize, sweepPlan, tileOf } from "./att-model.js";
 
 // Kinds, from a name or a media type.
 assert.deepEqual(kindOf("capture.PNG"), { kind: "image", drawn: true });
@@ -67,5 +69,53 @@ assert.deepEqual(sweepPlan(files, { maxBytes: 1e9, maxFiles: 3 }).sort(), ["a", 
 assert.deepEqual(sweepPlan(files, { maxBytes: 1e9, maxFiles: 3, keep: new Set(["a"]) }).sort(), ["b", "c"]);
 assert.deepEqual(sweepPlan(files, { maxBytes: 25, maxFiles: 99 }).sort(), ["a", "b", "c"]);
 assert.deepEqual(sweepPlan(files, { maxBytes: 1e9, maxFiles: 99 }), []);
+
+// #93: a piece's family (its card's tile and type), beside kindOf, which stays as it was for a .docx.
+const fam = (name, o) => familyOf(name, kindOf(name).kind, o);
+assert.deepEqual(fam("Compte rendu reunion juin.docx"), { tile: "doc", type: "doc" });
+assert.equal(kindOf("Compte rendu reunion juin.docx").kind, "other", "kindOf unchanged: the viewer's route");
+assert.deepEqual(fam("Rapport annuel V2.pdf"), { tile: "doc", type: "pdf" });
+assert.deepEqual(fam("contacts.csv"), { tile: "sheet", type: "sheet" }, "a .csv is a spreadsheet's, though kindOf says text");
+assert.deepEqual(fam("ventes.xlsx"), { tile: "sheet", type: "sheet" });
+assert.deepEqual(fam("PLAN.md"), { tile: "text", type: "markdown" });
+assert.deepEqual(fam("notes-de-reunion-2026-08-21.txt"), { tile: "text", type: "text" });
+assert.deepEqual(fam("LICENSE"), { tile: "text", type: "text" });
+assert.deepEqual(fam("attach.js"), { tile: "code", type: "code" });
+assert.deepEqual(fam("photo-plage.jpg"), { tile: "image", type: "image" });
+assert.deepEqual(fam("export-4f1c2a9e-77b0.zip"), { tile: "other", type: null, ext: "ZIP" }, "its extension, never « Fichier »");
+assert.deepEqual(fam("sans-extension"), { tile: "other", type: "other" });
+assert.deepEqual(fam("export-4f1c2a9e-77b0", { dir: true }), { tile: "other", type: "folder" });
+assert.deepEqual(fam("export.csv", { dir: true }), { tile: "other", type: "folder" }, "a folder whatever its name");
+
+// The tiles: an asset path, never worked out (render only reads one), one per family and appearance,
+// all on the disk, and the same as brand/piece-tiles.py makes them (no drift between the two).
+assert.equal(tileOf("sheet", true), "mods/kt-chat/tiles/sheet-dark.svg");
+assert.equal(tileOf("sheet", false), "mods/kt-chat/tiles/sheet-light.svg");
+const here = new URL(".", import.meta.url).pathname;
+const made = mkdtempSync(`${tmpdir()}/kt-chat-tiles-`);
+try {
+  const gen = Bun.spawnSync(["python3", "-I", `${here}../../brand/piece-tiles.py`, made]);
+  assert.equal(gen.exitCode, 0, String(gen.stderr));
+  for (const f of FAMILIES) for (const dark of [true, false]) {
+    const name = tileOf(f, dark).split("/").pop();
+    assert.ok(existsSync(`${here}tiles/${name}`), `${name} pre-rendered`);
+    assert.equal(readFileSync(`${here}tiles/${name}`, "utf8"), readFileSync(`${made}/${name}`, "utf8"), `${name}: as the generator makes it`);
+  }
+  assert.equal(readdirSync(made).length, FAMILIES.length * 2);
+} finally {
+  for (const n of readdirSync(made)) unlinkSync(`${made}/${n}`);
+  rmdirSync(made);
+}
+
+// The grid: 188 so that the bubble (576) holds 3; two rows, the last place « +N », all once opened.
+assert.equal(colsFor(576), 3);
+assert.equal(gridW(3), 576);
+assert.equal(colsFor(790), 4, "the field at the column's width");
+assert.equal(colsFor(100), 1, "one at least");
+assert.deepEqual(gridPlan(10, 4, false), { shown: 7, more: 3 }, "Kylian's 10 pieces in the field: 7 and « +3 »");
+assert.deepEqual(gridPlan(10, 4, true), { shown: 10, more: 0 }, "opened: all of them");
+assert.deepEqual(gridPlan(8, 4, false), { shown: 8, more: 0 }, "two full rows: no « +N »");
+assert.deepEqual(gridPlan(10, 3, false), { shown: 5, more: 5 }, "a sent message (3 columns)");
+assert.deepEqual(gridPlan(0, 4, false), { shown: 0, more: 0 });
 
 console.log("att-model ok");

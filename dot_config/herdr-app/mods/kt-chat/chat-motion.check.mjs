@@ -50,6 +50,8 @@ const ui = {
   ScrollHandle: { new: () => ({ scroll_to_item() {} }) },
   VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, scroll_to_bottom() {} }) },
   TextareaState: { new: () => ({ set_auto_grow() {}, on() {}, value: () => "", set_value() {}, replace() {}, focus() {} }) },
+  // image(src) keeps its src (#93: a card's square reads a pre-rendered tile).
+  image: (src) => { const p = node("image"); p.__node.calls.push(["src", [src]]); return p; },
 };
 // hc, agents(), focused() and openOverlay() go through these, which a case may swap (#81's routes).
 let hcFake = async () => ({});
@@ -218,6 +220,15 @@ const pr = { key: "p", name: "Projet" };
   t.blocks = [...t.blocks, { role: "tool", id: "x", kind: "read", input: { path: "/w/proj/cap.png" }, result: { o: 1, ok: true, imgs: [{ n: 0, media: "image/png", bytes: 1 }] } },
     { role: "prose", id: "p:x", text: "voir /w/proj/doc.md", cites: [{ path: "/w/proj/doc.md", abs: "/w/proj/doc.md" }] }];
   assert.ok(!draw(c, k).some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith(`kc-as-${t.id}`))), "render never works the assets out again");
+  // More than one image alone: cards (#93), a file on this computer draggable onto a terminal, no motion
+  // of their own (they come with their turn: no enter() id, no transition).
+  t.assets = [{ id: "c:0", key: "/w/proj/doc.md", kind: "markdown", name: "doc.md", abs: "/w/proj/doc.md" },
+    { id: "t:x:0", key: "s:1:x:0", kind: "image", drawn: true, name: "cap.png", ref: { o: 1, tool: "x", n: 0 } }];
+  const nodes = draw(c, k);
+  const row = flat({ __node: nodes.find((n) => callsOf(n, "id").some(([v]) => v === `kc-as-${t.id}`)) });
+  assert.deepEqual(row.flatMap((n) => callsOf(n, "id").map(([v]) => v)).filter((v) => String(v).startsWith("kc-")), [`kc-as-${t.id}`, `kc-pc-${t.id}-as-0`, `kc-pc-${t.id}-as-1`], "two cards, no photo");
+  assert.deepEqual(row.flatMap((n) => callsOf(n, "drag_paths")), [[["/w/proj/doc.md"]]], "the file on the disk drags; the embedded image has none");
+  assert.deepEqual(transitions(row), [], "no motion of their own");
 }
 
 // ── #93: the field's pieces. The composer's height changes at once when one comes or goes, never frame
@@ -238,10 +249,15 @@ const press = (nodes, id, x) => callsOf(nodes.find((n) => callsOf(n, "id").some(
     assert.ok(transitions([piece]).includes("top") && transitions([piece]).includes("opacity"), "native transitions, on the piece only");
     assert.ok(callsOf(pieceBox(nodes, p), "overflow_hidden").length, "inside a box of its own that clips: it rises over nothing");
   }
+  // × shows on the hovered card only (in its corner, inside the box its rise clips in).
+  assert.ok(!nodes.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-dx-"))), "no × while no card is hovered");
+  c.pieceHover = `kc-pc-${c.drafts[1].id}`;
+  const hovered = flat(c.draftView(T, cx()));
+  assert.deepEqual(hovered.filter((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-dx-"))).map((n) => callsOf(n, "id")[0][0]), [`kc-dx-${c.drafts[1].id}`], "the hovered card's ×, and only it");
   // × : it fades out where it stands (its place kept: the height doesn't move), then ONE timer drops it.
   const x = cx();
   x.stop_propagation = () => {};
-  press(nodes, `kc-dx-${c.drafts[1].id}`, x);
+  press(hovered, `kc-dx-${c.drafts[1].id}`, x);
   assert.equal(c.drafts.length, 2, "still there while it fades");
   const going = flat(c.draftView(T, cx()));
   assert.deepEqual(callsOf(pieceOf(going, c.drafts[1]), "opacity").at(-1), [0], "fading out");
@@ -254,12 +270,78 @@ const press = (nodes, id, x) => callsOf(nodes.find((n) => callsOf(n, "id").some(
   // Reduced motion: no fade, no rise, no timer; × removes it at once.
   const c = chat({ reduced: true });
   c.drafts = add([], ["/p/cap.png", "/p/devis.pdf"], "drop").list;
+  c.pieceHover = `kc-pc-${c.drafts[0].id}`;
   const nodes = flat(c.draftView(T, cx()));
   assert.deepEqual(transitions(nodes), [], "the pieces: no transition");
   const x = cx();
   x.stop_propagation = () => {};
   press(nodes, `kc-dx-${c.drafts[0].id}`, x);
   assert.deepEqual([c.drafts.map((p) => p.label), x.timers.length], [["devis.pdf"], 0], "gone at once, no timer");
+}
+// « +N »: 10 pieces (DRAFT_MAX) in the field at the column's width hold 4 columns, two rows: 7 cards and
+// « +3 ». A click shows all 10 in the same next render: the height changes once, at once (no timer, no
+// height transition anywhere, the grid never given a height).
+const idsOf = (nodes, prefix) => nodes.flatMap((n) => callsOf(n, "id").map(([v]) => String(v))).filter((v) => v.startsWith(prefix));
+const ten = ["/d/logo.png", "/d/capture.png", "/d/photo.jpg", "/d/Compte rendu reunion juin.docx", "/d/notes-de-reunion-2026-08-21.txt",
+  "/d/Rapport annuel V2.pdf", "/d/export-4f1c2a9e-77b0.zip", "/d/Devis client.pdf", "/d/PLAN.md", "/d/contacts.csv"];
+{
+  const c = chat();
+  c.width = 900;
+  c.drafts = add([], ten, "drop").list;
+  const folded = flat(c.draftView(T, cx()));
+  assert.equal(idsOf(folded, "kc-pc-").length, 7, "7 cards");
+  assert.deepEqual(idsOf(folded, "kc-more-"), ["kc-more-p:drafts"], "then « +3 » in the 8th place");
+  const x = cx();
+  x.stop_propagation = () => {};
+  press(folded, "kc-more-p:drafts", x);
+  assert.equal(x.timers.length, 0, "no timer: it opens in one go");
+  const opened = flat(c.draftView(T, cx()));
+  assert.deepEqual([idsOf(opened, "kc-pc-").length, idsOf(opened, "kc-more-").length], [10, 0], "the next render: all 10, no « +N »");
+  assert.ok(!transitions(opened).includes("height") && !opened.some((n) => callsOf(n, "id").some(([v]) => v === "kc-drafts") && callsOf(n, "h").length), "no height moves: one change, at once");
+  // Sent, the field's next pieces start on two rows again.
+  c.open.delete("p:drafts");
+  c.drafts = add([], ten, "drop").list;
+  assert.equal(idsOf(flat(c.draftView(T, cx())), "kc-pc-").length, 7);
+}
+// Each family's square: its pre-rendered tile (tiles/<family>-dark.svg, on the disk), the extension over
+// it; render runs nothing to make one (no exec, no task).
+{
+  const c = chat();
+  const runs = [];
+  execFake = async (...a) => { runs.push(a); return { code: 0, stdout: "" }; };
+  const want = { "a.docx": "doc", "b.pdf": "doc", "c.xlsx": "sheet", "d.csv": "sheet", "e.txt": "text", "f.md": "text", "g.js": "code", "h.webp": "image", "i.zip": "other" };
+  c.drafts = add([], Object.keys(want).map((n) => `/d/${n}`), "drop").list;
+  c.open.add("p:drafts");
+  const x = cx();
+  let spawned = 0;
+  x.spawn = () => { spawned++; };
+  const nodes = flat(c.draftView(T, x));
+  for (const p of c.drafts) {
+    const card = flat({ __node: nodes.find((n) => callsOf(n, "id").some(([v]) => v === `kc-pc-${p.id}`)) });
+    const srcs = card.flatMap((n) => callsOf(n, "src").map(([s]) => s));
+    assert.deepEqual(srcs, [`mods/kt-chat/tiles/${want[p.label]}-dark.svg`], `${p.label}: its family's tile`);
+    assert.ok(readdirSync(`${dir}/tiles`).includes(`${want[p.label]}-dark.svg`), `${p.label}: the tile is on the disk`);
+  }
+  assert.deepEqual([runs.length, spawned], [0, 0], "render made no tile and started nothing");
+  execFake = async () => ({ code: 0, stdout: "" });
+}
+// Files dropped anywhere on the face: they join the message; with the background's panel open, an image
+// among them goes to the background, and a drop with no image still joins the message.
+{
+  const c = chat();
+  const did = [];
+  c.importBg = (_cx, _pr, p) => did.push(["bg", p]);
+  c.attach = (_cx, paths) => did.push(["att", paths]);
+  c.composerShown = () => true;
+  const pr = { key: "proj" };
+  c.dropped(cx(), ["/d/a.png", "/d/b.pdf"], pr);
+  c.bgMenu = true;
+  c.dropped(cx(), ["/d/b.pdf", "/d/a.png"], pr);
+  c.dropped(cx(), ["/d/b.pdf"], pr);
+  c.bgMenu = false;
+  c.composerShown = () => false;
+  c.dropped(cx(), ["/d/b.pdf"], pr);
+  assert.deepEqual(did, [["att", ["/d/a.png", "/d/b.pdf"]], ["bg", "/d/a.png"], ["att", ["/d/b.pdf"]]], "panel closed: joined; open: the image to the background; no image: joined; no agent: nothing");
 }
 
 // ── #81: the completion menu. A passing popup over the transcript's bottom (render() puts it in the

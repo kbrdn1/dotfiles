@@ -66,6 +66,13 @@ try {
   const before = readdirSync(out).length;
   assert.deepEqual(cli("file", md, "--out", out), { kind: "markdown", lang: null, bytes: 15 });
   assert.equal(readdirSync(out).length, before);
+  // #93: a folder (a piece can be one) says so, its card then shows no size; a file never says `dir`.
+  const folder = `${work}/un-dossier`;
+  mkdirSync(folder);
+  const said = cli("file", folder, "--out", out);
+  rmdirSync(folder);
+  assert.deepEqual([said.kind, said.dir], ["other", true]);
+  assert.equal(readdirSync(out).length, before, "nothing made for a folder");
 
   // A PDF of two pages: the first as its thumbnail, any page on demand, the count.
   const pdf = `${work}/doc.pdf`;
