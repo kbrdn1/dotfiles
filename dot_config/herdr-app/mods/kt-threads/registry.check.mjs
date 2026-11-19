@@ -5,9 +5,10 @@
 // malformed input (relative folder, "..", a name out of ^[A-Za-z0-9._ -]{1,64}$, a logo outside brand/projects/,
 // not JSON) is refused with a reason, and nothing is changed. The request file (requestOf + settle): applied
 // once per id (a replay set aside), set aside past 2 minutes either way (120000 ms still good), and a request
-// set aside or refused writes nothing. Not loaded by Herdr.
+// set aside or refused writes nothing. guard: a command that throws never ends kt-threads' loop. Not loaded
+// by Herdr.
 import assert from "node:assert/strict";
-import { idOf, folderOf, parse, fromBase64url, moveProject, addProject, requestOf, settle, REQUEST_TTL, APPLIED_KEPT } from "./registry.js";
+import { idOf, folderOf, parse, fromBase64url, moveProject, addProject, requestOf, settle, REQUEST_TTL, APPLIED_KEPT, guard, failure } from "./registry.js";
 
 const P = "/Users/someone/Projects";
 const entry = (name, order, extra = {}) => ({ id: idOf(`${P}/${name}`), name, folder: `${P}/${name}`, machine: null, color: "ansi3", order,
@@ -186,5 +187,25 @@ assert.deepEqual(state0, frozen, "the state read, never changed");
 const many = { ...state0, applied: Array.from({ length: APPLIED_KEPT }, (_, i) => `old-${i}`) };
 const kept = take(JSON.stringify(tvMove), many).writes["kt.registry.applied"];
 assert.deepEqual([kept.length, kept[0], kept.at(-1)], [APPLIED_KEPT, "old-1", "req-c"]);
+
+// guard: kt-threads' command loop, faked. A handler that throws, one that rejects after an await, and one whose
+// failure report throws too: each is said, and every command after it is still handled.
+const handled = [], failures = [];
+const dispatch = async (c) => {
+  if (c === "boom") throw new Error("boom");
+  if (c === "late") { await null; throw new Error("late"); }
+  if (c === "spawn") ({}).spawn(); // a TypeError, as a missing cx.spawn would be
+  handled.push(c);
+};
+for (const c of ["agents", "boom", "density", "late", "spawn", "every"]) await guard(c, dispatch, (f) => failures.push(f), () => 7);
+assert.deepEqual(handled, ["agents", "density", "every"], "the loop went on past each failure");
+assert.deepEqual(failures.map((f) => [f.at, f.received]), [[7, "boom"], [7, "late"], [7, "spawn"]]);
+assert.match(failures[0].error, /^Error: boom/);
+assert.match(failures[2].error, /TypeError/);
+await guard("boom", dispatch, () => { throw new Error("the report failed"); });
+await guard("after", dispatch, () => {});
+assert.equal(handled.at(-1), "after", "a report that throws doesn't end it either");
+const long = failure("x".repeat(500), { stack: "s".repeat(5000) }, 1);
+assert.deepEqual([long.received.length, long.error.length], [200, 2000], "bounded");
 
 console.log("registry: ok");

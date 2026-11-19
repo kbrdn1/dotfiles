@@ -309,17 +309,16 @@ export default class Threads extends View {
       cx.timer.every(15000, (cx) => this.readReports(cx));
       cx.timer.every(5000, (cx) => this.syncProjects(cx));
       pollMachines(cx); // #60: shared "kt.machines" from hc machine ls, every 15 s (machines.js)
-      // The registry's request file (registry.js): read now, then at each change of data/kt-threads/, one
-      // request at a time; a watch refused, released or reclaimed (64 folders at most for every mod) looks
-      // again 10 s later.
-      cx.spawn(async (cx) => {
-        const dir = `${appHome()}/data/kt-threads`;
-        await fs.mkdir(dir, { recursive: true }).catch(() => {});
-        for (;;) {
-          if (await this.registryRequest(dir)) cx.notify();
-          const changed = await watchFolder(dir).catch(() => []);
-          if (!changed.length) await cx.sleep(10e3);
-        }
+      // The registry's request file (registry.js), read every 3 s, one request at a time (a watch of
+      // data/kt-threads/ never woke: polled instead, a missing file read off the UI thread).
+      fs.mkdir(`${appHome()}/data/kt-threads`, { recursive: true }).catch(() => {});
+      this.alive = { started: Date.now(), tick: null };
+      cx.timer.every(3000, () => {
+        if (this.requesting) return;
+        this.requesting = true;
+        this.registryRequest()
+          .catch((e) => this.commandFailed(registry.failure("registry-request.json", e)))
+          .finally(() => { this.requesting = false; });
       });
       // `kt-threads.density` (a key, or `herdr-app do`) flips the cards like the icon by THREADS;
       // `kt-threads.projects` opens or closes the project picker; `kt-threads.every` flips every
@@ -327,82 +326,112 @@ export default class Threads extends View {
       // `kt-threads.theme-light` /
       // `theme-dark` / `theme-blur` move the theme switch. `focus` (pane.go) takes the keyboard;
       // `key:<keys>` takes it and types those keys ("j", "g g", "5 j", "L"), for tests.
+      // Each command is guarded (registry.guard): one that throws is written to
+      // data/kt-threads/command-error.json (commandFailed), and the loop goes on.
       cx.spawn(async (cx) => {
         for (;;) {
           const c = await nextCommand();
-          if (c === "focus") this.focusIn();
-          // `hover:<tab id>` opens a compact row as the pointer would; `hover:` alone leaves it (tests).
-          else if (c.startsWith("hover:")) {
-            const was = this.hover;
-            this.hover = c.slice(6) || null;
-            if (!this.hover) this.linger(was, cx);
-          }
-          else if (c.startsWith("key:")) {
-            this.focusIn();
-            for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
-          }
-          // `cursor:<line id>` takes the keyboard with the cursor on that line (a tab id, `dec:accept:<tab
-          // id>`), for tests.
-          else if (c.startsWith("cursor:")) {
-            this.focusIn();
-            this.cur = c.slice(7);
-            this.reveal = true;
-          }
-          else if (c === "density") this.toggleDensity();
-          else if (c === "projects") this.openProjects();
-          // `bar-move:<name>|<name>`: a drag in the bar from one project onto another (names as the
-          // registry has them, "home" for Home), for tests.
-          else if (c.startsWith("bar-move:")) {
-            const [a, b] = c.slice(9).split("|");
-            const id = (n) => (n === "home" ? "home" : registry().find((e) => e.name === n)?.id);
-            if (id(a) && id(b)) this.moveProject(id(a), id(b));
-          }
-          // The project picker's « Nouveau projet »: `space.new` alone opens in the focused terminal's
-          // folder (no prompt), so ask for a local folder; here, as this list outlives the popup.
-          else if (c === "new-project") {
-            show("thread");
-            const folder = await pickFolder({ prompt: tr("open") }).catch(() => null);
-            if (folder) {
-              run("space.new", { folder, machine: "" });
-              this.syncProjects(cx); // into the registry now, not at the next tick
+          await registry.guard(c, async (c) => {
+            if (c === "focus") this.focusIn();
+            // `hover:<tab id>` opens a compact row as the pointer would; `hover:` alone leaves it (tests).
+            else if (c.startsWith("hover:")) {
+              const was = this.hover;
+              this.hover = c.slice(6) || null;
+              if (!this.hover) this.linger(was, cx);
             }
-          }
-          else if (c === "every") setShared("kt.project", shared("kt.project") === "*" ? null : "*");
-          // `agents` folds or unfolds the navigation's Agents group (Skills, MCP, Plugins).
-          else if (c === "agents") setShared("kt.nav.agents", !shared("kt.nav.agents"));
-          // `wt-remove:<worktree path>` (settle()'s notification): kt-gwm's guarded removal of it, asked
-          // first, then its page shown (a copy never opened only exists once shown, and reads it then).
-          else if (c.startsWith("wt-remove:")) {
-            setShared("kt-gwm.remove", { path: c.slice(10), at: Date.now() });
-            show("gwm");
-          }
-          // `halo:<color>` draws the halo in that color, `nav-page:<page>` the navigation as if that page
-          // showed; `halo:` / `nav-page:` alone go back. This copy only, nothing shown changes (tests).
-          else if (c.startsWith("halo:")) this.haloTest = c.slice(5) || null;
-          else if (c.startsWith("nav-page:")) this.navTest = c.slice(9) || null;
-          else if (c === "archived") {
-            const f = filterOf(shared("kt.threadFilter"));
-            setShared("kt.threadFilter", { ...f, archived: !f.archived });
-          }
-          else if (/^theme-(light|dark|blur)$/.test(c)) this.setTheme(c.slice(6), cx);
-          else if (c.startsWith("project-move") || c.startsWith("project-add")) this.projectCommand(c, cx);
+            else if (c.startsWith("key:")) {
+              this.focusIn();
+              for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
+            }
+            // `cursor:<line id>` takes the keyboard with the cursor on that line (a tab id, `dec:accept:<tab
+            // id>`), for tests.
+            else if (c.startsWith("cursor:")) {
+              this.focusIn();
+              this.cur = c.slice(7);
+              this.reveal = true;
+            }
+            else if (c === "density") this.toggleDensity();
+            else if (c === "projects") this.openProjects();
+            // `bar-move:<name>|<name>`: a drag in the bar from one project onto another (names as the
+            // registry has them, "home" for Home), for tests.
+            else if (c.startsWith("bar-move:")) {
+              const [a, b] = c.slice(9).split("|");
+              const id = (n) => (n === "home" ? "home" : registry().find((e) => e.name === n)?.id);
+              if (id(a) && id(b)) this.moveProject(id(a), id(b));
+            }
+            // The project picker's « Nouveau projet »: `space.new` alone opens in the focused terminal's
+            // folder (no prompt), so ask for a local folder; here, as this list outlives the popup.
+            else if (c === "new-project") {
+              show("thread");
+              const folder = await pickFolder({ prompt: tr("open") }).catch(() => null);
+              if (folder) {
+                run("space.new", { folder, machine: "" });
+                this.syncProjects(cx); // into the registry now, not at the next tick
+              }
+            }
+            else if (c === "every") setShared("kt.project", shared("kt.project") === "*" ? null : "*");
+            // `agents` folds or unfolds the navigation's Agents group (Skills, MCP, Plugins).
+            else if (c === "agents") setShared("kt.nav.agents", !shared("kt.nav.agents"));
+            // `wt-remove:<worktree path>` (settle()'s notification): kt-gwm's guarded removal of it, asked
+            // first, then its page shown (a copy never opened only exists once shown, and reads it then).
+            else if (c.startsWith("wt-remove:")) {
+              setShared("kt-gwm.remove", { path: c.slice(10), at: Date.now() });
+              show("gwm");
+            }
+            // `halo:<color>` draws the halo in that color, `nav-page:<page>` the navigation as if that page
+            // showed; `halo:` / `nav-page:` alone go back. This copy only, nothing shown changes (tests).
+            else if (c.startsWith("halo:")) this.haloTest = c.slice(5) || null;
+            else if (c.startsWith("nav-page:")) this.navTest = c.slice(9) || null;
+            else if (c === "archived") {
+              const f = filterOf(shared("kt.threadFilter"));
+              setShared("kt.threadFilter", { ...f, archived: !f.archived });
+            }
+            else if (/^theme-(light|dark|blur)$/.test(c)) this.setTheme(c.slice(6), cx);
+            // Not awaited (the loop doesn't wait on its exec); its own failure is caught the same way.
+            else if (c.startsWith("project-move") || c.startsWith("project-add")) {
+              this.projectCommand(c).catch((e) => this.commandFailed(registry.failure(c, e)));
+            }
+          }, (f) => this.commandFailed(f));
           cx.notify();
         }
       });
     }
   }
 
-  // The registry's request file, data/kt-threads/registry-request.json (registry.js' header): read, set aside
-  // when too old or its id was applied already, else applied (registry.settle: the folder looked for on the
-  // disk first, nothing written on a refusal), then deleted, whatever came of it. The outcome goes to shared
-  // "kt.registry.last" and to registry-result.json beside it ({ at, received (200 characters at most), id, ok,
-  // project, entry, maps | reason }): shared.json is saved in the background, the file at once. A text read
-  // a second time unchanged (its unlink failed, and the result written woke the watch) is left alone.
-  // true: there was a request.
-  async registryRequest(dir) {
-    const file = `${dir}/registry-request.json`;
+  // data/kt-threads/registry-result.json, written at once (shared.json is saved in the background):
+  // { alive: { started, tick }, last }: the request reader's last tick (written once a minute at most when
+  // there's nothing to read, proof it runs), and the registry's last outcome or step (registry.js' header).
+  registryWrite(last) {
+    if (last !== undefined) this.registryLast = last;
+    this.aliveWritten = Date.now();
+    const body = { alive: this.alive ?? null, last: this.registryLast ?? null };
+    return fs.writeFile(`${appHome()}/data/kt-threads/registry-result.json`, `${JSON.stringify(body, null, 2)}\n`).catch(() => {});
+  }
+
+  // A command that threw (registry.guard), or a request read that failed: data/kt-threads/command-error.json
+  // ({ at, received, error }), and shared "kt.registry.last" for the registry's own.
+  commandFailed(f) {
+    if (/^project-(move|add)|^registry-request/.test(f.received)) {
+      const last = { ...f, ok: false, reason: `error: ${f.error.split("\n")[0]}` }; // i18n: tech
+      setShared("kt.registry.last", last);
+      this.registryWrite(last);
+    }
+    return fs.writeFile(`${appHome()}/data/kt-threads/command-error.json`, `${JSON.stringify(f, null, 2)}\n`).catch(() => {});
+  }
+
+  // The registry's request file, data/kt-threads/registry-request.json (registry.js' header), read every 3 s:
+  // set aside when too old or its id was applied already, else applied (registry.settle: the folder looked for
+  // on the disk first, nothing written on a refusal), then deleted, whatever came of it. The outcome goes to
+  // shared "kt.registry.last" and to registry-result.json ({ at, received (200 characters at most), id, ok,
+  // project, entry, maps | reason }). A text read a second time unchanged (its unlink failed) is left alone.
+  async registryRequest() {
+    this.alive.tick = Date.now();
+    const file = `${appHome()}/data/kt-threads/registry-request.json`;
     const text = await readTextFile(file).catch(() => null);
-    if (!text || text === this.requestDone) return false;
+    if (!text || text === this.requestDone) {
+      if (Date.now() - (this.aliveWritten ?? 0) >= 60e3) await this.registryWrite();
+      return;
+    }
     this.requestDone = text;
     const req = registry.requestOf(text, Date.now(), shared("kt.registry.applied") ?? []);
     const exists = req.folder ? await exec("test", ["-d", req.folder]).then((r) => r.code === 0).catch(() => false) : false;
@@ -412,34 +441,45 @@ export default class Threads extends View {
     await fs.unlink(file).catch(() => {});
     const last = { at: Date.now(), received: text.slice(0, 200), id: req.id ?? null, ...out };
     setShared("kt.registry.last", last);
-    await fs.writeFile(`${dir}/registry-result.json`, `${JSON.stringify(last, null, 2)}\n`).catch(() => {});
-    return true;
+    await this.registryWrite(last);
   }
 
   // `project-move:<json>` / `project-add:<json>` (registry.js, from `herdr-app do`): the registry moved where
   // kt-projects can't (a folder renamed on disk: its color, order and chat background kept) or grown before
-  // any space opens on the project. The folder checked on the disk first; a refusal does nothing. Each
-  // outcome, refusals too, goes to shared "kt.registry.last" ({ at, received (200 characters at most), ok,
-  // id | reason }), read with jq: a mod's console.log reaches no file.
-  projectCommand(c, cx) {
-    const said = (out) => setShared("kt.registry.last", { at: Date.now(), received: c.slice(0, 200), ...out });
-    if (!c.includes(":")) return void said({ ok: false, reason: "no payload" }); // i18n: tech
+  // any space opens on the project. The folder checked on the disk first; a refusal does nothing. Each step
+  // is written to registry-result.json as it's reached (received, parsed, exec, exec done), and the outcome,
+  // refusals too, to shared "kt.registry.last" as well ({ at, received (200 characters at most), ok, id |
+  // reason, trace }). Called without awaiting it, its rejection caught by the caller.
+  async projectCommand(c) {
+    const received = c.slice(0, 200);
+    const trace = [];
+    const step = (s) => {
+      trace.push(`${s} ${Date.now()}`);
+      return this.registryWrite({ at: Date.now(), received, step: s, trace });
+    };
+    const said = (out) => {
+      const last = { at: Date.now(), received, ...out, trace };
+      setShared("kt.registry.last", last);
+      return this.registryWrite(last);
+    };
+    await step("received"); // i18n: tech
+    if (!c.includes(":")) return said({ ok: false, reason: "no payload" }); // i18n: tech
     const [kind, text] = [c.slice(0, c.indexOf(":")), c.slice(c.indexOf(":") + 1)];
-    if (kind !== "project-move" && kind !== "project-add") return void said({ ok: false, reason: `unknown command ${kind}` }); // i18n: tech
+    if (kind !== "project-move" && kind !== "project-add") return said({ ok: false, reason: `unknown command ${kind}` }); // i18n: tech
     const input = registry.parse(text);
-    if (!input.ok) return void said({ ok: false, reason: input.reason });
+    if (!input.ok) return said({ ok: false, reason: input.reason });
+    await step("parsed"); // i18n: tech
     const folder = registry.folderOf(kind === "project-move" ? input.value.to : input.value.folder);
-    cx.spawn(async (cx) => {
-      const exists = folder ? await exec("test", ["-d", folder]).then((r) => r.code === 0).catch(() => false) : false;
-      const r = kind === "project-move"
-        ? registry.moveProject(shared("kt.projects") ?? [], { "kt.chat.backgrounds": shared("kt.chat.backgrounds") ?? {} }, input.value, exists)
-        : registry.addProject(shared("kt.projects") ?? [], input.value, exists);
-      if (!r.ok) return void said({ ok: false, reason: r.reason });
-      setShared("kt.projects", r.list);
-      for (const [key, map] of Object.entries(r.maps ?? {})) setShared(key, map);
-      said({ ok: true, id: r.id, maps: Object.keys(r.maps ?? {}) });
-      cx.notify();
-    });
+    await step("exec"); // i18n: tech
+    const exists = folder ? await exec("test", ["-d", folder]).then((r) => r.code === 0).catch(() => false) : false;
+    await step("exec done"); // i18n: tech
+    const r = kind === "project-move"
+      ? registry.moveProject(shared("kt.projects") ?? [], { "kt.chat.backgrounds": shared("kt.chat.backgrounds") ?? {} }, input.value, exists)
+      : registry.addProject(shared("kt.projects") ?? [], input.value, exists);
+    if (!r.ok) return said({ ok: false, reason: r.reason });
+    setShared("kt.projects", r.list);
+    for (const [key, map] of Object.entries(r.maps ?? {})) setShared(key, map);
+    return said({ ok: true, id: r.id, maps: Object.keys(r.maps ?? {}) });
   }
 
   // Keeps the registry in step with the spaces: an open space whose project isn't in it adds it

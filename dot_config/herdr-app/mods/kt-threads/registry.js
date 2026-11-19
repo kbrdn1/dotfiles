@@ -2,13 +2,15 @@
 // kt-projects nor kt-threads' own sync can: a project's folder renamed on disk (k-hub -> kbrdn-hub), a
 // project added before any space opens on it.
 //
-// The way in is a request file kt-threads watches: ~/.config/herdr-app/data/kt-threads/registry-request.json,
-// { "id": "<name>", "at": <ms since the epoch>, "kind": "project-move" | "project-add", ...its fields }.
-// kt-threads reads it (requestOf), applies it once per id (settle), deletes it, and writes the outcome to
-// data/kt-threads/registry-result.json and shared "kt.registry.last" ({ at, received, id, ok, project, entry,
-// maps | reason }). A request older than 2 minutes, or whose id was applied already, is set aside. `herdr-app do
-// kt-threads.project-move:…` exists too, but the CLI only reaches a mod shown in an overlay: kt-threads, a
-// layout block, never gets it.
+// Two ways in, while it's found out which one holds (the other goes then):
+// - a request file kt-threads reads every 3 s: ~/.config/herdr-app/data/kt-threads/registry-request.json,
+//   { "id": "<name>", "at": <ms since the epoch>, "kind": "project-move" | "project-add", ...its fields }.
+//   kt-threads reads it (requestOf), applies it once per id (settle), deletes it. A request older than 2
+//   minutes, or whose id was applied already, is set aside.
+// - `herdr-app do "kt-threads.project-move:b64:<base64url of the JSON>"` (project-add the same), each step
+//   written as it's reached.
+// Either way the outcome goes to data/kt-threads/registry-result.json ({ alive: { started, tick }, last }),
+// written at once, and to shared "kt.registry.last" ({ at, received, id?, ok, project, entry, maps | reason }).
 //
 // project-move {from, to, name?, logos?, force?}: the entry of this computer whose folder is `from` takes
 //   `to`'s id ([null, to]) and folder, and the name and logos given; its color, order and other fields stay.
@@ -90,6 +92,21 @@ export function fromBase64url(s) {
 }
 
 const no = (reason) => ({ ok: false, reason });
+
+/** A command that failed, as kt-threads writes it: { at, received (200 characters at most), error (its
+ *  stack, 2000 at most) }. */
+export const failure = (c, e, now = Date.now()) =>
+  ({ at: now, received: String(c).slice(0, 200), error: String(e?.stack ?? e).slice(0, 2000) });
+
+/** One command of kt-threads' loop, run so that a throw or a rejection never ends the loop: `run(c)` awaited,
+ *  and on a failure `failed(failure(c, e))` instead, itself unable to throw out. */
+export async function guard(c, run, failed, now = Date.now) {
+  try {
+    await run(c);
+  } catch (e) {
+    try { failed(failure(c, e, now())); } catch { /* the loop goes on */ }
+  }
+}
 
 // The request file: how long it stays good, and the ids kept as applied (the newest ones).
 export const REQUEST_TTL = 2 * 60e3;

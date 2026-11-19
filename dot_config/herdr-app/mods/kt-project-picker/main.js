@@ -220,11 +220,14 @@ export default class ProjectPicker extends View {
       div().id(`pp-dot-${id}-${st}`).size(6).rounded(3).flex_none().bg(t[st]));
   }
 
-  // A project's mark: its logo, else its color square.
-  mark(t, e, color, size) {
+  // A project's mark at 16 px: its logo, else its color square with its name's first letter (as
+  // kt-threads' project bar draws it).
+  mark(t, e, color, name) {
     const logo = logoOf(e);
-    // The selector's own: a logo at 16 px, else the color square.
-    return logo ? image(logo).size(16).flex_none().rounded(3) : div().size(size).rounded(2).flex_none().bg(color);
+    return logo
+      ? image(logo).size(16).flex_none().rounded(3)
+      : div().size(16).rounded(3).flex_none().bg(color).flex().items_center().justify_center()
+        .text_size(10).font_semibold().text_color(t.chrome).child([...String(name ?? "")][0]?.toUpperCase() ?? "?"); // i18n: tech
   }
 
   // A 32 px line, radius 12 in the 16 card (4 px in). `on`: the shown project, on the kbrdn.dev ink.
@@ -280,7 +283,7 @@ export default class ProjectPicker extends View {
     const line = this.base(`pp-${s.id}`, t, s.active, cursor);
     return (e && !kid ? this.draggable(line, t, e, (cx) => this.select(s, cx)) : line.on_click((_e, cx) => this.select(s, cx)))
       .when(kid, (el) => el.pl(15).child(svg(I("git-branch")).size(12).flex_none().text_color(this.spaceRepo(s)?.linked ? t.dim : alpha(t.dim, "00"))))
-      .when(!kid, (el) => el.child(this.mark(t, e, spaceColor(t, s), 8)))
+      .when(!kid, (el) => el.child(this.mark(t, e, spaceColor(t, s), s.name)))
       .child(div().flex_none().max_w(120).truncate().text_size(13).text_color(s.active || cursor ? t.foreground : t.muted).child(s.name))
       .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(s.branch ?? ""))
       .children(this.statusDots(t, s.id, s.tabs))
@@ -291,7 +294,7 @@ export default class ProjectPicker extends View {
   closedLine(t, e, i, cursor) {
     const line = this.base(`pp-closed-${i}`, t, false, cursor, t.muted).text_color(cursor ? t.muted : t.dim);
     return this.draggable(line, t, e, (cx) => this.reopen(e, cx))
-      .child(div().opacity(0.5).child(this.mark(t, e, paint(t, e.color) ?? t.dim, 8)))
+      .child(div().opacity(0.5).child(this.mark(t, e, paint(t, e.color) ?? t.dim, e.name)))
       .child(div().flex_none().max_w(120).truncate().text_size(13).child(e.name))
       .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).child(e.machine ?? ""))
       .child(div().flex_none().font_family(MONO).text_size(10.5).child(tr("closed")));
