@@ -1,0 +1,32 @@
+// decide.js' own words (I18N.md), copied with it byte for byte into kt-threads and kbrdn-toast.
+// The held-message dialog's lines it reads on the screen are Claude Code's, in English.
+export default {
+  fr: {
+    changed: "L'écran a changé : rien envoyé.",
+    noCursor: "Curseur introuvable sur ce choix : rien validé.",
+    stillThere: "Envoyé, mais le dialogue est toujours là.",
+    nothing: "Rien à répondre ici.",
+    already: "Déjà répondu.",
+    gone: "La demande n'est plus en attente.",
+    failed: "Échec : {why}",
+    from: "Message de {sender}",
+    waiting: "Attend ta réponse",
+    open: "Ouvrir",
+    accept: "Accepter",
+    refuse: "Refuser",
+  },
+  en: {
+    changed: "The screen changed: nothing sent.",
+    noCursor: "Cursor not found on this choice: nothing confirmed.",
+    stillThere: "Sent, but the dialog is still there.",
+    nothing: "Nothing to answer here.",
+    already: "Already answered.",
+    gone: "The request is no longer pending.",
+    failed: "Failed: {why}",
+    from: "Message from {sender}",
+    waiting: "Waiting for your answer",
+    open: "Open",
+    accept: "Accept",
+    refuse: "Refuse",
+  },
+};

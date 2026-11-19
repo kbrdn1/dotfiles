@@ -19,8 +19,14 @@
 // turn, « Travaille… » and the messages typed meanwhile (« en file »).
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
-import { agents, focused, panes, theme, settings, shared, home, appHome, exec, readTextFile, checking, nextCommand, notify, props, layout } from "herdr";
+import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
+import { agents, focused, panes, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, checking, nextCommand, notify, props, layout, run } from "herdr";
+// #56: the composer (pure, composer.check.mjs); kt-threads' decide.js (a byte-identical copy, with
+// decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser; kt-head's view.js (a
+// byte-identical copy): « Ouvrir le terminal », the thread's other face.
+import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
+import { decide, decisionButtons } from "./decide.js";
+import { view } from "./view.js";
 import { ingest, prepend, build, tally, foldedSteps, trim, pendingQueue } from "./chat-model.js";
 import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep } from "./chat-view.js";
 import { preview, docOf, mdState, mdBudget, target as linkTarget } from "./markdown.js";
@@ -88,11 +94,33 @@ export default class Chat extends View {
     this.motion = motionState();
     this.handle = cx.focus_handle();
     this.vim = new Vim();
-    // ctrl-b space (kt-composer / kt-head view.js) asks for the keyboard through this shared stamp (a
-    // time). One older than 2 s when this copy starts is not a request; a fresh one is (the first
-    // ctrl-b space starts this copy: its stamp is written just before).
+    // ctrl-b space (kt-head's view.js) asks for the keyboard through this shared stamp (a time). One
+    // older than 2 s when this copy starts is not a request; a fresh one is (the first ctrl-b space
+    // starts this copy: its stamp is written just before).
     const stamp = shared("kt.chat.focus");
     this.focusAsked = stamp && Date.now() - stamp > 2000 ? stamp : null;
+    // #56, the composer: its field (a TextareaState is made here, never in render), what is typed,
+    // whether a send runs, its refusal or failure, and the blocked agent's request (decide.js).
+    this.draft = "";
+    this.typing = false;
+    this.sending = false;
+    this.sendErr = null; // { why, message } from composer.js sendResult
+    this.decision = null; // decide(terminal) while the agent is blocked
+    this.composer = TextareaState.new({ placeholder: tr("composer.ph") });
+    this.composer.set_auto_grow(1, 8);
+    this.composer.on("change", (_e, cx) => {
+      const had = Boolean(this.draft.trim());
+      this.draft = this.composer.value();
+      if (this.sendErr && this.sendErr.why !== "blocked") this.sendErr = null;
+      if (had !== Boolean(this.draft.trim())) cx.notify();
+    });
+    // Enter sends; shift-enter asks for a line break (the field may give one by itself).
+    this.composer.on("submit", (e, cx) => {
+      if (e?.shift) this.composer.replace("\n");
+      else this.send(cx);
+    });
+    this.composer.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
+    this.composer.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     if (checking()) return;
     cx.spawn(async (cx) => {
       for (;;) {
@@ -293,6 +321,17 @@ export default class Chat extends View {
   }
 
   press(e, cx) {
+    // The composer has the keyboard: typing is its own; esc gives the keyboard back to the turns.
+    if (this.typing) {
+      if (keyOf(e).name !== "escape") return false;
+      this.focusIn();
+      return true;
+    }
+    // i: into the composer (when there is an agent to write to).
+    if (keyOf(e).name === "i" && this.composerShown()) {
+      this.composer.focus();
+      return true;
+    }
     const a = this.vim.handle(e);
     if (a === "pending" || a === "count") return true;
     const n = this.turns.length;
@@ -330,6 +369,102 @@ export default class Chat extends View {
         return true;
     }
     return false;
+  }
+
+  // ---------- the composer (#56) ----------
+
+  /** The composer shows under the agent's transcript (not a fixed file's, not without an agent). */
+  composerShown() {
+    const tg = target();
+    return !this.fixed && Boolean(tg.agent) && !tg.reason;
+  }
+
+  /**
+   * The draft to the agent, by `hc send` (composer.js: never --force). Working, Claude Code queues it;
+   * blocked, nothing goes (the request shows instead). Sent, the field empties and the live tail
+   * shows it come in; refused or failed, the text stays and the reason shows under the field.
+   */
+  send(cx) {
+    const a = target().agent;
+    const can = canSend({ status: this.fixed ? null : a?.status ?? null, text: this.draft, sending: this.sending });
+    if (!can.ok) {
+      if (can.why === "blocked") this.sendErr = { why: "blocked" };
+      cx.notify();
+      return;
+    }
+    this.sending = true;
+    this.sendErr = null;
+    const text = this.draft;
+    cx.spawn(async (cx) => {
+      const res = sendResult(await hc(sendArgs(a.address, text)).catch((e) => (e instanceof Error ? e : new Error(String(e)))));
+      this.sending = false;
+      if (res.ok) {
+        // Only what was sent goes (typing meanwhile stays).
+        if (this.composer.value() === text) this.composer.set_value("");
+        this.draft = this.composer.value();
+        this.follow = true;
+        this.reveal = "bottom";
+        this.load(cx, true);
+      } else this.sendErr = res;
+      cx.notify();
+    });
+  }
+
+  // The blocked agent's request (decide.js reads the bridge's cache, or the screen for a held message):
+  // read when the status turns blocked, dropped when it leaves it.
+  readDecision(cx, address) {
+    cx.spawn(async (cx) => {
+      const d = await decide(address).catch(() => null);
+      if (target().agent?.address === address && target().agent?.status === "blocked") this.decision = d;
+      cx.notify();
+    });
+  }
+
+  // « Ouvrir le terminal »: the thread's terminal face, which gets the keyboard (view.js).
+  openTerminal() {
+    view("main", { layout, run, setShared, panes, focused });
+  }
+
+  composerView(t, tg) {
+    const a = tg.agent;
+    const m = sendMode(a?.status ?? null);
+    const can = canSend({ status: a?.status ?? null, text: this.draft, sending: this.sending });
+    const red_ = red(t);
+    const p = m === "blocked" ? this.decision?.pending : null;
+    const pill = (id, label, onClick) => h_flex().id(id).flex_none().h(20).px(8).items_center().rounded_full().border(1).border_color(t.input)
+      .font_family(MONO).text_size(10).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); cx.notify(); })
+      .child(label);
+    // A dialog waits in the terminal: what it asks, its answers when it has some, the terminal.
+    const blocked = m === "blocked"
+      ? v_flex().gap(6).px(10).py(8).rounded(12).border(1).border_color(alpha(t.blocked, "66")).bg(alpha(t.blocked, "14"))
+        .child(h_flex().gap(8).items_center()
+          .child(div().size(6).flex_none().rounded_full().bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))
+          .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(t.foreground).child(p?.title || tr("composer.blocked"))))
+        .when(Boolean(p?.detail), (el) => el.child(div().text_size(12).text_color(t.muted).children(lines(p.detail).slice(0, 4).map((l) => div().child(l || " ")))))
+        .child(h_flex().gap(6).items_center()
+          .when(Boolean(p?.options?.length), (el) => el.child(decisionButtons(this.decision, { onDone: (r, cx) => {
+            if (!r?.ok && r?.reason) notify({ title: tr("composer.answerFailed"), body: r.reason, level: "error" });
+            cx.notify();
+          } })))
+          .child(pill("kc-open-term", tr("composer.openTerminal"), () => this.openTerminal())))
+      : null;
+    const hint = this.sending ? tr("composer.sending")
+      : this.sendErr ? tr(`composer.err.${this.sendErr.why}`, { why: this.sendErr.message ?? "" })
+        : m === "queue" ? tr("composer.queue") : m === "blocked" ? tr("composer.held") : tr("composer.hint");
+    const field = h_flex().id("kc-composer").items_end().gap(8).pl(12).pr(4).py(4).rounded(12).border(1)
+      .border_color(this.typing ? t.accent : t.input).bg(t.background).cursor_text()
+      .on_click(() => this.composer.focus())
+      .child(Textarea.new(this.composer).flex_1().min_w(0).text_size(13).text_color(t.foreground))
+      .child(div().id("kc-send").size(28).flex_none().rounded_full().flex().items_center().justify_center()
+        .bg(can.ok ? t.accent : t.raised).text_color(can.ok ? t.accent_foreground : t.dim)
+        .tooltip(m === "queue" ? tr("composer.sendQueue") : tr("composer.send"))
+        .when(can.ok, (el) => el.cursor_pointer().on_click((_e, cx) => { cx.stop_propagation(); this.send(cx); }))
+        .child(this.sending ? svg(SPIN).size(14).spin(900) : svg("mods/kt-crosstalk/send.svg").size(14)));
+    return v_flex().flex_none().px(10).pt(8).pb(8).gap(6).border_t(1).border_dashed().border_color(t.border)
+      .when(Boolean(blocked), (el) => el.child(blocked))
+      .child(field)
+      .child(div().font_family(MONO).text_size(10).text_color(this.sendErr ? red_ : t.dim).truncate().child(hint));
   }
 
   toggle(id) {
@@ -679,6 +814,17 @@ export default class Chat extends View {
     const status = tg.agent?.status ?? null;
     const { delta, tick } = liveStep({ shown, wasShown: this.wasShown, status, lastStatus: this.lastStatus, hasState: Boolean(this.state), fixed: this.fixed });
     if (delta) this.load(cx, true);
+    // #56: blocked, the request is read once (per agent and per blocking); out of it, dropped, and a
+    // refusal for « blocked » goes with it.
+    if (status === "blocked" && !this.fixed && (this.lastStatus !== "blocked" || this.decisionFor !== want)) {
+      this.decisionFor = want;
+      this.decision = null;
+      this.readDecision(cx, want);
+    } else if (status !== "blocked") {
+      this.decisionFor = null;
+      this.decision = null;
+      if (this.sendErr?.why === "blocked") this.sendErr = null;
+    }
     this.wasShown = shown;
     this.lastStatus = status;
     if (tick && !this.ticker) {
@@ -722,7 +868,8 @@ export default class Chat extends View {
       if (chatShown(layout())) cx.spawn(async (cx) => { this.focusIn(); cx.notify(); });
     }
     const keyed = this.handle.is_focused();
-    return v_flex().id("kt-chat").size_full().rounded(16).border(1).border_color(keyed ? t.accent : t.border).bg(t.background)
+    const writes = !this.fixed && Boolean(tg.agent) && !tg.reason;
+    return v_flex().id("kt-chat").size_full().rounded(16).border(1).border_color(keyed || this.typing ? t.accent : t.border).bg(t.background)
       .overflow_hidden().text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => {
@@ -730,6 +877,7 @@ export default class Chat extends View {
         if (Math.abs(w - this.width) > 1) { this.width = w; cx.notify(); }
       })
       .child(enter(this.m, this.body(t, cx, tg, keyed), `kc-body-${want ?? "none"}`, { dy: 0 }).flex_1().min_h(0))
+      .when(writes, (el) => el.child(this.composerView(t, tg)))
       .when(keyed, (el) => el.child(div().flex_none().px(14).py(6).border_t(1).border_dashed().border_color(t.border)
         .font_family(MONO).text_size(10).text_color(t.dim).child(tr("hint"))));
   }

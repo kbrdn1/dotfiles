@@ -2,7 +2,7 @@
 // line, heavy lines skipped, trimmed outputs, last K turns) and chat-model.js (merge, pairing,
 // turns, items, fold, tally, queue, ingest) on chat-fixture.jsonl, an invented session.
 import assert from "node:assert/strict";
-import { index, startsTurn } from "./chat-index.ts";
+import { index, startsTurn, strip, normalize } from "./chat-index.ts";
 import { build, fold, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
 
 const all = new Uint8Array(await Bun.file(new URL("./chat-fixture.jsonl", import.meta.url)).arrayBuffer());
@@ -73,6 +73,19 @@ assert.deepEqual(openers[5].from, { kind: "teammate", name: "helper", color: "bl
 assert.equal(openers[5].text, "Coucou");
 assert.ok(!full.entries.some((e) => e.uuid === "u-24"), "isMeta without turnPosition is hidden");
 assert.ok(!full.entries.some((e) => e.k === "user" && e.uuid === "u-23"), "the compaction summary is not a turn");
+
+// hc send's and a paste's wrappers come off (#56, seen on a throwaway session): the text inside.
+assert.equal(strip('<hc from="t1">Bonjour</hc>'), "Bonjour");
+assert.equal(strip('\n\n<pasted_content id="0945">\n<hc from="t1">une\ndeux\n```js\nx\n```</hc>\n</pasted_content id="0945">\n'), "une\ndeux\n```js\nx\n```");
+assert.equal(strip('avant <pasted_content id="a">collé</pasted_content id="a"> après'), "avant collé après");
+assert.equal(strip("rien à enlever <hc> au milieu"), "rien à enlever <hc> au milieu", "an <hc> that doesn't wrap the whole text stays");
+const sent = normalize({ type: "user", uuid: "u-x", timestamp: "2026-01-01T10:00:00Z", turnPosition: {}, message: { content: '<hc from="t1">Envoyé par le Chat</hc>' } }, 0, {}, "");
+assert.equal(sent[0].text, "Envoyé par le Chat");
+assert.equal(sent[0].turn, true);
+const queued = normalize({ type: "queue-operation", operation: "enqueue", content: '<hc from="t1">en file</hc>' }, 0, {}, "");
+assert.equal(queued[0].text, "en file");
+const handed = normalize({ type: "attachment", uuid: "u-y", attachment: { type: "queued_command", commandMode: "prompt", prompt: '<hc from="t1">pendant</hc>' } }, 0, {}, "");
+assert.deepEqual([handed[0].k, handed[0].turn, handed[0].text], ["user", false, "pendant"]);
 
 // Older lines, without turnPosition.
 assert.equal(startsTurn({ type: "user", message: { content: "salut" } }, "salut"), true);

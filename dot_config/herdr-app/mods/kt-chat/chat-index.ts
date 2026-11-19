@@ -54,6 +54,19 @@ function unwrap(text: string): { text: string; from?: Entry } {
   return { text: m[3], from: { kind, name: attrs["from-name"] ?? attrs.teammate_id ?? attrs.from ?? "", color: attrs.color ?? null } };
 }
 
+/**
+ * What a message sent by `hc send` and a paste come wrapped in, seen in transcripts (2026-11-19):
+ * `<hc from="t1">…</hc>` around the text, `<pasted_content id="x">…</pasted_content id="x">` around a
+ * pasted part (a text of several lines sent by hc). Off, the text inside kept, blank lines at the ends
+ * dropped.
+ */
+export function strip(text: string): string {
+  let s = text.replace(/<pasted_content id="([^"]*)">\n?([\s\S]*?)\n?<\/pasted_content id="\1">/g, "$2");
+  const hc = s.match(/^\s*<hc(?:\s[^>]*)?>([\s\S]*?)<\/hc>\s*$/);
+  if (hc) s = hc[1];
+  return s.replace(/^\n+|\n+$/g, "");
+}
+
 const tag = (text: string, name: string) => text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1]?.trim();
 
 /**
@@ -214,7 +227,7 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
         e.from = { kind: "task", status: tag(text, "status") ?? null };
         e.text = cap(tag(text, "summary") ?? "", 2000);
       } else {
-        const u = unwrap(text);
+        const u = unwrap(strip(text));
         if (u.from) e.from = u.from;
         else if (o.origin?.kind === "peer") e.from = { kind: "peer", name: o.origin.name ?? "", color: null };
         e.text = cap(u.text, 20000);
@@ -233,7 +246,7 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
     case "queue-operation": {
       const t = typeof o.content === "string" ? o.content : null;
       const task = !!t && /^\s*<task-notification>/.test(t);
-      return [{ k: "queue", o: off, at, op: o.operation, text: task ? null : cap(t, 2000), task }];
+      return [{ k: "queue", o: off, at, op: o.operation, text: task || t == null ? null : cap(strip(t), 2000), task }];
     }
     case "attachment": {
       const a = o.attachment ?? {};
@@ -244,7 +257,7 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
         return [{ k: "notice", o: off, uuid: o.uuid, at, kind: "task", status: tag(text, "status") ?? null, text: cap(tag(text, "summary") ?? "", 2000) }];
       }
       if (a.isMeta || !text.trim()) return [];
-      const u = unwrap(text);
+      const u = unwrap(strip(text));
       return [{ k: "user", o: off, uuid: o.uuid, at, turn: false, text: cap(u.text, 20000), ...(u.from ? { from: u.from } : {}) }];
     }
   }
