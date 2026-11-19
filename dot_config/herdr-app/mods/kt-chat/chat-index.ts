@@ -1,4 +1,5 @@
 // bun chat-index.ts <session.jsonl> [--from N] [--to N] [--last-turns K] [--budget CHARS] [--max-entries M]
+// bun chat-index.ts <session.jsonl> --tool <tool_use id>   (#79: one call's input, the last 4 MB read)
 //
 // Reads a Claude Code transcript from byte N (never `tail`: nix's gives one line on these files)
 // and prints { path, session, from, start, end, size, more, entries, meta } on stdout:
@@ -394,6 +395,41 @@ export function index(bytes: Uint8Array, opts: Options = {}) {
   return { path: opts.path ?? null, session: session ?? null, from, start, end, size, more: start > from, entries: entries.slice(first), meta: rest, skipped, bad, tail: prev, rewound };
 }
 
+/**
+ * #79: the tool call `id` as the model wrote it, { name, input, cut } or null, from the transcript's
+ * last bytes, the newest line first. A permission is asked for the call just written, so it is near
+ * the end. An edit's texts are capped at `max` characters each (`cut` then says so).
+ */
+export function toolCallOf(bytes: Uint8Array, id: string, max = 32000) {
+  const text = new TextDecoder().decode(bytes);
+  const needle = `"id":"${id}"`;
+  for (let end = text.length; end > 0; ) {
+    const start = text.lastIndexOf("\n", end - 1) + 1;
+    const line = text.slice(start, end);
+    end = start - 1;
+    if (!line.includes(needle)) continue;
+    let o: any;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      continue; // the line cut by the read's start, or one being written
+    }
+    const b = (o?.message?.content ?? []).find((c: any) => c?.type === "tool_use" && c.id === id);
+    if (!b) continue;
+    const input = { ...(b.input ?? {}) };
+    let cut = false;
+    const clip = (s: unknown) => {
+      if (typeof s !== "string" || s.length <= max) return s;
+      cut = true;
+      return s.slice(0, max);
+    };
+    for (const k of ["old_string", "new_string", "content", "new_source", "command"]) if (k in input) input[k] = clip(input[k]);
+    if (Array.isArray(input.edits)) input.edits = input.edits.map((e: any) => ({ ...e, old_string: clip(e?.old_string), new_string: clip(e?.new_string) }));
+    return { name: String(b.name), input, cut };
+  }
+  return null;
+}
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const path = args.find((a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--"));
@@ -411,6 +447,12 @@ if (import.meta.main) {
     process.exit(0);
   }
   const size = file.size;
+  if (args.includes("--tool")) {
+    const tool = args[args.indexOf("--tool") + 1];
+    const tail = new Uint8Array(await file.slice(Math.max(0, size - 4 * 1024 * 1024), size).arrayBuffer());
+    process.stdout.write(JSON.stringify({ call: tool ? toolCallOf(tail, tool) : null }));
+    process.exit(0);
+  }
   let from = Math.max(0, num("--from") ?? 0);
   if (from > size) from = 0;
   const to = Math.min(size, num("--to") ?? size);

@@ -55,6 +55,7 @@ import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "
 // decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser.
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
+import { askFile, askRows, callId, shownRows } from "./ask.js";
 import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals } from "./chat-model.js";
 import {
   pickTarget, tallyText, childOf, liveStep,
@@ -310,6 +311,8 @@ export default class Chat extends View {
     this.sending = false;
     this.sendErr = null; // { why, message } from composer.js sendResult
     this.decision = null; // decide(terminal) while the agent is blocked
+    this.askCall = null; // #79: the blocked call as the model wrote it (chat-index.ts --tool), for an edit's diff
+    this.askOpen = false; // #79: the request shown whole
     this.composer = TextareaState.new({ placeholder: tr("composer.ph") });
     // Monocode's field: one row of 22 px, up to 140 (input.rs:27, :407-411).
     this.composer.set_auto_grow(1, 6);
@@ -1186,8 +1189,29 @@ export default class Chat extends View {
   readDecision(cx, address) {
     cx.spawn(async (cx) => {
       const d = await decide(address).catch(() => null);
-      if (target().agent?.address === address && target().agent?.status === "blocked") this.decision = d;
+      const still = target().agent?.address === address && target().agent?.status === "blocked";
+      if (still) {
+        this.decision = d;
+        this.askCall = null;
+        this.askOpen = false;
+      }
       cx.notify();
+      // #79: the call itself, read back from the transcript by its id: what an edit changes (the bridge
+      // publishes its path only). Never during the render.
+      const id = still ? callId(d?.pending) : null;
+      const path = this.state?.path;
+      if (!id || !path) return;
+      const r = await exec(`${home()}/.nix-profile/bin/bun`, [`${appHome()}/mods/kt-chat/chat-index.ts`, path, "--tool", id], { timeout: 20000 }).catch(() => null);
+      let call = null;
+      try {
+        call = JSON.parse(r?.stdout || "null")?.call ?? null;
+      } catch {
+        call = null;
+      }
+      if (this.decision === d) {
+        this.askCall = call;
+        cx.notify();
+      }
     });
   }
 
@@ -2763,13 +2787,33 @@ export default class Chat extends View {
       .text_size(12).text_color(ink(t, 1)).cursor_pointer().hover((s) => s.bg(ink(t, 0.15)))
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); cx.notify(); })
       .child(label);
+    // #79: what it asks, whole: the command, or the edit's diff under its file; its first rows, all on a
+    // click (up to OPEN, the rest left to the terminal). Opened, the card takes its height at once (no
+    // height animation, #92) and the rows come in fading (motion.js enter, no rise).
+    const ask = p ? askRows(p, this.askCall) : [];
+    const file = p ? askFile(p, this.askCall) : null;
+    const shown = shownRows(ask, this.askOpen);
+    const body = v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px")
+      .children(shown.rows.map((r) => {
+        const c = r.sign === "+" ? t.ansi2 : r.sign === "-" ? ERR : null;
+        return div().min_w(0).px(4).rounded(3).text_color(c ?? ink(t, 0.75)).when(Boolean(c), (el) => el.bg(alpha(c, "1a")))
+          .child(`${r.sign === " " ? "" : r.sign}${r.text}` || " ");
+      }));
+    const askView = ask.length
+      ? v_flex().gap(4).min_w(0)
+        .when(Boolean(file), (el) => el.child(div().min_w(0).truncate().text_size(12).text_color(ink(t, 0.5)).child(file)))
+        .child(this.askOpen ? enter(this.m, body.max_h(260).overflow_y_scrollbar(), "kc-ask-open", { dy: 0 }) : body.id("kc-ask"))
+        .when(shown.foldable, (el) => el.child(h_flex().gap(6).items_center()
+          .child(pill("kc-ask-fold", this.askOpen ? tr("composer.askFold") : tr("composer.askAll", { n: ask.length }), () => { this.askOpen = !this.askOpen; }))
+          .when(this.askOpen && shown.more > 0, (el) => el.child(div().text_size(12).text_color(ink(t, 0.5)).child(tr("composer.askMore", { n: shown.more }))))))
+      : null;
     // A dialog waits in the terminal: what it asks, its answers when it has some, the terminal.
     const blocked = m === "blocked"
       ? v_flex().gap(6).px(12).py(10).rounded(12).border(1).border_color(alpha(t.blocked, "66")).bg(alpha(t.blocked, dark ? "14" : "1f"))
         .child(h_flex().gap(8).items_center()
           .child(div().size(6).flex_none().rounded_full().bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))
           .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(ink(t, 1)).child(p?.title || tr("composer.blocked"))))
-        .when(Boolean(p?.detail), (el) => el.child(div().text_size(12.5).line_height("20px").text_color(ink(t, 0.6)).children(lines(p.detail).slice(0, 4).map((l) => div().child(l || " ")))))
+        .when(Boolean(askView), (el) => el.child(askView))
         .child(h_flex().gap(6).items_center()
           .when(Boolean(p?.options?.length), (el) => el.child(decisionButtons(this.decision, { onDone: (r, cx) => {
             if (!r?.ok && r?.reason) notify({ title: tr("composer.answerFailed"), body: r.reason, level: "error" });
