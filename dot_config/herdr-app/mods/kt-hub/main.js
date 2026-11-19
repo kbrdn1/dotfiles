@@ -6,8 +6,9 @@
 // Now in the header. #89's layout (Apple's Screen Time, validated on its mockup), every row as wide as the
 // page: Temps agent (Semaine / Mois and the periods before, the daily average and its change, the days
 // stacked by project under a dashed average, the most active, the plan's limits), Activity, then Next,
-// Sub-agents and Recent side by side as tall as each other (Recent dropping lines to fit), then the tracked
-// workflows (week by week, then a funnel per workflow). Widths: tiers.js, with their previous tier kept.
+// Sub-agents and Recent side by side as tall as each other (Recent dropping lines to fit), Machines (this
+// Mac and main-vps: CPU, memory, disk; hosts.js), then the tracked workflows (week by week, then a funnel
+// per workflow). Widths: tiers.js, with their previous tier kept.
 // #48: the year of GitHub instead of the agents' (tab). #49: one project's view, the shown space's unless
 // kt.project is "*" (v switches to the global one): its worktrees (gwm), its week with its PRs (gh pr list)
 // and what review and CI caught (~/Reports' recaps, the flows), its year, its PRs (a click opens the Inbox
@@ -30,7 +31,9 @@ import * as fs from "fs/promises";
 import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, setShared, settings, panes } from "herdr";
 import { week, ranked, year, years, now, byMachine, delta, localDay, dayShift, familyOf, projectIndex, period, spent, spentDelta, stacks, periodCounts, planLimits } from "./model.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the other machines and their state (#66).
-import { machineList, machineTag, stateOf, stateWord } from "./machines.js";
+import { machineList, machineTag, stateOf, stateWord, guard, loginOf, REMOTE_TIMEOUT } from "./machines.js";
+// Machines (Kylian's request of 2026-11-19): CPU, memory and disk of this Mac and of main-vps.
+import { VPS, VPS_CMD, MAC_EVERY, VPS_EVERY, VPS_FLOOR, macFigures, linuxFigures, readDue } from "./hosts.js";
 import { ghArgs, parseYear, stale, githubYear } from "./github.js";
 import { keyOf as folderKey, projectWeek, projectYear, projectYears, weekPrs, weekChecks, prListArgs } from "./project.js";
 import { nextFlows, nextPlanIssues, recentMerges, parseHistory, onGitHub, flowWeeks, funnels } from "./recent.js";
@@ -62,7 +65,7 @@ const archived = (e) => Number.isFinite(e?.archived);
 const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
 const paint = (path, c) => globalThis.window.paint_path(path, c).absolute().inset_0();
 const AGAIN_MS = 60e3; // the indexer at most once a minute, unless r
-const SECTIONS = ["now", "time", "act", "next", "subs", "recent", "flows"];
+const SECTIONS = ["now", "time", "act", "next", "subs", "recent", "hosts", "flows"];
 const RECENT_MS = 14 * 864e5; // #50: Next and Recent look two weeks back
 const P_SECTIONS = ["phead", "pweek", "pact", "pprs", "plaunch"]; // #49: one project's view
 const STALE_MS = 3600e3; // a project's PRs (gh) and worktrees (gwm): asked again after an hour, or on r
@@ -73,6 +76,7 @@ const PROJ_MAX = 6;
 const MOST = ["proj", "launch", "model"];
 const FALL = ["accent", "ansi13", "ansi9", "ansi6", "ansi5"];
 const QUOTA = ".claude/cache/statusline/herdr-quota.json";
+const HOSTS_FILE = "data/kt-hub/machines.json"; // main-vps' last figures (numbers only)
 const BUILD_MAX = 4; // bars built cold in one render (built()); the chart counts for all
 const MEMO = 120; // their geometries kept
 // A card's frame: its border (2), its padding (28 across; 12 + 14 down) and its head (24 + 12).
@@ -170,6 +174,9 @@ export default class Hub extends View {
     this.projAll = false;
     this.tm = null;
     this.qText = undefined; // herdr-quota.json as read (planLimits weighs it against kt.usage.summary)
+    // Machines: each one's last figures (hosts.js) and when it was last asked; main-vps' last ones kept in
+    // data/kt-hub/machines.json (shown with their age after a restart; `file`: that file as read or written).
+    this.hosts = { mac: null, macAt: 0, vps: null, vpsAt: 0, file: undefined };
     this.bars = new Map();
     this.slots = new Map(); // a bar's last geometry, by its row (built())
     this.builds = 0;
@@ -180,6 +187,13 @@ export default class Hub extends View {
     this.tw = new Set(); // the trames the last render asked for
     if (checking()) return;
     this.load(cx);
+    // main-vps' last figures as the last pass on it left them (a file of this Mac: nothing asked of the VPS).
+    cx.spawn(async (cx) => {
+      const text = await readTextFile(`${appHome()}/${HOSTS_FILE}`).catch(() => null);
+      this.hosts.file = text;
+      const kept = parse(text)?.vps;
+      if (kept?.at && !this.hosts.vps) { this.hosts.vps = kept; cx.notify(); }
+    });
     cx.spawn(async (cx) => {
       const names = await fs.readdir(`${appHome()}/${TRAME_DIR}`).catch(() => []);
       for (const n of names) if (TRAME_NAME.test(n)) this.tr.have.add(n);
@@ -528,12 +542,56 @@ export default class Hub extends View {
       }
       if (++n % 5) return;
       this.quotaLoad(cx);
+      this.hostsLoad(cx, MAC_EVERY, VPS_EVERY);
       if (this.waiting && Date.now() - this.ranAt >= AGAIN_MS) this.index(cx, "bus");
       if (this.source === "github") this.ghLoad(cx, this.ghYear); // asks gh only when stale
       if (this.d && localDay(Date.now()) !== this.d.today) this.derive();
       const minute = Math.floor(Date.now() / 60e3);
       if (minute !== this.minute || this.keyed !== this.handle.is_focused()) { this.minute = minute; cx.notify(); }
     });
+  }
+
+  // Machines (hosts.js): this Mac every `macEvery` ms, main-vps every `vpsEvery` (both only while the hub
+  // shows: readDue asks visible() itself, and the tick that calls this stops when the page is left). This
+  // Mac: three local commands. main-vps: Kylian's approved command, through guard() (a machine away is not
+  // called; REMOTE_TIMEOUT), its figures then written to HOSTS_FILE. A read that fails keeps the last
+  // figures and their age.
+  hostsLoad(cx, macEvery, vpsEvery) {
+    if (checking()) return;
+    const h = this.hosts, now = Date.now(), shown = visible();
+    if (!h.macBusy && readDue(shown, h.macAt, macEvery, now)) {
+      h.macBusy = true;
+      h.macAt = now;
+      cx.spawn(async (cx) => {
+        const out = (r) => (r?.code === 0 ? r.stdout : "");
+        const [s, v, d] = await Promise.all([
+          exec("/usr/sbin/sysctl", ["-n", "vm.loadavg", "hw.ncpu", "hw.memsize"], { timeout: 5e3 }).catch(() => null),
+          exec("/usr/bin/vm_stat", [], { timeout: 5e3 }).catch(() => null),
+          exec("/bin/df", ["-kP", "/System/Volumes/Data"], { timeout: 5e3 }).catch(() => null),
+        ]);
+        h.mac = macFigures(out(s), out(v), out(d), Date.now()) ?? h.mac;
+        h.macBusy = false;
+        cx.notify();
+      });
+    }
+    if (!h.vpsBusy && machineList().some((m) => m.name === VPS) && readDue(shown, h.vpsAt, vpsEvery, now)) {
+      h.vpsBusy = true;
+      h.vpsAt = now;
+      cx.spawn(async (cx) => {
+        const r = await guard(exec)("sh", ["-c", VPS_CMD], { on: VPS, timeout: REMOTE_TIMEOUT }).catch(() => null);
+        const f = r?.code === 0 ? linuxFigures(r.stdout, Date.now()) : null;
+        if (f) {
+          h.vps = f;
+          const text = JSON.stringify({ v: 1, vps: f });
+          await writeTextFile(`${appHome()}/${HOSTS_FILE}`, text, h.file ?? null).then(() => { h.file = text; }, () => {
+            h.file = undefined; // written elsewhere meanwhile: read again before the next write
+            return readTextFile(`${appHome()}/${HOSTS_FILE}`).then((x) => { h.file = x; }, () => {});
+          });
+        }
+        h.vpsBusy = false;
+        cx.notify();
+      });
+    }
   }
 
   // #89: the statusLine's herdr-quota.json, on show and every 5 s while shown; a file that changed redraws,
@@ -1341,6 +1399,61 @@ export default class Hub extends View {
         .child(col(76, (s) => div().truncate().font_family(MONO).text_size(10.5).text_color(t.working).child(s.current ? tr("flows.running", { n: s.current }) : ""))));
   }
 
+  // ---------- Machines (Kylian's request of 2026-11-19) ----------
+
+  // A column per machine, as wide and as tall as the other (under each other when narrow): this Mac, then
+  // main-vps when Herdr knows it. The iPhone: nothing yet (Herdr doesn't know it; iOS gives no app the
+  // system's CPU or memory).
+  machinesCard(t, fullW, i) {
+    const inner = fullW - CARD_X;
+    const cols = [null, ...(machineList().some((m) => m.name === VPS) ? [VPS] : [])];
+    const two = cols.length > 1 && this.tier("hosts", inner) !== "narrow";
+    const w = two ? Math.floor((inner - 16 * (cols.length - 1)) / cols.length) : inner;
+    return this.card(t, "hosts", tr("hosts.title"), null, this.hint(t, tr("hosts.hint")),
+      (two ? h_flex().items_start().gap(16) : v_flex().gap(16)).children(cols.map((name) => this.hostCol(t, name, w))), i);
+  }
+
+  // A machine: its tag (this Mac's dot, else machines.js' with ROOT), what it is (cores, memory), how old its
+  // figures are; then CPU (the load over the cores: past 100 % when the queue is longer), memory and disk,
+  // each a dithered bar in the plan limit's tones. A machine away or to log in again: said, its last figures
+  // dimmed (never the connection's reason, which can hold its address).
+  hostCol(t, name, w) {
+    const h = this.hosts, f = name ? h.vps : h.mac, s = name ? stateOf(name) : null;
+    const away = Boolean(s && !s.reachable);
+    const every = name ? VPS_EVERY : MAC_EVERY;
+    const old = f?.at && Date.now() - f.at > 3 * every;
+    const tone = (r) => (r >= 0.9 ? t.ansi1 : r >= 0.75 ? t.blocked : t.accent);
+    const gib = (b) => num(b / 2 ** 30, b >= 100 * 2 ** 30 ? 0 : 1);
+    const pct = (r) => tr("pct", { n: Math.round(r * 100) });
+    const barW = Math.max(60, Math.min(140, Math.floor((w - 72 - 44 - 30) / 2 / 3) * 3));
+    const row = (id, label, x, detail) => h_flex().id(`hub-host-${name ?? "mac"}-${id}`).h(26).gap(10).items_center()
+      .child(div().w(72).flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(label))
+      .child(x ? this.bar(t, barW, Math.min(1, x.ratio), tone(x.ratio), `host:${name ?? "mac"}:${id}`) : div().w(barW).h(9).flex_none().bg(faint(t.foreground, 0.06)))
+      .child(div().w(44).flex_none().flex().justify_end().font_family(MONO).text_size(11).text_color(x ? t.foreground : t.dim).child(x ? pct(x.ratio) : "…"))
+      .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).child(x ? detail : ""));
+    const tag = name ? machineTag(t, name, { id: `hub-host-tag-${name}` })
+      : h_flex().gap(6).items_center().child(div().size(7).flex_none().rounded_full().bg(t.done)).child(div().text_size(12.5).font_medium().text_color(t.foreground).child(tr("now.thisMac")));
+    const what = [f?.cpu && tr("hosts.cores", { n: f.cpu.cores }), f?.mem && tr("hosts.gib", { n: gib(f.mem.total) })].filter(Boolean).join(" · ");
+    const login = name ? loginOf(name) : null;
+    const state = away ? stateWord(name) : f?.at ? tr(old ? "hosts.old" : "hosts.read", { ago: relative(f.at) }) : tr("hosts.reading");
+    return v_flex().id(`hub-host-${name ?? "mac"}`).w(w).flex_none().gap(4)
+      .child(h_flex().h(24).gap(10).items_center()
+        .child(tag)
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(what))
+        .child(div().flex_1())
+        .child(div().flex_none().text_size(11).text_color(away || old ? t.blocked : t.dim).child(state)))
+      .when(Boolean(login), (el) => el.child(h_flex().gap(8).items_center()
+        .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.foreground).child(login))
+        .child(div().id(`hub-host-login-${name}`).flex_none().px(8).py(2).rounded(6).border(1).border_color(t.border).text_size(11).text_color(t.muted)
+          .cursor_pointer().hover((x) => x.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => { cx.stop_propagation(); cx.write_to_clipboard(login); })
+          .child(tr("hosts.copy")))))
+      .child(v_flex().gap(2).when(away || old, (el) => el.opacity(0.55))
+        .child(row("cpu", tr("hosts.cpu"), f?.cpu, f?.cpu ? tr("hosts.load", { load: num(f.cpu.load, 1), n: f.cpu.cores }) : ""))
+        .child(row("mem", tr("hosts.mem"), f?.mem, f?.mem ? tr("hosts.of", { used: gib(f.mem.used), total: gib(f.mem.total) }) : ""))
+        .child(row("disk", tr("hosts.disk"), f?.disk, f?.disk ? tr("hosts.of", { used: gib(f.disk.used), total: gib(f.disk.total) }) : "")));
+  }
+
   // ---------- Next, Recent (#50) ----------
 
   // A line that opens something (the Inbox, an agent, a file), or says it can't: its dot, its text, its
@@ -1529,11 +1642,12 @@ export default class Hub extends View {
     const next = this.linesCard(t, "next", tr("next.title"), ng, nSizes, H("list-todo"), tr("next.none"), 3);
     const subs = this.subsCard(t, 4);
     const recent = this.linesCard(t, "recent", tr("recent.title"), rg, rCounts, HISTORY, tr("recent.none"), 5);
-    this.rowOf = { now: 0, time: 0, act: 1, next: 2, subs: 2, recent: 2, flows: 3 };
+    this.rowOf = { now: 0, time: 0, act: 1, next: 2, subs: 2, recent: 2, hosts: 3, flows: 4 };
     return [time, act,
       trio ? h_flex().items_start().gap(8).child(next.flex_1().h(hh)).child(subs.flex_1().h(hh)).child(recent.flex_1().h(hh).overflow_hidden())
         : v_flex().gap(8).child(next).child(subs).child(recent),
-      this.flowsCard(t, W, 6)];
+      this.machinesCard(t, W, 6),
+      this.flowsCard(t, W, 7)];
   }
 
   body(t) {
@@ -1576,6 +1690,8 @@ export default class Hub extends View {
         });
         this.startTick(cx);
         this.quotaLoad(cx);
+        // Machines at once: this Mac, and main-vps unless it was read under VPS_FLOOR ago (back and forth).
+        this.hostsLoad(cx, 0, VPS_FLOOR);
         if (Date.now() - this.ranAt >= AGAIN_MS) this.index(cx, "page");
       }
     }
