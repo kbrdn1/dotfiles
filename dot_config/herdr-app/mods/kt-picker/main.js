@@ -328,7 +328,8 @@ export default class Search extends View {
         // As kt-gwm's "Nouveau worktree": kt-new, whose Checkout pill makes it with gwm.
         { id: "worktree", icon: "folder-tree", name: tr("newWorktree"), overlay: true, go: () => { show("thread"); run("mod.open", { name: "kt-new" }); } },
         { id: "palette", icon: "layout-list", name: tr("palette"), kbd: "⌘⇧P", overlay: true, go: () => run("app.palette") },
-        { id: "panel", icon: "panel-right", name: tr("panel"), go: () => run("layout.toggle", { id: "panel" }) },
+        // kt-head opens and closes the panel with its content moving (#73), as ctrl-b p does.
+        { id: "panel", icon: "panel-right", name: tr("panel"), go: () => run("kt-head.panel-toggle") },
       ].map((a) => ({ kind: "action", key: `a:${a.id}`, ...a })).filter((r) => match(r, [r.name])),
       () => 0,
     );

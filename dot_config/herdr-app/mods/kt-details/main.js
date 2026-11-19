@@ -7,7 +7,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, panes, run, shared, exec as hostExec, home, layout, theme, checking } from "herdr";
+import { spaces, panes, run, shared, exec as hostExec, home, theme, checking } from "herdr";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
@@ -36,12 +36,6 @@ const tilde = (path) => {
   const [p, h] = [path, home()].map((s) => s.replace(/\\/g, "/"));
   return p.startsWith(h) ? `~${p.slice(h.length)}` : path;
 };
-
-function shown(node, id) {
-  if (!node) return false;
-  if (node.id === id) return !node.hidden;
-  return (node.children ?? []).some((c) => shown(c, id));
-}
 
 export default class Details extends View {
   init(_props, cx) {
@@ -301,10 +295,8 @@ export default class Details extends View {
                     .child(div().text_color(t.ansi1).child(`−${g.del}`))
                 : null,
               changed
-                ? () => {
-                    if (!shown(layout(), "panel")) run("layout.show", { id: "panel" });
-                    run("layout.select", { stack: "panel-body", child: "diff" });
-                  }
+                // kt-head shows the panel on Changes (ctrl-b d's way): its content glides in if it was hidden (#73).
+                ? () => run("kt-head.panel:diff")
                 : null,
             ),
           )
