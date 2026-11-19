@@ -3,7 +3,8 @@
 #   (a) a reset in the same window (resets_at unchanged) lowers the shown week: a fresh reading wins even lower;
 #   (b) an idle session replaying its old, higher reading changes nothing;
 #   (c) a later window wins, and an earlier one never comes back;
-#   (d) two active sessions: each new reading of either one is shown, and their replays change nothing.
+#   (d) two active sessions: each new reading of either one is shown, and their replays change nothing;
+#   (e) a file left by the old merge (98 %, no session remembers it) gives way to the first reading of any session.
 # A reading is fresh when it is a session's first or differs from the one it wrote last (its session cache).
 # Hermetic: temp HOME (isolates ~/.claude/cache/statusline), a plain folder as cwd, no git, no network.
 set -euo pipefail
@@ -27,6 +28,11 @@ expect() { # <what> <expected used@resets>
   local got; got="$(shown)"
   [ "$got" = "$2" ] || { echo "FAIL: $1: expected $2, got $got"; cat "$Q"; exit 1; }
 }
+
+# (e) the 98 % the old merge froze after Kylian's reset (2026-11-19): no session cache knows it.
+mkdir -p "$(dirname "$Q")"
+printf '{"seven_day":{"used_percentage":98,"resets_at":%s},"updated_at":1}' "$W1" > "$Q"
+render z 2 $W1;    expect "(e) a legacy 98 gives way to a first reading" "2@$W1"
 
 render a 98 $W1;   expect "a's first reading" "98@$W1"
 render b 98 $W1;   expect "b's first reading" "98@$W1"

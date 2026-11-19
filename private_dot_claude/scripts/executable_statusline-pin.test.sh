@@ -34,8 +34,12 @@ chmod +x "$tmp/bin/gwm"
 # --- transcript: one Edit inside the worktree ------------------------
 printf '{"message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"%s"}}]}}\n' \
   "$tmp/wt/f.txt" > "$tmp/t.jsonl"
-printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","model":{"display_name":"T","id":"x"}}' \
-  "$SID" "$tmp/t.jsonl" "$tmp/repo" > "$tmp/in.json"
+# input <cwd>: the status line's JSON for session $SID (rewritten whole: `sed -i` differs between BSD and GNU sed)
+input() {
+  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","model":{"display_name":"T","id":"x"}}' \
+    "$SID" "$tmp/t.jsonl" "$1" > "$tmp/in.json"
+}
+input "$tmp/repo"
 
 render() { HOME="$tmp" PATH="$tmp/bin:$PATH" bun "$SL" < "$tmp/in.json" > /dev/null; }
 settle() { perl -e 'select(undef,undef,undef,0.6)'; }
@@ -55,10 +59,9 @@ render; render; settle  # pinned now: no further spawn
 [ "$(attaches)" = 2 ] || { echo "FAIL: re-pinned on later renders ($(attaches) attaches)"; exit 1; }
 
 # --- a session working in its own cwd must NOT be pinned -------------
-sed -i '' "s|\"cwd\":\"$tmp/repo\"|\"cwd\":\"$tmp/wt\"|" "$tmp/in.json"
 rm -f "$tmp/gwm.log"
 SID="$SID-2"
-sed -i '' "s|\"session_id\":\"[^\"]*\"|\"session_id\":\"$SID\"|" "$tmp/in.json"
+input "$tmp/wt"
 render; settle
 [ ! -f "$tmp/gwm.log" ] || { echo "FAIL: pinned a session already inside its worktree"; cat "$tmp/gwm.log"; exit 1; }
 
