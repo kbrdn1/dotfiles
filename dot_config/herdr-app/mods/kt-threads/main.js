@@ -68,6 +68,8 @@ import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder, keys } from "herdr";
 // kt-keys' shortcuts.js (a byte-identical copy): each nav line's key as keycaps, read from keys() (#72).
 import { shortcut, kbd, tip } from "./shortcuts.js";
+// kt-keys' panel.js (a byte-identical copy): the sidebar's content glides in and out with it (#73).
+import { columnIn } from "./panel.js";
 import * as fs from "fs/promises";
 
 // The places' git and real paths go through machines.js' guard: a machine away refuses at once (#61).
@@ -1813,7 +1815,12 @@ export default class Threads extends View {
       .child(svg(I(open ? "chevron-down" : "chevron-right")).size(13));
   }
 
+  // panel.js: the whole sidebar glides in and out with its column (#73).
   render(cx) {
+    return columnIn("side", this.motion, this.draw(cx));
+  }
+
+  draw(cx) {
     this.findRepos(cx);
     this.followGlass(cx);
     const t = (this.t = theme());

@@ -14,7 +14,7 @@ import { spaces, panes, run, theme, shared, props, layout, settings, window as w
 // Copied byte for byte from mods/kt-keys/shortcuts.js: the buttons' keys in their tooltips, read from keys() (#72).
 import { shortcut, tip } from "./shortcuts.js";
 // Copied byte for byte from mods/kt-keys/panel.js: the right panel opens and closes with its content moving (#73).
-import { togglePanel, showPanel } from "./panel.js";
+import { togglePanel, showPanel, toggleColumn, columnIn } from "./panel.js";
 import { motionState, frame, enter, fade, sharpen } from "./motion.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
@@ -166,11 +166,13 @@ const confirm = (title, detail, label, command) =>
 const face = (which) => view(which, { layout, run, setShared, panes, focused });
 // The key bound to an action (shortcuts.js), for a tooltip.
 const keyOf = (...actions) => shortcut(keys(), shared("layout"), ...actions);
-// `panel-toggle` (ctrl-b p) and `panel:<surface>` open and close the right panel through panel.js (#73).
+// `panel-toggle` (ctrl-b p) and `panel:<surface>` open and close the right panel through panel.js (#73),
+// `side-toggle` (ctrl-b shift-v) the left sidebar.
 function route(c, cx) {
   const [name, arg] = [c.split(":")[0], c.slice(c.indexOf(":") + 1)];
   if (name === "view") face(c.includes(":") ? arg : "");
   else if (name === "panel-toggle") togglePanel(cx);
+  else if (name === "side-toggle") toggleColumn("side", cx);
   else if (name === "panel") {
     run("layout.select", { stack: "panel-body", child: arg });
     showPanel(cx);
@@ -415,6 +417,7 @@ export default class Head extends View {
     const w = win() ?? {};
     const t = theme();
     if (props()?.part !== "brand") this.autoHub(cx);
-    return props()?.part === "brand" ? this.brand(t, w) : this.crumbs(t, w, cx);
+    // The brand block is the sidebar's top: it glides with it (panel.js, #73).
+    return props()?.part === "brand" ? columnIn("side", this.motion, this.brand(t, w)) : this.crumbs(t, w, cx);
   }
 }

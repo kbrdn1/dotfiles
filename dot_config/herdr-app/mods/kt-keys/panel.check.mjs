@@ -3,13 +3,15 @@
 // opening, whose first layout makes it ready, then glides in. Closing sets "out", ONE timer hides the column
 // after 180 ms then says "done". Pressed again while it goes (toggle, or a surface's key: showPanel), it comes
 // back and the timer does nothing. Reduced motion: the column at once, "done", no timer. A step over a second
-// old, or "done", draws in place. The wrapper keeps one id. herdr and gpui-kit mocked.
+// old, or "done", draws in place. The wrapper keeps one id. The left sidebar ("side") the same way under its
+// own key, its content from the left, leaving the panel alone. herdr and gpui-kit mocked.
 import assert from "node:assert/strict";
 import { plugin } from "bun";
 
 const store = {};
 const ran = [];
 let hidden = true;
+let sideHidden = false;
 const el = () => {
   const node = { kids: [], props: {}, trs: {}, on: {} };
   const p = new Proxy(node, {
@@ -34,16 +36,17 @@ plugin({
       exports: {
         shared: (k) => store[k],
         setShared: (k, v) => { store[k] = v; },
-        layout: () => ({ id: "root", children: [{ id: "work" }, { id: "panel", hidden }] }),
+        layout: () => ({ id: "root", children: [{ id: "side", hidden: sideHidden }, { id: "work" }, { id: "panel", hidden }] }),
         run: (name, args) => {
           ran.push(`${name}:${args.id}`);
           if (args.id === "panel") hidden = name === "layout.hide" ? true : name === "layout.show" ? false : !hidden;
+          if (args.id === "side") sideHidden = name === "layout.hide" ? true : name === "layout.show" ? false : !sideHidden;
         },
       },
     }));
   },
 });
-const { showPanel, hidePanel, togglePanel, panelOpen, stepOf, panelIn, KEY } = await import("./panel.js");
+const { showPanel, hidePanel, togglePanel, panelOpen, stepOf, panelIn, KEY, toggleColumn, columnOpen, columnIn, keyOf } = await import("./panel.js");
 const { MS } = await import("./motion.js");
 
 // A cx whose one-shot timers wait to be fired by hand.
@@ -142,5 +145,30 @@ const still = panelIn({ reduced: true }, el(), { gen: 9, dir: "in", at: 100 }, 1
 assert.deepEqual(still.props.id, ["kt-panel-motion"]);
 assert.deepEqual([still.props.left, still.props.opacity, still.kids.length], [undefined, undefined, 1]);
 assert.deepEqual(still.trs, {});
+
+// The left sidebar ("side"): the same steps under its own key, its content from the left, the panel untouched.
+assert.equal(keyOf("side"), "kt.side.motion");
+assert.equal(KEY, "kt.panel.motion");
+const panelBefore = { ...store[KEY] };
+const panelHidden = hidden;
+assert.equal(columnOpen("side"), true);
+toggleColumn("side", cx, false);
+assert.equal(store["kt.side.motion"].dir, "out");
+assert.equal(sideHidden, false, "the sidebar waits for its content");
+assert.deepEqual(fire(), [MS.open]);
+assert.deepEqual([sideHidden, store["kt.side.motion"].dir], [true, "done"]);
+toggleColumn("side", cx, false);
+assert.deepEqual([sideHidden, store["kt.side.motion"].dir, timers.length], [false, "in", 0]);
+assert.deepEqual([store[KEY], hidden], [panelBefore, panelHidden], "the panel's step and column untouched");
+const sm = { reduced: false };
+const sw = columnIn("side", sm, el(), { gen: 4, dir: "in", at: 100 }, 120);
+assert.deepEqual(sw.props.id, ["kt-side-motion"]);
+assert.deepEqual([sw.props.left, sw.props.opacity], [[-12], [0]], "from the left");
+assert.deepEqual(sw.kids[1].props.id, ["kt-side-cue-4"]);
+sw.kids[1].on.on_size_change({}, { notify() {} });
+assert.deepEqual([sm.sideReady, sm.panelReady], [4, undefined], "its own readiness");
+const sw2 = columnIn("side", sm, el(), { gen: 4, dir: "in", at: 100 }, 140);
+assert.deepEqual([sw2.props.left, sw2.props.opacity, sw2.trs.left.easing], [[0], [1], "ease-out"]);
+assert.deepEqual(columnIn("side", sm, el(), { gen: 5, dir: "out", at: 100 }, 150).props.left, [-12]);
 
 console.log("panel: ok");
