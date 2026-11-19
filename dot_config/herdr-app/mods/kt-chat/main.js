@@ -41,8 +41,10 @@
 // The thread's Chat face (#54, back with #86: Kylian wants it in place of the tab's panes, not beside
 // them): the layout's stack thread-body shows this copy (child chat) or the tab's panes (child main).
 // It follows the shown tab's agent (pickTarget), takes the keyboard when kt-head's view.js switches to
-// it (shared stamp "kt.chat.focus"), and fades in then (enter(), opacity only); « Ouvrir le terminal »
-// goes back to the panes, the keyboard to its agent's pane. Or a fixed file (props().file).
+// it (shared stamp "kt.chat.focus"); « Ouvrir le terminal » goes back to the panes, the keyboard to its
+// agent's pane. Or a fixed file (props().file). No motion at the switch: Herdr keeps this copy alive
+// while hidden (AGENTS.md: the other child of a stack is found as it was), so the face shows its last
+// state in its first image; a cold copy (its first show, or after a save) shows its skeleton at once.
 
 import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
@@ -218,7 +220,7 @@ export default class Chat extends View {
     this.fixed = props()?.file ?? null; // a JSONL shown instead of the agent's
     // ctrl-b space (kt-head's view.js) asks for the keyboard through this shared stamp (a time). One
     // older than 2 s when this copy starts is not a request; a fresh one is (the first ctrl-b space
-    // starts this copy: its stamp is written just before). The face fades in under it (render).
+    // starts this copy: its stamp is written just before).
     const stamp = shared("kt.chat.focus");
     this.focusAsked = stamp && Date.now() - stamp > 2000 ? stamp : null;
     this.open = new Set(); // opened: f:<turn> fold, s:<step> detail, c:<notice> summary, r:<run> report, k:<code> block
@@ -3561,8 +3563,7 @@ export default class Chat extends View {
     if (this.cleanDue && !checking()) this.sweepBg(cx);
     // The thread switched to its Chat face: take the keyboard, once per request, at the first render
     // that shows this face (a stamp seen while the face is still hidden waits for it: view.js writes the
-    // stamp, then switches). The stamp also names the face's showing: a new one fades it in
-    // (`kc-face-<stamp>` below), the way back to the panes has no motion.
+    // stamp, then switches).
     const ask = shared("kt.chat.focus");
     if (!checking() && takesFocus(ask, this.focusAsked, chatShown(layout()))) {
       this.focusAsked = ask;
@@ -3582,9 +3583,12 @@ export default class Chat extends View {
     // ground (conversation.rs:3833-3852, transcript.rs:5880-5918).
     // No frame (Kylian, 2026-11-19: the background goes to the edges, as in Monocode); the corners
     // stay those of the thread's block (radius 16, the column's 20 less its padding of 4).
-    // The face fades in each time ctrl-b space shows it (its stamp: a new id, enter() starts over),
-    // opacity only, never a size; a fixed file's copy once.
-    return enter(this.m, div().size_full(), this.fixed ? "kc-face" : `kc-face-${this.focusAsked ?? 0}`, { dy: 0 }).child(div().id("kt-chat").relative().size_full().rounded(16)
+    // The body fades in when the agent changes (#92), not the copy's first one (its first show: the
+    // skeleton, or the state read before, is there in the first image).
+    const bodyId = `kc-body-${want ?? "none"}`;
+    if (this.bodyFor === undefined) this.motion.shown.add(bodyId);
+    this.bodyFor = want;
+    return div().id("kt-chat").relative().size_full().rounded(16)
       .overflow_hidden().text_color(ink(t, 1))
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_drop((ev, cx) => { const p = (ev?.paths ?? []).find((x) => IMAGE.test(x)); if (p && pr) { this.importBg(cx, pr, p); cx.notify(); } })
@@ -3598,9 +3602,9 @@ export default class Chat extends View {
         // #81: the completion menu, a passing popup over the transcript's bottom (menu.js, like bgMenu):
         // in the transcript's own box, so it never covers the composer and moves nothing in it.
         .child(div().relative().flex_1().min_h(0).flex().flex_col()
-          .child(enter(this.m, this.body(t, cx, tg, keyed), `kc-body-${want ?? "none"}`, { dy: 0 }).flex_1().min_h(0))
+          .child(enter(this.m, this.body(t, cx, tg, keyed), bodyId, { dy: 0 }).flex_1().min_h(0))
           .when(writes, (el) => el.children([this.menuEl(t)].filter(Boolean))))
         .when(writes, (el) => el.child(this.composerView(t, tg, pr, cx))))
-      .children(this.bgControls(t, pr) ?? []));
+      .children(this.bgControls(t, pr) ?? []);
   }
 }

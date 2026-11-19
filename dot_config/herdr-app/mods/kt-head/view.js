@@ -6,10 +6,10 @@
 // `view(arg, deps)`: "" alternates, "chat" / "main" pick. From a page that covers the thread (the
 // stack view on Skills, Inbox…), "" brings the thread back on its Chat face. The Chat gets the
 // keyboard through shared "kt.chat.focus" (kt-chat reads it when it draws: a mod can't send another
-// one a command; a new stamp also fades the face in), written before the switch so the face's first
-// draw has it. Back on the panes, no motion: the keyboard to the agent's pane (the focused pane's
-// agent, else the tab's first agent; none: the tab's focused pane). Answers the child shown, or null
-// without the stack (another layout). Pure, its herdr calls passed in: view.check.mjs.
+// one a command), written before the switch so the face's first draw has it. No motion either way
+// (the face shows its last state at once). Back on the panes: the keyboard to the agent's pane (the
+// focused pane's agent, else the tab's first agent; none: the tab's focused pane). Answers the child
+// shown, or null without the stack (another layout). Pure, its herdr calls passed in: view.check.mjs.
 
 export function find(node, id) {
   if (node?.id === id) return node;
