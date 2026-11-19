@@ -404,7 +404,9 @@ export function indexHistory(file: string, A: Archive, ctx: Ctx) {
   }
 }
 
-/** claude-flow's store keeps 20 flows: each pass copies them in, and notes when a step turns done. */
+/** claude-flow's store keeps 20 flows: each pass copies them in, and notes when a step turns done. Its steps
+ * have no time; its commits do (items.commits[].at): #76 keeps the first and the last seen and their count,
+ * across passes (the store's items can be cut), for the hub's week by week. */
 export function archiveFlows(dir: string, A: Archive, now: number) {
   let names: string[] = [];
   try { names = readdirSync(dir).filter((n) => /^me_.*\.json$/.test(n)); } catch { return; }
@@ -419,7 +421,10 @@ export function archiveFlows(dir: string, A: Archive, now: number) {
         // Done when first seen: 0, before the archive knew it.
         if (s?.status === "done" && doneAt[step] == null) doneAt[step] = prev ? now : 0;
       }
-      A.flows[k] = { ...v, first: prev?.first ?? now, seen: now, doneAt };
+      const at = (v.items?.commits ?? []).map((c: any) => c?.at).filter(Number.isFinite);
+      const c0 = Math.min(prev?.c0 ?? Infinity, ...at), c1 = Math.max(prev?.c1 ?? 0, ...at);
+      A.flows[k] = { ...v, first: prev?.first ?? now, seen: now, doneAt,
+        c0: Number.isFinite(c0) ? c0 : null, c1: c1 > 0 ? c1 : null, nc: Math.max(prev?.nc ?? 0, Number(v.commits) || 0, at.length) };
     }
   }
 }
@@ -558,7 +563,7 @@ export function summarize(A: Archive, now: number) {
   const reports = Object.values(A.reports ?? {}).map((x) => x.r).filter((r) => r && r.at >= new Date(`${from}T00:00:00`).getTime()).sort((a, b) => b.at - a.at);
   const flows = Object.entries(A.flows ?? {}).map(([key, f]) => ({ key, workflow: f.workflow ?? null, repo: f.repo ?? null, issue: f.issue ?? null, pr: f.pr ?? null,
     steps: Object.fromEntries(Object.entries<any>(f.steps ?? {}).map(([s, v]) => [s, v?.status ?? null])), doneAt: f.doneAt ?? {},
-    review: f.review?.iteration ?? 0, ci: f.ci?.iteration ?? 0, first: f.first, seen: f.seen }));
+    review: f.review?.iteration ?? 0, ci: f.ci?.iteration ?? 0, first: f.first, seen: f.seen, c0: f.c0 ?? null, c1: f.c1 ?? null, nc: f.nc ?? 0 }));
   // #50: the sessions of the last two weeks (their title, last activity, project), the plans, the notes.
   const sessions = Object.entries(A.files ?? {}).filter(([f, st]) => !f.includes("/subagents/") && (st.ts ?? 0) >= now - RECENT_MS)
     .map(([f, st]) => ({ sid: basename(f, ".jsonl"), title: st.ctitle ?? st.title ?? null, last: st.ts!, project: (st.proj && A.projects[st.proj]?.name) || null }))

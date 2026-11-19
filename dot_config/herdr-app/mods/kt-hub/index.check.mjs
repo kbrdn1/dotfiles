@@ -158,7 +158,8 @@ utimesSync(`${D}/vault/pro/vieille.md`, new Date("2026-10-01T12:00:00Z"), new Da
 put(`${D}/vault/pro/.git/c.md`, "---\ntitle: cachée\n---\n");
 put(`${D}/reports/o-r/broken/facts.json`, "{");
 put(`${cfg.store}/me_claude-flow-x.json`, JSON.stringify({
-  "flow:o/r#1": { workflow: "me:issue-worktree-pr", repo: "o/r", issue: 1, pr: 3, steps: { issue: { status: "done" }, merge: { status: "pending" } } },
+  "flow:o/r#1": { workflow: "me:issue-worktree-pr", repo: "o/r", issue: 1, pr: 3, steps: { issue: { status: "done" }, merge: { status: "pending" } },
+    commits: 3, items: { commits: [{ at: 2000, text: "a" }, { at: 1000, text: "b" }, { at: "x" }] } },
   "other:key": { x: 1 },
 }));
 
@@ -222,6 +223,7 @@ assert.equal(d18.s.hist, undefined, "history after the junction: the transcripts
 // Flows: copied, a step done when first seen is 0.
 assert.deepEqual(Object.keys(a.flows), ["flow:o/r#1"]);
 assert.deepEqual(a.flows["flow:o/r#1"].doneAt, { issue: 0 });
+assert.deepEqual([a.flows["flow:o/r#1"].c0, a.flows["flow:o/r#1"].c1, a.flows["flow:o/r#1"].nc], [1000, 2000, 3], "#76: its commits' first and last time, their count");
 // The summary: under 100 KB, the year's sessions, a project's PRs from its repo.
 let s = sum();
 assert.ok(readFileSync(`${cfg.out}/summary.json`).length < 100e3);
@@ -248,7 +250,7 @@ assert.equal(s.reports.length, 1, "the plan and the broken file are no branch re
 assert.deepEqual(s.reports[0], { repo: "o/r", branch: "feat/#1-x", issue: "1", at: Date.parse("2026-11-18T19:00:00Z"),
   pr: { n: 3, title: "une PR", state: "MERGED", url: "https://github.com/o/r/pull/3", draft: false },
   ci: { ok: 2, fail: 1, pending: 0, total: 3 }, review: { passes: 2, found: 2, fixed: 2, open: 0 }, lines: [40, 3] });
-assert.deepEqual(s.flows.map((f) => [f.key, f.steps.issue, f.doneAt.issue]), [["flow:o/r#1", "done", 0]]);
+assert.deepEqual(s.flows.map((f) => [f.key, f.steps.issue, f.doneAt.issue, f.c0, f.c1, f.nc]), [["flow:o/r#1", "done", 0, 1000, 2000, 3]]);
 assert.equal(X.recap({ kind: "plan", facts: { repo: "o/r" } }), null);
 
 // #50: the sessions of the last two weeks (the given title, the project where each was last), the plans,
@@ -295,6 +297,7 @@ assert.deepEqual(a.days["2026-11-19"].p, { cli: 1 }, "the finished line counts o
 assert.deepEqual(a.days["2026-11-19"].s, { cli: 1 }, "A still once on the 19th");
 assert.equal(a.days["2026-11-19"].m, 2);
 assert.equal(a.flows["flow:o/r#1"].doneAt.merge, now);
+assert.deepEqual([a.flows["flow:o/r#1"].c0, a.flows["flow:o/r#1"].c1, a.flows["flow:o/r#1"].nc], [1000, 2000, 3], "the store lost its items: the archive keeps them");
 // A pass with nothing new changes no count.
 const snap = JSON.stringify({ d: a.days, p: a.projects });
 X.run(cfg);

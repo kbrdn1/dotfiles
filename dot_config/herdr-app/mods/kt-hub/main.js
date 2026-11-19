@@ -1,57 +1,94 @@
 // kt-hub: the home page (#46), the "hub" child of kbrdn-threads' "view" stack. It draws what the indexer
-// (index.ts, #44) leaves in data/kt-hub/summary.json and computes nothing in render: model.js derives the
-// week, the rankings, the projects and the year once per summary (and when the day changes).
-// Sections: the header (the index's state, r), Now (the live agents, a click goes to the one to see),
-// This week (six cards against the same days of the week before, their 8 weeks as bars), Activity (the
-// year in plain squares, viz.calendar, ‹ year ›), the week's workflows and skills, its sub-agents, the
-// projects (this week's most active first). #48: the year of GitHub instead of the agents' (tab). #49: one
-// project's view, the shown space's unless kt.project is "*" (v switches to the global one): its worktrees
-// (gwm), its week with its PRs (gh pr list) and what review and CI caught (~/Reports' recaps, the flows),
-// its year, its PRs (a click opens the Inbox on one), its launches. #50: the tracked workflows (claude-flow's
-// flows, each its path from the issue to the note), Next (who waits, the flows' next step, the plans'
-// unblocked issues) and Recent (merges, vault notes, removed worktrees, sessions), on the right when wide.
+// (index.ts, #44) leaves in data/kt-hub/summary.json and computes nothing in render: model.js and recent.js
+// derive the week, the rankings, the projects, the year and the flows once per summary (and per day).
+// #76's layout (validated on its HTML mockup): a card per section, every series in trame (viz.js' dithered
+// cells: the year, the cards' trends and the rows of squares as SVG images written by the page, trame.js;
+// the bars and a project's weeks in paths), Now in the header. From WIDE px, Next and Recent on the right of
+// the top (This week + Activity) only, as tall as it, Recent dropping lines to fit; under it, side by side
+// under Activity. Then the launches beside the sub-agents (as tall as each other), the projects (6, the rest
+// folded), the tracked workflows (week by week, then a funnel per workflow). Widths: the main column's tier
+// (tiers.js), never the whole page's.
+// #48: the year of GitHub instead of the agents' (tab). #49: one project's view, the shown space's unless
+// kt.project is "*" (v switches to the global one): its worktrees (gwm), its week with its PRs (gh pr list)
+// and what review and CI caught (~/Reports' recaps, the flows), its year, its PRs (a click opens the Inbox
+// on one), its launches. #50: Next (who waits, the flows' next step, the plans' unblocked issues) and Recent
+// (merges, vault notes, removed worktrees, sessions).
 // The indexer runs (exec, bun by its path: exec's PATH has no ~/.nix-profile): on the first show and on
 // coming back after 60 s, the old summary staying shown; on the bus's "agents" while shown, 60 s apart at
 // most (a bump in between waits for its turn); on r. A hidden copy doesn't render, so it doesn't hear
 // the bus: it catches up when it shows. One 5 s tick while shown (the page left, a bump waiting, the day
 // and the minute changing); none while hidden.
 // Keys (vim.js): j / k gg / G the sections, [ / ] or h / l the year, tab the source (global view), v the
-// view, r index (and the project's PRs and worktrees), ? kt-keys, q / esc back to the thread when there is one.
+// view, r index (and the project's PRs and worktrees), enter (Now: go to the agent; Projects: all or 6),
+// ? kt-keys, q / esc back to the thread when there is one.
 // Mod commands: kt-hub.focus, key:<keys>, refresh, year:<yyyy>, source:<agents|github>, scope:<auto|global>.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
+import * as fs from "fs/promises";
 import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, setShared, settings, panes } from "herdr";
-import { week, ranked, projectRows, year, years, now, byMachine, delta, localDay, dayShift, familyOf } from "./model.js";
+import { week, ranked, projectRows, year, years, now, byMachine, delta, localDay, dayShift, daysBetween, familyOf } from "./model.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the other machines and their state (#66).
 import { machineList, machineTag, stateOf, stateWord } from "./machines.js";
 import { ghArgs, parseYear, stale, githubYear } from "./github.js";
 import { keyOf as folderKey, projectWeek, projectYear, projectYears, weekPrs, weekChecks, prListArgs } from "./project.js";
-import { PATH, path as flowPath, byWorkflow, nextFlows, nextPlanIssues, recentMerges, parseHistory } from "./recent.js";
+import { nextFlows, nextPlanIssues, recentMerges, parseHistory, onGitHub, flowWeeks, funnels } from "./recent.js";
 import { makeT, num, date, time, relative, duration } from "./i18n.js";
 import strings from "./strings.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { dither, iconBtn, bandRow } from "./band.js";
-import { motionState, frame, enter } from "./motion.js";
+import { motionState, frame, enter, stagger } from "./motion.js";
 import { skeleton } from "./skeleton.js";
-import { viz, quartileLevels } from "./viz.js";
+import { viz, quartileLevels, capped, progressGeometry, faint, isLight, reveal, swatch, SERIES } from "./viz.js";
 import { roll } from "./roll.js";
 import { refreshOn } from "./bus.js";
+// kt-keys' tiers.js and kt-flow's steps.js (byte-identical copies): the width tiers, the steps' phases.
+import { tierOf } from "./tiers.js";
+import { PHASES, workflowName, speak } from "./steps.js";
+import { calN, calendarGrid, calendarSvg, squaresSvg, trendSvg, funnelSvg, donutSvg, sparkGeometry, hash } from "./trame.js";
 
 const tr = makeT(strings);
+speak(makeT);
 const MONO = "Monaspace Krypton";
 const I = (name) => `mods/kt-threads/${name}.svg`;
+const H = (name) => `mods/kt-hub/${name}.svg`;
+const HISTORY = "mods/kt-panel-head/history.svg";
 const SPIN = "mods/workspace-chrome/spinner.svg";
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
+const paint = (path, c) => globalThis.window.paint_path(path, c).absolute().inset_0();
 const AGAIN_MS = 60e3; // the indexer at most once a minute, unless r
-const SECTIONS = ["now", "week", "act", "rank", "proj", "flows", "next", "recent"];
+const SECTIONS = ["now", "week", "act", "next", "recent", "rank", "proj", "flows"];
 const RECENT_MS = 14 * 864e5; // #50: Next and Recent look two weeks back
-const WIDE = 1300; // #50: Next and Recent in a column on the right from this width, under the rest below it
+const WIDE = 1300; // #50: Next and Recent on the right from this page width (+ HYST to come, under it to go)
+const HYST = 32;
+const SIDE_W = 400;
 const P_SECTIONS = ["phead", "pweek", "pact", "pprs", "plaunch"]; // #49: one project's view
 const STALE_MS = 3600e3; // a project's PRs (gh) and worktrees (gwm): asked again after an hour, or on r
 const CARDS = ["s", "p", "a", "sub", "pr", "streak"];
 const FAMILY = { workflow: "ansi4", loop: "ansi5", skill: "ansi2" };
+const PROJ_MAX = 6;
+const BUILD_MAX = 4; // bars and project weeks built cold in one render (built()); the chart counts for all
+const MEMO = 120; // their geometries kept
+// A card's frame: its border (2), its padding (28 across; 12 + 14 down) and its head (24 + 12).
+const CARD_X = 30, CARD_Y = 64;
+// #76: the steps' phases in color (steps.js' PHASES), and a color per workflow (its own, else stable by name).
+const PHASE_COLOR = { prep: "ansi4", spec: "ansi6", impl: "ansi5", ship: "ansi3", close: "ansi2" };
+const phaseOf = (id) => PHASES.find((p) => p.steps.includes(id))?.id ?? "close";
+const WF_COLOR = { "me:issue-worktree-pr": "ansi4", "me:issue-branch-pr": "ansi6", "me:spec-issue-worktree-pr": "ansi2", "me:spec-issue-branch-pr": "ansi2",
+  "me:goal": "ansi5", "me:dispatch": "ansi3", "me:release": "accent" };
+const WF_SERIES = ["ansi4", "ansi5", "ansi2", "ansi3", "ansi6", "accent"];
+const wfColor = (w) => WF_COLOR[w] ?? WF_SERIES[parseInt(hash(String(w ?? "")), 36) % WF_SERIES.length];
+// #76: the trames' images (trame.js), in data/kt-hub/trame: <kind>-<data>-<look>.svg (the data part and the
+// look part apart: the sweep keeps every look of the data shown, dark, light, glass). TRAME: the captures'
+// two switches (<use>, and the SVG's size for a Retina that would blur it).
+const TRAME = { use: true, scale: 1 };
+const TRAME_DIR = "data/kt-hub/trame";
+const TRAME_NAME = /^(cal|leg|days|tr|fn|dn)-[0-9a-z]+-[0-9a-z]+\.svg$/;
+const MAX_FILES = 120; // ponytail: a cap, not an LRU; past it, only the shown look's files stay
+const SETTLE_MS = 300; // a width that moved this recently writes no image (a drag would write one a pixel)
+// Next's and Recent's rows: a group's name, a line; the empty sentence.
+const SUB_H = 18, LINE_H = 26, EMPTY_H = 34;
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -65,6 +102,19 @@ function find(node, id) {
 const visible = () => (find(layout(), "view")?.active ?? null) === "hub";
 // A thread to go back to: a space with a tab.
 const hasThread = () => spaces().some((s) => s.tabs?.length);
+// The height of groups of lines with `counts` lines shown each: a name, its lines (2 px apart), 4 between.
+const groupsH = (counts) => (counts.length ? counts.reduce((s, n) => s + SUB_H + n * (LINE_H + 2), 0) + 4 * (counts.length - 1) : EMPTY_H);
+// The lines each group keeps within `avail` px: the longest loses its last first, each keeps one.
+function fit(sizes, avail) {
+  const n = [...sizes];
+  while (groupsH(n) > avail) {
+    let k = -1;
+    n.forEach((v, i) => { if (v > 1 && (k < 0 || v > n[k])) k = i; });
+    if (k < 0) break;
+    n[k]--;
+  }
+  return n;
+}
 
 export default class Hub extends View {
   init(_props, cx) {
@@ -98,12 +148,34 @@ export default class Hub extends View {
     this.cur = "now";
     this.reveal = false;
     this.width = 1000;
+    this.widthAt = 0; // when the width last moved (SETTLE_MS)
     this.headW = 0;
     this.shown = false;
     this.tick = null;
     this.minute = 0;
+    // #76: the layout's states (tiers with their previous one, the right column, the top's height for
+    // Recent), Projects all or 6, the bars' and weeks' paths (memo), the trames' files.
+    this.tiers = {};
+    this.wide = false;
+    this.topH = 0;
+    this.projAll = false;
+    this.bars = new Map();
+    this.sparks = new Map();
+    this.slots = new Map(); // a bar's or a project's weeks' last geometry, by its row (built())
+    this.builds = 0;
+    this.later = false;
+    this.heavy = 0; // 0: none yet, 1: the bars, 2: and the weeks, 3: and the chart (bar())
+    this.heavySoon = -1;
+    this.tr = { have: new Set(), slot: new Map(), queue: new Map(), busy: false, listed: false, swept: null };
+    this.tw = new Set(); // the trames the last render asked for
     if (checking()) return;
     this.load(cx);
+    cx.spawn(async (cx) => {
+      const names = await fs.readdir(`${appHome()}/${TRAME_DIR}`).catch(() => []);
+      for (const n of names) if (TRAME_NAME.test(n)) this.tr.have.add(n);
+      this.tr.listed = true;
+      cx.notify();
+    });
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -146,7 +218,10 @@ export default class Hub extends View {
     this.pHeat.clear();
     const reg = shared("kt.projects");
     this.regKey = JSON.stringify(reg ?? null);
-    this.d = { today, w, launches: ranked(s.days, w, "l"), subs: ranked(s.days, w, "sub"), rows: projectRows(s.projects, reg, w), years: ys };
+    // #76: the flows of the last two weeks, week by week (their commits' times) and by workflow.
+    const flows = (s.flows ?? []).filter((f) => (f.seen ?? 0) >= Date.now() - RECENT_MS);
+    this.d = { today, w, launches: ranked(s.days, w, "l"), subs: ranked(s.days, w, "sub"), rows: projectRows(s.projects, reg, w), years: ys,
+      fl: { weeks: flowWeeks(flows, Date.now()), funnels: funnels(flows) } };
   }
 
   // The year's levels (quartiles each side of the junction), once per summary and year; its weeks'
@@ -181,6 +256,71 @@ export default class Hub extends View {
         h.tips.set(key, tr(word, { from: date(`${dayShift(h.start, a)}T12:00:00`), to: date(`${dayShift(h.start, b)}T12:00:00`), n: num(n) }));
       }
       cx.notify();
+    });
+  }
+
+  // ---------- trames (#76, trame.js) ----------
+
+  // An image of the hub's: { path, w, h } once its file is written, else the last image of that slot (the
+  // old one stays until the new one exists, drawn at its own size), else null (its place, empty). Asked in
+  // render, built in a task after it (flushTrames), never while the width moves.
+  trame(slot, kind, data, look, w, h, build) {
+    const name = `${kind}-${hash(`${slot}|${data}`)}-${hash(look)}.svg`;
+    this.tw.add(name);
+    if (this.tr.have.has(name)) {
+      this.tr.slot.set(slot, { name, w, h });
+      return { path: `${TRAME_DIR}/${name}`, w, h };
+    }
+    if (this.tr.listed && Date.now() - this.widthAt >= SETTLE_MS) this.tr.queue.set(name, build);
+    const last = this.tr.slot.get(slot);
+    return last && this.tr.have.has(last.name) ? { path: `${TRAME_DIR}/${last.name}`, w: last.w, h: last.h } : null;
+  }
+
+  // The images asked for and not there: built and written in a task, one per turn (each a few ms, #76's
+  // measures), the page redrawn after each. A file that already exists (another copy wrote it) is there.
+  flushTrames(cx) {
+    if (checking() || this.tr.busy) return;
+    if (!this.tr.queue.size) { this.sweep(cx); return; }
+    this.tr.busy = true;
+    cx.spawn(async (cx) => {
+      const dir = `${appHome()}/${TRAME_DIR}`;
+      await fs.mkdir(dir, { recursive: true }).catch(() => {});
+      for (const [name, build] of [...this.tr.queue]) {
+        this.tr.queue.delete(name);
+        if (this.tr.have.has(name)) continue;
+        const file = `${dir}/${name}`;
+        try {
+          const text = build();
+          const ok = await writeTextFile(file, text, null).then(() => true, () => fs.exists(file));
+          if (ok) this.tr.have.add(name);
+        } catch (e) {
+          console.log(`kt-hub: trame ${name}: ${String(e?.message ?? e).slice(0, 160)}`);
+        }
+        cx.notify();
+      }
+      this.tr.busy = false;
+      cx.notify();
+    });
+  }
+
+  // Once per summary, the queue empty: the files of no data shown go (every look of the shown data stays),
+  // and past MAX_FILES the other looks too. Only in data/kt-hub/trame, only names of TRAME_NAME.
+  sweep(cx) {
+    if (!this.sum || !this.tr.listed || this.tr.swept === this.sum.at || !this.tw.size) return;
+    this.tr.swept = this.sum.at;
+    const parts = (n) => n.slice(0, -4).split("-");
+    const data = new Set([...this.tw].map((n) => parts(n)[1]));
+    const looks = new Set([...this.tw].map((n) => parts(n)[2]));
+    cx.spawn(async () => {
+      const dir = `${appHome()}/${TRAME_DIR}`;
+      const names = (await fs.readdir(dir).catch(() => [])).filter((n) => TRAME_NAME.test(n));
+      const kept = names.filter((n) => data.has(parts(n)[1]));
+      const gone = names.filter((n) => !data.has(parts(n)[1]));
+      if (kept.length > MAX_FILES) gone.push(...kept.filter((n) => !looks.has(parts(n)[2])));
+      for (const n of gone) {
+        await fs.unlink(`${dir}/${n}`).catch(() => {});
+        this.tr.have.delete(n);
+      }
     });
   }
 
@@ -327,14 +467,15 @@ export default class Hub extends View {
     });
   }
 
+  // The Inbox opens GitHub repos only (#76, recent.js' onGitHub): a flow's repo can be a folder's name.
   openIssue(repo, n) {
-    if (!repo || !n) return;
+    if (!onGitHub(repo) || !n) return;
     setShared("kt.inbox.open", { repo, kind: "issue", number: Number(n), at: Date.now() });
     run("layout.select", { stack: "view", child: "inbox" });
   }
 
   openPr(slug, n) {
-    if (!slug || !n) return;
+    if (!onGitHub(slug) || !n) return;
     setShared("kt.inbox.open", { repo: slug, kind: "pr", number: n, at: Date.now() });
     run("layout.select", { stack: "view", child: "inbox" });
   }
@@ -454,6 +595,7 @@ export default class Hub extends View {
     else if (a === "panel-next" || a === "right") this.stepYear(1, cx);
     else if ((a === "tab-next" || a === "tab-prev") && !this.pv) this.setSource(this.source === "github" ? "agents" : "github", cx);
     else if (a === "open" && this.cur === "now") this.go(now(agents()).go);
+    else if (a === "open" && this.cur === "proj" && !this.pv) this.projAll = !this.projAll;
     else if (a === "refresh") {
       this.index(cx, "r");
       if (this.pv) this.sideLoad(cx, this.pv, true);
@@ -466,28 +608,80 @@ export default class Hub extends View {
 
   // ---------- pieces ----------
 
-  card(t) {
-    return v_flex().min_h(0).rounded(16).border(1).border_color(t.border).bg(t.background);
+  // A tier of the width `w` (tiers.js), its previous one kept per `name` (hysteresis).
+  tier(name, w) {
+    return (this.tiers[name] = tierOf(w, this.tiers[name]));
   }
 
-  // A section: its name on a dashed rule (the cursor's ring while the page has the keyboard), its right
-  // side, its body.
-  section(t, id, label, right, body) {
+  // A section (#76): a card, radius 14, padding 14; its head, the name in mono 11 caps, its count rolling,
+  // its actions on the right; the accent ring while the page has the keyboard on it. `i`: its rank in the
+  // page, for the entry's cascade.
+  card(t, id, label, count, right, body, i = 0) {
     const on = this.keyed && this.cur === id;
-    return v_flex().id(`hub-sec-${id}`).mx(4).px(8).pt(10).pb(8).gap(8).rounded(14).border(1)
-      .border_color(on ? alpha(t.accent, "99") : alpha(t.border, "00"))
-      .child(h_flex().gap(10).items_center()
+    const el = v_flex().min_w(0).px(14).pt(12).pb(14).gap(12).rounded(14).border(1)
+      .border_color(on ? alpha(t.accent, "99") : t.border).bg(t.background)
+      .child(h_flex().h(24).gap(8).items_center()
         .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(String(label).toUpperCase()))
-        .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border))
+        .when(count != null, (e) => e.child(div().flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(roll(this.m, `hub-ct-${id}`, num(count ?? 0), 14))))
+        .child(div().flex_1())
         .children([right].flat().filter(Boolean)))
       .child(body);
+    return enter(this.m, el, `hub-sec-${id}`, { dy: 0, delay: stagger(i, 8) });
   }
 
-  muted(t, text) {
-    return div().text_size(12.5).text_color(t.dim).child(text);
+  // The empty sentence of a section: its icon and why, centred, a line high (never silent).
+  empty(t, icon, text) {
+    return h_flex().h(EMPTY_H).gap(8).items_center().justify_center().text_size(12.5).text_color(t.dim)
+      .child(svg(icon).size(14).flex_none()).child(div().truncate().child(text));
   }
 
-  // ---------- header ----------
+  hint(t, text) {
+    return div().min_w(0).truncate().text_size(11).text_color(t.dim).child(text);
+  }
+
+  sub(t, text, more = 0) {
+    return div().h(SUB_H).pt(4).font_family(MONO).text_size(10).text_color(t.dim)
+      .child(`${String(text).toUpperCase()}${more ? `  +${more}` : ""}`); // i18n: tech
+  }
+
+  // A dithered bar (viz.js' progress, bare): paths memoized by width and ratio. The bars, the projects'
+  // weeks (this.heavy 1, 2) and the weeks' chart (3) come one, two and three renders after the one that
+  // brings the data: a render of the page takes ~20 ms, and all of them at once ~40 of the ~50 a render
+  // has (#76's measures).
+  // Paths built cold in this render, BUILD_MAX at most: past it a slot keeps its last geometry one more render
+  // (a summary that changes them all at once, Monday's, cost ~40 ms in one render); `this.later` asks for it.
+  // The memo: by what draws (a bar's head column, a week's bar heights), the oldest entries going past MEMO.
+  built(map, key, slot, build) {
+    let g = map.get(key);
+    if (!g) {
+      const last = this.slots.get(slot);
+      if (this.builds >= BUILD_MAX) { this.later = true; return last ?? null; }
+      this.builds++;
+      g = build();
+      map.set(key, g);
+      while (map.size > MEMO) map.delete(map.keys().next().value);
+    }
+    this.slots.set(slot, g);
+    return g;
+  }
+
+  bar(t, w, ratio, color, slot) {
+    const head = Math.round(Math.floor(w / 3) * Math.min(1, Math.max(0, ratio)));
+    const g = this.heavy ? this.built(this.bars, `${w}|${head}`, slot, () => capped((c) => progressGeometry(ratio, w, c), 3, w * 9)) : null;
+    if (!g) return div().w(w).h(9).flex_none().bg(faint(color, 0.14));
+    return div().relative().w(w).h(9).flex_none().children([...g.paths].map(([k, p]) => paint(p, k === "tint" ? color : faint(color, 0.14))));
+  }
+
+  // A project's 8 weeks (trame.js' sparkGeometry).
+  spark(t, values, color, slot) {
+    const max = Math.max(1, ...values);
+    const g = this.heavy >= 2 ? this.built(this.sparks, values.map((v) => (v > 0 ? Math.max(1, Math.round((v / max) * 6)) : 0)).join(""), slot, () => capped((c) => sparkGeometry(values, 96, 18, c), 3)) : null;
+    if (!g) return div().w(96).h(18).flex_none();
+    const fill = { track: faint(color, 0.14), past: faint(color, 0.7), now: color };
+    return div().relative().w(g.w).h(g.h).flex_none().children([...g.paths].map(([k, p]) => paint(p, fill[k])));
+  }
+
+  // ---------- header and Now ----------
 
   header(t) {
     const s = this.sum;
@@ -512,75 +706,86 @@ export default class Hub extends View {
           .tooltip(tr("view.tip")).on_click((_e, cx) => { cx.stop_propagation(); this.setScope(k); cx.notify(); })
           .child(pr ? div().max_w(160).truncate().child(label) : label);
       })) : null;
-    return this.card(t).id("hub-head").relative().flex_none().px(4).pb(4)
+    return v_flex().id("hub-head").relative().flex_none().rounded(16).border(1).border_color(t.border).bg(t.background).px(4).pb(4)
       .on_size_change((x, cx) => { if (x.width !== this.headW) { this.headW = x.width; cx.notify(); } })
       .children([dither(this.headW, 60, 16, tint)].filter(Boolean))
       .child(bandRow(t, { m: this.m, color: tint, icon: I("house"), title: this.pv ? tr("titleProject", { name: this.pv.name }) : tr("title"),
         dot: this.running ? t.working : this.err ? t.ansi1 : null,
         // #66: the archived figures are this Mac's (its transcripts), said once there are other machines.
         sub: [`${date(at)} · ${time(at)}`, state, machineList().length ? tr("index.local") : null],
-        buttons: [seg, refresh] }));
+        buttons: [seg, refresh] }))
+      .child(this.nowRow(t));
   }
 
-  // A registry entry's color (a theme name or #hex), else the accent.
   colorOf(t, e) {
     const c = e?.color;
     return c ? (c.startsWith("#") ? c : t[c] ?? t.accent) : t.accent;
   }
 
-  // ---------- now ----------
-
-  nowSection(t) {
+  // Now (#76: the header's second row): the live agents in a sentence (a spinner while one works, a
+  // breathing dot while one waits), a pill per machine with other machines (#66: its state when it doesn't
+  // answer, its counts else), and « Y aller » to the one to see first.
+  nowRow(t) {
     const n = now(agents());
     const parts = [n.working && tr("now.working", { n: n.working }), n.blocked && tr("now.blocked", { n: n.blocked }), n.done && tr("now.done", { n: n.done })].filter(Boolean);
     const dot = n.blocked ? t.blocked : n.done ? t.done : n.working ? t.working : t.dim;
-    const line = h_flex().gap(10).items_center().px(4)
+    const others = machineList();
+    const pills = others.length ? byMachine(agents(), others.map((m) => m.name)).map((g) => {
+      const s = g.name == null ? null : others.find((m) => m.name === g.name) ?? stateOf(g.name);
+      const word = g.name == null ? "" : stateWord(g.name);
+      const counts = [g.working && tr("now.working", { n: g.working }), g.blocked && tr("now.blocked", { n: g.blocked }), g.done && tr("now.done", { n: g.done })].filter(Boolean);
+      const text = word || (counts.length ? counts.join(", ") : g.total ? tr("now.idle", { n: g.total }) : tr("now.noAgent"));
+      const tag = g.name == null
+        ? h_flex().gap(5).items_center().child(div().size(6).flex_none().rounded_full().bg(t.done)).child(tr("now.thisMac"))
+        : machineTag(t, g.name, { id: `hub-now-tag-${g.name}` });
+      return h_flex().id(`hub-now-m-${g.name ?? "local"}`).flex_none().h(22).pl(g.name == null ? 8 : 0).pr(8).gap(6).items_center().rounded_full().bg(t.raised)
+        .font_family(MONO).text_size(10.5).text_color(t.dim)
+        .when(Boolean(g.go), (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)).tooltip(tr("now.goTip", { name: g.go.tab_name || g.go.address }))
+          .on_click((_e, cx) => { cx.stop_propagation(); this.go(g.go); }))
+        .child(tag)
+        .child(div().max_w(220).truncate().text_color(t.muted).child(s && !s.reachable && s.status === "login" ? `hc machine login ${g.name}` : text)); // i18n: tech
+    }) : [];
+    const on = this.keyed && this.cur === "now";
+    return h_flex().id("hub-now").h(40).pl(12).pr(6).gap(10).items_center().rounded(12).border(1)
+      .border_color(on ? alpha(t.accent, "99") : alpha(t.border, "00")).bg(alpha(t.raised, "99"))
       .child(n.working ? svg(SPIN).size(12).flex_none().spin(900).text_color(t.working)
         : div().size(8).flex_none().rounded_full().bg(dot).when(n.blocked > 0, (el) => el.loop("opacity", { from: 0.3, to: 1, period: 1200 })))
       .child(div().flex_1().min_w(0).truncate().text_size(13.5).text_color(parts.length ? t.foreground : t.muted).child(parts.length ? parts.join(" · ") : tr("now.none")))
+      .children(pills)
       .when(Boolean(n.go), (el) => el.child(h_flex().id("hub-now-go").flex_none().h(26).px(10).gap(6).items_center().rounded_full()
         .border(1).border_color(alpha(dot, "66")).bg(alpha(dot, "14")).text_size(12).text_color(t.foreground).cursor_pointer()
         .hover((s) => s.bg(alpha(dot, "24"))).tooltip(tr("now.goTip", { name: n.go.tab_name || n.go.space_name || n.go.address }))
         .on_click((_e, cx) => { cx.stop_propagation(); this.go(n.go); })
         .child(tr("now.go")).child(svg(I("chevron-right")).size(12))));
-    // #66: with other machines, the live agents of each, its state beside it (machines.js); nothing read
-    // there, only agents()' addresses. A machine that doesn't answer says so instead of its counts.
-    const others = machineList();
-    if (!others.length) return this.section(t, "now", tr("now.title"), null, line);
-    const rows = byMachine(agents(), others.map((m) => m.name)).map((g) => {
-      const s = g.name == null ? null : others.find((m) => m.name === g.name) ?? stateOf(g.name);
-      const word = g.name == null ? "" : stateWord(g.name);
-      const counts = [g.working && tr("now.working", { n: g.working }), g.blocked && tr("now.blocked", { n: g.blocked }), g.done && tr("now.done", { n: g.done })].filter(Boolean);
-      const text = word || (counts.length ? counts.join(" · ") : g.total ? tr("now.idle", { n: g.total }) : tr("now.noAgent"));
-      return h_flex().id(`hub-now-m-${g.name ?? "local"}`).h(26).px(4).gap(10).items_center().rounded(8)
-        .when(Boolean(g.go), (el) => el.cursor_pointer().hover((x) => x.bg(t.hover)).tooltip(tr("now.goTip", { name: g.go.tab_name || g.go.address }))
-          .on_click((_e, cx) => { cx.stop_propagation(); this.go(g.go); }))
-        .child(div().w(150).flex_none().flex().child(g.name == null
-          ? h_flex().gap(5).items_center().px(6).rounded_full().bg(t.raised).font_family(MONO).text_size(10.5).text_color(t.dim)
-            .child(div().size(6).flex_none().rounded_full().bg(t.done)).child(tr("now.thisMac"))
-          : machineTag(t, g.name, { id: `hub-now-tag-${g.name}` })))
-        .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(word ? t.muted : counts.length ? t.foreground : t.dim).child(text))
-        .when(Boolean(s && !s.reachable && s.status === "login"), (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim)
-          .child(`hc machine login ${g.name}`))); // i18n: tech
-    });
-    return this.section(t, "now", tr("now.title"), null, v_flex().gap(4).child(line).child(v_flex().gap(2).pl(2).children(rows)));
   }
 
   // ---------- this week ----------
 
-  // Eight weeks as bars, the last (this week so far) in the accent.
-  bars(t, values, w, color) {
-    const max = Math.max(1, ...values);
-    const gap = 3;
-    const bw = Math.max(2, Math.floor((w - gap * (values.length - 1)) / values.length));
-    return h_flex().h(24).gap(gap).items_end().children(values.map((v, i) =>
-      div().w(bw).h(Math.max(2, Math.round((v / max) * 24))).rounded(2).bg(i === values.length - 1 ? color : alpha(color, v ? "59" : "26"))));
+  // A trend (trame.js, recadrée) as an image, `w` px wide, 56 high; revealed once it's there.
+  trendImg(t, slot, values, w) {
+    if (!values || values.length < 2) return div().h(56);
+    const W = Math.floor(w / 3) * 3, tint = t.accent, dim = isLight(t) ? 0.45 : 1;
+    const img = this.trame(slot, "tr", values.join(","), `${tint}|${dim}|${W}|${TRAME.scale}`, W, 56, () => trendSvg(values, W, tint, { dim, scale: TRAME.scale }).svg);
+    return img ? reveal(this.m, `hub-${slot}`, img.w, img.h, image(img.path).w(img.w).h(img.h)) : div().w(W).h(56);
+  }
+
+  // The streak's last 14 days, in the year's squares and levels.
+  streakDays(t) {
+    const h = this.heatOf(Number(this.d.today.slice(0, 4)));
+    const i = h ? daysBetween(h.start, this.d.today) : -1;
+    const lv = i >= 0 ? h.levels.slice(Math.max(0, i - 13), i + 1).map((v) => v ?? 0) : [];
+    if (!lv.length) return div();
+    const ink = t.accent, track = faint(t.foreground, 0.07), w = lv.length * 15 - 3;
+    const img = this.trame("days", "days", lv.join(""), `${ink}|${track}|${TRAME.scale}`, w, 12, () => squaresSvg(lv, 3, ink, track, { scale: TRAME.scale }).svg);
+    return v_flex().h_full().justify_end().gap(6).tooltip(tr("streak.daysTip"))
+      .child(div().font_family(MONO).text_size(10).text_color(t.dim).child(tr("streak.last14")))
+      .child(img ? reveal(this.m, "hub-days", img.w, img.h, image(img.path).w(img.w).h(img.h)) : div().w(w).h(12));
   }
 
   statCard(t, k, cw) {
     const { w } = this.d;
     const s = this.sum;
-    const inner = cw - 24;
+    const inner = cw - CARD_X;
     const value = (x) => (k === "a" ? duration(x) : num(x));
     let main, detail, d = null, series = null, tip;
     if (k === "streak") {
@@ -596,26 +801,91 @@ export default class Hub extends View {
       tip = tr(`tip.${k}`, { mg: num(w.now.mg) });
     }
     const pct = d == null ? null : `${d >= 0 ? "+" : "−"}${tr("pct", { n: Math.abs(d) })}`;
-    return v_flex().id(`hub-card-${k}`).w(cw).flex_none().p(12).gap(8).rounded(12).border(1).border_color(t.border).bg(t.raised).tooltip(tip)
+    return v_flex().id(`hub-card-${k}`).w(cw).flex_none().p(14).gap(4).rounded(12).border(1).border_color(t.border).bg(t.raised).tooltip(tip)
       .child(this.V.stat(tr(`card.${k}`), main, { delta: pct, detail, better: "higher", width: inner, id: `hub-st-${k}` }))
-      .when(Boolean(series), (el) => el.child(this.bars(t, series, inner, t.accent)));
+      .child(div().mt(8).h(56).child(k === "streak" ? this.streakDays(t) : this.trendImg(t, `tr-${k}`, series, inner)));
   }
 
-  weekSection(t) {
-    const W = this.width - 24;
-    const cols = W >= 1050 ? 3 : 2;
-    const cw = Math.floor((W - 8 * (cols - 1)) / cols);
-    return this.section(t, "week", tr("week.title"), div().flex_none().text_size(11).text_color(t.dim).child(tr("week.sub")),
-      h_flex().flex_wrap().gap(8).children(CARDS.map((k) => this.statCard(t, k, cw))));
+  weekCard(t, colW, i) {
+    const inner = colW - CARD_X;
+    const tier = this.tier("week", inner);
+    const cols = tier === "wide" ? 3 : tier === "medium" ? 2 : 1;
+    const cw = Math.floor((inner - 8 * (cols - 1)) / cols);
+    return this.card(t, "week", tr("week.title"), null, this.hint(t, tr("week.sub")), h_flex().flex_wrap().gap(8).children(CARDS.map((k) => this.statCard(t, k, cw))), i);
   }
 
   // ---------- activity ----------
 
-  actSection(t) {
+  // A year in trame (#76): its squares one image (trame.js), centred in `width`; months over the weeks they
+  // begin, Lun/Mer/Ven beside their rows, the junction's step line, a tooltip per week over the image; under
+  // it, the total on the left (and `extras`), the legend (the same squares) on the right.
+  yearBody(t, { slot, h, tint, mark, markTip, word = "act.week", total, extras = [], width }) {
+    const gutter = 30, top = 16;
+    const avail = Math.max(60, width - gutter);
+    const [Y, M, D] = h.start.split("-").map(Number);
+    const offset = (new Date(Y, M - 1, D, 12).getDay() + 6) % 7;
+    const n = calN(h.levels, offset, avail);
+    const gk = `${n}|${avail}`;
+    if (h.gridKey !== gk) {
+      const g = calendarGrid(h.levels, offset, avail, n);
+      // The 1st of each month in range (a Date per month, not per day: #50's ~10 ms), at its week's column;
+      // the first goes when the next is under 3 weeks away.
+      const starts = [];
+      const t0 = new Date(Y, M - 1, D, 12).getTime();
+      for (let k = 0; k < 12; k++) {
+        const i = Math.round((new Date(Y, M - 1 + k, 1, 12).getTime() - t0) / 864e5);
+        const col = Math.floor((offset + i) / 7) - g.skip;
+        if (i >= 0 && i < h.levels.length && col >= 0) starts.push([col, (M - 1 + k) % 12]);
+      }
+      if (starts.length > 1 && starts[1][0] - starts[0][0] < 3) starts.shift();
+      g.months = starts;
+      h.grid = g;
+      h.gridKey = gk;
+    }
+    const g = h.grid;
+    const ink = t[tint] ?? tint, track = faint(t.foreground, 0.07), axis = faint(t.foreground, 0.45);
+    const img = this.trame(slot, "cal", `${h.start}|${h.levels.map((v) => v ?? "-").join("")}`, `${ink}|${track}|${n}|${avail}|${TRAME.use}|${TRAME.scale}`, g.width, g.height,
+      () => calendarSvg(h.levels, offset, avail, ink, track, { n, use: TRAME.use, scale: TRAME.scale }).svg);
+    const lbl = (s, x, y, w) => div().absolute().left(Math.round(x)).top(Math.round(y - 7)).w(w).h(14).flex().items_center().whitespace_nowrap()
+      .font_family(MONO).text_size(10).text_color(axis).child(s);
+    const months = tr("act.months").split(" "), days = tr("act.weekdays").split(" ");
+    const kids = [
+      ...g.months.map(([col, k]) => lbl(months[k] ?? "", gutter + col * g.pitch, top / 2, 60)),
+      ...days.slice(0, 3).map((l, k) => lbl(l, 0, top + 2 * k * g.pitch + g.square / 2, gutter)),
+      div().absolute().left(gutter).top(top).child(img ? reveal(this.m, `hub-${slot}`, img.w, img.h, image(img.path).w(img.w).h(img.h))
+        : div().w(g.width).h(g.height).rounded(4).bg(faint(t.foreground, 0.03))),
+    ];
+    // Where two sources meet: the line between the days before and after, a step in a week cut there.
+    if (mark != null && mark > 0 && mark < h.levels.length) {
+      const col = Math.floor((offset + mark) / 7) - g.skip, row = (offset + mark) % 7, x = (c) => gutter + c * g.pitch - 2;
+      if (col >= 0) {
+        const seg = (k, l, tp, ww, hh) => div().id(`hub-${slot}-mark${k}`).absolute().left(l).top(tp).w(ww).h(hh).bg(axis).when(Boolean(markTip), (e) => e.tooltip(markTip));
+        kids.push(seg(0, x(col), top + row * g.pitch - 2, 1, (7 - row) * g.pitch));
+        if (row > 0) kids.push(seg(1, x(col), top + row * g.pitch - 2, g.pitch + 1, 1), seg(2, x(col + 1), top - 2, 1, row * g.pitch));
+      }
+    }
+    // A tooltip per week (a square each would be 371 elements): its first and last day in range.
+    for (let c = 0; c < g.cols; c++) {
+      const from = Math.max(0, (c + g.skip) * 7 - offset), to = Math.min(h.levels.length - 1, (c + g.skip) * 7 - offset + 6);
+      if (from <= to && h.levels[from] != null) kids.push(div().id(`hub-${slot}-w${c}`).absolute().left(gutter + c * g.pitch).top(top).w(g.pitch).h(g.height).tooltip(this.weekTip(h, from, to, word)));
+    }
+    const legW = 5 * (n * 3 + 3) - 3;
+    const leg = this.trame(`${slot}-leg`, "leg", "01234", `${ink}|${track}|${n}|${TRAME.scale}`, legW, n * 3, () => squaresSvg([0, 1, 2, 3, 4], 3, ink, track, { n, scale: TRAME.scale }).svg);
+    return v_flex().gap(10)
+      .child(h_flex().justify_center().child(div().relative().w(gutter + g.width).h(top + g.height).flex_none().children(kids)))
+      .child(h_flex().gap(10).items_center().min_w(0).font_family(MONO).text_size(11).text_color(t.muted)
+        .child(div().flex_none().child(total))
+        .children(extras)
+        .child(div().flex_1())
+        .child(h_flex().flex_none().gap(6).items_center().text_size(10).text_color(axis)
+          .child(tr("act.less")).child(leg ? image(leg.path).w(leg.w).h(leg.h) : div().w(legW).h(n * 3)).child(tr("act.more"))));
+  }
+
+  actCard(t, colW, i) {
     const gh = this.source === "github";
     const ys = gh ? this.ghYears() : this.d.years;
     const shownYear = gh ? this.ghYear : this.year;
-    const i = ys.indexOf(shownYear);
+    const yi = ys.indexOf(shownYear);
     const arrow = (id, icon, tip, by, on) => div().id(id).size(24).flex_none().rounded_full().flex().items_center().justify_center()
       .text_color(on ? t.muted : t.dim).when(!on, (el) => el.opacity(0.4))
       .when(on, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
@@ -635,84 +905,106 @@ export default class Hub extends View {
       .child(pill("agents", tr("act.agents"), t.accent))
       .child(pill("github", "GitHub", t.ansi2)) // i18n: tech
       .child(div().w(6))
-      .child(arrow("hub-y-prev", "chevron-left", tr("act.prev"), -1, i > 0))
+      .child(arrow("hub-y-prev", "chevron-left", tr("act.prev"), -1, yi > 0))
       .child(div().font_family(MONO).text_size(12).text_color(t.foreground).child(String(shownYear ?? "")))
-      .child(arrow("hub-y-next", "chevron-right", tr("act.next"), 1, i >= 0 && i < ys.length - 1));
-    if (gh) return this.section(t, "act", tr("act.title"), right, this.ghBody(t));
+      .child(arrow("hub-y-next", "chevron-right", tr("act.next"), 1, yi >= 0 && yi < ys.length - 1));
+    const width = colW - CARD_X;
+    if (gh) return this.card(t, "act", tr("act.title"), null, right, this.ghBody(t, width), i);
     const h = this.year != null ? this.heatOf(this.year) : null;
-    if (!h) return this.section(t, "act", tr("act.title"), right, this.V.calendar([], {}));
+    if (!h) return this.card(t, "act", tr("act.title"), null, right, this.empty(t, H("calendar"), tr("act.none")), i);
     const junction = this.sum.junction;
-    const cal = this.V.calendar(h.levels, {
-      start: h.start, months: tr("act.months").split(" "), weekdays: tr("act.weekdays").split(" "), legend: [tr("act.less"), tr("act.more")],
+    return this.card(t, "act", tr("act.title"), null, right, this.yearBody(t, { slot: `cal-${this.year}`, h, tint: "accent",
       mark: h.split > 0 ? h.split : null, markTip: junction ? tr("act.mark", { date: date(`${junction}T12:00:00`, { year: true }) }) : null,
-      tip: (a, b) => this.weekTip(h, a, b),
-      id: `hub-cal-${this.year}`,
-    });
-    return this.section(t, "act", tr("act.title"), right, v_flex().gap(6)
-      .child(div().font_family(MONO).text_size(11).text_color(t.muted).child(tr("act.total", { active: num(h.active), sessions: num(h.sessions) })))
-      .child(cal));
+      total: tr("act.total", { active: num(h.active), sessions: num(h.sessions) }), width }), i);
   }
 
-  // GitHub's year (#48): its own levels, its total and the private contributions it counts without
-  // detail; before its first read, a bar breathing; gh failing, said under what was shown.
-  ghBody(t) {
+  // GitHub's year (#48): its own levels, its total and the private contributions it counts without detail;
+  // before its first read, a bar breathing; gh failing, said under what was shown.
+  ghBody(t, width) {
     const y = this.ghYear;
     const e = this.gh.get(y);
     const v = e?.view;
     const err = this.ghErr ? div().text_size(12).text_color(t.ansi1).child(tr("act.ghError", { error: this.ghErr })) : null;
     if (!v) {
       const S = skeleton(t, this.m);
-      return v_flex().gap(6).children([err ?? (e && !this.ghBusy.has(y) ? this.muted(t, tr("act.ghNone")) : S.pulse(S.block(null, 120).id("hub-gh-sk")))]);
+      return v_flex().gap(6).children([err ?? (e && !this.ghBusy.has(y) ? this.empty(t, H("calendar"), tr("act.ghNone")) : S.pulse(S.block(null, 120).id("hub-gh-sk")))]);
     }
-    const tip = (a, b) => this.weekTip({ values: v.values, start: v.start, tips: e.tips }, a, b, "act.ghWeek");
-    const cal = this.V.calendar(v.levels, { start: v.start, months: tr("act.months").split(" "), weekdays: tr("act.weekdays").split(" "),
-      legend: [tr("act.less"), tr("act.more")], tip, color: "ansi2", id: `hub-gh-${y}` });
+    const extras = [
+      ...(v.restricted > 0 ? [div().id("hub-gh-private").flex_none().text_color(t.dim).tooltip(tr("act.ghPrivateTip")).child(tr("act.ghPrivate", { n: num(v.restricted) }))] : []),
+      div().flex_none().text_color(t.dim).child(this.ghBusy.has(y) ? tr("act.ghReading") : tr("act.ghAt", { ago: relative(e.cache.at) })),
+    ];
+    // The year as yearBody wants it, kept on its entry (its grid memoized there; a new read makes a new entry).
+    e.h ??= { values: v.values, levels: v.levels, start: v.start, tips: e.tips };
     return v_flex().gap(6)
-      .child(h_flex().gap(8).items_center().font_family(MONO).text_size(11).text_color(t.muted)
-        .child(div().child(tr("act.ghTotal", { n: num(v.total), active: num(v.active) })))
-        .when(v.restricted > 0, (el) => el.child(div().id("hub-gh-private").text_color(t.dim).tooltip(tr("act.ghPrivateTip"))
-          .child(tr("act.ghPrivate", { n: num(v.restricted) }))))
-        .child(div().flex_1())
-        .child(div().text_color(t.dim).child(this.ghBusy.has(y) ? tr("act.ghReading") : tr("act.ghAt", { ago: relative(e.cache.at) }))))
-      .child(cal)
+      .child(this.yearBody(t, { slot: `gh-${y}`, h: e.h, tint: "ansi2",
+        word: "act.ghWeek", total: tr("act.ghTotal", { n: num(v.total), active: num(v.active) }), extras, width }))
       .when(Boolean(err), (el) => el.child(err));
   }
 
   // ---------- this week's launches and sub-agents ----------
 
-  rankRows(t, list, colorOf, emptyText) {
-    if (!list.length) return this.muted(t, emptyText);
-    const max = Math.max(...list.map((x) => x.n));
-    return v_flex().gap(4).children(list.slice(0, 8).map((x) => {
+  // The ranked rows in `cols` columns (ranked down, then across: a row stretched wide left a hole between
+  // its name and its bar), a dithered bar each.
+  rankRows(t, list, colorOf, emptyText, cols = 1) {
+    if (!list.length) return this.empty(t, I("workflow"), emptyText);
+    const shown = list.slice(0, 8);
+    const max = Math.max(...shown.map((x) => x.n));
+    const per = Math.ceil(shown.length / cols);
+    const row = (x) => {
       const c = colorOf(x);
       const d = x.n - x.prev;
-      return h_flex().id(`hub-r-${x.family ?? "sub"}-${x.name}`).h(22).gap(8).items_center().tooltip(tr("rank.tip", { name: x.name, n: x.n, prev: x.prev }))
+      return h_flex().id(`hub-r-${x.family ?? "sub"}-${x.name}`).h(24).gap(8).items_center().tooltip(tr("rank.tip", { name: x.name, n: x.n, prev: x.prev }))
         .child(div().size(6).flex_none().rounded_full().bg(c))
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.foreground).child(x.name))
-        .child(div().w(80).h(6).flex_none().rounded(3).bg(alpha(c, "1f")).child(div().h_full().rounded(3).bg(alpha(c, "b3")).w(Math.max(3, Math.round((x.n / max) * 80)))))
+        .child(this.bar(t, 96, x.n / max, c, `rk:${x.family ?? "sub"}:${x.name}`))
         .child(div().w(28).flex_none().flex().justify_end().font_family(MONO).text_size(11.5).text_color(t.foreground).child(num(x.n)))
         .child(div().w(30).flex_none().flex().justify_end().font_family(MONO).text_size(10).text_color(d > 0 ? t.ansi2 : d < 0 ? t.ansi1 : t.dim)
           .child(d ? `${d > 0 ? "+" : "−"}${Math.abs(d)}` : "="));
-    }));
+    };
+    return h_flex().items_start().gap(32).children(Array.from({ length: cols }, (_, j) => v_flex().flex_1().min_w(0).gap(2).children(shown.slice(j * per, (j + 1) * per).map(row))));
   }
 
   // The week's launches (workflows, loops, skills; Claude Code's own commands on one line under them)
-  // beside its sub-agents by type, under each other when narrow.
-  rankSection(t) {
+  // beside its sub-agents (a donut), as tall as each other; under each other when narrow.
+  rankRow(t, fullW, i) {
     const all = this.d.launches;
     const work = all.filter((x) => x.family !== "command");
     const cmds = all.filter((x) => x.family === "command");
+    const side = this.tier("rank", fullW - CARD_X) !== "narrow";
+    const SUBS_W = 380;
+    const cols = side && this.tier("rankCols", fullW - SUBS_W - 8 - CARD_X) === "wide" ? 2 : 1;
     const legend = h_flex().flex_none().gap(10).items_center().children(["workflow", "loop", "skill"].map((f) => h_flex().gap(4).items_center()
       .font_family(MONO).text_size(10.5).text_color(t.dim).child(div().size(6).rounded_full().bg(t[FAMILY[f]])).child(tr(`fam.${f}`))));
-    const launches = v_flex().flex_1().min_w(0).gap(4)
-      .child(this.rankRows(t, work, (x) => t[FAMILY[x.family]] ?? t.accent, tr("launch.none")))
-      .when(cmds.length > 0, (el) => el.child(div().pt(2).truncate().font_family(MONO).text_size(10.5).text_color(t.dim)
-        .child(tr("launch.commands", { list: cmds.slice(0, 6).map((x) => `/${x.name} ${x.n}`).join(" · ") }))));
-    const subs = v_flex().flex_1().min_w(0).gap(6)
-      .child(div().font_family(MONO).text_size(11).text_color(t.muted).child(tr("sub.title").toUpperCase()))
-      .child(this.rankRows(t, this.d.subs, () => t.ansi6, tr("sub.none")));
-    const wide = this.width >= 900;
-    return this.section(t, "rank", tr("launch.title"), legend, (wide ? h_flex().items_start().gap(24) : v_flex().gap(14)).child(launches).child(subs));
+    const launches = this.card(t, "rank", tr("launch.title"), work.reduce((s, x) => s + x.n, 0), legend, v_flex().flex_1().justify_center().gap(8)
+      .child(this.rankRows(t, work, (x) => t[FAMILY[x.family]] ?? t.accent, tr("launch.none"), cols))
+      .when(cmds.length > 0, (el) => el.child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.dim)
+        .child(tr("launch.commands", { list: cmds.slice(0, 6).map((x) => `/${x.name} ${x.n}`).join(" · ") })))), i);
+    const subs = this.d.subs;
+    const subsCard = this.card(t, "subs", tr("sub.title"), subs.reduce((s, x) => s + x.n, 0), null, v_flex().flex_1().justify_center()
+      .child(subs.length ? this.donut(t, subs.slice(0, 6)) : this.empty(t, I("bot"), tr("sub.none"))), i);
+    return side ? div().flex().gap(8).child(launches.flex_1()).child(subsCard.w(SUBS_W).flex_none()) : v_flex().gap(8).child(launches).child(subsCard);
+  }
+
+  // The sub-agents as viz.donut draws a ring (its ring an image, trame.js: ~400 rectangles in paths), its
+  // caption and total in the hole, its legend beside it.
+  donut(t, list) {
+    const size = 132, values = list.map((x) => x.n), total = values.reduce((s, v) => s + v, 0);
+    const colors = list.map((_, k) => t[SERIES[k % 6]] ?? t.accent);
+    const img = this.trame("subs", "dn", values.join(","), `${colors.join(",")}|${size}|${TRAME.scale}`, size, size, () => donutSvg(values, size, colors, { scale: TRAME.scale }).svg);
+    // viz.donut's hole: outer 60 px from the centre (66), inner 21 px further in (39).
+    const inner = 39, figure = num(total), fit = Math.floor(Math.min(26, (inner * 2 - 16) / (figure.length * 0.62)));
+    const label = (s, y, lh, size2, color, semibold, mono) => div().absolute().left(0).top(Math.round(y - lh / 2)).w(size).h(lh).flex().items_center().justify_center()
+      .whitespace_nowrap().text_size(size2).text_color(color).when(semibold, (e) => e.font_semibold()).when(mono, (e) => e.font_family(MONO)).child(s);
+    const fg = (a) => faint(t.foreground, a);
+    const ring = div().relative().size(size).flex_none()
+      .child(img ? reveal(this.m, "hub-subs-ring", img.w, img.h, image(img.path).w(img.w).h(img.h)) : div().size(size))
+      .child(label(tr("sub.caption").toUpperCase(), size / 2 - 16, 13, 10, fg(0.45), false, true))
+      .child(label(figure, size / 2 + 4, Math.ceil(fit * 1.3), fit, t.foreground, true, false));
+    const rows = list.map((x, k) => h_flex().gap(8).items_center().text_size(12)
+      .child(swatch(colors[k]))
+      .child(div().flex_1().min_w(0).truncate().text_color(fg(0.8)).child(x.name))
+      .child(div().flex_none().font_family(MONO).text_color(fg(0.5)).child(`${num(x.n)} · ${tr("pct", { n: total ? Math.round((x.n / total) * 100) : 0 })}`)));
+    return h_flex().flex_wrap().items_center().gap(24).child(ring).child(v_flex().flex_1().min_w(140).max_w(320).gap(8).children(rows));
   }
 
   // ---------- projects ----------
@@ -729,140 +1021,216 @@ export default class Hub extends View {
     return box.bg(alpha(fill, r.entry ? "ff" : "66")).child(div().font_family(MONO).font_bold().text_size(11).text_color(t.chrome).child(([...name][0] ?? "?").toUpperCase()));
   }
 
-  projRow(t, r) {
+  projRow(t, r, seen) {
     const name = r.kind === "other" ? tr("proj.other") : r.name;
-    const max = Math.max(1, ...r.spark);
     const color = r.entry?.color ? (r.entry.color.startsWith("#") ? r.entry.color : t[r.entry.color] ?? t.accent) : t.accent;
+    const fig = (v, w, s) => div().w(w).flex_none().flex().justify_end().font_family(MONO).text_size(11).text_color(v ? t.foreground : t.dim).child(s);
     return h_flex().id(`hub-p-${r.key}`).h(34).px(4).gap(10).items_center().rounded(10).hover((s) => s.bg(t.hover))
       .child(this.tile(t, r))
       .child(h_flex().flex_1().min_w(0).gap(8).items_center()
         .child(div().min_w(0).truncate().text_size(13).text_color(r.s ? t.foreground : t.muted).child(name))
         .when(!r.entry && (r.kind === "repo" || r.kind === "gh"), (el) => el.child(div().flex_none().h(16).px(6).flex().items_center().rounded_full()
           .border(1).border_color(t.border).font_family(MONO).text_size(9.5).text_color(t.dim).child(tr("proj.unlisted")))))
-      .child(h_flex().id(`hub-ps-${r.key}`).flex_none().h(18).gap(2).items_end().tooltip(tr("proj.sparkTip", { list: r.spark.join(" · ") }))
-        .children(r.spark.map((v, i) => div().w(5).h(Math.max(2, Math.round((v / max) * 18))).rounded(1)
-          .bg(i === r.spark.length - 1 ? color : alpha(color, v ? "66" : "26")))))
-      .child(div().w(150).flex_none().flex().justify_end().font_family(MONO).text_size(11).text_color(r.s ? t.foreground : t.dim)
-        .child(tr("proj.week", { s: num(r.s), a: duration(r.a * 1000) })))
-      .child(div().w(46).flex_none().flex().justify_end().font_family(MONO).text_size(11).text_color(r.pr ? t.foreground : t.dim).child(tr("proj.prs", { n: r.pr })))
-      .when(this.width >= 760, (el) => el.child(div().w(110).flex_none().flex().justify_end().text_size(11).text_color(t.dim)
+      .child(div().id(`hub-ps-${r.key}`).w(96).flex_none().tooltip(tr("proj.sparkTip", { list: r.spark.join(" · ") })).child(this.spark(t, r.spark, color, `sp:${r.key}`)))
+      .child(fig(r.s, 70, num(r.s)))
+      .child(fig(r.a, 80, r.a ? duration(r.a * 1000) : "—"))
+      .child(fig(r.pr, 46, num(r.pr)))
+      .when(seen, (el) => el.child(div().w(110).flex_none().flex().justify_end().text_size(11).text_color(t.dim)
         .child(r.last ? tr("proj.last", { ago: relative(r.last) }) : "")));
   }
 
-  projSection(t) {
-    const rows = this.d.rows.slice(0, 14);
-    return this.section(t, "proj", tr("proj.title"), null,
-      rows.length ? v_flex().gap(2).children(rows.map((r) => this.projRow(t, r))) : this.muted(t, tr("proj.none")));
+  // This week's most active first, 6 of them, the rest behind « Voir les N projets » (enter on the section).
+  projCard(t, fullW, i) {
+    const rows = this.d.rows;
+    if (!rows.length) return this.card(t, "proj", tr("proj.title"), 0, null, this.empty(t, I("folder"), tr("proj.none")), i);
+    const seen = this.tier("proj", fullW - CARD_X) !== "narrow";
+    const col = (w, s, right = true) => div().w(w).flex_none().flex().when(right, (e) => e.justify_end()).child(s);
+    const head = h_flex().h(22).px(4).gap(10).items_center().border_b(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.dim)
+      .child(div().w(20).flex_none())
+      .child(div().flex_1().min_w(0).child(tr("proj.col.name").toUpperCase()))
+      .child(col(96, tr("proj.col.weeks").toUpperCase(), false))
+      .child(col(70, tr("proj.col.s").toUpperCase()))
+      .child(col(80, tr("proj.col.a").toUpperCase()))
+      .child(col(46, tr("proj.col.pr").toUpperCase()))
+      .when(seen, (el) => el.child(col(110, tr("proj.col.last").toUpperCase())));
+    const shown = this.projAll ? rows : rows.slice(0, PROJ_MAX);
+    const more = rows.length > PROJ_MAX ? h_flex().id("hub-proj-more").h(28).gap(6).items_center().justify_center().rounded(8).cursor_pointer()
+      .font_family(MONO).text_size(11).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .on_click((_e, cx) => { cx.stop_propagation(); this.projAll = !this.projAll; cx.notify(); })
+      .child(this.projAll ? tr("proj.less") : tr("proj.more", { n: rows.length })).child(svg(I(this.projAll ? "chevron-up" : "chevron-down")).size(12)) : null;
+    return this.card(t, "proj", tr("proj.title"), rows.length, this.hint(t, tr("proj.hint")),
+      v_flex().gap(2).child(head).children(shown.map((r) => this.projRow(t, r, seen))).when(Boolean(more), (el) => el.child(more)), i);
   }
 
-  // ---------- flows, Next, Recent (#50) ----------
+  // ---------- tracked workflows (#76: week by week, then a funnel per workflow) ----------
 
-  // A line that opens something (the Inbox, an agent, a file): its dot, its text, its time on the right.
-  line(t, id, color, text, right, onClick, tip) {
-    return h_flex().id(id).h(26).px(4).gap(8).items_center().rounded(8).cursor_pointer().hover((s) => s.bg(t.hover))
-      .when(Boolean(tip), (el) => el.tooltip(tip)).on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); })
-      .child(div().size(6).flex_none().rounded_full().bg(color))
-      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(text))
-      .when(right != null, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(right)));
+  flowsCard(t, fullW, i) {
+    const F = this.d.fl, W = F.weeks;
+    if (!W.total) return this.card(t, "flows", tr("flows.title"), null, null, this.empty(t, I("git-pull-request"), tr("flows.none")), i);
+    const inner = fullW - CARD_X;
+    const fg = (a) => faint(t.foreground, a);
+    const kw = Math.floor((inner - 16) / 3);
+    const kpi = (id, name, value, detail, tip) => v_flex().id(`hub-fk-${id}`).w(kw).flex_none().px(14).py(12).gap(4).rounded(12).border(1).border_color(t.border).bg(t.raised)
+      .when(Boolean(tip), (el) => el.tooltip(tip))
+      .child(div().truncate().text_size(12).text_color(fg(0.6)).child(name))
+      .child(div().text_size(24).font_semibold().text_color(t.foreground).child(roll(this.m, `hub-fk-${id}-v`, value, 31)))
+      .child(div().truncate().text_size(12).text_color(fg(0.55)).child(detail));
+    const kpis = h_flex().gap(8)
+      .child(kpi("merged", tr("flows.merged"), num(W.mergedTotal), tr("flows.mergedOf", { n: W.total })))
+      .child(kpi("span", tr("flows.span"), W.median != null ? duration(W.median) : "—", tr("flows.spanOf", { n: W.spanN }), tr("flows.spanTip")))
+      .child(kpi("waiting", tr("flows.waiting"), num(W.open), W.oldest ? tr("flows.oldest", { ago: relative(W.oldest.c1, { bare: true }) }) : ""));
+    // The weeks beside what blocks (under each other when narrow): the chart's series in the colors of the
+    // phases they stand for, active (implementation) and merged (wrap-up); no per-week phase is invented.
+    const two = this.tier("flows", inner) !== "narrow";
+    const half = two ? Math.floor((inner - 16) / 2) : inner;
+    const flowName = (f) => `${String(f.repo ?? "").split("/").pop()}#${f.issue ?? "?"}`; // i18n: tech
+    // The chart's new values wait a render when other paths were built in this one (built()): the old ones
+    // are still in viz.js' memo, so drawing them costs nothing.
+    const want = { active: W.active, merged: W.merged, labels: W.starts.map((s) => tr("flows.weekOf", { date: date(s) })), half };
+    const key = JSON.stringify(want);
+    if (this.heavy >= 3 && this.chartKey !== key) {
+      if (this.builds > 0 && this.chartLast) this.later = true;
+      else { this.chartKey = key; this.chartLast = want; this.builds += BUILD_MAX; }
+    }
+    const cv = this.chartLast ?? want;
+    const chart = v_flex().w(half).flex_none().gap(6).child(this.sub(t, tr("flows.byWeek")))
+      .child(this.heavy < 3 || cv.half !== half ? div().w(half).h(150 + 26) : this.V.chart("bar", [
+        { label: tr("flows.active"), values: cv.active, color: PHASE_COLOR.impl },
+        { label: tr("flows.mergedS"), values: cv.merged, color: PHASE_COLOR.close },
+      ], { labels: cv.labels, height: 150, width: half, id: "hub-fl-weeks" }));
+    const blocks = v_flex().w(half).flex_none().gap(2).child(this.sub(t, tr("flows.blocks")))
+      .children(W.blocks.slice(0, 6).map((b) => {
+        const c = t[PHASE_COLOR[phaseOf(b.step)]] ?? t.muted;
+        return h_flex().id(`hub-fb-${b.step}`).h(26).gap(8).items_center().tooltip(b.flows.map(flowName).join(" · "))
+          .child(div().w(104).flex_none().h(18).flex().items_center().justify_center().rounded_full().border(1).border_color(alpha(c, "4d")).bg(alpha(c, "1a"))
+            .font_family(MONO).text_size(10.5).text_color(c).child(b.step ? tr(`step.${b.step}`) : "?"))
+          .child(div().w(56).flex_none().font_family(MONO).text_size(11).text_color(t.foreground).child(tr("flows.n", { n: b.n })))
+          .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.muted)
+            .child(b.oldest ? tr("flows.oldestIs", { name: flowName(b.oldest), ago: relative(b.oldest.c1) }) : b.flows.map(flowName).join(", ")));
+      }));
+    // The funnels, two a row (one when narrow; an odd last one as wide as the row: no hole).
+    const fs = F.funnels;
+    const per = two ? 2 : 1;
+    const legend = h_flex().flex_none().gap(10).items_center().children(PHASES.filter((p) => p.id !== "spec").map((p) => h_flex().gap(4).items_center()
+      .font_family(MONO).text_size(10.5).text_color(t.dim).child(div().size(6).rounded_full().bg(t[PHASE_COLOR[p.id]])).child(p.label.toLowerCase())));
+    const rowsOf = [];
+    for (let k = 0; k < fs.length; k += per) {
+      const row = fs.slice(k, k + per);
+      const w = Math.floor((inner - 8 * (row.length - 1)) / row.length);
+      rowsOf.push(h_flex().gap(8).items_start().children(row.map((f) => this.funnelCard(t, f, w))));
+    }
+    return this.card(t, "flows", tr("flows.title"), W.total, this.hint(t, tr("flows.hint")), v_flex().gap(12)
+      .child(kpis)
+      .child((two ? h_flex().items_start().gap(16) : v_flex().gap(12)).child(chart).child(blocks))
+      .child(h_flex().gap(8).items_center().child(div().flex_1().child(this.sub(t, tr("flows.byWf")))).child(legend))
+      .child(v_flex().gap(8).children(rowsOf)), i);
   }
 
-  sub(t, text) {
-    return div().pt(4).font_family(MONO).text_size(10).text_color(t.dim).child(String(text).toUpperCase());
+  // A workflow's funnel: its color and name, then for each step from the issue to the note how many of its
+  // flows passed it (a dithered bar in the color of the step's phase: the 8 bars one image, trame.js) and
+  // how many are at it now. Rows of FN_ROW px: the image's bars sit in them.
+  funnelCard(t, f, w) {
+    const FN_ROW = 26;
+    const color = t[wfColor(f.workflow)] ?? t.accent;
+    const barW = Math.floor(Math.max(42, w - CARD_X - 100 - 24 - 40 - 76 - 4 * 10) / 3) * 3;
+    const colors = f.steps.map((s) => t[PHASE_COLOR[phaseOf(s.id)]] ?? t.accent);
+    const ratios = f.steps.map((s) => (f.total ? s.passed / f.total : 0));
+    const img = this.trame(`fn-${f.workflow}`, "fn", ratios.map((r) => Math.round(r * 1000)).join(","), `${colors.join(",")}|${barW}|${TRAME.scale}`, barW, f.steps.length * FN_ROW,
+      () => funnelSvg(ratios.map((ratio, k) => ({ ratio, color: colors[k] })), barW, FN_ROW, { scale: TRAME.scale }).svg);
+    const tip = (s) => { const name = tr(`step.${s.id}`); return s.current ? tr("flows.passedNow", { step: name, n: s.passed, total: f.total, cur: s.current }) : tr("flows.passed", { step: name, n: s.passed, total: f.total }); };
+    const col = (w2, cell) => v_flex().w(w2).flex_none().children(f.steps.map((s, k) => div().id(`hub-fn-${f.workflow ?? "none"}-${w2}-${k}`).h(FN_ROW).flex().items_center().tooltip(tip(s)).child(cell(s))));
+    return v_flex().id(`hub-fn-${f.workflow ?? "none"}`).w(w).flex_none().px(14).py(12).gap(6).rounded(12).border(1).border_color(alpha(color, "4d")).bg(t.raised)
+      .child(h_flex().h(20).gap(8).items_center().min_w(0)
+        .child(div().size(8).flex_none().rounded_full().bg(color))
+        .child(div().flex_none().text_size(13).font_semibold().text_color(t.foreground).child(workflowName(f.workflow)))
+        .child(div().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(f.workflow ?? ""))
+        .child(div().flex_1())
+        .child(div().flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(`${tr("flows.n", { n: f.total })} · ${tr("flows.wfMerged", { n: f.merged })}`)))
+      .child(h_flex().gap(10).items_start()
+        .child(col(100, (s) => div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(tr(`step.${s.id}`))))
+        .child(img ? reveal(this.m, `hub-fn-${f.workflow}-img`, img.w, img.h, image(img.path).w(img.w).h(img.h)) : div().w(barW).h(f.steps.length * FN_ROW))
+        .child(col(24, (s) => div().w_full().flex().justify_end().font_family(MONO).text_size(11).text_color(t.foreground).child(num(s.passed))))
+        .child(col(40, (s) => div().w_full().flex().justify_end().font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("pct", { n: f.total ? Math.round((s.passed / f.total) * 100) : 0 }))))
+        .child(col(76, (s) => div().truncate().font_family(MONO).text_size(10.5).text_color(t.working).child(s.current ? tr("flows.running", { n: s.current }) : ""))));
   }
 
-  // The flows of claude-flow (archived by the indexer): by workflow, how many merged and noted and where the
-  // open ones stand; then the latest, each its path from the issue to the note (viz.steps).
-  flowsSection(t) {
+  // ---------- Next, Recent (#50) ----------
+
+  // A line that opens something (the Inbox, an agent, a file), or says it can't: its dot, its text, its
+  // project or time on the right.
+  line(t, l) {
+    return h_flex().id(l.id).h(LINE_H).px(4).gap(8).items_center().rounded(8)
+      .when(Boolean(l.go), (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { cx.stop_propagation(); l.go(cx); }))
+      .when(Boolean(l.tip), (el) => el.tooltip(l.tip))
+      .child(div().size(6).flex_none().rounded_full().bg(l.color))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(l.text))
+      .when(Boolean(l.extra), (el) => el.child(div().flex_none().max_w(120).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(l.extra)))
+      .when(l.right != null, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(l.right)));
+  }
+
+  nextGroups(t) {
     const since = Date.now() - RECENT_MS;
-    const groups = byWorkflow(this.sum.flows, since);
-    if (!groups.length) return this.section(t, "flows", tr("flows.title"), null, this.muted(t, tr("flows.none")));
-    const words = Object.fromEntries(PATH.map((s) => [s, tr(`step.${s}`)]));
-    const latest = (this.sum.flows ?? []).filter((f) => (f.seen ?? 0) >= since).sort((a, b) => b.seen - a.seen).slice(0, 6);
-    const W = Math.max(240, Math.min(520, Math.floor((this.width >= WIDE ? this.width - 420 : this.width) * 0.45)));
-    return this.section(t, "flows", tr("flows.title"), null, v_flex().gap(6)
-      .children(groups.map((g) => h_flex().gap(8).items_center().font_family(MONO).text_size(11)
-        .child(div().flex_none().text_color(t.foreground).child(g.workflow ?? "—"))
-        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child([tr("flows.count", { n: g.total, merged: g.merged, noted: g.noted }),
-          ...Object.entries(g.open).map(([s, n]) => tr("flows.at", { step: words[s] ?? s, n }))].join(" · ")))))
-      .child(this.sub(t, tr("flows.latest")))
-      .children(latest.map((f) => h_flex().id(`hub-fl-${f.key}`).gap(12).items_center().py(2)
-        .child(div().id(`hub-fl-${f.key}-n`).w(170).flex_none().truncate().font_family(MONO).text_size(11).text_color(t.foreground).cursor_pointer()
-          .hover((s) => s.text_color(t.accent)).tooltip(tr("flows.open"))
-          .on_click((_e, cx) => { cx.stop_propagation(); this.openIssue(f.repo, f.issue); })
-          .child(`${String(f.repo ?? "").split("/").pop()}#${f.issue ?? "?"}`)) // i18n: tech
-        // The paths come a render later (stepsOk): six steps' geometry on the render that brings the
-        // page's data took it near the ~50 ms a render has. Until then, the step reached, in words.
-        .child(div().flex_1().min_w(0).child(this.stepsOk
-          ? this.V.steps(flowPath(f).map((s) => ({ label: words[s.id], state: s.state })), { width: W, id: `hub-fl-${f.key}-steps` })
-          : div().h(30).font_family(MONO).text_size(10.5).text_color(t.dim).child(words[flowPath(f).filter((s) => s.state === "done").at(-1)?.id] ?? ""))))));
+    const flowLine = (f) => ({ id: `hub-nx-f-${f.key}`, color: t.ansi4, text: `${String(f.repo ?? "").split("/").pop()}#${f.issue ?? "?"}`, right: f.next ? tr(`step.${f.next}`) : "", // i18n: tech
+      go: onGitHub(f.repo) ? () => this.openIssue(f.repo, f.issue) : null, tip: onGitHub(f.repo) ? tr("flows.open") : tr("flows.noLink", { repo: f.repo }) });
+    return [
+      [tr("next.blocked"), agents().filter((a) => a.status === "blocked").slice(0, 6).map((a) => ({ id: `hub-nx-a-${a.address}`, color: t.blocked,
+        text: a.tab_name || a.space_name || a.address, go: () => this.go(a), tip: tr("now.goTip", { name: a.tab_name || a.address }) }))],
+      [tr("next.flows"), nextFlows(this.sum.flows, since).slice(0, 6).map(flowLine)],
+      [tr("next.plans"), nextPlanIssues(this.sum.plans).slice(0, 6).map((x) => ({ id: `hub-nx-i-${x.repo}-${x.n}`, color: t.ansi3, text: `#${x.n} ${x.title}`, right: x.plan,
+        go: onGitHub(x.repo) ? () => this.openIssue(x.repo, x.n) : null, tip: tr("flows.open") }))],
+    ].filter(([, l]) => l.length);
   }
 
-  // Next: who waits for you (live), the open flows' next step, the plans' unblocked issues.
-  nextSection(t) {
+  recentGroups(t) {
     const since = Date.now() - RECENT_MS;
-    const blocked = agents().filter((a) => a.status === "blocked");
-    const flows = nextFlows(this.sum.flows, since).slice(0, 6);
-    const issues = nextPlanIssues(this.sum.plans).slice(0, 6);
-    const kids = [];
-    if (blocked.length) kids.push(this.sub(t, tr("next.blocked")), ...blocked.slice(0, 6).map((a) =>
-      this.line(t, `hub-nx-a-${a.address}`, t.blocked, a.tab_name || a.space_name || a.address, null, () => this.go(a), tr("now.goTip", { name: a.tab_name || a.address }))));
-    if (flows.length) kids.push(this.sub(t, tr("next.flows")), ...flows.map((f) =>
-      this.line(t, `hub-nx-f-${f.key}`, t.ansi4, `${String(f.repo ?? "").split("/").pop()}#${f.issue ?? "?"}`, f.next ? tr(`step.${f.next}`) : "", () => this.openIssue(f.repo, f.issue), tr("flows.open"))));
-    if (issues.length) kids.push(this.sub(t, tr("next.plans")), ...issues.map((i) =>
-      this.line(t, `hub-nx-i-${i.repo}-${i.n}`, t.ansi3, `#${i.n} ${i.title}`, i.plan, () => this.openIssue(i.repo, i.n), tr("flows.open"))));
-    return this.section(t, "next", tr("next.title"), null, kids.length ? v_flex().gap(2).children(kids) : this.muted(t, tr("next.none")));
+    return [
+      [tr("recent.merges"), recentMerges(this.sum.flows, this.sum.reports, since).slice(0, 6).map((x) => ({ id: `hub-rc-m-${x.repo}-${x.pr}`, color: t.ansi5,
+        text: x.title ? `#${x.pr} ${x.title}` : `${x.repo}#${x.pr}`, right: relative(x.at, { bare: true }), go: () => this.openPr(x.repo, x.pr), tip: tr("proj.prTip") }))],
+      [tr("recent.notes"), (this.sum.notes ?? []).slice(0, 6).map((n) => ({ id: `hub-rc-n-${n.path}`, color: t.ansi6, text: n.title, right: relative(n.at, { bare: true }),
+        go: () => exec("open", [n.path]).catch(() => {}), tip: tr("recent.noteTip", { where: n.vault }) }))],
+      [tr("recent.worktrees"), (this.hist?.list ?? []).slice(0, 5).map((w, i) => ({ id: `hub-rc-w-${i}`, color: t.dim, text: w.name, right: w.age }))],
+      [tr("recent.sessions"), (this.sum.sessions ?? []).slice(0, 6).map((s) => ({ id: `hub-rc-s-${s.sid}`, color: t.idle ?? t.dim, text: s.title || tr("recent.untitled"),
+        extra: s.project ?? "", right: relative(s.last, { bare: true }) }))],
+    ].filter(([, l]) => l.length);
   }
 
-  // Recent: the merges, the vault's notes, the worktrees gwm removed, the sessions of these days.
-  recentSection(t) {
-    const since = Date.now() - RECENT_MS;
-    const merges = recentMerges(this.sum.flows, this.sum.reports, since).slice(0, 6);
-    const notes = (this.sum.notes ?? []).slice(0, 6);
-    const removed = (this.hist?.list ?? []).slice(0, 5);
-    const sessions = (this.sum.sessions ?? []).slice(0, 6);
-    const kids = [];
-    if (merges.length) kids.push(this.sub(t, tr("recent.merges")), ...merges.map((x) =>
-      this.line(t, `hub-rc-m-${x.repo}-${x.pr}`, t.ansi5, x.title ? `#${x.pr} ${x.title}` : `${x.repo}#${x.pr}`, relative(x.at, { bare: true }), () => this.openPr(x.repo, x.pr), tr("proj.prTip"))));
-    if (notes.length) kids.push(this.sub(t, tr("recent.notes")), ...notes.map((n) =>
-      this.line(t, `hub-rc-n-${n.path}`, t.ansi6, n.title, relative(n.at, { bare: true }), () => exec("open", [n.path]).catch(() => {}), tr("recent.noteTip", { where: n.vault }))));
-    if (removed.length) kids.push(this.sub(t, tr("recent.worktrees")), ...removed.map((w, i) =>
-      h_flex().id(`hub-rc-w-${i}`).h(22).px(4).gap(8).items_center().child(div().size(6).flex_none().rounded_full().bg(t.dim))
-        .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.muted).child(w.name))
-        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(w.age))));
-    if (sessions.length) kids.push(this.sub(t, tr("recent.sessions")), ...sessions.map((s) =>
-      h_flex().id(`hub-rc-s-${s.sid}`).h(22).px(4).gap(8).items_center().child(div().size(6).flex_none().rounded_full().bg(t.idle ?? t.dim))
-        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(s.title || tr("recent.untitled")))
-        .child(div().flex_none().max_w(120).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(s.project ?? ""))
-        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(relative(s.last, { bare: true })))));
-    return this.section(t, "recent", tr("recent.title"), null, kids.length ? v_flex().gap(2).children(kids) : this.muted(t, tr("recent.none")));
+  // A card of groups of lines, `counts` lines shown each (fit()), « +n » after a group's name for the rest;
+  // the empty sentence centred in what it's given.
+  linesCard(t, id, label, groups, counts, emptyIcon, emptyText, i) {
+    const body = groups.length
+      ? v_flex().gap(4).children(groups.map(([name, lines], k) => v_flex().gap(2).child(this.sub(t, name, lines.length - counts[k]))
+        .children(lines.slice(0, counts[k]).map((l) => this.line(t, l)))))
+      : v_flex().flex_1().justify_center().child(this.empty(t, emptyIcon, emptyText));
+    return this.card(t, id, label, null, null, body, i);
   }
 
   // ---------- one project (#49) ----------
 
   // Its head: the registry's mark, its repo, its open worktrees (gwm).
-  pHead(t, pr) {
+  pHead(t, pr, i) {
     const side = this.side.get(pr.key);
     const wts = side?.wts;
     const tileRow = { kind: pr.p?.kind ?? "repo", entry: pr.entry, name: pr.name };
-    return this.section(t, "phead", tr("proj.head"), null, h_flex().gap(10).items_center().px(4)
+    return this.card(t, "phead", tr("proj.head"), null, null, h_flex().gap(10).items_center()
       .child(this.tile(t, tileRow))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().truncate().text_size(13.5).text_color(t.foreground).child(pr.name))
         .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child([pr.slug, pr.root.replace(home(), "~")].filter(Boolean).join(" · "))))
       .child(div().flex_none().max_w(420).truncate().font_family(MONO).text_size(11).text_color(wts?.length ? t.foreground : t.dim)
-        .child(wts == null ? (side?.busy ? tr("proj.wtReading") : "") : wts.length ? tr("proj.wts", { n: wts.length, list: wts.slice(0, 4).join(", ") }) : tr("proj.wtNone"))));
+        .child(wts == null ? (side?.busy ? tr("proj.wtReading") : "") : wts.length ? tr("proj.wts", { n: wts.length, list: wts.slice(0, 4).join(", ") }) : tr("proj.wtNone"))), i);
   }
 
   pCard(t, id, cw, name, main, { d = null, detail = "", tip = "", better = "higher" } = {}) {
     const pct = d == null || d === 0 ? null : `${d > 0 ? "+" : "−"}${tr("pct", { n: Math.abs(d) })}`;
-    return v_flex().id(`hub-pc-${id}`).w(cw).flex_none().p(12).rounded(12).border(1).border_color(t.border).bg(t.raised).when(Boolean(tip), (el) => el.tooltip(tip))
-      .child(this.V.stat(name, main, { delta: pct, detail: d === 0 ? tr("week.same") : detail, better, width: cw - 24, id: `hub-ps-${this.pv.key}-${id}` }));
+    return v_flex().id(`hub-pc-${id}`).w(cw).flex_none().p(14).rounded(12).border(1).border_color(t.border).bg(t.raised).when(Boolean(tip), (el) => el.tooltip(tip))
+      .child(this.V.stat(name, main, { delta: pct, detail: d === 0 ? tr("week.same") : detail, better, width: cw - CARD_X, id: `hub-ps-${this.pv.key}-${id}` }));
   }
 
-  pWeek(t, pr, pw, prs, checks) {
-    const W = this.width - 24;
-    const cols = W >= 1050 ? 4 : 2;
-    const cw = Math.floor((W - 8 * (cols - 1)) / cols);
+  pWeek(t, pr, pw, prs, checks, fullW, i) {
+    const inner = fullW - CARD_X;
+    const tier = this.tier("pweek", inner);
+    const cols = tier === "wide" ? 3 : tier === "medium" ? 2 : 1;
+    const cw = Math.floor((inner - 8 * (cols - 1)) / cols);
     const vs = tr("week.vs");
     const cards = [
       this.pCard(t, "s", cw, tr("card.s"), num(pw.now.s), { d: delta(pw.now.s, pw.before.s), detail: vs, tip: tr("tip.s") }),
@@ -875,13 +1243,13 @@ export default class Hub extends View {
       this.pCard(t, "ci", cw, tr("proj.cardCi"), `${checks.ciOk} / ${checks.ciOk + checks.ciFail}`,
         { detail: tr("proj.ciDetail", { runs: tr("proj.ciRuns", { n: checks.ciRuns }) }), tip: tr("proj.ciTip") }),
     ];
-    return this.section(t, "pweek", tr("week.title"), div().flex_none().text_size(11).text_color(t.dim).child(tr("week.sub")), h_flex().flex_wrap().gap(8).children(cards));
+    return this.card(t, "pweek", tr("week.title"), null, this.hint(t, tr("week.sub")), h_flex().flex_wrap().gap(8).children(cards), i);
   }
 
-  pAct(t, pr) {
+  pAct(t, pr, fullW, i) {
     const ys = projectYears(pr.p, this.d.today);
     const y = this.pYear.get(pr.key) ?? ys.at(-1);
-    const i = ys.indexOf(y);
+    const yi = ys.indexOf(y);
     const h = this.pHeatOf(pr, y);
     const arrow = (id, icon, tip, by, on) => div().id(id).size(24).flex_none().rounded_full().flex().items_center().justify_center()
       .text_color(on ? t.muted : t.dim).when(!on, (el) => el.opacity(0.4))
@@ -889,27 +1257,22 @@ export default class Hub extends View {
         .on_click((_e, cx) => { cx.stop_propagation(); this.stepYear(by, cx); cx.notify(); }))
       .child(svg(I(icon)).size(13));
     const right = h_flex().flex_none().gap(4).items_center()
-      .child(arrow("hub-py-prev", "chevron-left", tr("act.prev"), -1, i > 0))
+      .child(arrow("hub-py-prev", "chevron-left", tr("act.prev"), -1, yi > 0))
       .child(div().font_family(MONO).text_size(12).text_color(t.foreground).child(String(y)))
-      .child(arrow("hub-py-next", "chevron-right", tr("act.next"), 1, i >= 0 && i < ys.length - 1));
+      .child(arrow("hub-py-next", "chevron-right", tr("act.next"), 1, yi >= 0 && yi < ys.length - 1));
     const junction = this.sum.junction;
-    const cal = this.V.calendar(h.levels, {
-      start: h.start, months: tr("act.months").split(" "), weekdays: tr("act.weekdays").split(" "), legend: [tr("act.less"), tr("act.more")],
+    return this.card(t, "pact", tr("act.title"), null, right, this.yearBody(t, { slot: `pcal-${hash(pr.key)}-${y}`, h, tint: this.colorOf(t, pr.entry),
       mark: h.split > 0 ? h.split : null, markTip: junction ? tr("act.mark", { date: date(`${junction}T12:00:00`, { year: true }) }) : null,
-      tip: (a, b) => this.weekTip(h, a, b), color: this.colorOf(t, pr.entry), id: `hub-pcal-${pr.key}-${y}`,
-    });
-    return this.section(t, "pact", tr("act.title"), right, v_flex().gap(6)
-      .child(div().font_family(MONO).text_size(11).text_color(t.muted).child(tr("act.total", { active: num(h.active), sessions: num(h.sessions) })))
-      .child(cal));
+      total: tr("act.total", { active: num(h.active), sessions: num(h.sessions) }), width: fullW - CARD_X }), i);
   }
 
   // The week's PRs (gh): number, title, state, its review and CI when a report has them; a click opens it in
   // the Inbox (kt.inbox.open), as kt-flow does.
-  pPrs(t, pr, prs) {
+  pPrs(t, pr, prs, i) {
     const side = this.side.get(pr.key);
     const err = side?.prErr ? div().text_size(12).text_color(t.ansi1).child(tr("proj.ghError", { error: side.prErr })) : null;
-    if (!pr.slug) return this.section(t, "pprs", tr("proj.prsTitle"), null, this.muted(t, tr("proj.noSlug")));
-    if (!prs) return this.section(t, "pprs", tr("proj.prsTitle"), null, err ?? this.muted(t, side?.busy ? tr("proj.ghReading") : tr("proj.ghNone")));
+    if (!pr.slug) return this.card(t, "pprs", tr("proj.prsTitle"), null, null, this.empty(t, I("git-pull-request"), tr("proj.noSlug")), i);
+    if (!prs) return this.card(t, "pprs", tr("proj.prsTitle"), null, null, err ?? this.empty(t, I("git-pull-request"), side?.busy ? tr("proj.ghReading") : tr("proj.ghNone")), i);
     const STATE = { OPEN: t.ansi2, MERGED: t.ansi5, CLOSED: t.dim };
     const rows = prs.rows.slice(0, 10).map((x) => {
       const c = x.draft ? t.dim : STATE[x.state] ?? t.dim;
@@ -924,34 +1287,70 @@ export default class Hub extends View {
         .child(div().w(70).flex_none().flex().justify_end().font_family(MONO).text_size(10.5).text_color(x.ci?.fail ? t.ansi1 : t.dim)
           .child(x.ci ? tr("proj.prCi", { ok: x.ci.ok, n: x.ci.total }) : ""));
     });
-    return this.section(t, "pprs", tr("proj.prsTitle"), null, v_flex().gap(2)
-      .children(rows.length ? rows : [this.muted(t, tr("proj.noPr"))]).when(Boolean(err), (el) => el.child(err)));
+    return this.card(t, "pprs", tr("proj.prsTitle"), null, null, v_flex().gap(2)
+      .children(rows.length ? rows : [this.empty(t, I("git-pull-request"), tr("proj.noPr"))]).when(Boolean(err), (el) => el.child(err)), i);
   }
 
-  pLaunches(t, pw) {
+  pLaunches(t, pw, fullW, i) {
     const list = pw.launches.map((x) => ({ ...x, family: familyOf(x.name) })).filter((x) => x.family !== "command");
-    return this.section(t, "plaunch", tr("launch.title"), null, this.rankRows(t, list, (x) => t[FAMILY[x.family]] ?? t.accent, tr("launch.none")));
+    const cols = this.tier("plaunch", fullW - CARD_X) === "wide" ? 2 : 1;
+    return this.card(t, "plaunch", tr("launch.title"), null, null, this.rankRows(t, list, (x) => t[FAMILY[x.family]] ?? t.accent, tr("launch.none"), cols), i);
   }
 
-  projectBody(t, pr) {
+  projectBody(t, pr, W) {
     const pw = projectWeek(pr.p, this.d.w);
     const side = this.side.get(pr.key);
     const prs = side?.prs ? weekPrs(side.prs, this.sum.reports, pr.slug, this.d.w) : null;
     const checks = weekChecks(this.sum.reports, this.sum.flows, pr.slug, this.d.w);
-    return [this.pHead(t, pr), this.pWeek(t, pr, pw, prs, checks), this.pAct(t, pr), this.pPrs(t, pr, prs), this.pLaunches(t, pw)];
+    this.rowOf = Object.fromEntries(P_SECTIONS.map((s, k) => [s, k]));
+    return [this.pHead(t, pr, 0), this.pWeek(t, pr, pw, prs, checks, W, 1), this.pAct(t, pr, W, 2), this.pPrs(t, pr, prs, 3), this.pLaunches(t, pw, W, 4)];
   }
 
   // ---------- page ----------
 
-  // Before the first summary: the sections' shapes as bars (skeleton.js), breathing.
+  // Before the first summary: the cards' shapes (skeleton.js), breathing.
   skeletonBody(t) {
     const S = skeleton(t, this.m);
-    return S.pulse(v_flex().id("hub-body-sk").p(12).gap(14)
-      .child(S.line(140, { h: 7, lh: 16 }))
-      .child(h_flex().gap(8).children([0, 1, 2].map(() => S.block(null, 110).flex_1())))
-      .child(S.line(110, { h: 7, lh: 16 }))
-      .child(S.block(null, 140))
-      .child(S.list(5, { h: 34, icon: 20, lines: [0.4] })));
+    const sec = (inner) => v_flex().px(14).pt(12).pb(14).gap(12).rounded(14).border(1).border_color(t.border).bg(t.background)
+      .child(S.line(110, { h: 7, lh: 24 })).child(inner);
+    return S.pulse(v_flex().id("hub-body-sk").gap(8)
+      .child(sec(h_flex().gap(8).children([0, 1, 2].map(() => S.block(null, 150).flex_1()))))
+      .child(sec(S.block(null, 140)))
+      .child(sec(S.list(5, { h: 34, icon: 20, lines: [0.4] }))));
+  }
+
+  // The global view (#76's layout): its rows (each a child of the scroll, for j / k), and each section's row.
+  globalRows(t, W) {
+    this.wide = W >= (this.wide ? WIDE : WIDE + HYST);
+    const colW = this.wide ? W - SIDE_W - 8 : W;
+    const week = this.weekCard(t, colW, 1), act = this.actCard(t, colW, 2);
+    const ng = this.nextGroups(t), rg = this.recentGroups(t);
+    const nSizes = ng.map(([, l]) => l.length), rSizes = rg.map(([, l]) => l.length);
+    const rest = [this.rankRow(t, W, 5), this.projCard(t, W, 6), this.flowsCard(t, W, 7)];
+    if (this.wide) {
+      // Next and Recent beside the top only, as tall as it (its height measured): Recent takes what Next leaves.
+      const nextH = CARD_Y + groupsH(nSizes);
+      const recentH = this.topH ? Math.max(this.topH - nextH - 8, CARD_Y + EMPTY_H) : null;
+      const rCounts = recentH ? fit(rSizes, recentH - CARD_Y) : rSizes;
+      const left = v_flex().id("hub-top-l").flex_1().min_w(0).gap(8)
+        .on_size_change((s, cx) => { const h = Math.round(s.height); if (h !== this.topH) { this.topH = h; cx.notify(); } })
+        .child(week).child(act);
+      const right = v_flex().w(SIDE_W).flex_none().gap(8).when(Boolean(this.topH), (el) => el.h(this.topH))
+        .child(this.linesCard(t, "next", tr("next.title"), ng, nSizes, H("list-todo"), tr("next.none"), 3))
+        .child(this.linesCard(t, "recent", tr("recent.title"), rg, rCounts, HISTORY, tr("recent.none"), 4).when(Boolean(recentH), (el) => el.h(recentH).overflow_hidden()));
+      this.rowOf = { now: 0, week: 0, act: 0, next: 0, recent: 0, rank: 1, proj: 2, flows: 3 };
+      return [h_flex().items_start().gap(8).child(left).child(right), ...rest];
+    }
+    // Under WIDE: Next and Recent side by side under Activity, as tall as Next (Recent at least ~240 px when
+    // it has that much); under each other when narrow.
+    const nextNat = CARD_Y + groupsH(nSizes), recentNat = CARD_Y + groupsH(rSizes);
+    const pair = this.tier("pair", W) !== "narrow";
+    const hh = Math.max(nextNat, Math.min(recentNat, 240));
+    const rCounts = pair ? fit(rSizes, hh - CARD_Y) : rSizes;
+    const next = this.linesCard(t, "next", tr("next.title"), ng, nSizes, H("list-todo"), tr("next.none"), 3);
+    const recent = this.linesCard(t, "recent", tr("recent.title"), rg, rCounts, HISTORY, tr("recent.none"), 4);
+    this.rowOf = { now: 0, week: 0, act: 1, next: 2, recent: 2, rank: 3, proj: 4, flows: 5 };
+    return [week, act, pair ? h_flex().items_start().gap(8).child(next.flex_1().h(hh)).child(recent.flex_1().h(hh).overflow_hidden()) : v_flex().gap(8).child(next).child(recent), ...rest];
   }
 
   body(t) {
@@ -959,22 +1358,15 @@ export default class Hub extends View {
       return v_flex().flex_1().min_h(0).child(this.readError ? div().p(16).text_size(13).text_color(t.ansi1).child(tr("index.unreadable", { error: this.readError })) : this.skeletonBody(t));
     }
     const pr = this.pv;
-    // #50: Next and Recent, on the right from WIDE px (their own scroll), else after the flows.
-    const wide = !pr && this.width >= WIDE;
-    const side = pr ? [] : [this.nextSection(t), this.recentSection(t)];
-    const kids = pr ? this.projectBody(t, pr)
-      : [this.nowSection(t), this.weekSection(t), this.actSection(t), this.rankSection(t), this.projSection(t), this.flowsSection(t), ...(wide ? [] : side)];
+    const kids = pr ? this.projectBody(t, pr, this.width) : this.globalRows(t, this.width);
     if (this.reveal) {
-      const i = (pr ? P_SECTIONS : SECTIONS).indexOf(this.cur);
-      if (i >= 0 && i < kids.length) this.scroll.scroll_to_item(i);
+      const i = this.rowOf?.[this.cur];
+      if (i != null && i < kids.length) this.scroll.scroll_to_item(i);
       this.reveal = false;
     }
-    const main = v_flex().id("hub-body").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).pb(16).gap(4).children(kids);
     // The view's key in the id: global and each project fade in when they come.
-    return enter(this.m, h_flex().flex_1().min_h(0).items_start(), `hub-in-${pr?.key ?? "global"}`, { dy: 0 })
-      .child(main.h_full())
-      .when(wide, (el) => el.child(v_flex().id("hub-side").w(400).flex_none().h_full().overflow_y_scrollbar().p(4).pb(16).gap(4)
-        .border_l(1).border_color(t.border).children(side)));
+    return enter(this.m, v_flex().flex_1().min_h(0), `hub-in-${pr?.key ?? "global"}`, { dy: 0 })
+      .child(v_flex().id("hub-body").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().track_scroll(this.scroll).pb(16).gap(8).children(kids));
   }
 
   render(cx) {
@@ -1008,17 +1400,37 @@ export default class Hub extends View {
     if (this.pv && vis) this.sideLoad(cx, this.pv);
     if (!this.pv && vis && this.sum) this.histLoad(cx);
     if (!(this.pv ? P_SECTIONS : SECTIONS).includes(this.cur)) this.cur = (this.pv ? P_SECTIONS : SECTIONS)[0];
-    const page = v_flex().id("hub-root").size_full().gap(4).text_color(t.foreground)
+    this.tw = new Set();
+    this.builds = 0;
+    this.later = false;
+    const page = v_flex().id("hub-root").size_full().gap(8).text_color(t.foreground)
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
-      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
+      .on_size_change((size, cx) => {
+        if (size.width === this.width) return;
+        this.width = size.width;
+        this.widthAt = Date.now();
+        // The images wait for the width to settle: one timer per resize, to draw them once it has.
+        if (!this.settling && !checking()) {
+          this.settling = true;
+          cx.timer.after(SETTLE_MS + 20, (cx) => { this.settling = false; cx.notify(); });
+        }
+        cx.notify();
+      })
       .child(this.header(t))
-      .child(this.card(t).flex_1().min_h(0).overflow_hidden().child(this.body(t)));
+      .child(this.body(t));
     this.writeTips(cx);
-    // The flows' paths, once, a moment after the first render with data (one timer, then never again).
-    if (this.d && !this.stepsOk && !this.stepsSoon && !checking()) {
-      this.stepsSoon = true;
-      cx.timer.after(80, (cx) => { this.stepsOk = true; cx.notify(); });
+    this.flushTrames(cx);
+    // Paths left for the next render (built()): one timer, re-armed only while some are left.
+    if (this.later && !this.laterSoon && !checking()) {
+      this.laterSoon = true;
+      cx.timer.after(16, (cx) => { this.laterSoon = false; cx.notify(); });
+    }
+    // The bars, the weeks, then the chart, once each, a moment after the first render with data (one timer
+    // each, never again).
+    if (this.d && this.heavy < 3 && this.heavySoon !== this.heavy && !checking()) {
+      this.heavySoon = this.heavy;
+      cx.timer.after(80, (cx) => { this.heavy++; cx.notify(); });
     }
     return page;
   }

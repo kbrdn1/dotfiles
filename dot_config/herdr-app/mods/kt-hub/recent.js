@@ -62,21 +62,80 @@ export function nextPlanIssues(plans) {
   return out;
 }
 
+/** A GitHub repo, "owner/name": the only kind the Inbox opens and a PR number means something in. A flow's
+ * repo can be a folder's name instead: a repo without a remote ("kalima"), or claude-flow's guess for a
+ * session outside any repo, the folder it runs in ("kbrdn1" for ~, its repoOf). */
+export const onGitHub = (repo) => /^[\w.-]+\/[\w.-]+$/.test(String(repo ?? ""));
+
 /** Recent: the merges since `since`, from the flows (when their merge was seen done) and the reports (a
- * merged PR), once each, the latest first. */
+ * merged PR), once each, the latest first; on GitHub repos only. */
 export function recentMerges(flows, reports, since) {
   const seen = new Map();
   for (const f of flows ?? []) {
     const at = f?.doneAt?.merge;
-    if (at && at >= since && f.repo && f.pr) seen.set(`${f.repo}#${f.pr}`, { repo: f.repo, pr: f.pr, issue: f.issue ?? null, title: null, at });
+    if (at && at >= since && onGitHub(f.repo) && f.pr) seen.set(`${f.repo}#${f.pr}`, { repo: f.repo, pr: f.pr, issue: f.issue ?? null, title: null, at });
   }
   for (const r of reports ?? []) {
-    if (r?.pr?.state !== "MERGED" || !r.pr.n || (r.at ?? 0) < since) continue;
+    if (r?.pr?.state !== "MERGED" || !r.pr.n || (r.at ?? 0) < since || !onGitHub(r.repo)) continue;
     const k = `${r.repo}#${r.pr.n}`;
     const was = seen.get(k);
     seen.set(k, { repo: r.repo, pr: r.pr.n, issue: was?.issue ?? r.issue ?? null, title: r.pr.title ?? null, at: was?.at ?? r.at });
   }
   return [...seen.values()].sort((a, b) => b.at - a.at);
+}
+
+// #76, Workflows suivis: week by week, then a funnel per workflow. claude-flow's steps have no time: the
+// weeks come from each flow's commits (the indexer keeps the first and the last, c0 and c1, and their count).
+
+/** The last `n` weeks (Monday 00:00, local) up to `now`: the flows active in each (a commit in it), those
+ * merged in each (their last commit in it), the median from first to last commit (flows of 2 commits or
+ * more), the open flows (not merged) and the oldest of them by last commit, and those open flows by the step
+ * they wait for (stage().next), the most first, each with its oldest. */
+export function flowWeeks(flows, now, n = 3) {
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const at = (k) => { const d = new Date(monday); d.setDate(d.getDate() + 7 * k); return d.getTime(); };
+  const starts = Array.from({ length: n }, (_, i) => at(i - n + 1));
+  const ends = starts.map((_, i) => at(i - n + 2));
+  const list = flows ?? [];
+  const merged = list.filter((f) => stage(f).merged);
+  const dated = (f) => f.c0 != null && f.c1 != null;
+  const spans = list.filter((f) => (f.nc ?? 0) >= 2 && dated(f)).map((f) => f.c1 - f.c0).sort((a, b) => a - b);
+  const open = list.filter((f) => !stage(f).merged);
+  const oldest = (fs) => fs.filter((f) => f.c1 != null).sort((a, b) => a.c1 - b.c1)[0] ?? null;
+  const by = new Map();
+  for (const f of open) {
+    const s = stage(f).next ?? null;
+    if (!by.has(s)) by.set(s, []);
+    by.get(s).push(f);
+  }
+  return {
+    total: list.length, starts,
+    active: starts.map((s, i) => list.filter((f) => dated(f) && f.c0 < ends[i] && f.c1 >= s).length),
+    merged: starts.map((s, i) => merged.filter((f) => f.c1 != null && f.c1 >= s && f.c1 < ends[i]).length),
+    mergedTotal: merged.length, median: spans.length ? spans[Math.floor((spans.length - 1) / 2)] : null, spanN: spans.length,
+    open: open.length, oldest: oldest(open),
+    blocks: [...by].map(([step, fs]) => ({ step, n: fs.length, oldest: oldest(fs), flows: fs })).sort((a, b) => b.n - a.n || (String(a.step) < String(b.step) ? -1 : 1)),
+  };
+}
+
+/** A funnel per workflow: for each step of PATH, how many of its flows passed it (done, or left behind a
+ * later step done: path()'s skipped) and how many are at work on it; the most flows first. */
+export function funnels(flows) {
+  const by = new Map();
+  for (const f of flows ?? []) {
+    const w = f.workflow ?? null;
+    if (!by.has(w)) by.set(w, []);
+    by.get(w).push(f);
+  }
+  return [...by].map(([workflow, list]) => {
+    const paths = list.map(path);
+    return {
+      workflow, total: list.length, merged: list.filter((f) => stage(f).merged).length,
+      steps: PATH.map((id, i) => ({ id, passed: paths.filter((p) => p[i].state === "done" || p[i].state === "skipped").length, current: paths.filter((p) => p[i].state === "current").length })),
+    };
+  }).sort((a, b) => b.total - a.total || (String(a.workflow) < String(b.workflow) ? -1 : 1));
 }
 
 /** `gwm history --all`: one line per removal, newest first ("11h    remove   feat-1-x") -> [{ age, kind, name }]. */
