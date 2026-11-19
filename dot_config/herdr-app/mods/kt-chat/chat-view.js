@@ -70,20 +70,11 @@ export function liveStep({ shown, wasShown, status, lastStatus, hasState, fixed 
   return { delta, tick };
 }
 
-/** The first turn drawn, of n, when the last `show` are. */
-export const firstShown = (n, show) => Math.max(0, n - show);
-
 /**
  * The scroll child (0 is the head: « Tours précédents » or « Début de la session ») of the turn
- * now at index `at` among all turns, when the first drawn is `first`.
+ * now at index `at` among all turns, when the first drawn is `first` (turn-window.js: which ones).
  */
 export const childOf = (at, first) => 1 + at - first;
-
-/**
- * Turns drawn after a read put `added` older turns in front of `before` loaded ones (all of which
- * were drawn): those, plus up to `step` of the new.
- */
-export const shownAfterRead = (before, added, step) => before + Math.min(step, Math.max(0, added));
 
 // ── Monocode's words (#75) ──────────────────────────────────────────────────
 

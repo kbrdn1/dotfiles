@@ -114,16 +114,17 @@ export function pairWheel(kept, half) {
 }
 
 /**
- * The message on screen (measure_active, :101-125): following the bottom, or within NEAR_END of it,
- * the last; else the first whose turn starts in the view, else the last one above it. `tops`: turn id
+ * The message on screen (measure_active, :101-125): following the bottom, or within NEAR_END of it
+ * when it is the conversation's end (`whole`), the last; else the first whose turn starts in the
+ * view, else the last one above it. A turn after the drawn ones has no top: below. `tops`: turn id
  * -> its top (a drawn turn); a turn before `first` isn't drawn: above. A note shares its turn's place:
  * the turn's first message stands for it, unless `cur` (the one lit now) is of that turn. Answers
  * { k, above }: its index (-1: none), and whether its turn starts above the view (`[` goes back to it).
  */
-export function activeAt({ marks: list, tops, first = 0, scrollTop, vh, end, follow = false, cur = -1 }) {
+export function activeAt({ marks: list, tops, first = 0, scrollTop, vh, end, follow = false, whole = true, cur = -1 }) {
   const n = list.length;
   if (!n) return { k: -1, above: false };
-  if (follow || end - (scrollTop + vh) <= TL.NEAR_END) return { k: n - 1, above: false };
+  if (follow || atEnd({ scrollTop, vh, end, whole })) return { k: n - 1, above: false };
   let above = -1, hit = -1;
   for (let k = 0; k < n; k++) {
     const m = list[k];
@@ -139,6 +140,13 @@ export function activeAt({ marks: list, tops, first = 0, scrollTop, vh, end, fol
   if (cur >= 0 && cur < n && list[cur].turn === list[k].turn) k = cur;
   return { k, above: hit < 0 && above >= 0 };
 }
+
+/**
+ * The view at the conversation's bottom: within NEAR_END of the scroll area's end, when that end is
+ * the conversation's (`whole`, #59: a window that stops before the end has « Tours suivants » there).
+ * A wheel going down that lands here follows the bottom again (#59).
+ */
+export const atEnd = ({ scrollTop, vh, end, whole = true }) => whole && end - (scrollTop + vh) <= TL.NEAR_END;
 
 /** The jump's anchor: a view tall, never past the content's end (it would lengthen the scroll). */
 export const anchorH = ({ y, end, vh }) => Math.max(1, Math.min(vh, end - y));

@@ -43,7 +43,7 @@ import { decide, decisionButtons } from "./decide.js";
 import { view } from "./view.js";
 import { ingest, prepend, build, tally, foldedSteps, trim, pendingQueue } from "./chat-model.js";
 import {
-  pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep,
+  pickTarget, tallyText, childOf, chatShown, liveStep,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, orphans, clampText,
   foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
@@ -52,7 +52,9 @@ import { attachmentsOf, photoSize } from "./att-model.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
 import { motionState, frame, enter } from "./motion.js";
-import { TL, marks as markList, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, anchorH, stepMark, ownerOf } from "./timeline.js";
+import { TL, marks as markList, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, stepMark, ownerOf } from "./timeline.js";
+// #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
+import * as win from "./turn-window.js";
 import { skeleton, readyFor } from "./skeleton.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { makeT, duration, time, num } from "./i18n.js";
@@ -63,9 +65,6 @@ const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
 const CODE = "Monaspace Neon";
 const K = 30; // turns read at first, and per read of « Tours précédents »
-// Turns drawn, then added per « Tours précédents » (the loaded ones first, then a read): a render
-// has ~50 ms, and 30 busy turns took ~40 ms to describe under herdr-app check.
-const SHOW = 10;
 const BUDGET = 500000; // chat-index.ts --budget: characters of JSON per read
 const MAX_ENTRIES = 900; // --max-entries: JSON.parse + build() stay ~15 ms in the mod engine
 const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before the oldest go
@@ -147,7 +146,7 @@ export default class Chat extends View {
     this.open = new Set(); // opened: f:<turn> fold, s:<step> detail, c:<notice> summary, r:<run> report, k:<code> block
     this.shownSteps = new Map(); // phase id -> steps drawn (STEPS, then MORE at a time)
     this.cur = -1; // the turn cursor (-1: the last)
-    this.show = SHOW; // turns drawn (the last ones)
+    this.win = { from: 0, to: 0 }; // the turns drawn, [from, to) (turn-window.js, #59)
     this.follow = true; // stuck to the bottom until the reader scrolls up
     this.reveal = null; // a child to bring into view after the next layout
     // The timeline (#85): Kylian's messages (timeline.js marks, made in rebuild), the scroll area's
@@ -307,7 +306,7 @@ export default class Chat extends View {
               this.rebuild(live);
               this.follow = true;
               this.cur = -1;
-              this.show = SHOW;
+              this.win = win.bottom(this.turns.length);
               this.reveal = "bottom";
             }
             if (this.err) {
@@ -346,12 +345,16 @@ export default class Chat extends View {
       return true;
     }
     const before = this.state;
-    this.state = trim(ingest(before, out), KEEP);
+    const grown = ingest(before, out);
+    // Not following the bottom, the turns drawn stay (#59: a « Tours précédents » read while it works
+    // would go at the next tick): the trim stops at the window's first turn.
+    this.state = trim(grown, win.keepFor(grown.entries, this.follow ? null : this.turns[this.first()]?.id ?? null, KEEP));
     // ingest keeps the entries array when nothing came (skipped lines only), trim when under KEEP.
     const grew = this.state.entries !== before.entries;
     if (!grew && live === this.builtLive) return false; // the state still moves on to the new end
     // The cursor follows its turn by id (turns come in at the bottom, old ones go at the top); the
-    // drawn window keeps its size.
+    // drawn window too (rebuild: remap): it slides with the end while following it, else it keeps its
+    // turns and the new ones wait in « Tours suivants ».
     const curId = this.cur >= 0 ? this.turns[this.cur]?.id : null;
     this.rebuild(live);
     this.cur = curId ? this.turns.findIndex((t) => t.id === curId) : -1;
@@ -359,9 +362,12 @@ export default class Chat extends View {
     return true;
   }
 
-  rebuild(live) {
+  /** The turns built again from the state; the drawn window follows its turns by id (turn-window.js remap). */
+  rebuild(live, follow = this.follow) {
+    const was = this.turns.map((t) => t.id);
     this.builtLive = live;
     this.turns = this.state ? build(this.state.entries, { live }) : [];
+    this.win = win.remap(this.win, was, this.turns.map((t) => t.id), follow);
     // Messages typed while it works, not taken yet: their « en file » bubbles under the live turn.
     this.queued = live && this.state ? pendingQueue(this.state.entries) : [];
     // The counts, once per build rather than on every render: the fold's, each phase's.
@@ -375,35 +381,44 @@ export default class Chat extends View {
     for (const k of this.hts.keys()) if (k.startsWith("kc-turn-") && !rows.has(k)) this.hts.delete(k);
   }
 
-  /** The first turn drawn: the last `this.show` of them. */
+  /** The first turn drawn (turn-window.js: [from, to), CAP turns at most). */
   first() {
-    return firstShown(this.turns.length, this.show);
+    return Math.min(this.win.from, this.turns.length);
+  }
+
+  /** After the last turn drawn: the end, or the first of « Tours suivants ». */
+  end() {
+    return Math.min(this.win.to, this.turns.length);
   }
 
   /**
-   * « Tours précédents »: the loaded turns not drawn yet first, then a read before the first one.
-   * Either way the turn that was first drawn stays where the reader was looking. The caller redraws.
+   * « Tours précédents »: the loaded turns not drawn yet first, then a read before the first one;
+   * the window fills up to CAP first (the live turn stays), then slides, the bottom ones going to
+   * « Tours suivants » (turn-window.js older). Either way the turn that was first drawn stays
+   * where the reader was looking. The caller redraws.
    */
   older(cx) {
     const was = this.first();
     if (was > 0) {
-      this.show += SHOW;
+      this.win = win.older(this.win);
       this.reveal = childOf(was, this.first());
+      this.cur = was; // j k go on from what is read, not from a turn the window left
+      if (this.end() < this.turns.length) this.follow = false;
       return;
     }
     if (!this.state?.more || this.olderBusy) return;
     this.olderBusy = true;
-    const before = this.turns.length;
     cx.spawn(async (cx) => {
       try {
         const next = prepend(this.state, await this.index(this.state.path, ["--to", String(this.state.start)]));
         if (next !== this.state) {
           this.state = next;
-          this.rebuild(this.builtLive);
-          const added = Math.max(0, this.turns.length - before);
-          this.show = shownAfterRead(before, added, SHOW);
-          this.reveal = childOf(added, this.first()); // the old first turn is now at `added`
-          if (this.cur >= 0) this.cur += added;
+          this.rebuild(this.builtLive, false); // the same turns drawn, now after the read ones
+          const at = this.first(); // where the turn that was first drawn is now
+          this.win = win.older(this.win);
+          this.reveal = childOf(at, this.first());
+          this.cur = at;
+          if (this.end() < this.turns.length) this.follow = false;
         }
       } catch (e) {
         notify({ title: tr("empty.failed.title"), body: String(e?.message ?? e).slice(0, 300), level: "error" });
@@ -412,6 +427,14 @@ export default class Chat extends View {
         cx.notify();
       }
     });
+  }
+
+  /** « Tours suivants »: SHOW more below, the top ones out past CAP; the last turn drawn stays in view. */
+  newer() {
+    const was = this.end() - 1;
+    this.win = win.newer(this.win, this.turns.length);
+    this.reveal = childOf(was, this.first());
+    this.cur = was;
   }
 
   // ---------- keys ----------
@@ -441,7 +464,7 @@ export default class Chat extends View {
     const move = (to) => {
       this.cur = to;
       this.follow = to === n - 1;
-      if (to < this.first()) this.show = n - to; // the cursor draws the turns it reaches
+      this.win = win.reach(this.win, n, to); // the cursor draws the turn it reaches, CAP at most
       this.reveal = childOf(to, this.first());
       this.jump = null; // a jump still waiting for its rows: this move wins
       // No wheel measures this scroll: the timeline lights the cursor's message.
@@ -518,6 +541,8 @@ export default class Chat extends View {
         if (this.composer.value() === text) this.composer.set_value("");
         this.draft = this.composer.value();
         this.follow = true;
+        this.jump = null;
+        this.win = win.bottom(this.turns.length);
         this.reveal = "bottom";
         this.load(cx, true);
       } else this.sendErr = res;
@@ -760,7 +785,7 @@ export default class Chat extends View {
     if (!m) return;
     this.cur = m.i;
     this.follow = false;
-    if (m.i < this.first()) this.show = this.turns.length - m.i;
+    this.win = win.at(this.win, this.turns.length, m.i); // not drawn: it and SHOW - 1 after it (#59)
     this.jump = m.turn;
     this.reveal = null;
     this.tlId = m.id;
@@ -816,8 +841,9 @@ export default class Chat extends View {
 
   /** The scroll area's rows, top to bottom (as body() draws them): { tops: turn id -> top, at: row id -> top, end, known }. */
   geom() {
-    const turns = this.turns.slice(this.first());
-    const ids = ["kc-head", ...turns.map((t) => `kc-turn-${t.id}`), ...(this.builtLive ? ["kc-working"] : [])];
+    const turns = this.turns.slice(this.first(), this.end());
+    const tail = this.end() < this.turns.length ? ["kc-later"] : this.builtLive ? ["kc-working"] : [];
+    const ids = ["kc-head", ...turns.map((t) => `kc-turn-${t.id}`), ...tail];
     // The end mark: 1 px, never measured.
     const o = offsets([...ids.map((id) => this.hts.get(id)), 1], TOP_INSET);
     const at = new Map(ids.map((id, k) => [id, o.tops[k]]));
@@ -833,14 +859,22 @@ export default class Chat extends View {
     if (!ev.local_position) return;
     const { keep, pair: w } = pairWheel(this.wheelAt, { row, px: ev.position.x, py: ev.position.y, y: ev.local_position.y, dy: ev.delta.y });
     this.wheelAt = keep;
-    if (!w || !this.marks.length || this.vh <= 0) return;
+    if (!w || this.vh <= 0) return;
     const g = this.geom();
     if (!g.known || !g.at.has(w.id)) return;
     const z = this.zoom();
     // The area's padding (TOP_INSET above, 8 under) is part of what scrolls.
     const scrollTop = wheelTop({ top: g.at.get(w.id), inRow: w.inRow / z, inView: w.inView / z, dy: w.dy / z, max: g.end + 8 - this.vh });
+    const whole = this.end() >= this.turns.length; // the window's bottom is the conversation's
+    // #59: going down to the conversation's bottom follows it again (the live tail's new turns show).
+    if (w.dy < 0 && !this.follow && atEnd({ scrollTop, vh: this.vh, end: g.end + 8, whole })) {
+      this.follow = true;
+      this.cur = -1;
+      cx.notify();
+    }
+    if (!this.marks.length) return;
     const cur = this.follow ? -1 : this.marks.findIndex((m) => m.id === this.tlId);
-    const r = activeAt({ marks: this.marks, tops: g.tops, first: this.first(), scrollTop, vh: this.vh, end: g.end + 8, follow: this.follow, cur });
+    const r = activeAt({ marks: this.marks, tops: g.tops, first: this.first(), scrollTop, vh: this.vh, end: g.end + 8, follow: this.follow, whole, cur });
     const id = this.marks[r.k]?.id ?? null;
     if (id !== this.tlId || r.above !== this.tlAbove) {
       this.tlId = id;
@@ -1486,6 +1520,17 @@ export default class Chat extends View {
     return this.col(h_flex().justify_center().py(8).child(this.label(t, tr("start"), 0.35)), "kc-head");
   }
 
+  // « Tours suivants » (#59): the head's twin under a window that stops before the end, with how many
+  // turns wait below it (the live tail's new ones among them), and « en direct » when the agent's live
+  // turn is one of them (the bottom isn't followed then: the button or G bring it back).
+  later(t, k) {
+    return this.col(h_flex().justify_center().py(8).child(h_flex().id("kc-later-btn").h(26).px(12).gap(6).items_center().rounded_full()
+      .border(1).border_color(ink(t, 0.1)).cursor_pointer().hover((s) => s.bg(ink(t, 0.08))).text_size(12).text_color(ink(t, 0.6))
+      .on_click((_e, cx) => { this.newer(); cx.notify(); })
+      .child(svg(I("chevron-down")).size(12))
+      .child(tr(this.builtLive ? "laterLive" : "later", { n: k }))), "kc-later");
+  }
+
   // Under a live turn: the agent at work, then what was typed meanwhile and not taken yet, in pale
   // « en file » bubbles (queue-operation), on the right like the user's.
   working(t) {
@@ -1525,14 +1570,17 @@ export default class Chat extends View {
     if (e?.code === "missing") return this.empty(t, tr("empty.missing.title"), tr("empty.missing.text", { path: e.path }), true);
     if (e?.code === "failed") return this.empty(t, tr("empty.failed.title"), tr("empty.failed.text", { why: e.why }), true);
     if (!this.turns.length) return this.empty(t, tr("empty.empty.title"), tr("empty.empty.text"), true);
-    const from = this.first();
+    // The window (#59): [from, to), CAP turns at most, « Tours suivants » under it when it stops
+    // before the end (the live turn and its « travaille… » row are then below too).
+    const from = this.first(), to = this.end();
     // The code budget goes to the latest turns first: they are described last to first.
     this.budget = { spans: CODE_SPANS, rows: CODE_ROWS };
     const turns = [];
-    for (let i = this.turns.length - 1; i >= from; i--) turns.push(this.turn(t, cx, this.turns[i], i, keyed));
+    for (let i = to - 1; i >= from; i--) turns.push(this.turn(t, cx, this.turns[i], i, keyed));
     this.budget = null;
     const children = [this.head(t), ...turns.reverse()];
-    if (this.builtLive) children.push(this.working(t));
+    if (to < this.turns.length) children.push(this.later(t, this.turns.length - to));
+    else if (this.builtLive) children.push(this.working(t));
     // The 1 px end mark: revealing it shows the bottom of a last turn taller than the view.
     children.push(div().flex_none().h(1));
     const last = children.length - 1;
@@ -1572,7 +1620,7 @@ export default class Chat extends View {
       .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(8).left(0).right(0).justify_center()
         .child(h_flex().id("kc-bottom").size(30).rounded_full().items_center().justify_center().border(1).border_color(ink(t, 0.1))
           .bg(ink(t, 0.04)).cursor_pointer().tooltip(tr("bottom")).text_color(ink(t, 0.7)).hover((s) => s.text_color(ink(t, 1)))
-          .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.jump = null; this.reveal = "bottom"; cx.notify(); })
+          .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.jump = null; this.win = win.bottom(this.turns.length); this.reveal = "bottom"; cx.notify(); })
           .child(svg(I("chevron-down")).size(16)))));
   }
 

@@ -2,7 +2,7 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects } from "./chat-view.js";
+import { pickTarget, tallyText, childOf, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects } from "./chat-view.js";
 import strings from "./strings.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
@@ -36,33 +36,10 @@ assert.equal(tallyText({ ...base, thoughts: 2 }, tr), "count.thoughts=2", "think
 assert.equal(tallyText({ ...base, order: ["edit"], edits: 1, thoughts: 3 }, tr), "count.edits=1", "thinking is not counted beside work");
 assert.equal(tallyText({ ...base, order: ["agent", "other"], agents: 1, others: 2, notes: 1, errors: 1 }, tr), "count.agents=1 · count.others=2 · count.notes=1 · count.errors=1");
 
-// ── Which turns are drawn, where the view goes ──────────────────────────────
-// 30 turns read, the last 10 drawn: the head is child 0, turn 20 child 1.
-assert.equal(firstShown(30, 10), 20);
-assert.equal(firstShown(4, 10), 0);
+// ── Where the view goes (which turns are drawn: turn-window.check.mjs) ──────
+// The head is child 0, the first turn drawn child 1; 10 more drawn above, the old first is child 11.
 assert.equal(childOf(20, 20), 1);
-// « Tours précédents » with turns already read: 10 more drawn, the old first (20) stays in view.
-let show = 10;
-const was = firstShown(30, show);
-show += 10;
-assert.equal(childOf(was, firstShown(30, show)), 11);
-// Then with every read turn drawn (a session cut by the budget: 4 read, 10 allowed), a read adds 30
-// older turns in front: the 4 stay drawn plus 10 new, and the old first is at index 30 now.
-const before = 4, added = 30;
-show = shownAfterRead(before, added, 10);
-assert.equal(show, 14);
-const first = firstShown(before + added, show);
-assert.equal(first, 20);
-assert.equal(childOf(added, first), 11, "the turn that was first drawn is child 11 (the head, then 10 new)");
-assert.equal(shownAfterRead(4, 3, 10), 7, "fewer older turns than a step: all of them");
-assert.equal(shownAfterRead(4, -1, 10), 4, "a read that merged a turn adds nothing below zero");
-// The cursor above the drawn turns draws down to it.
-const n = 30;
-show = 10;
-const to = 5;
-if (to < firstShown(n, show)) show = n - to;
-assert.equal(firstShown(n, show), 5);
-assert.equal(childOf(to, firstShown(n, show)), 1);
+assert.equal(childOf(20, 10), 11);
 
 // ── The Chat face shown (it takes the keyboard on ctrl-b space only then) ───
 const lay = (body, page) => ({ id: "root", children: [{ id: "view", ...(page ? { active: page } : {}), children: [

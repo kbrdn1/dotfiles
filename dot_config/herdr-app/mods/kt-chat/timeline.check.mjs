@@ -3,7 +3,7 @@
 // without a scroll offset, which message is on screen, the jump's anchor and the [ ] step. Fixtures
 // are made up (no real session).
 import assert from "node:assert/strict";
-import { TL, label, marks, barWindow, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, anchorH, stepMark, ownerOf } from "./timeline.js";
+import { TL, label, marks, barWindow, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, stepMark, ownerOf } from "./timeline.js";
 
 // ── Which messages (classify's verdict, as chat-index.ts leaves it) ─────────
 assert.equal(label("\n  fix   the\tbug \nmore"), "fix the bug", "the first non-empty line, spaces collapsed");
@@ -91,11 +91,20 @@ assert.deepEqual(at(400), { k: 1, above: true }, "no turn starts in the view: th
 assert.deepEqual(at(400, { cur: 2 }), { k: 2, above: true }, "the note lit now stays lit within its turn");
 assert.deepEqual(at(400, { cur: 0 }), { k: 1, above: true }, "but not a message of another turn");
 assert.deepEqual(at(960), { k: 3, above: false }, "within 16 px of the end: the last");
+// A window that stops before the end (#59): its bottom is « Tours suivants », not the last message.
+assert.deepEqual(at(960, { whole: false }), { k: 3, above: false }, "e starts in the view anyway");
+assert.deepEqual(activeAt({ marks: mk, tops: new Map([["a", 60], ["c", 360]]), scrollTop: 900, vh: 500, end: 1410, whole: false }), { k: 1, above: true },
+  "e not drawn (after the window): the last above, not the last message");
 assert.deepEqual(at(0, { follow: true }), { k: 3, above: false }, "following the bottom: the last");
 assert.deepEqual(activeAt({ marks: [], tops, scrollTop: 0, vh: 500, end: 1461 }), { k: -1, above: false });
 // Turns not drawn (before `first`) are above; a drawn turn not measured yet ends the walk.
 assert.deepEqual(activeAt({ marks: mk, tops: new Map([["e", 1260]]), first: 4, scrollTop: 900, vh: 200, end: 1461 }), { k: 1, above: true });
 assert.deepEqual(activeAt({ marks: mk, tops: new Map(), first: 0, scrollTop: 0, vh: 500, end: 9000 }), { k: 0, above: false }, "nothing measured: the first");
+
+// The bottom, where a wheel going down follows it again (#59): within 16 px of a whole window's end.
+assert.equal(atEnd({ scrollTop: 945, vh: 500, end: 1461 }), true, "16 px from the end");
+assert.equal(atEnd({ scrollTop: 944, vh: 500, end: 1461 }), false, "17 px");
+assert.equal(atEnd({ scrollTop: 961, vh: 500, end: 1461, whole: false }), false, "« Tours suivants » below: not the bottom");
 
 // ── The jump ────────────────────────────────────────────────────────────────
 // A view tall, so the smallest scroll puts its top at the view's top either way...
