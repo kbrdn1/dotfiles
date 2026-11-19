@@ -296,7 +296,10 @@ export default class Chat extends View {
           this.fixed = arg || null;
           this.loadedFor = undefined;
         } else if (name === "refresh") this.load(cx);
-        else if (name === "background") this.bgMenu = !this.bgMenu;
+        else if (name === "background") {
+          if (this.bgMenu) this.closeBg(cx);
+          else this.bgMenu = true;
+        }
         else if (name === "tl") this.tlCommand(arg);
         cx.notify();
       }
@@ -916,7 +919,12 @@ export default class Chat extends View {
       .bg(ink(t, this.bgMenu ? 0.15 : 0.06)).text_color(ink(t, this.bgMenu ? 1 : 0.5)).cursor_pointer().tooltip(tr("bg.button"))
       .hover((st) => st.bg(ink(t, 0.1)).text_color(ink(t, 1)))
       // A press outside the panel closes it, this button's too: that press must not open it again.
-      .on_click((_e, cx) => { if (Date.now() - (this.bgClosedAt ?? 0) > 400) this.bgMenu = !this.bgMenu; cx.notify(); })
+      .on_click((_e, cx) => {
+        if (Date.now() - (this.bgClosedAt ?? 0) <= 400) return;
+        if (this.bgMenu) return this.closeBg(cx);
+        this.bgMenu = true;
+        cx.notify();
+      })
       .child(svg(OWN("image")).size(14));
     if (!this.bgMenu) return [btn];
     const seg = (id, options, on, pick) => h_flex().h(24).p(2).gap(2).rounded(7).bg(ink(t, 0.06)).children(options.map(([v, label]) =>
@@ -933,9 +941,11 @@ export default class Chat extends View {
     const pct = s ? Math.round(s.opacity * 100) : 0;
     const nudge = (d) => this.setBg(pr.key, { opacity: Math.round(Math.min(OPACITY.max, Math.max(OPACITY.min, s.opacity + d)) * 100) / 100 });
     // 320 wide (#87): the five effects on one row (appearance.rs:23-39, its segmented « Background effect »).
-    const panel = v_flex().id("kc-bg-panel").absolute().top(42).right(10).w(320).p(12).gap(10).rounded(12).border(1).border_color(ink(t, 0.1))
-      .bg(t.popover).shadow_lg()
-      .on_mouse_down_out((_e, cx) => { this.bgMenu = false; this.bgClosedAt = Date.now(); cx.notify(); })
+    // #92: a popup: it comes in fading and rising DY.row (enter(), which gives it its id before its
+    // handlers), and fades out before it goes (closeBg()).
+    const panel = this.out(enter(this.m, v_flex().w(320).p(12).gap(10).rounded(12).border(1).border_color(ink(t, 0.1))
+      .bg(t.popover).shadow_lg(), "kc-bg-panel", { dy: DY.row }), "kc-bg-panel")
+      .on_mouse_down_out((_e, cx) => { this.bgClosedAt = Date.now(); this.closeBg(cx); })
       .child(div().text_size(12).font_semibold().text_color(ink(t, 1)).child(tr("bg.title", { project: pr.name })))
       .child(h_flex().gap(8).items_center().child(button("kc-bg-pick", tr("bg.pick"), (cx) => this.pickBg(cx, pr)))
         .when(Boolean(this.bgNote?.busy) || this.bgBusy.size > 0, (el) => el.child(svg(SPIN).size(12).text_color(t.working).spin(900))))
@@ -956,7 +966,12 @@ export default class Chat extends View {
           .child(button("kc-bg-more", "+", () => nudge(OPACITY.step))))) // i18n: tech
         .child(row(tr("bg.scope"), seg("kc-bg-scope", [["all", tr("bg.all")], ["empty", tr("bg.empty")]], s.scope, (v) => this.setBg(pr.key, { scope: v }))))
         .child(button("kc-bg-remove", tr("bg.remove"), () => this.setBg(pr.key, null), ERR)));
-    return [btn, panel];
+    return [btn, div().absolute().top(42).right(10).child(panel)];
+  }
+
+  /** #92: the background panel fades out, then closes (goOut()). */
+  closeBg(cx) {
+    this.goOut(cx, "kc-bg-panel", () => { this.bgMenu = false; });
   }
 
   // ---------- the timeline (#85, timeline.js) ----------
@@ -2060,6 +2075,23 @@ export default class Chat extends View {
     const src = this.tasksFor(a?.address);
     const tasks = tasksLedge(src?.todos);
     const subs = agentsLedge(bridge?.agents, Date.now(), a?.address ?? "");
+    // #92: a ledge whose data went (its tasks all done, its last sub-agent gone) fades out where it
+    // stood, its last state kept, then goes (goOut()); its data coming back meanwhile cancels that.
+    const keyA = a?.address ?? "";
+    const ledge = (kind, now, draw) => {
+      const gone = `kc-${kind}-led-${keyA}`;
+      if (now) {
+        this.going.delete(gone);
+        this.lastLedge[kind] = { key: keyA, ...now };
+        return draw(now);
+      }
+      const l = this.lastLedge[kind];
+      if (!l || l.key !== keyA) return null;
+      this.goOut(cx, gone, () => { if (this.lastLedge[kind] === l) this.lastLedge[kind] = null; }, { inRender: true });
+      return this.m.reduced ? null : draw(l);
+    };
+    const tasksEl = ledge("tasks", tasks && { led: tasks, at: src?.plan ? src.at : null }, (x) => this.tasksShelf(t, x.led, a, cx, x.at));
+    const subsEl = ledge("agents", subs && { led: subs }, (x) => this.agentsShelf(t, x.led, a, cx));
     return h_flex().w_full().flex_none().justify_center()
       .child(v_flex().relative().w_full().max_w(COLUMN).px(10).pb(6).gap(8)
         // runner: its band in the flow, first, on the card's left edge: the transcript ends above it and
@@ -2068,9 +2100,9 @@ export default class Chat extends View {
         .when(this.band, (el) => el.child(runnerBand(this.runner)))
         .when(Boolean(blocked), (el) => el.child(blocked))
         .child(v_flex().w_full()
-          .when(Boolean(tasks), (el) => el.child(this.tasksShelf(t, tasks, a, cx, src?.plan ? src.at : null)))
+          .when(Boolean(tasksEl), (el) => el.child(tasksEl))
           .child(card)
-          .when(Boolean(subs), (el) => el.child(this.agentsShelf(t, subs, a, cx))))
+          .when(Boolean(subsEl), (el) => el.child(subsEl)))
         .child(under));
   }
 
@@ -2169,13 +2201,16 @@ export default class Chat extends View {
     }
   }
 
-  /** A ledge's 30 px header: what it holds, a chevron; a click folds or unfolds it (`set`, per agent). */
+  /**
+   * A ledge's 30 px header: what it holds, a chevron; a click unfolds it (`set`, per agent) or folds it:
+   * its body fades out first (#92, goOut(), under `${id}~${key}`), the ledge's height kept meanwhile.
+   */
   shelfHead(t, id, set, key, open, chevron, ...parts) {
     return h_flex().id(id).h(30).gap(8).items_center().cursor_pointer()
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        if (open) set.delete(key);
-        else set.add(key);
+        if (open) return this.goOut(cx, `${id}~${key}`, () => set.delete(key));
+        set.add(key);
         cx.notify();
       })
       .children(parts)
@@ -2197,9 +2232,10 @@ export default class Chat extends View {
     const mark = (s) => (s === "completed" ? svg(I("check")).size(11).flex_none().text_color(t.done)
       : s === "in_progress" ? div().size(7).rounded(4).flex_none().bg(t.working)
         : div().size(7).rounded(4).flex_none().border(1.5).border_color(t.dim));
-    const rows = () => v_flex().pb(6)
-      .children(led.rows.map((x) => h_flex().h(22).gap(8).items_center()
-        .child(h_flex().w(16).flex_none().items_center().justify_center().child(mark(x.status)))
+    // #92: a task's mark fades in when its state changes (a new id per state: one done, its ✓ comes in).
+    const taskLines = () => v_flex().pb(6)
+      .children(led.rows.map((x, i) => h_flex().h(22).gap(8).items_center()
+        .child(enter(this.m, h_flex().w(16).flex_none().items_center().justify_center().child(mark(x.status)), `kc-tk-${key}-${i}-${x.status}`, { dy: 0 }))
         .child(div().flex_1().min_w(0).truncate().text_size(12.5)
           .text_color(x.status === "in_progress" ? ink(t, 0.9) : x.status === "completed" ? ink(t, 0.4) : ink(t, 0.6)).child(sayTask(x)))))
       .when(led.more > 0, (el) => el.child(div().pl(24).h(18).font_family(MONO).text_size(10.5).text_color(ink(t, 0.4)).child(`+${led.more}`)));
@@ -2213,9 +2249,12 @@ export default class Chat extends View {
       div().flex_none().font_family(MONO).text_size(11).text_color(ink(t, 0.45)).child(`${led.done} / ${led.total}`),
       // A session's plan is kept by hand and can grow old: its age (the bridge, live, has none).
       ...(at ? [div().flex_none().text_size(11).text_color(ink(t, 0.35)).child(tr("shelf.planAge", { ago: relative(at) }))] : []));
-    const body = collapse(this.m, `kc-tasks-${key}`, open, rows, { cx });
-    return enter(this.m, v_flex().mx(8).px(10).rounded_t(10).border_t(1).border_x(1).border_color(ink(t, dark ? 0.08 : 0.06)).bg(ink(t, 0.03))
-      .child(head).when(Boolean(body), (el) => el.child(body)), `kc-tasks-${key}-ledge`, { dy: 0 });
+    // #92: unfolded, its lines come in as the popups do and fade out before it folds; the composer's
+    // height moves once, never frame by frame (it is the transcript's height: a followed bottom would
+    // redraw on every frame). The ledge itself comes in the same way, and fades out when its data goes.
+    const body = open ? this.rise(taskLines(), `kc-tasks-b-${key}`, `kc-tasks-head~${key}`) : null;
+    return this.rise(v_flex().mx(8).px(10).rounded_t(10).border_t(1).border_x(1).border_color(ink(t, dark ? 0.08 : 0.06)).bg(ink(t, 0.03))
+      .child(head).when(Boolean(body), (el) => el.child(body)), `kc-tasks-${key}-ledge`, `kc-tasks-led-${key}`);
   }
 
   /**
@@ -2243,20 +2282,33 @@ export default class Chat extends View {
     const n = led.rows.length;
     // A live one's branch in its state's color, a failed one in a muted red, the others at rest.
     const colorOf = (x) => (isAlive(x) ? alpha(t.working, "99") : x.state === "error" ? alpha(t.ansi1, "80") : rest);
+    // #92: a sub-agent new since the last render comes in as the popups do; the others are drawn as
+    // they are (one that ends fades already, FADE, then goes after GONE, at once).
+    const known = this.subsKnown.get(key);
+    this.subsKnown.set(key, new Set(led.rows.map((x) => x.id)));
     const row = (x, i) => {
       const ended = !isAlive(x);
       const last = i === n - 1;
       const shown = this.subOpen === x.id;
       const color = colorOf(x);
-      return v_flex()
+      const wid = `kc-sa-in-${key}-${x.id}`;
+      if (!known || known.has(x.id)) this.m.shown.add(wid);
+      // Its detail: in as the popups do, out fading before it goes (#92).
+      const away = `kc-sad-${key}-${x.id}`;
+      return this.rise(v_flex()
         .child(h_flex().id(`kc-sa-${key}-${x.id}`).h(H).gap(8).items_center().rounded(6).cursor_pointer().hover((s) => s.bg(ink(t, 0.05)))
-          .on_click((_e, cx) => { cx.stop_propagation(); this.subOpen = shown ? null : x.id; cx.notify(); })
+          .on_click((_e, cx) => {
+            cx.stop_propagation();
+            if (shown) return this.goOut(cx, away, () => { if (this.subOpen === x.id) this.subOpen = null; });
+            this.subOpen = x.id;
+            cx.notify();
+          })
           .child(twig(t, { h: H, x: 10, last: last && !shown, color, rest }))
           .child(h_flex().flex_1().min_w(0).gap(8).items_center().when(ended && now - endOf(x) > FADE, (el) => el.opacity(0.45))
             .child(pet(x, `kc-sa-pet-${key}-${x.id}`))
             .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ended ? ink(t, 0.5) : ink(t, 0.85)).child(x.what || x.name || "agent")) // i18n: tech
             .child(div().flex_none().pr(4).font_family(MONO).text_size(11).text_color(ink(t, 0.45)).child(agentAge(x, now)))))
-        .when(shown, (el) => el.child(this.subDetail(t, x, last, rest, now)));
+        .when(shown, (el) => el.child(this.rise(this.subDetail(t, x, last, rest, now), `kc-sad-in-${key}-${x.id}`, away))), wid);
     };
     const alive = led.alive;
     const head = this.shelfHead(t, "kc-agents-head", this.agentsOpen, key, open, open ? "chevron-up" : "chevron-down",
@@ -2266,9 +2318,11 @@ export default class Chat extends View {
         .when(open, (el) => el.child(div().absolute().top(16).left(10).h(7).border_l(1).border_color(colorOf(led.rows[0])))),
       div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ink(t, 0.8))
         .child(`${tr("shelf.agents", { n })} · ${alive ? tr("shelf.running", { n: alive }) : tr("shelf.ended", { n })}`));
-    const body = collapse(this.m, `kc-agents-${key}`, open, () => v_flex().pb(6).children(led.rows.map(row)), { cx });
-    return enter(this.m, v_flex().mx(8).px(10).rounded_b(10).border_b(1).border_x(1).border_color(ink(t, dark ? 0.08 : 0.06)).bg(ink(t, 0.03))
-      .child(head).when(Boolean(body), (el) => el.child(body)), `kc-agents-${key}-ledge`, { dy: 0 });
+    // #92: as the tasks' ledge: its branches come in and fade out before it folds, the ledge itself
+    // comes in and fades out when its last sub-agent goes; the composer's height moves once.
+    const body = open ? this.rise(v_flex().pb(6).children(led.rows.map(row)), `kc-agents-b-${key}`, `kc-agents-head~${key}`) : null;
+    return this.rise(v_flex().mx(8).px(10).rounded_b(10).border_b(1).border_x(1).border_color(ink(t, dark ? 0.08 : 0.06)).bg(ink(t, 0.03))
+      .child(head).when(Boolean(body), (el) => el.child(body)), `kc-agents-${key}-ledge`, `kc-agents-led-${key}`);
   }
 
   /**
