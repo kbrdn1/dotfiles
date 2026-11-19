@@ -832,13 +832,16 @@ export default class Market extends View {
     const t = theme();
     const list = this.rows();
     const x = this.openRow;
-    const s = split(this.width - (props()?.overlay ? 8 : 0), 0.46);
+    // The width's tier (tiers.js, the root's width less a dialog's padding, the last tier for its
+    // hysteresis). Side by side the widths are continuous: the body keeps its id and only a column that
+    // appears fades in (the list here, the detail by its own enter).
+    const s = (this.tiers = split(this.width - (props()?.overlay ? 8 : 0), { ratio: 0.46, prev: this.tiers?.tier }));
     return v_flex().id("ktmk-root").size_full().gap(4).text_color(t.foreground)
       .when(Boolean(props()?.overlay), (el) => el.p(4).rounded(20).border(1).border_color(t.border).bg(t.chrome))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t))
-      .child(enter(this.m, h_flex().flex_1().min_h(0).gap(4), `ktmk-tier-${s.tier}${s.solo ? (x ? "-d" : "-l") : ""}`, { dy: 0 })
-        .when(!(s.solo && x), (el) => el.child(this.list(t, list, cx)))
+      .child(h_flex().id("ktmk-body").flex_1().min_h(0).gap(4)
+        .when(!(s.solo && x), (el) => el.child(enter(this.m, this.list(t, list, cx), "ktmk-col-list", { dy: 0 })))
         .when(Boolean(x), (el) => el.child(this.detail(t, x, s.detail, s.solo, cx))));
   }
 }
