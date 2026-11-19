@@ -41,7 +41,8 @@
 // pane, keeps its own line in the registry shared "kt.chat.panes" = { [pane]: terminal }, shows only when its tab and
 // the thread do (no other pane zoomed), takes the keyboard on "focus" and once at its creation;
 // « Ouvrir le terminal » focuses its agent's pane; its agent's terminal gone, « Agent fermé » and
-// Fermer. The stack's copy (thread-body's child chat) works as before until lot 4 takes it out.
+// Fermer. Lot 4 took the stack's copy out (thread-body's child chat, #54): a Chat is a pane (kt-head's
+// ctrl-b space makes or focuses it), or a fixed file.
 
 import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
@@ -49,14 +50,12 @@ import { agents, focused, panes, spaces, terminals, theme, settings, shared, set
 // #86: kt-chat as a pane of the tab (props: {terminal}), its agent, its pane, the registry (pure).
 import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "./chat-pane.js";
 // #56: the composer (pure, composer.check.mjs); kt-threads' decide.js (a byte-identical copy, with
-// decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser; kt-head's view.js (a
-// byte-identical copy): « Ouvrir le terminal », the thread's other face.
+// decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser.
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
-import { view } from "./view.js";
 import { ingest, prepend, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue } from "./chat-model.js";
 import {
-  pickTarget, tallyText, childOf, chatShown, liveStep,
+  pickTarget, tallyText, childOf, liveStep,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
   foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
@@ -274,11 +273,6 @@ export default class Chat extends View {
     this.runner = cx.new(Runner); // runner: a nested view, its renders are its own
     this.handle = cx.focus_handle();
     this.vim = new Vim();
-    // ctrl-b space (kt-head's view.js) asks for the keyboard through this shared stamp (a time). One
-    // older than 2 s when this copy starts is not a request; a fresh one is (the first ctrl-b space
-    // starts this copy: its stamp is written just before).
-    const stamp = shared("kt.chat.focus");
-    this.focusAsked = stamp && Date.now() - stamp > 2000 ? stamp : null;
     // #56, the composer: its field (a TextareaState is made here, never in render), what is typed,
     // whether a send runs, its refusal or failure, and the blocked agent's request (decide.js).
     this.draft = "";
@@ -740,11 +734,9 @@ export default class Chat extends View {
     });
   }
 
-  // « Ouvrir le terminal »: the thread's terminal face, which gets the keyboard (view.js).
+  // « Ouvrir le terminal » (#86): the keyboard to its agent's terminal, the pane beside it.
   openTerminal() {
-    // #86: a pane's Chat gives the keyboard to its agent's terminal, the pane beside it.
     if (paneTerminal()) run("pane.focus", { terminal: paneTerminal() });
-    else view("main", { layout, run, setShared, panes, focused });
   }
 
   // ---------- the project and its background (#57) ----------
@@ -2613,10 +2605,10 @@ export default class Chat extends View {
     }
   }
 
-  /** This face is on screen: the layout's thread shows its Chat, or this copy shows a fixed file. */
+  /** This copy is on screen: a fixed file, or its pane (no Chat outside a pane since #86's lot 4). */
   isShown() {
     if (this.fixed) return true;
-    if (!paneTerminal()) return chatShown(layout());
+    if (!paneTerminal()) return false;
     // #86, a pane: its tab shown in the shown space, the thread on screen, no other pane zoomed.
     return paneShown({ pane: this.paneId, agentTab: this.agentTab(), panes: panes(), spaces: spaces(), layout: layout() });
   }
@@ -2681,13 +2673,6 @@ export default class Chat extends View {
       this.cleanDue = true;
     }
     if (this.cleanDue && !checking()) this.sweepBg(cx);
-    // The thread switched to its Chat face: take the keyboard, once per request, only when the
-    // layout shows this face (a hidden copy doesn't draw anyway). The stack's copy only (#86).
-    const ask = paneTerminal() ? null : shared("kt.chat.focus");
-    if (ask && ask !== this.focusAsked && !checking()) {
-      this.focusAsked = ask;
-      if (chatShown(layout())) cx.spawn(async (cx) => { this.focusIn(); cx.notify(); });
-    }
     const keyed = this.handle.is_focused();
     if (paneTerminal() && !checking()) this.paneSync(cx, keyed);
     const writes = !this.fixed && Boolean(tg.agent) && !tg.reason;

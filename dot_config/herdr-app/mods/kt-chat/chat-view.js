@@ -52,17 +52,10 @@ function find(node, id) {
 }
 const shownChild = (stack) => stack?.active ?? stack?.children?.[0]?.id;
 
-/** Does the layout show the thread (stack view on thread, whichever face)? A pane's Chat (#86) needs it. */
+/** Does the layout show the thread (stack view on thread)? A pane's Chat (#86) needs it. */
 export function threadShown(root) {
   const page = find(root, "view");
   return !page || shownChild(page) === "thread";
-}
-
-/** Does the layout show the thread on its Chat face (stack view on thread, thread-body on chat)? */
-export function chatShown(root) {
-  const body = find(root, "thread-body");
-  const page = find(root, "view");
-  return shownChild(body) === "chat" && (!page || shownChild(page) === "thread");
 }
 
 /**
