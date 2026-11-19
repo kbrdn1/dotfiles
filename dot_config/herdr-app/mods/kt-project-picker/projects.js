@@ -37,7 +37,8 @@ export function restore(list, id) {
  *   (kt-chat then sweeps the files no background refers to any more);
  * - "kt.kanban.slicePick" (`pick`): its project slice dropped, when it was this one;
  * - "kt.hub.forget" (`forget`): its folder at `now`, for the Accueil's indexer to purge its archive (a project
- *   of this computer only: the archive's folders are this computer's).
+ *   of this computer only: the archive's folders are this computer's), and its former ones (`formerly`, a
+ *   renamed folder: the Accueil counts their history as its own, which would come back under the old name).
  * state: { projects, maps, pick, forget }.
  */
 export function deletePlan(state, id, now) {
@@ -51,6 +52,6 @@ export function deletePlan(state, id, now) {
     writes[key] = rest;
   }
   if (state.pick?.project === id) writes["kt.kanban.slicePick"] = { ...state.pick, project: null };
-  if (!e.machine && e.folder) writes["kt.hub.forget"] = { ...(state.forget ?? {}), [e.folder]: now };
+  if (!e.machine && e.folder) writes["kt.hub.forget"] = { ...(state.forget ?? {}), ...Object.fromEntries([e.folder, ...(e.formerly ?? [])].map((f) => [f, now])) };
   return writes;
 }

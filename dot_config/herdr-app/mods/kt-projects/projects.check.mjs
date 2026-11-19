@@ -45,5 +45,10 @@ const w2 = deletePlan({ projects: list, maps: {}, pick: { project: B } }, R, 300
 assert.deepEqual(Object.keys(w2), ["kt.projects"]);
 assert.equal(deletePlan({ projects: list }, idOf("/work/none"), 1), null);
 assert.deepEqual(deletePlan({ projects: list }, B, 7)["kt.hub.forget"], { "/work/beta": 7 }, "no forget yet");
+// A renamed project (registry `formerly`): its former folders are forgotten with it, else the Accueil's
+// history under them would come back under the old name.
+const moved = list.map((e) => (e.id === B ? { ...e, formerly: ["/work/beta-old", "/old/beta"] } : e));
+assert.deepEqual(deletePlan({ projects: moved, forget: { "/work/x": 1 } }, B, 9)["kt.hub.forget"],
+  { "/work/x": 1, "/work/beta": 9, "/work/beta-old": 9, "/old/beta": 9 });
 
 console.log("projects.check: ok");
