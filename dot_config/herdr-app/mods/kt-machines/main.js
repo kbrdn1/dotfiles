@@ -28,6 +28,9 @@ const CARD = 520;
 const SERVER = "mods/kt-machines/server.svg";
 // A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// A warning's words: blocked in dark; foreground in light, where blocked is 4.1:1 (FILTERS.md, #81) and
+// its hue goes on a dot (or stays on the badge's fill).
+const warnInk = (t) => (settings().dark ? t.blocked : t.foreground);
 const veil = () => (settings().dark ? alpha("#000000", "8c") : alpha("#0a0a0a", "59"));
 
 export default class Machines extends View {
@@ -111,7 +114,7 @@ export default class Machines extends View {
         .child(div().size(8).flex_none().rounded_full().bg(stateColor(t, c.status)))
         .child(div().flex_none().max_w(200).truncate().text_size(13.5).font_medium().text_color(t.foreground).child(c.name))
         .when(c.root === true, (el) => el.child(div().id(`km-root-${i}`).flex_none().px(5).rounded(4).bg(alpha(t.blocked, "24"))
-          .font_family(MONO).text_size(9.5).text_color(t.blocked).tooltip(tr("root.tip")).child("ROOT"))) // i18n: tech
+          .font_family(MONO).text_size(9.5).text_color(warnInk(t)).tooltip(tr("root.tip")).child("ROOT"))) // i18n: tech
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(c.status === "ready" ? t.dim : t.muted)
           .child(c.status === "ready" ? tr("state.ready") : stateWord(c.name)))
         .when(c.primary === "project", (el) => el.child(this.pill(t, `km-project-${i}`, tr("project"), (_e, cx) => this.project(c.name, cx), tr("project.tip", { name: c.name })))))
@@ -123,7 +126,8 @@ export default class Machines extends View {
           .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.foreground).child(c.login))
           .child(this.pill(t, `km-copy-${i}`, tr("copy"), (_e, cx) => this.copy(c.login, cx))))))
       .when(c.linger, (el) => el.child(h_flex().pl(16).gap(6).items_center()
-        .child(div().flex_1().min_w(0).text_size(12).text_color(t.blocked).child(tr("linger.text")))
+        .when(!settings().dark, (e) => e.child(div().size(6).flex_none().rounded_full().bg(t.blocked)))
+        .child(div().flex_1().min_w(0).text_size(12).text_color(warnInk(t)).child(tr("linger.text")))
         .child(this.pill(t, `km-linger-${i}`, tr("linger.button"), (_e, cx) => this.add(cx), tr("linger.tip")))));
   }
 

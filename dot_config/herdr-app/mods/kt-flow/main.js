@@ -769,7 +769,9 @@ export default class Flow extends View {
         // Waiting on Kylian: what it asks, as the Kanban's card and the sidebar (title · detail on hover).
         .when(Boolean(N.ask), (el) => el.child(div().id(`kf-now-ask-${term}`).h(22).px(6).flex().items_center()
           .when(N.ask.length > 0, (e) => e.tooltip(N.ask.join(" · ")))
-          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.blocked)
+          // In light, blocked is 4.1:1 (FILTERS.md, #81): foreground words, the hue on a dot before them.
+          .when(!settings().dark, (e) => e.child(div().size(6).mr(6).flex_none().rounded_full().bg(t.blocked)))
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(settings().dark ? t.blocked : t.foreground)
             .child(N.ask.length ? tr("waiting", { title: N.ask[0] }) : tr("waitingBare")))))
         .children(N.agents.slice(0, 4).map((a, i) => enter(m, h_flex().h(22).px(6).gap(8).items_center(), `kf-now-a-${term}-${a.id ?? i}`, { dy: 0, delay: stagger(i, 4) })
           .child(h_flex().size(14).flex_none().items_center().justify_center().child(div().size(6).rounded_full().bg(t.working)))

@@ -102,6 +102,9 @@ const K = (name) => `mods/kt-kanban/${name}.svg`;
 const PAGE = "kanban";
 const show = (child) => run("layout.select", { stack: "view", child });
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// A warning's words: blocked in dark; foreground in light, where blocked is 4.1:1 (FILTERS.md, #81) and
+// its hue stays on the dot, the border and the fill around them.
+const warnInk = (t) => (settings().dark ? t.blocked : t.foreground);
 // A registry or space color: a theme name ("ansi6") or a #hex.
 const paint = (t, c) => (!c ? null : c.startsWith("#") ? c : t[c] ?? null);
 // PR state -> icon and theme color name (kt-threads').
@@ -1172,7 +1175,7 @@ export default class Kanban extends View {
         .child(h_flex().id(`kk-wip-${key}`).flex_none().h(20).px(6).gap(3).items_center().rounded(6).border(1)
           .border_color(over ? alpha(t.blocked, "66") : editing ? t.border : alpha(t.border, "00"))
           .when(over, (el) => el.bg(alpha(t.blocked, "24")))
-          .text_color(over ? t.blocked : t.dim).cursor_pointer().hover((s) => s.bg(t.hover))
+          .text_color(over ? warnInk(t) : t.dim).cursor_pointer().hover((s) => s.bg(t.hover))
           .tooltip(over ? tr("limit.over", { n, lim }) : tr("limit.tip"))
           .on_click((_e, cx) => { this.limitEdit = editing ? null : key; cx.notify(); })
           .child(mono(roll(this.m, `kk-n-${key}`, String(n), 14)))
@@ -1251,7 +1254,7 @@ export default class Kanban extends View {
     const one = asking && !full ? h_flex().id(`kk-ask1-${key}`).h(26).px(8).gap(6).items_center().rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
       .tooltip(asking.detail ? `${asking.title} · ${asking.detail}` : asking.title)
       .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
-      .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.blocked).child(asking.title))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(warnInk(t)).child(asking.title))
       .when(Boolean(pills), (el) => el.child(pills)) : null;
     // The rows below the title are builders: a fold closing builds them once more (motion.js collapse).
     // What it asks (whole, with its pills), else what it does or answered. `fold`: inside a compact card's
@@ -1260,7 +1263,7 @@ export default class Kanban extends View {
       ? v_flex().px(8).py(5).gap(2).rounded(8).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
         .child(h_flex().gap(6).items_center()
           .child(div().size(6).rounded(3).flex_none().bg(t.blocked))
-          .child(div().flex_1().min_w(0).when(!fold, (el) => el.truncate()).text_size(12).font_medium().text_color(t.blocked).child(asking.title)))
+          .child(div().flex_1().min_w(0).when(!fold, (el) => el.truncate()).text_size(12).font_medium().text_color(warnInk(t)).child(asking.title)))
         .when(Boolean(asking.detail), (el) => el.child(div().max_h(fold ? 64 : clamp).overflow_hidden().text_size(11.5).line_height("16px").text_color(t.foreground).child(asking.detail)))
         .when(!fold && Boolean(pills), (el) => el.child(h_flex().pt(3).child(pills)))
       : th.line ? div().max_h(clamp).overflow_hidden().text_size(11.5).line_height("16px").text_color(th.status === "working" ? t.muted : t.dim).child(`↳ ${th.line}`)
@@ -1669,7 +1672,7 @@ export default class Kanban extends View {
     const asking = th.status === "blocked" ? this.askOf(th) : null;
     const nowEl = asking
       ? v_flex().px(10).py(8).gap(4).rounded(10).border(1).border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a"))
-        .child(div().text_size(12.5).font_medium().text_color(t.blocked).child(asking.title))
+        .child(div().text_size(12.5).font_medium().text_color(warnInk(t)).child(asking.title))
         .when(Boolean(asking.detail), (el) => el.child(div().max_h(120).overflow_hidden().text_size(12).line_height("17px").text_color(t.foreground).child(asking.detail)))
       : th.line ? div().max_h(120).overflow_hidden().text_size(12).line_height("17px").text_color(t.muted).child(`↳ ${th.line}`) : null;
     const body = v_flex().id(`kk-dr-body-${key}`).flex_1().min_h(0).overflow_y_scrollbar().p(14).gap(18)

@@ -145,7 +145,16 @@ export function machineTag(t, name, { id, opts, size = 10.5 } = {}) {
     .font_family(MONO).text_size(size).text_color(s.reachable ? t.dim : t.muted).tooltip(tip)
     .child(div().size(6).flex_none().rounded_full().bg(stateColor(t, s.status)))
     .child(name)
-    .when(s.root === true, (el) => el.child(div().flex_none().text_color(t.blocked).child("ROOT"))); // i18n: tech
+    .when(s.root === true, (el) => el.child(rootMark(t, div))); // i18n: tech
+}
+
+// ROOT in the warning hue. blocked is 4.1:1 on light (FILTERS.md, #81): there the word stays foreground
+// and the hue goes on a thin border; dark keeps the hued word, as before.
+function rootMark(t, div) {
+  const dark = host.settings?.()?.dark !== false;
+  return div().flex_none().text_color(dark ? t.blocked : t.foreground)
+    .when(!dark, (el) => el.px(3).rounded(3).border(1).border_color(`${String(t.blocked).slice(0, 7)}80`))
+    .child("ROOT"); // i18n: tech
 }
 
 /** What a view shows when the thread or project on screen is another machine's and the view reads this

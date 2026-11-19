@@ -5,7 +5,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout } from "herdr";
+import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, settings } from "herdr";
 import { motionState, frame, fade, rows as motionRows } from "./motion.js";
 import { skeleton } from "./skeleton.js";
 import { refreshOn } from "./bus.js";
@@ -408,7 +408,9 @@ export default class Spaces extends View {
           .when(!connected && !rebuilt && !login, el => el.child(div().flex_none().child((machine?.state ?? "asleep").replace(/_/g, " ")))) // i18n: tech
           .when(rebuilt, el => el.child(h_flex().flex_none().gap(3).items_center()
             .child(div().max_w(140).truncate().child(repair?.error || tr("rebuilt")))
-            .child(div().id(`machine-connect-${m}`).text_color(repair?.error ? t.blocked : t.muted)
+            // In light, blocked is 4.1:1 (FILTERS.md, #81): the word goes foreground, the hue on a dot before it.
+            .when(Boolean(repair?.error) && !settings().dark, el => el.child(div().size(6).flex_none().rounded_full().bg(t.blocked)))
+            .child(div().id(`machine-connect-${m}`).text_color(repair?.error ? (settings().dark ? t.blocked : t.foreground) : t.muted)
               .hover(s => s.text_color(t.foreground))
               .tooltip(repair?.error || tr("rebuiltTip"))
               .on_click((_e, cx) => { cx.stop_propagation(); this.reconnect(machine, cx); })
@@ -427,7 +429,10 @@ export default class Spaces extends View {
       if (!collapsed && rebuilt) { before += 1; return [head]; }
       const cell = collapsed ? railCell : (el) => el;
       const guidance = !collapsed && login ? [v_flex().px(8).pb(6).gap(3).flex_none()
-        .child(div().text_size(11).text_color(t.blocked).child(tr("needsLogin")))
+        // In light, blocked is 4.1:1 (FILTERS.md, #81): foreground words, the hue on a dot before them.
+        .child(h_flex().gap(6).items_center()
+          .when(!settings().dark, (el) => el.child(div().size(6).flex_none().rounded_full().bg(t.blocked)))
+          .child(div().text_size(11).text_color(settings().dark ? t.blocked : t.foreground).child(tr("needsLogin"))))
         .child(h_flex().gap(5).items_center()
           .child(div().flex_1().min_w(0).truncate().tooltip(login).text_size(11).text_color(t.muted).child(login))
           .child(div().id(`machine-login-copy-${m}`).flex_none().px(5).py(2).rounded(4)

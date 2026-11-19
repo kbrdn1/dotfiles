@@ -75,6 +75,12 @@ const tilde = (p) => (p && p.startsWith(home()) ? `~${p.slice(home().length)}` :
 const CARD = 680;
 // A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// A warning's words: blocked in dark; foreground in light, where blocked is 4.1:1 (FILTERS.md, #81) and
+// its hue goes on a dot (or stays on the badge's fill).
+const warnInk = (t) => (settings().dark ? t.blocked : t.foreground);
+const warnLine = (t, text) => h_flex().px(4).gap(6).items_center()
+  .when(!settings().dark, (el) => el.child(div().size(6).flex_none().rounded_full().bg(t.blocked)))
+  .child(div().min_w(0).text_size(12).text_color(warnInk(t)).child(text));
 const veil = () => (settings().dark ? alpha("#000000", "8c") : alpha("#0a0a0a", "59"));
 // Name on the chip, the command, and whether it takes the thread as its first message (`task`:
 // Herdr appends it to the command, `claude "<text>"`). Edit to taste.
@@ -861,7 +867,7 @@ export default class NewThread extends View {
     // Its spaces' repos, if not looked at yet (away at the opening, back now): #61.
     if (mach) this.scanOn(mach, cx);
     const asRoot = Boolean(mach) && isRoot(mach) === true && Boolean(AGENTS[this.agent][1]);
-    const rootBadge = (el) => el.child(div().flex_none().px(4).rounded(4).bg(alpha(t.blocked, "24")).text_color(t.blocked).text_size(9.5).child("ROOT")); // i18n: tech
+    const rootBadge = (el) => el.child(div().flex_none().px(4).rounded(4).bg(alpha(t.blocked, "24")).text_color(warnInk(t)).text_size(9.5).child("ROOT")); // i18n: tech
     // A workflow leading the consigne owns the checkout (skills.js checkoutOf); else kt-new's pick.
     const own = git ? this.owner() : null;
     const away = own ? checkoutOf(own) === "worktree" : git && this.worktree;
@@ -1112,8 +1118,8 @@ export default class NewThread extends View {
                         .on_click((_e, cx) => { this.checkAgents(cx); cx.notify(); }))
                       .child((this.checkingOn === mach ? tr("agents.checking") : tr("agents.check")).toUpperCase()))), "agent")),
               )
-              .when(Boolean(nudge), (el) => el.child(div().px(4).text_size(12).text_color(t.blocked).child(nudge)))
-              .when(asRoot, (el) => el.child(div().px(4).text_size(12).text_color(t.blocked).child(tr("root.line", { machine: mach }))))
+              .when(Boolean(nudge), (el) => el.child(warnLine(t, nudge)))
+              .when(asRoot, (el) => el.child(warnLine(t, tr("root.line", { machine: mach }))))
               .child(this.state(t, p, git, tree, spec)),
           )
           // The foot, under a dashed rule: the keys, the branch to be, Start.

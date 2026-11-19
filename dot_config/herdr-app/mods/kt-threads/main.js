@@ -226,6 +226,9 @@ async function writeGlass(base) {
 const paint = (t, c) => (!c ? null : c.startsWith("#") ? c : t[c] ?? null);
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// A warning's words: blocked in dark; foreground in light, where blocked is 4.1:1 (FILTERS.md, #81) and
+// its hue stays on the dot, the border and the fill around them.
+const warnInk = (t) => (settings().dark ? t.blocked : t.foreground);
 // The project bar: 30 px squares 6 px apart, 12 px in from the sidebar's edges; its arrows 20 px.
 const SQUARE = 30, BAR_GAP = 6, BAR_PAD = 12, ARROW = 20;
 
@@ -777,7 +780,7 @@ export default class Threads extends View {
       return h_flex().h(22).px(10).gap(6).items_center().rounded_full().bg(t.blocked + "26").border(1).border_color(t.blocked + "4d")
         // The detailed card's one pulse (each one redraws the window): its top right shows no NEEDS YOU.
         .child(div().size(6).rounded(3).bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))
-        .child(div().truncate().text_size(12).font_medium().text_color(t.blocked).child(tr("needsYou")));
+        .child(div().truncate().text_size(12).font_medium().text_color(warnInk(t)).child(tr("needsYou")));
     }
     // An agent on another machine (#65): its live line (herdr-bridge's file) is on that machine, not read
     // from here; said where this computer's agent would show its action or answer, instead of nothing.
@@ -1393,7 +1396,7 @@ export default class Threads extends View {
       .child(roll(this.m, `kt-g-n-${g.key}`, String(g.threads.length), 13).font_family(MONO).text_size(10).text_color(t.dim))
       .child(div().flex_1())
       .when(g.need > 0, (el) => el.child(h_flex().flex_none().h(16).px(6).items_center().rounded_full().border(1)
-        .border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a")).font_family(MONO).text_size(9.5).text_color(t.blocked)
+        .border_color(alpha(t.blocked, "4d")).bg(alpha(t.blocked, "1a")).font_family(MONO).text_size(9.5).text_color(warnInk(t))
         .child(tr("asks", { n: g.need }))))
       .when(folded, (el) => el.child(svg(I("chevron-right")).size(11).flex_none().text_color(t.dim)));
   }

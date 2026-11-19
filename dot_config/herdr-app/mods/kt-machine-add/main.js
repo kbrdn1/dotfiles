@@ -237,7 +237,11 @@ export default class MachineAdd extends View {
     const text = String(this.state[target]).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const command = `hc machine add ${shellArg(target)}`;
     return v_flex().gap(6)
-      .child(div().text_size(12).line_height("17px").text_color(t.blocked).child(TextView.html(`kma-message-${target}`, `<span>${text}</span>`).selectable(true))) // i18n: tech
+      // In light, blocked is 4.1:1 (FILTERS.md, #81): foreground words, the hue on a dot before them.
+      .child(h_flex().gap(6).items_start()
+        .when(!settings().dark, (el) => el.child(div().size(6).mt(5).flex_none().rounded_full().bg(t.blocked)))
+        .child(div().flex_1().min_w(0).text_size(12).line_height("17px").text_color(settings().dark ? t.blocked : t.foreground)
+          .child(TextView.html(`kma-message-${target}`, `<span>${text}</span>`).selectable(true)))) // i18n: tech
       .when(this.pending.has(target), (el) => el.child(h_flex().child(this.pill(t, `kma-copy-${target}`, this.copiedCommand === command ? tr("copied") : tr("copy"),
         (_e, cx) => { cx.write_to_clipboard(command); this.copiedCommand = command; cx.notify(); }))));
   }

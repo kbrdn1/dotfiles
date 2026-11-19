@@ -33,6 +33,9 @@ const I = (name) => `mods/kt-threads/${name}.svg`;
 const show = (child) => run("layout.select", { stack: "view", child });
 // A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// A warning's words: blocked in dark; foreground in light, where blocked is 4.1:1 (FILTERS.md, #81) and
+// its hue stays on the badge's fill and on the ⚠ mark.
+const warnInk = (t) => (settings().dark ? t.blocked : t.foreground);
 // A registry color: a theme name ("ansi6", "accent") or a #hex.
 const paint = (t, c) => (!c ? null : c.startsWith("#") ? c : t[c] ?? null);
 
@@ -375,9 +378,9 @@ export default class ProjectPicker extends View {
       const login = loginOf(m);
       const word = stateWord(m);
       return [
-        st.root === true && div().id(`pp-root-${m}`).flex_none().px(4).rounded(4).bg(alpha(t.blocked, "24")).text_color(t.blocked).text_size(9.5)
+        st.root === true && div().id(`pp-root-${m}`).flex_none().px(4).rounded(4).bg(alpha(t.blocked, "24")).text_color(warnInk(t)).text_size(9.5)
           .tooltip(tr("machine.rootTip", { m })).child("ROOT"), // i18n: tech
-        word && div().id(`pp-state-${m}`).flex_none().text_color(st.status === "login" ? t.blocked : t.muted)
+        word && div().id(`pp-state-${m}`).flex_none().text_color(st.status === "login" ? warnInk(t) : t.muted)
           .when(Boolean(login), (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground)).tooltip(tr("machine.loginTip", { login }))
             .on_click((_e, cx) => { cx.write_to_clipboard(login); notify({ title: tr("copied"), body: login, level: "success", timeout: 2000 }); }))
           .child(word),

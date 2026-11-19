@@ -3,7 +3,7 @@
 // model + context and the account quota on the right.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, agents, theme, run, window, keys, focused, exec, readTextFile, home, checking, shared } from "herdr";
+import { spaces, agents, theme, run, window, keys, focused, exec, readTextFile, home, checking, shared, settings } from "herdr";
 import { summarize } from "./ci.js";
 import { motionState, frame, enter } from "./motion.js";
 import { companion } from "./companion-logo.js";
@@ -198,8 +198,12 @@ export default class KbrdnStatus extends View {
       .when(Boolean(space?.branch), (el) => el.child(h_flex().min_w(0).child(label("branch", div().truncate().child(space.branch)))))
       .when(pr.length > 0, (el) => el.child(group(pr, "ks-pr")))
       .child(h_flex().gap(6).items_center().flex_none().child(div().size(6).rounded(3).bg(t.dim)).child(tr("agents", { n: list.length }))
+        // In light, blocked is 4.1:1 (FILTERS.md, #81): foreground words, the hue on a dot that stands in for the "·".
+        .when(needs > 0 && !settings().dark, (el) => el.child(enter(m, h_flex().gap(6).items_center().text_color(t.foreground), "ks-needs", { dy: 0 })
+          // i18n: tech (NEEDS YOU, the agent state: the same in every language)
+          .child(div().size(6).rounded(3).bg(t.blocked)).child(`${needs} needs you`)))
         // i18n: tech (NEEDS YOU, the agent state: the same in every language)
-        .when(needs > 0, (el) => el.child(enter(m, div().text_color(t.blocked), "ks-needs", { dy: 0 }).child(`· ${needs} needs you`))))
+        .when(needs > 0 && settings().dark, (el) => el.child(enter(m, div().text_color(t.blocked), "ks-needs", { dy: 0 }).child(`· ${needs} needs you`))))
       .child(div().flex_1())
       .when(session.length > 0, (el) => el.child(group(session, "ks-session")))
       .when(session.length > 0 && quota.length > 0, (el) => el.child(sep()))

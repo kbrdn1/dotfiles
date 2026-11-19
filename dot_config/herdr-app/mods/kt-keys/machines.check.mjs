@@ -9,6 +9,7 @@ const store = {};
 let layouts = [];
 let hcOut = { code: 0, stdout: "" };
 let sets = 0;
+let dark = true;
 const toasts = [];
 // A mock element: records its builder calls, children and handlers.
 const el = (kind) => {
@@ -36,6 +37,7 @@ plugin({
         machines: () => layouts,
         hc: async () => hcOut,
         notify: (n) => toasts.push(n),
+        settings: () => ({ dark }),
       },
       loader: "object",
     }));
@@ -212,6 +214,15 @@ assert.equal(tagA.props.id[0], "tg");
 assert.match(text(tagA), /vps-a/);
 assert.match(text(tagA), /ROOT/); // logs in as root
 assert.match(tagA.props.tooltip[0], /vps-a : connectée · compte root · root : /);
+// ROOT: the warning hue's word in dark; in light (blocked is 4.1:1 there, #81) the word in foreground
+// and the hue on a thin border.
+const rootOf = (tag) => find(tag, (n) => n.kids?.includes("ROOT"));
+assert.deepEqual(rootOf(tagA).props.text_color, ["x"]);
+assert.equal(rootOf(tagA).props.border_color, undefined);
+dark = false;
+const lightA = rootOf(M.machineTag(t, "vps-a", { id: "tl", opts: o }));
+assert.deepEqual([lightA.props.text_color, lightA.props.border_color], [["f"], ["x80"]]);
+dark = true;
 const tagB = M.machineTag(t, "vps-b", { id: "tb", opts: o });
 assert.doesNotMatch(text(tagB), /ROOT/); // not known: no ROOT
 assert.match(tagB.props.tooltip[0], /vps-b : login requis/);

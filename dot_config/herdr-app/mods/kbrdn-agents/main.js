@@ -297,10 +297,12 @@ export default class Agents extends View {
   status(t, a, compact = false) {
     const color = t[a.status] ?? t.dim;
     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(12).mx(1).flex_none().text_color(t.working).spin(900);
-    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
+    // In light, blocked is 4.1:1 (FILTERS.md, #81): the words go foreground, the hue stays on the fill and border.
+    const ink = settings().dark ? t.blocked : t.foreground;
+    if (a.status === "blocked" && compact) return div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(10.5).font_bold().text_color(ink).flex().items_center().justify_center().child("!");
     // kbrdn.dev `.tag`: mono uppercase pill, border 30% / fill 10%.
     if (a.status === "blocked") return div().flex_none().px(7).h(18).rounded_full().border(1).border_color(t.blocked + "4d").bg(t.blocked + "1a")
-      .font_family("Monaspace Krypton").text_size(9.5).text_color(t.blocked).flex().items_center().child(tr("blocked"));
+      .font_family("Monaspace Krypton").text_size(9.5).text_color(ink).flex().items_center().child(tr("blocked"));
     // Idle: a ring; done: a dot.
     if (a.status === "idle") return div().size(7).mx(3).flex_none().rounded(4).border(1.5).border_color(t.idle ?? t.dim);
     return div().size(7).mx(3).flex_none().rounded(4).bg(a.status === "done" ? color : t.dim + "00");
