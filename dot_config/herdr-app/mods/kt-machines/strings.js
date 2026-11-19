@@ -21,7 +21,10 @@ export default {
     add: "Ajouter une machine",
     settings: "Réglages",
     "settings.tip": "Réglages › Machines : renommer, mettre à jour, retirer",
-    "foot.keys": "j k · entrée : copier ou ouvrir · y copier · q fermer",
+    "foot.move": "naviguer",
+    "foot.open": "copier ou ouvrir",
+    "foot.copy": "copier",
+    "foot.close": "fermer",
   },
   en: {
     title: "Machines",
@@ -44,6 +47,9 @@ export default {
     add: "Add a machine",
     settings: "Settings",
     "settings.tip": "Settings › Machines: rename, update, remove",
-    "foot.keys": "j k · enter: copy or open · y copy · q close",
+    "foot.move": "move",
+    "foot.open": "copy or open",
+    "foot.copy": "copy",
+    "foot.close": "close",
   },
 };

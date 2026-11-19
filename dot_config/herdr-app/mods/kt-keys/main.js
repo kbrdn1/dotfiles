@@ -219,6 +219,8 @@ const TABLE = {
     ["enter / o", "md.machinesOpen", "kt-machines"],
     ["y", "md.machinesCopy", "kt-machines"],
     ["q / esc", "r.close", "kt-machines"],
+    ["enter", "md.machineAdd", "kt-machine-add"],
+    ["esc", "r.close", "kt-machine-add"],
     ["/ esc", "md.modsSearch", "kt-mods"],
     ["tab / [ ]", "md.modsFilters", "kt-mods"],
     ["l / enter", "md.modsDetail", "kt-mods"],

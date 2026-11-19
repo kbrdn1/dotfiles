@@ -18,6 +18,7 @@ import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
 import { ditherBand, TOP } from "./dither.js";
 import { machineList, stateColor, stateWord } from "./machines.js";
 import { cardOf } from "./card.js";
+import { kbd } from "./shortcuts.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -136,8 +137,8 @@ export default class Machines extends View {
     // The modals' motion (ANIMATIONS.md, kt-confirm's): the veil fades in and the card rises, once, on
     // the first size report, and goes back out on dismiss; reduced motion: there at once.
     const s = sheet(m, "km", still || Boolean(this.size));
-    const kbd = (k) => div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
     const dark = settings().dark;
+    const hint = (k, what, vim = false) => h_flex().flex_none().gap(5).items_center().child(kbd(t, k, { vim })).child(div().child(what));
     // The head (kt-confirm's): a 60 px band over the pixel dither, in the accent; the mark, the title, a
     // mono subtitle (how many machines), esc.
     const head = div().id("km-head").relative().flex_none().h(60).overflow_hidden().rounded_t(15)
@@ -153,7 +154,7 @@ export default class Machines extends View {
         .child(v_flex().flex_1().min_w(0).gap(2)
           .child(sharpen(this.motion, "km-title", () => div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(tr("title"))))
           .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child(cards.length ? tr("sub.count", { n: cards.length }) : tr("sub.none"))))
-        .child(kbd("esc")));
+        .child(kbd(t, "escape"))); // i18n: tech
     const empty = v_flex().id("km-empty").flex_none().px(4).py(6).gap(4)
       .child(div().text_size(13).font_medium().text_color(t.foreground).child(tr("empty.title")))
       .child(div().max_w(440).text_size(13).line_height("20px").text_color(t.muted).child(tr("empty.text")));
@@ -167,10 +168,16 @@ export default class Machines extends View {
         .child(v_flex().id("km-list").p(12).gap(8).max_h(Math.max(200, (this.size?.height ?? 900) - 220)).overflow_y_scroll()
           .children(cards.length ? cards.map((c, i) => this.card(t, c, i, keyed && i === this.cur)) : [empty]))
         .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
-        .child(h_flex().flex_none().px(12).py(10).gap(8).items_center()
-          .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("foot.keys")))
-          .child(this.pill(t, "km-settings", tr("settings"), (_e, cx) => { this.dismiss(cx); run("app.settings", { section: "machines" }); }, tr("settings.tip")))
-          .child(this.pill(t, "km-add", tr("add"), (_e, cx) => this.add(cx)))));
+        // The foot on two rows: the keys (shortcuts.js' glyphs, wrapping rather than cut), then the actions.
+        .child(v_flex().flex_none().px(12).py(10).gap(8)
+          .child(h_flex().flex_wrap().gap_x(12).gap_y(6).items_center().text_size(11).text_color(t.dim)
+            .child(hint("j / k", tr("foot.move"), true))
+            .child(hint("enter", tr("foot.open")))
+            .child(hint("y", tr("foot.copy"), true))
+            .child(hint("escape", tr("foot.close"))))
+          .child(h_flex().gap(8).items_center().justify_end()
+            .child(this.pill(t, "km-settings", tr("settings"), (_e, cx) => { this.dismiss(cx); run("app.settings", { section: "machines" }); }, tr("settings.tip")))
+            .child(this.pill(t, "km-add", tr("add"), (_e, cx) => this.add(cx))))));
     return s.veil(div().id("km-veil").size_full().flex().items_center().justify_center().bg(veil()))
       .track_focus(this.handle)
       .on_key_down((e, cx) => {
