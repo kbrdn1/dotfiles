@@ -80,7 +80,7 @@ def herdr_app() -> list[str]:
     # La layout « glass » est une copie de kbrdn-threads (mêmes touches) : une seule table suffit.
     sections = [("global", "Partout"), ("terminal", "Dans un terminal"),
                 ("layout:kbrdn-threads", "Layout kbrdn-threads"), ("mod:kt-picker", "Recherche (kt-picker)")]
-    out = ["## Herdr 2 — l'application et les mods kbrdn", "",
+    out = ["## Herdr 2 : l'application et les mods kbrdn", "",
            "Le quotidien : Herdr 2 (`~/.config/herdr-app`) et la layout `kbrdn-threads`. Prefix = `ctrl-b`.",
            "Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le même `keys.json`.", ""]
     for name, title in sections:
@@ -126,7 +126,7 @@ def herdr() -> list[str]:
         groups.setdefault(current, []).append(
             (f"`{bind}`", action.replace("_", " "), note)
         )
-    out = ["## herdr 1 — le multiplexeur en TUI", "",
+    out = ["## herdr 1 : le multiplexeur en TUI", "",
            "La version terminal, avant Herdr 2. Prefix = `ctrl+b`.", "",
            "> herdr **rejette en silence** tout binding direct qui intercepterait la frappe :",
            "> une lettre seule doit être préfixée. Le fichier de travail des remaps est",
@@ -156,7 +156,7 @@ def tmux() -> list[str]:
             continue
         cmd = re.sub(r"\s+", " ", cmd)[:60]
         rows.append((f"`{key}`", tbl or "prefix", f"`{cmd}`"))
-    out = ["## tmux — multiplexeur historique", "",
+    out = ["## tmux : multiplexeur historique", "",
            f"Remplacé par herdr au quotidien, gardé pour les sessions existantes. "
            f"Prefix = `{prefix.group(1) if prefix else 'C-b'}`. "
            "Config générée par home-manager (`nix-config/home.nix`), pas par chezmoi.", ""]
@@ -220,7 +220,7 @@ def zed() -> list[str]:
         ctx = b.get("context", "(global)")
         rows = [(f"`{k}`", f"`{json.dumps(v) if isinstance(v, list) else v}`")
                 for k, v in binds.items()]
-        out += [f"<details><summary><code>{ctx}</code> — {len(rows)} bindings</summary>", ""]
+        out += [f"<details><summary><code>{ctx}</code> : {len(rows)} bindings</summary>", ""]
         out += table(rows, ("Touche", "Action"))
         out += ["", "</details>", ""]
     return out
@@ -231,7 +231,7 @@ def aerospace() -> list[str]:
     txt = read(HOME / ".config/aerospace/aerospace.toml")
     if txt is None:
         return []
-    out = ["## AeroSpace — gestionnaire de fenêtres", ""]
+    out = ["## AeroSpace : gestionnaire de fenêtres", ""]
     for mode in re.finditer(r"^\[mode\.([a-z-]+)\.binding\]$(.*?)(?=^\[|\Z)", txt, re.S | re.M):
         name, body = mode.group(1), mode.group(2)
         rows = []
@@ -265,7 +265,7 @@ def main() -> int:
     body = [
         "# Raccourcis clavier",
         "",
-        "> ⚠️ **Fichier généré.** Ne pas l'éditer à la main — relancer",
+        "> ⚠️ **Fichier généré.** Ne pas l'éditer à la main : relancer",
         "> `python3 scripts/gen-keybindings.py`, qui relit les configs de la machine.",
         "> Le README n'en garde qu'un pointeur : les tableaux recopiés à la main",
         "> dérivaient à chaque changement de config.",

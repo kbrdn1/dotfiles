@@ -49,16 +49,18 @@ def frontmatter(path: Path) -> dict[str, str]:
 def summary(desc: str, limit: int = 160) -> str:
     """Première phrase utile, triggers retirés."""
     if not desc:
-        return "—"
+        return "-"
     # indicateurs de bloc YAML (`>-`, `|`, `>`) : le parseur minimal les laisse passer
     desc = re.sub(r"^[>|][+-]?\s*", "", desc).strip()
     desc = re.split(r"\s*(?:Triggers?|À utiliser)\s*:", desc)[0]
+    # le document est public : pas de tiret cadratin, un deux-points à sa place
+    desc = re.sub(r"\s*—\s*", " : ", desc)
     # première phrase, en évitant de couper sur les points d'abréviations courantes
     parts = re.split(r"(?<=[a-zé0-9\)»])\.\s+(?=[A-ZÀ-Ý])", desc)
     s = parts[0].strip().rstrip(".")
     if len(s) > limit:
         s = s[:limit].rsplit(" ", 1)[0] + "…"
-    return s.replace("|", "\\|") or "—"
+    return s.replace("|", "\\|") or "-"
 
 
 def skill_name(d: Path, fm: dict[str, str]) -> str:
@@ -137,9 +139,9 @@ def main() -> int:
         if (CLAUDE / "hooks").is_dir() else []
 
     b = [
-        "# Claude Code — inventaire de la config",
+        "# Claude Code : inventaire de la config",
         "",
-        "> ⚠️ **Fichier généré.** Ne pas l'éditer à la main — relancer",
+        "> ⚠️ **Fichier généré.** Ne pas l'éditer à la main : relancer",
         "> `python3 scripts/gen-claude-doc.py`, qui relit `~/.claude`.",
         "",
         "La méthode de travail elle-même est décrite dans",
@@ -155,7 +157,7 @@ def main() -> int:
         f"| Commandes | {len(commands)} |",
         f"| Agents | {len(agents)} |",
         "",
-        "## Skills `me:*` — ma méthode de travail",
+        "## Skills `me:*` : ma méthode de travail",
         "",
         "Les procédures maison : workflows git, boucles auto-cadencées, bootstrap projet,",
         "génération de documents. Ce sont elles que `RULES.md` et `WORKFLOW.md` citent.",
@@ -172,7 +174,7 @@ def main() -> int:
         b += [
             "## Skills liés (non versionnés)",
             "",
-            f"{len(linked)} symlinks vers des installations tierces — le dépôt ne les",
+            f"{len(linked)} symlinks vers des installations tierces : le dépôt ne les",
             "embarque pas, il faut réinstaller la source pour les retrouver. Le lien dit",
             "d'où ils viennent.",
             "",
