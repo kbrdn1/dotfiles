@@ -15,7 +15,10 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, theme, settings, props, closeOverlay, openOverlay, shared, home, readTextFile, nextCommand, checking, layout, appHome } from "herdr";
+import { spaces, panes, run, theme, settings, props, closeOverlay, openOverlay, shared, home, readTextFile, nextCommand, checking, layout, appHome, keys } from "herdr";
+// Copied byte for byte from mods/kt-keys/shortcuts.js: the pages' and actions' keys, read from keys(), and every
+// key here drawn as keycaps (#72).
+import { shortcut, kbd } from "./shortcuts.js";
 import { search } from "./fuzzy.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
@@ -85,14 +88,15 @@ const RANK = { blocked: 0, done: 1, working: 2, idle: 3 };
 const STATUS = { blocked: "NEEDS YOU", done: "DONE", working: "WORKING", idle: "IDLE" }; // i18n: tech
 const GROUPS = ["all", "threads", "projects", "pages"];
 const groupName = (i) => tr(`group.${GROUPS[i]}`);
-// [id, icon, name, kbd, overlay]: a page of the layout's "view" stack, listed when the stack has it;
+// [id, icon, name, overlay]: a page of the layout's "view" stack, listed when the stack has it;
 // with `overlay`, a mod opened over the window (mod.open), listed when its folder has a main.js.
-// A name is the page's own (a proper noun), else null: strings.js' page.<id>.
+// A name is the page's own (a proper noun), else null: strings.js' page.<id>. Its key: keys.json's
+// `layout.select:<id>`, or `mod.open:<id>` for an overlay (shortcuts.js).
 const PAGES = [
   ["inbox", "layers", "Inbox"], ["skills", "sparkles", "Skills"], ["mcp", "plug", "MCP"], ["gwm", "git-branch", "Worktrees"],
-  ["plugins", "puzzle", "Plugins", "⌃B U"], ["workflow", "layout-list", "Workflow", "⌃B ⇧A"],
+  ["plugins", "puzzle", "Plugins"], ["workflow", "layout-list", "Workflow"],
   ["automation", "refresh-cw", null], ["notes", "file-text", "Notes"],
-  ["kt-usage", "clock", null, null, true], ["kt-mods", "settings", "Mods", null, true],
+  ["kt-usage", "clock", null, true], ["kt-mods", "settings", "Mods", true],
 ];
 // Row heights, so the list has a definite height (a scroll area without one lays out at zero).
 const H = { eyebrow: 28, thread: 48, project: 36, closed: 36, fold: 30, page: 36, action: 36, empty: 110 };
@@ -134,7 +138,7 @@ export default class Search extends View {
     this.readLive(cx);
     // Which overlay pages exist (a mod folder with a main.js), once: a page appears when its mod does.
     cx.spawn(async (cx) => {
-      for (const [id, , , , overlay] of PAGES) {
+      for (const [id, , , overlay] of PAGES) {
         if (overlay) this.mods[id] = Boolean(await readTextFile(`${appHome()}/mods/${id}/main.js`).catch(() => null));
       }
       cx.notify();
@@ -317,19 +321,22 @@ export default class Search extends View {
 
     // Only what exists: the stack's pages, and the overlay mods found on disk (init's check).
     const stack = new Set((find(layout(), "view")?.children ?? []).map((c) => c.id));
-    const pages = byScore(PAGES.filter(([id, , , , overlay]) => (overlay ? this.mods[id] : stack.has(id)))
-      .map(([id, icon, name, kbd, overlay]) => ({ kind: "page", key: `g:${id}`, id, icon, name: name ?? tr(`page.${id}`), kbd, overlay: Boolean(overlay) }))
+    const binds = keys();
+    const keyFor = (...actions) => shortcut(binds, shared("layout"), ...actions);
+    const pages = byScore(PAGES.filter(([id, , , overlay]) => (overlay ? this.mods[id] : stack.has(id)))
+      .map(([id, icon, name, overlay]) => ({ kind: "page", key: `g:${id}`, id, icon, name: name ?? tr(`page.${id}`),
+        kbd: keyFor(overlay ? `mod.open:${id}` : `layout.select:${id}`), overlay: Boolean(overlay) }))
       .filter((r) => match(r, [r.name, r.id])), () => 0);
 
     const actions = byScore(
       [
         // `overlay`: it opens another dialog (go() closes this popup first).
-        { id: "new", icon: "square-pen", name: tr("newThread"), kbd: "⌘T", overlay: true, go: () => { show("thread"); run("mod.open", { name: "kt-new" }); } },
+        { id: "new", icon: "square-pen", name: tr("newThread"), kbd: keyFor("mod.open:kt-new"), overlay: true, go: () => { show("thread"); run("mod.open", { name: "kt-new" }); } },
         // As kt-gwm's "Nouveau worktree": kt-new, whose Checkout pill makes it with gwm.
-        { id: "worktree", icon: "folder-tree", name: tr("newWorktree"), overlay: true, go: () => { show("thread"); run("mod.open", { name: "kt-new" }); } },
-        { id: "palette", icon: "layout-list", name: tr("palette"), kbd: "⌘⇧P", overlay: true, go: () => run("app.palette") },
+        { id: "worktree", icon: "folder-tree", name: tr("newWorktree"), kbd: keyFor("kt-head.worktree"), overlay: true, go: () => { show("thread"); run("mod.open", { name: "kt-new" }); } },
+        { id: "palette", icon: "layout-list", name: tr("palette"), kbd: keyFor("app.palette"), overlay: true, go: () => run("app.palette") },
         // kt-head opens and closes the panel with its content moving (#73), as ctrl-b p does.
-        { id: "panel", icon: "panel-right", name: tr("panel"), go: () => run("kt-head.panel-toggle") },
+        { id: "panel", icon: "panel-right", name: tr("panel"), kbd: keyFor("kt-head.panel-toggle"), go: () => run("kt-head.panel-toggle") },
       ].map((a) => ({ kind: "action", key: `a:${a.id}`, ...a })).filter((r) => match(r, [r.name])),
       () => 0,
     );
@@ -396,10 +403,6 @@ export default class Search extends View {
         const d = div().child(r.s.replace(/ /g, " "));
         return (i === runs.length - 1 ? d.min_w(0).truncate() : d.flex_none()).when(r.on, (el) => el.text_color(t.accent));
       }));
-  }
-
-  kbd(t, k) {
-    return div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
   }
 
   // A picked row: the kbrdn.dev ink (transparent border elsewhere: no shift).
@@ -560,7 +563,7 @@ export default class Search extends View {
             .child(h_flex().size(20).flex_none().items_center().justify_center().child(svg(I(r.icon)).size(15).text_color(here ? t.accent : t.muted)))
             .child(this.hl(t, r.name, r.marks?.[0]).flex_1().text_size(13).text_color(t.foreground))
             .when(here, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.accent).child(tr("shown"))))
-            .when(Boolean(r.kbd), (el) => el.child(this.kbd(t, r.kbd))));
+            .when(Boolean(r.kbd), (el) => el.child(kbd(t, r.kbd))));
         }
       }
     }
@@ -581,7 +584,8 @@ export default class Search extends View {
     const listH = Math.min(total + 6, 440, Math.max(120, (this.winH ?? 900) - 270));
 
     const typing = this.typing;
-    const hint = (k, what) => h_flex().gap(5).items_center().child(this.kbd(t, k)).child(div().child(what));
+    // The foot's keys are the picker's own (vim.js, keys.json's mod:kt-picker), written as keys.json does.
+    const hint = (k, what) => h_flex().gap(5).items_center().child(kbd(t, k)).child(div().child(what));
     // vim's mode (kt-keys' pill): INSERT on the ink, NORMAL neutral.
     const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
       .border_color(typing ? alpha(t.accent, "66") : t.border).bg(typing ? alpha(t.accent, "24") : t.background)
@@ -647,7 +651,7 @@ export default class Search extends View {
                       .border_color(typing ? t.accent : t.input)
                       .child(svg(I("search")).size(15).flex_none().text_color(t.dim))
                       .child(Input.new(this.input).flex_1().h_full().text_size(15).text_color(t.foreground))
-                      .child(div().id("kp-esc").flex_none().cursor_pointer().on_click((_e, cx) => this.dismiss(cx)).child(this.kbd(t, "esc"))),
+                      .child(div().id("kp-esc").flex_none().cursor_pointer().on_click((_e, cx) => this.dismiss(cx)).child(kbd(t, "escape"))), // i18n: tech
                   ),
               )
               // The groups (filters.js), ⌘1-4 or tab / shift-tab; the ink glides to the one picked.
@@ -683,12 +687,12 @@ export default class Search extends View {
               .text_size(11)
               .text_color(t.dim)
               .when(this.keyed, (el) => el.child(mode))
-              .child(hint("↑↓", tr("hint.move")))
-              .child(hint("↵", tr("hint.open")))
-              .child(hint("⌘1-4", tr("hint.filter")))
-              .when(this.selected()?.kind === "thread", (el) => el.child(hint("ctrl+d", tr("hint.closeThread"))))
+              .child(hint("up / down", tr("hint.move")))
+              .child(hint("enter", tr("hint.open")))
+              .child(hint("cmd-1…4", tr("hint.filter")))
+              .when(this.selected()?.kind === "thread", (el) => el.child(hint("ctrl-d", tr("hint.closeThread"))))
               .child(div().flex_1())
-              .child(hint("esc", typing ? tr("hint.normal") : tr("hint.close"))),
+              .child(hint("escape", typing ? tr("hint.normal") : tr("hint.close"))),
           ),
       );
 
