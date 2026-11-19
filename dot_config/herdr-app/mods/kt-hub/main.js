@@ -16,8 +16,9 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { exec, readTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, settings, panes } from "herdr";
+import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, settings, panes } from "herdr";
 import { week, ranked, projectRows, year, years, now, delta, localDay, dayShift } from "./model.js";
+import { ghArgs, parseYear, stale, githubYear } from "./github.js";
 import { makeT, num, date, time, relative, duration } from "./i18n.js";
 import strings from "./strings.js";
 import { Vim, keysOf, step } from "./vim.js";
@@ -67,6 +68,12 @@ export default class Hub extends View {
     this.err = null; // error.json, when newer than the summary
     this.year = null;
     this.heat = new Map(); // year -> its levels, per summary
+    // #48: the heatmap's source, and GitHub's years (data/kt-hub/github-<year>.json, read then asked).
+    this.source = "agents";
+    this.ghYear = new Date().getFullYear();
+    this.gh = new Map(); // year -> { text, cache, view, tips } (text: the file as read, for writeTextFile)
+    this.ghBusy = new Set();
+    this.ghErr = null;
     this.cur = "now";
     this.reveal = false;
     this.width = 1000;
@@ -85,6 +92,7 @@ export default class Hub extends View {
           for (const k of keysOf(c.slice(4))) this.press(k, cx);
         } else if (c === "refresh") this.index(cx, "commande");
         else if (c.startsWith("year:")) this.pickYear(Number(c.slice(5)));
+        else if (c === "source:agents" || c === "source:github") this.setSource(c.slice(7), cx);
         cx.notify();
       }
     });
@@ -139,6 +147,62 @@ export default class Hub extends View {
     return s;
   }
 
+  // ---------- GitHub (#48) ----------
+
+  // The years GitHub can show: this one and the four before.
+  ghYears() {
+    const y = new Date().getFullYear();
+    return [y - 4, y - 3, y - 2, y - 1, y];
+  }
+
+  // A year of GitHub: its file first (once), then gh when it's stale (an hour this year, a day before),
+  // only while the page shows it. A failed gh keeps what was shown and says it.
+  ghLoad(cx, y) {
+    if (checking() || this.ghBusy.has(y)) return;
+    const had = this.gh.get(y);
+    if (had && !stale(had.cache, y, Date.now())) return;
+    this.ghBusy.add(y);
+    cx.spawn(async (cx) => {
+      const file = `${appHome()}/data/kt-hub/github-${y}.json`;
+      try {
+        let entry = had;
+        if (!entry) {
+          const text = await readTextFile(file).catch(() => null);
+          const cache = parse(text);
+          entry = { text, cache: cache?.v === 1 && cache.year === y ? cache : null };
+          this.setGh(y, entry);
+          cx.notify();
+        }
+        if (stale(entry.cache, y, Date.now()) && visible() && this.source === "github") {
+          const r = await exec("gh", ghArgs(y), { timeout: 30e3 });
+          const cache = r.code === 0 ? parseYear(r.stdout, y, Date.now()) : null;
+          if (!cache) this.ghErr = (r.stderr.trim().split("\n")[0] || `gh ${r.code}`).slice(0, 160);
+          else {
+            const text = JSON.stringify(cache);
+            // Replaced only if the file is still the one read (another copy may have written it).
+            await writeTextFile(file, text, entry.text ?? null).catch(() => null);
+            this.ghErr = null;
+            this.setGh(y, { text, cache });
+          }
+        }
+      } catch (e) {
+        this.ghErr = String(e?.message ?? e).slice(0, 160);
+      }
+      this.ghBusy.delete(y);
+      cx.notify();
+    });
+  }
+
+  setGh(y, { text, cache }) {
+    const view = cache ? githubYear(cache, localDay(Date.now())) : null;
+    this.gh.set(y, { text, cache, view, tips: new Map() });
+  }
+
+  setSource(s, cx) {
+    this.source = s;
+    if (s === "github") this.ghLoad(cx, this.ghYear);
+  }
+
   // One pass of the indexer; a pass running elsewhere (its lock) answers busy: its summary is read after.
   index(cx, why) {
     if (checking() || this.running) return;
@@ -172,6 +236,7 @@ export default class Hub extends View {
         return;
       }
       if (this.waiting && Date.now() - this.ranAt >= AGAIN_MS) this.index(cx, "bus");
+      if (this.source === "github") this.ghLoad(cx, this.ghYear); // asks gh only when stale
       if (this.d && localDay(Date.now()) !== this.d.today) this.derive();
       const minute = Math.floor(Date.now() / 60e3);
       if (minute !== this.minute || this.keyed !== this.handle.is_focused()) { this.minute = minute; cx.notify(); }
@@ -187,10 +252,16 @@ export default class Hub extends View {
     if (this.d?.years.includes(y)) this.year = y;
   }
 
-  stepYear(by) {
-    const ys = this.d?.years ?? [];
-    const i = ys.indexOf(this.year);
-    if (i >= 0 && ys[i + by] != null) this.year = ys[i + by];
+  // The shown source's year, one step back or forward (GitHub: asked when shown).
+  stepYear(by, cx) {
+    const gh = this.source === "github";
+    const ys = gh ? this.ghYears() : this.d?.years ?? [];
+    const i = ys.indexOf(gh ? this.ghYear : this.year);
+    if (i < 0 || ys[i + by] == null) return;
+    if (gh) {
+      this.ghYear = ys[i + by];
+      this.ghLoad(cx, this.ghYear);
+    } else this.year = ys[i + by];
   }
 
   // ---------- actions ----------
@@ -230,8 +301,9 @@ export default class Hub extends View {
     if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
       this.cur = SECTIONS[step(a, SECTIONS.indexOf(this.cur), SECTIONS.length, this.vim.count, 4)];
       this.reveal = true;
-    } else if (a === "panel-prev" || a === "left") this.stepYear(-1);
-    else if (a === "panel-next" || a === "right") this.stepYear(1);
+    } else if (a === "panel-prev" || a === "left") this.stepYear(-1, cx);
+    else if (a === "panel-next" || a === "right") this.stepYear(1, cx);
+    else if (a === "tab-next" || a === "tab-prev") this.setSource(this.source === "github" ? "agents" : "github", cx);
     else if (a === "open" && this.cur === "now") this.go(now(agents()).go);
     else if (a === "refresh") this.index(cx, "r");
     else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } });
@@ -349,20 +421,34 @@ export default class Hub extends View {
   // ---------- activity ----------
 
   actSection(t) {
-    const h = this.year != null ? this.heatOf(this.year) : null;
-    const ys = this.d.years;
-    const i = ys.indexOf(this.year);
+    const gh = this.source === "github";
+    const ys = gh ? this.ghYears() : this.d.years;
+    const shownYear = gh ? this.ghYear : this.year;
+    const i = ys.indexOf(shownYear);
     const arrow = (id, icon, tip, by, on) => div().id(id).size(24).flex_none().rounded_full().flex().items_center().justify_center()
       .text_color(on ? t.muted : t.dim).when(!on, (el) => el.opacity(0.4))
       .when(on, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
-        .on_click((_e, cx) => { cx.stop_propagation(); this.stepYear(by); cx.notify(); }))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.stepYear(by, cx); cx.notify(); }))
       .child(svg(I(icon)).size(13));
+    // The source (#48): Agents or GitHub, one at a time (tab), as pale pills (FILTERS.md).
+    const pill = (key, label, tint) => {
+      const on = this.source === key;
+      return h_flex().id(`hub-src-${key}`).h(22).px(8).gap(5).items_center().rounded_full().border(1)
+        .border_color(on ? alpha(tint, "66") : alpha(tint, "00")).bg(alpha(tint, on ? "33" : "14"))
+        .font_family(MONO).text_size(10.5).text_color(on ? t.foreground : t.muted).cursor_pointer()
+        .when(!on, (el) => el.hover((s) => s.bg(alpha(tint, "24")))).tooltip(tr("act.sourceTip"))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.setSource(key, cx); cx.notify(); })
+        .child(div().size(6).rounded_full().bg(tint)).child(label);
+    };
     const right = h_flex().flex_none().gap(4).items_center()
-      .child(h_flex().h(22).px(8).items_center().rounded_full().border(1).border_color(alpha(t.accent, "66")).bg(alpha(t.accent, "1f"))
-        .font_family(MONO).text_size(10.5).text_color(t.foreground).child(tr("act.agents")))
+      .child(pill("agents", tr("act.agents"), t.accent))
+      .child(pill("github", "GitHub", t.ansi2)) // i18n: tech
+      .child(div().w(6))
       .child(arrow("hub-y-prev", "chevron-left", tr("act.prev"), -1, i > 0))
-      .child(div().font_family(MONO).text_size(12).text_color(t.foreground).child(String(this.year ?? "")))
+      .child(div().font_family(MONO).text_size(12).text_color(t.foreground).child(String(shownYear ?? "")))
       .child(arrow("hub-y-next", "chevron-right", tr("act.next"), 1, i >= 0 && i < ys.length - 1));
+    if (gh) return this.section(t, "act", tr("act.title"), right, this.ghBody(t));
+    const h = this.year != null ? this.heatOf(this.year) : null;
     if (!h) return this.section(t, "act", tr("act.title"), right, this.V.calendar([], {}));
     const junction = this.sum.junction;
     const cal = this.V.calendar(h.levels, {
@@ -374,6 +460,40 @@ export default class Hub extends View {
     return this.section(t, "act", tr("act.title"), right, v_flex().gap(6)
       .child(div().font_family(MONO).text_size(11).text_color(t.muted).child(tr("act.total", { active: num(h.active), sessions: num(h.sessions) })))
       .child(cal));
+  }
+
+  // GitHub's year (#48): its own levels, its total and the private contributions it counts without
+  // detail; before its first read, a bar breathing; gh failing, said under what was shown.
+  ghBody(t) {
+    const y = this.ghYear;
+    const e = this.gh.get(y);
+    const v = e?.view;
+    const err = this.ghErr ? div().text_size(12).text_color(t.ansi1).child(tr("act.ghError", { error: this.ghErr })) : null;
+    if (!v) {
+      const S = skeleton(t, this.m);
+      return v_flex().gap(6).children([err ?? (e && !this.ghBusy.has(y) ? this.muted(t, tr("act.ghNone")) : S.pulse(S.block(null, 120).id("hub-gh-sk")))]);
+    }
+    const tip = (a, b) => {
+      const key = `${a}|${tr("act.less")}`;
+      let s = e.tips.get(key);
+      if (s == null) {
+        const n = v.values.slice(a, b + 1).reduce((x, k) => x + (k ?? 0), 0);
+        s = tr("act.ghWeek", { from: date(`${dayShift(v.start, a)}T12:00:00`), to: date(`${dayShift(v.start, b)}T12:00:00`), n: num(n) });
+        e.tips.set(key, s);
+      }
+      return s;
+    };
+    const cal = this.V.calendar(v.levels, { start: v.start, months: tr("act.months").split(" "), weekdays: tr("act.weekdays").split(" "),
+      legend: [tr("act.less"), tr("act.more")], tip, color: "ansi2", id: `hub-gh-${y}` });
+    return v_flex().gap(6)
+      .child(h_flex().gap(8).items_center().font_family(MONO).text_size(11).text_color(t.muted)
+        .child(div().child(tr("act.ghTotal", { n: num(v.total), active: num(v.active) })))
+        .when(v.restricted > 0, (el) => el.child(div().id("hub-gh-private").text_color(t.dim).tooltip(tr("act.ghPrivateTip"))
+          .child(tr("act.ghPrivate", { n: num(v.restricted) }))))
+        .child(div().flex_1())
+        .child(div().text_color(t.dim).child(this.ghBusy.has(y) ? tr("act.ghReading") : tr("act.ghAt", { ago: relative(e.cache.at) }))))
+      .child(cal)
+      .when(Boolean(err), (el) => el.child(err));
   }
 
   // ---------- this week's launches and sub-agents ----------

@@ -92,7 +92,7 @@ const TABLE = {
     ["p", "pg.mdRaw", "Skills, Plugins, Inbox, Workflow, Notes"], // i18n: tech
     ["ctrl-e / ctrl-y", "pg.mdScroll", "Skills, Plugins, Inbox, Notes"], // i18n: tech
     ["j / k, ctrl-d / ctrl-u, gg / G", "pg.notesRawScroll", "Notes · Brut"], // i18n: tech
-    ["esc", "pg.skillsEsc", "Skills, Plugins"], // i18n: tech
+    ["esc", "pg.skillsEsc", "Skills, Plugins, MCP"], // i18n: tech
     ["[ / ]", "pg.relation", "Inbox"],
     ["j / k", "r.line"],
     ["gg / G", "r.ends"],
@@ -124,6 +124,7 @@ const TABLE = {
     ["tab / shift-tab", "pg.notesSections", "Notes"],
     ["j / k, gg / G", "pg.hubSections", "pg.hubPage"],
     ["[ / ], h / l", "pg.hubYear", "pg.hubPage"],
+    ["tab / shift-tab", "pg.hubSource", "pg.hubPage"],
     ["enter / o", "pg.hubGo", "pg.hubPage"],
     ["r", "pg.hubIndex", "pg.hubPage"],
     ["q / esc", "pg.hubBack", "pg.hubPage"],
