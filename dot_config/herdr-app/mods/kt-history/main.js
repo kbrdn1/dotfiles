@@ -19,7 +19,9 @@
 
 import { View, div, svg, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, v_virtual_list, Scrollbar, ScrollHandle, VirtualListScrollHandle } from "gpui-base";
-import { exec as hostExec, focused, panes, spaces, theme, layout, settings, readTextFile, appHome, nextCommand, checking, run, notify, openOverlay, shared, watchFolder } from "herdr";
+import { exec as hostExec, focused, panes, spaces, theme, layout, settings, readTextFile, appHome, nextCommand, checking, run, notify, openOverlay, shared, setShared, watchFolder } from "herdr";
+// #82: opened on a commit by another mod (shared "kt.history.open"), open.js deciding.
+import { openRequest, wantStep } from "./open.js";
 import { parsePatch } from "./diff.js";
 import { ICON_MAP } from "./icons.js";
 import { fileItems, palette, alpha, action, MONO, IMAGE, loadPreview, cleanPreviews, viewImages, colorize, cleanTokens } from "./diffview.js";
@@ -192,6 +194,8 @@ export default class History extends View {
     this.listScroll = VirtualListScrollHandle.new();
     this.filesScroll = ScrollHandle.new();
     this.range = null; // the commit rows last drawn: the cursor scrolls only when it leaves them
+    this.want = null; // a sha another mod asked for (openAsked), until the list shows it or not
+    this.asked = null; // that request's `at`: each read once
     if (checking()) return;
     cx.spawn(async (cx) => {
       try { this.map = JSON.parse(await readTextFile(`${appHome()}/${ICON_MAP}`)); } catch { this.map = null; }
@@ -390,9 +394,46 @@ export default class History extends View {
         this.loading = false;
         // An answer for this place, unchanged or failed alike: its skeleton gives way (readyFor).
         if (this.readFor !== at) { this.readFor = at; cx.notify(); }
+        // A commit asked for (openAsked): the list it waited for is here.
+        if (this.want) this.applyWant(cx, true);
         if (this.again) { this.again = false; this.refresh(cx, true); }
       }
     });
+  }
+
+  // shared "kt.history.open" (#82, the Chat's references: { sha, at }, kt-inbox's "kt.inbox.open"
+  // pattern): that commit selected as a click would, but never toggled shut (already open, it stays),
+  // the cursor on its row brought into view. Not read yet: kept until the list's read; read and not
+  // among the last COUNT (or a prefix naming two): said, dropped. Read once and cleared; older than
+  // 30 s, only cleared. History stays read only: nothing else moves.
+  openAsked(cx) {
+    const req = shared("kt.history.open");
+    if (!req || this.asked === req.at) return;
+    this.asked = req.at;
+    // Not during render: setShared redraws every mod.
+    cx.spawn(async (cx) => {
+      setShared("kt.history.open", null);
+      const sha = openRequest(req, Date.now());
+      if (!sha) return;
+      this.want = sha;
+      this.applyWant(cx, Boolean(this.key));
+      cx.notify();
+    });
+  }
+
+  applyWant(cx, listed) {
+    const step = wantStep(this.commits, this.want, listed);
+    if (step.wait) return;
+    this.want = null;
+    if (step.drop) {
+      notify({ title: tr(`open.${step.drop}`), level: "warning", timeout: 5000 });
+      return;
+    }
+    this.zone = "commits";
+    this.cur = step.select;
+    this.reveal = true;
+    if (this.sel !== step.select) this.select(step.select, cx);
+    cx.notify();
   }
 
   select(hash, cx) {
@@ -574,6 +615,7 @@ export default class History extends View {
     const read = !checking() && shouldRead({ vis, shown: this.shown, loc, lastLoc: this.loc, readAt: this.readAt, now: Date.now() });
     if (vis) this.loc = loc;
     if (read) this.refresh(cx);
+    if (vis && !checking()) this.openAsked(cx);
     if (read && !this.shown) cx.spawn(async () => { await cleanPreviews(); await cleanTokens("kt-history"); });
     if (vis && !this.shown) this.showGen++;
     this.shown = vis;
