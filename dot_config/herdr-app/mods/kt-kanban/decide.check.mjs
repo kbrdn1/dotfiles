@@ -28,7 +28,7 @@ mock.module("gpui-base", () => ({ h_flex: chain, v_flex: chain }));
 const { decide, press, pillKeys } = await import("./decide.js");
 
 const cache = (t) => `${HOME}/.claude/cache/herdr/${t}`;
-const TOKEN = "0123456789abcdef0123456789abcdef";
+const TOKEN = "test-token-fixture";
 const RULE = { type: "addRules", rules: [{ toolName: "Bash", ruleContent: "npm test:*" }], behavior: "allow", destination: "localSettings" };
 // What herdr-bridge 0.4.0 publishes for a command: the terminal's choices, and the request's token apart.
 const permission = (id) => JSON.stringify({ pending: { id, kind: "permission", tool: "Bash", title: "Autoriser Bash ?", detail: "npm test",
