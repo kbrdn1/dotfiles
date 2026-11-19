@@ -2,15 +2,13 @@
 // kt-projects nor kt-threads' own sync can: a project's folder renamed on disk (k-hub -> kbrdn-hub), a
 // project added before any space opens on it.
 //
-// Two ways in, while it's found out which one holds (the other goes then):
-// - a request file kt-threads reads every 3 s: ~/.config/herdr-app/data/kt-threads/registry-request.json,
-//   { "id": "<name>", "at": <ms since the epoch>, "kind": "project-move" | "project-add", ...its fields }.
-//   kt-threads reads it (requestOf), applies it once per id (settle), deletes it. A request older than 2
-//   minutes, or whose id was applied already, is set aside.
-// - `herdr-app do "kt-threads.project-move:b64:<base64url of the JSON>"` (project-add the same), each step
-//   written as it's reached.
-// Either way the outcome goes to data/kt-threads/registry-result.json ({ alive: { started, tick }, last }),
-// written at once, and to shared "kt.registry.last" ({ at, received, id?, ok, project, entry, maps | reason }).
+// The way in, a request file kt-threads reads every 3 s: ~/.config/herdr-app/data/kt-threads/registry-request.json,
+// { "id": "<name>", "at": <ms since the epoch>, "kind": "project-move" | "project-add", ...its fields }.
+// kt-threads reads it (requestOf), applies it once per id (settle), deletes it. A request older than 2 minutes,
+// or whose id was applied already, is set aside. The outcome goes to data/kt-threads/registry-result.json
+// ({ alive: { started, tick, file, read }, last }), written at once, and to shared "kt.registry.last"
+// ({ at, received, id, ok, project, entry, maps | reason }). (A second way, `herdr-app do` with the JSON as
+// base64url, went once this one held: dated, applied once, its outcome in a file.)
 //
 // project-move {from, to, name?, logos?, force?}: the entry of this computer whose folder is `from` takes
 //   `to`'s id ([null, to]) and folder, and the name and logos given; its color, order and other fields stay.
@@ -46,13 +44,8 @@ function logosOf(v) {
   return light === undefined || dark === undefined ? null : { light, dark };
 }
 
-/** The command's JSON, read strictly: { ok: true, value } or { ok: false, reason }. */
+/** The request's JSON, read strictly: { ok: true, value } or { ok: false, reason }. */
 export function parse(text) {
-  if (typeof text === "string" && text.startsWith("b64:")) {
-    const json = fromBase64url(text.slice(4));
-    if (json === null) return { ok: false, reason: "not base64url" }; // i18n: tech
-    text = json;
-  }
   try {
     const v = JSON.parse(text);
     return v && typeof v === "object" && !Array.isArray(v) ? { ok: true, value: v } : { ok: false, reason: "not a JSON object" }; // i18n: tech
@@ -61,37 +54,7 @@ export function parse(text) {
   }
 }
 
-// `b64:<base64url>`: the JSON as base64url (A-Z a-z 0-9 - _, no padding needed), so `herdr-app do` passes
-// the command as it is: a raw JSON value ({, ", :) doesn't reach the mod intact. Decoded here by hand (no
-// atob in every runtime), UTF-8 included; null when it isn't base64url or valid UTF-8.
-const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-export function fromBase64url(s) {
-  const text = String(s).replace(/=+$/, "");
-  if (!/^[A-Za-z0-9_-]*$/.test(text) || text.length % 4 === 1) return null;
-  const bytes = [];
-  let acc = 0, bits = 0;
-  for (const ch of text) {
-    acc = (acc << 6) | B64.indexOf(ch);
-    bits += 6;
-    if (bits >= 8) { bits -= 8; bytes.push((acc >> bits) & 255); }
-  }
-  let out = "";
-  for (let i = 0; i < bytes.length;) {
-    const b = bytes[i];
-    const n = b < 0x80 ? 0 : b >= 0xf0 ? 3 : b >= 0xe0 ? 2 : b >= 0xc0 ? 1 : -1;
-    if (n < 0 || i + n > bytes.length - 1) return null;
-    let cp = n ? b & (0x3f >> n) : b;
-    for (let k = 1; k <= n; k++) {
-      if ((bytes[i + k] & 0xc0) !== 0x80) return null;
-      cp = (cp << 6) | (bytes[i + k] & 0x3f);
-    }
-    out += String.fromCodePoint(cp);
-    i += n + 1;
-  }
-  return out;
-}
-
-const no = (reason) => ({ ok: false, reason });
+const no =(reason) => ({ ok: false, reason });
 
 /** A command that failed, as kt-threads writes it: { at, received (200 characters at most), error (its
  *  stack, 2000 at most) }. */

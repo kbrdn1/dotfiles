@@ -43,7 +43,7 @@ import { filterOf, filtering, openFirst, moveInGroup } from "./thread-filter.js"
 import * as model from "./threads-model.js";
 import { age, duration, until, label, startOf, endOf, isAlive, FADE, PROJECT_COLORS, assignColors, sortRegistry, where } from "./threads-model.js";
 import * as io from "./threads-io.js";
-// The registry moved or grown by `kt-threads.project-move` / `project-add` (herdr-app do): a renamed folder, a project with no space yet.
+// The registry moved or grown by a request file (registry.js): a renamed folder, a project with no space yet.
 // Not `registry`: that name is this file's own registry() (the sorted kt.projects), and the app's runtime let the
 // local one win without a word, every registry.<fn> undefined (2026-11-19). kt-keys/parse.check.mjs catches it.
 import * as projectRegistry from "./registry.js";
@@ -391,10 +391,6 @@ export default class Threads extends View {
               setShared("kt.threadFilter", { ...f, archived: !f.archived });
             }
             else if (/^theme-(light|dark|blur)$/.test(c)) this.setTheme(c.slice(6), cx);
-            // Not awaited (the loop doesn't wait on its exec); its own failure is caught the same way.
-            else if (c.startsWith("project-move") || c.startsWith("project-add")) {
-              this.projectCommand(c).catch((e) => this.commandFailed(projectRegistry.failure(c, e)));
-            }
           }, (f) => this.commandFailed(f));
           cx.notify();
         }
@@ -404,7 +400,7 @@ export default class Threads extends View {
 
   // data/kt-threads/registry-result.json, written at once (shared.json is saved in the background):
   // { alive: { started, tick }, last }: the request reader's last tick (written once a minute at most when
-  // there's nothing to read, proof it runs), and the registry's last outcome or step (registry.js' header).
+  // there's nothing to read, proof it runs), and the registry's last outcome (registry.js' header).
   registryWrite(last) {
     if (last !== undefined) this.registryLast = last;
     this.aliveWritten = Date.now();
@@ -417,7 +413,7 @@ export default class Threads extends View {
   commandFailed(f) {
     // The file first: setShared itself can throw (a host call outside a task), and the error would be lost.
     const written = fs.writeFile(`${appHome()}/data/kt-threads/command-error.json`, `${JSON.stringify(f, null, 2)}\n`).catch(() => {});
-    if (/^project-(move|add)|^registry-request/.test(f.received)) {
+    if (/^registry-request/.test(f.received)) {
       const last = { ...f, ok: false, reason: `error: ${f.error.split("\n")[0]}` }; // i18n: tech
       this.registryWrite(last);
       try { setShared("kt.registry.last", last); } catch { /* in the files already */ }
@@ -454,48 +450,17 @@ export default class Threads extends View {
     const state = { projects: shared("kt.projects"), maps: { "kt.chat.backgrounds": shared("kt.chat.backgrounds") ?? {} }, applied: shared("kt.registry.applied") };
     const { out, writes } = projectRegistry.settle(req, state, exists);
     for (const [key, value] of Object.entries(writes)) setShared(key, value);
+    // A move's color goes to the spaces now on its folder: their entry, made when they opened, is absorbed by
+    // the move, and syncProjects would otherwise take the space's own color back into the registry.
+    if (req.kind === "project-move" && out.ok && out.entry?.color) {
+      const colors = { ...(shared("space.colors") ?? {}) };
+      for (const s of spaces()) if (this.projectId(s) === out.project) colors[s.id] = out.entry.color;
+      setShared("space.colors", colors);
+    }
     await fs.unlink(file).catch(() => {});
     const last = { at: Date.now(), received: text.slice(0, 200), id: req.id ?? null, ...out };
     setShared("kt.registry.last", last);
     await this.registryWrite(last);
-  }
-
-  // `project-move:<json>` / `project-add:<json>` (registry.js, from `herdr-app do`): the registry moved where
-  // kt-projects can't (a folder renamed on disk: its color, order and chat background kept) or grown before
-  // any space opens on the project. The folder checked on the disk first; a refusal does nothing. Each step
-  // is written to registry-result.json as it's reached (received, parsed, exec, exec done), and the outcome,
-  // refusals too, to shared "kt.registry.last" as well ({ at, received (200 characters at most), ok, id |
-  // reason, trace }). Called without awaiting it, its rejection caught by the caller.
-  async projectCommand(c) {
-    const received = c.slice(0, 200);
-    const trace = [];
-    const step = (s) => {
-      trace.push(`${s} ${Date.now()}`);
-      return this.registryWrite({ at: Date.now(), received, step: s, trace });
-    };
-    const said = (out) => {
-      const last = { at: Date.now(), received, ...out, trace };
-      setShared("kt.registry.last", last);
-      return this.registryWrite(last);
-    };
-    await step("received"); // i18n: tech
-    if (!c.includes(":")) return said({ ok: false, reason: "no payload" }); // i18n: tech
-    const [kind, text] = [c.slice(0, c.indexOf(":")), c.slice(c.indexOf(":") + 1)];
-    if (kind !== "project-move" && kind !== "project-add") return said({ ok: false, reason: `unknown command ${kind}` }); // i18n: tech
-    const input = projectRegistry.parse(text);
-    if (!input.ok) return said({ ok: false, reason: input.reason });
-    await step("parsed"); // i18n: tech
-    const folder = projectRegistry.folderOf(kind === "project-move" ? input.value.to : input.value.folder);
-    await step("exec"); // i18n: tech
-    const exists = folder ? await exec("test", ["-d", folder]).then((r) => r.code === 0).catch(() => false) : false;
-    await step("exec done"); // i18n: tech
-    const r = kind === "project-move"
-      ? projectRegistry.moveProject(shared("kt.projects") ?? [], { "kt.chat.backgrounds": shared("kt.chat.backgrounds") ?? {} }, input.value, exists)
-      : projectRegistry.addProject(shared("kt.projects") ?? [], input.value, exists);
-    if (!r.ok) return said({ ok: false, reason: r.reason });
-    setShared("kt.projects", r.list);
-    for (const [key, map] of Object.entries(r.maps ?? {})) setShared(key, map);
-    return said({ ok: true, id: r.id, maps: Object.keys(r.maps ?? {}) });
   }
 
   // Keeps the registry in step with the spaces: an open space whose project isn't in it adds it
