@@ -444,5 +444,49 @@
    "acc": "tests"
   }
  ],
- "fallback": "programs without a companion keep their logo: icons/<program.key>.svg"
+ "fallback": "programs without a companion keep their logo: icons/<program.key>.svg",
+ "variants": {
+  "grid": [
+   9,
+   7
+  ],
+  "head": 0.21,
+  "list": [
+   "crown",
+   "cap",
+   "bow",
+   "sprout",
+   "wizard",
+   "beanie",
+   "halo",
+   "tophat",
+   "bird",
+   "flower"
+  ],
+  "frames": {
+   "crown": "var/crown",
+   "cap": "var/cap",
+   "bow": "var/bow",
+   "sprout": "var/sprout",
+   "wizard": "var/wizard",
+   "beanie": "var/beanie",
+   "halo": "var/halo",
+   "tophat": "var/tophat",
+   "bird": "var/bird",
+   "flower": "var/flower"
+  },
+  "about": {
+   "crown": "a gold crown, a red jewel",
+   "cap": "a blue cap, its visor out left",
+   "bow": "a pink bow",
+   "sprout": "a sprout, two leaves",
+   "wizard": "a wizard's hat, a star on it",
+   "beanie": "a red beanie, a white pompom",
+   "halo": "a halo, floating",
+   "tophat": "a grey top hat, a red band",
+   "bird": "a little bird, perched",
+   "flower": "a white flower"
+  },
+  "slot": "a child of the logo's glyph box (so it bobs with it), in css px: left -(1 + k / dpr), top round(glyph x head) - (grid[1] - 1) x k / dpr, size grid x k / dpr; k as the badges'"
+ }
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Builds the companions: ../out/<theme>/<name>@<k>x.png, ../index.json, ../review.png, ../demo.gif.
+"""Builds the companions: ../out/<theme>/<name>@<k>x.png, ../index.json, ../review.png, ../demo.gif,
+../review-variants.png (the sub-agents' ten coiffes, #71).
 
     python3 -I ~/.config/herdr-app/brand/companions/src/build.py
 
@@ -425,6 +426,47 @@ BASH_RULES = [
 STATE_ACC = {"blocked": "bang", "done": "sparkle", "sleep": "zzz"}
 
 
+# ── The variants: ten coiffes that tell a parent's sub-agents apart (#71). companion-logo.js never
+# redraws a program's logo, so a variant is a layer on it: a hat on the glyph's head, top left (the
+# corners on the right hold the state marks and the action badge), moving with the glyph's bob.
+# Shape and hue both differ from one to the next: at 20x16 one alone is not enough. Program-agnostic:
+# it sits on any logo's tile. A 9x7 canvas, painted inside 1..7 x 1..5 so its outline fits.
+CW, CH = 9, 7
+HEAD = 0.21  # where a head is, down the glyph (Claude's body starts at 5/24): the hat sits on it
+
+
+def coiffe(rows, base, extra=None):
+    """A char map, its last row on the head: L B D the base's three tones, other letters from extra."""
+    tones = dict(zip("DBL", shades(PAL[base])), **(extra or {}))
+
+    def draw():
+        a = Raster(CW, CH)
+        top = CH - 1 - len(rows)
+        for y, row in enumerate(rows):
+            for x, ch in enumerate(row):
+                if ch != ".":
+                    a.set(1 + x, top + y, tones[ch])
+        return a
+    return draw
+
+
+VARIANTS = {
+    # key: (draw, what it is). A sub-agent gets one by its address (companion-logo.js); its parent none.
+    "crown": (coiffe(["L..L..B", "LB.L.BD", "LBBrBBD", "DDDDDDD"], "gold", {"r": PAL["red"]}), "a gold crown, a red jewel"),
+    "cap": (coiffe(["...LLB.", "..LLBBD", "..LBBBD", "BBBBBBD"], "blue"), "a blue cap, its visor out left"),
+    "bow": (coiffe(["LL...BD", "LBBkBBD", "LL...DD"], "pink", {"k": PAL["rust"]}), "a pink bow"),
+    "sprout": (coiffe([".LL.BB.", "LLBsBBD", "...s...", "...s..."], "green", {"s": shades(PAL["green"])[0]}), "a sprout, two leaves"),
+    "wizard": (coiffe(["...L...", "..LB...", "..LBD..", ".LByBD.", "LBBBBBD"], "purple", {"y": PAL["yellow"]}), "a wizard's hat, a star on it"),
+    "beanie": (coiffe(["...p...", ".LLLBB.", "LLBBBBD", "DBDBDBD"], "red", {"p": PAL["paper"]}), "a red beanie, a white pompom"),
+    "halo": (coiffe([".LLLLB.", "L.....D", ".BBBDD.", "......."], "yellow"), "a halo, floating"),
+    "tophat": (coiffe(["..LLBD.", "..LBBD.", "..rrrr.", "LLBBBBD"], "steel", {"r": PAL["red"]}), "a grey top hat, a red band"),
+    "bird": (coiffe(["....LB.", ".L.LBeY", "LLLBBB.", ".BBBDD.", "..o.o.."], "cyan",
+                    {"e": INK, "Y": PAL["yellow"], "o": PAL["wood"]}), "a little bird, perched"),
+    # the petals stand above the head on a long stem: on Codex's white square they would melt
+    "flower": (coiffe(["..L.B..", ".LLyBD.", "..B.D..", "...g...", "...g..."], "paper", {"y": PAL["gold"], "g": PAL["green"]}), "a white flower"),
+}
+
+
 def frames():
     """Every image: name -> Raster (before outline)."""
     out = {}
@@ -435,18 +477,21 @@ def frames():
     for acc, (draw, n, *_rest) in ACCESSORIES.items():
         for i in range(n):
             out[f"acc/{acc}-{i}"] = draw(i)
+    for key, (draw, _about) in VARIANTS.items():
+        out[f"var/{key}"] = draw()
     return out
 
 
 def check(images):
+    assert len(VARIANTS) == 10, "ten variants (#71)"
     for name, r in images.items():
-        size = (AW, AH) if name.startswith("acc/") else (W, H)
+        size = (AW, AH) if name.startswith("acc/") else (CW, CH) if name.startswith("var/") else (W, H)
         assert (r.w, r.h) == size, name
         # the outline needs a free pixel round everything (a body may stand on the bottom edge)
         painted = [(x, y) for y in range(r.h) for x in range(r.w) if r.at(x, y)]
         assert painted, f"{name}: empty"
         xs, ys = [p[0] for p in painted], [p[1] for p in painted]
-        bottom = r.h - 2 if name.startswith("acc/") else r.h - 1
+        bottom = r.h - 2 if name.startswith(("acc/", "var/")) else r.h - 1
         assert min(xs) >= 1 and max(xs) <= r.w - 2 and min(ys) >= 1 and max(ys) <= bottom, \
             f"{name}: painted {min(xs)}..{max(xs)} x {min(ys)}..{max(ys)}, the outline would be cut"
 
@@ -487,13 +532,18 @@ def main():
         "state_accessory": STATE_ACC,
         "tools": TOOLS, "tool_prefixes": TOOL_PREFIXES, "bash_rules": BASH_RULES,
         "fallback": "programs without a companion keep their logo: icons/<program.key>.svg",
+        "variants": {"grid": [CW, CH], "head": HEAD, "list": list(VARIANTS),
+                     "frames": {key: f"var/{key}" for key in VARIANTS},
+                     "about": {key: about for key, (_d, about) in VARIANTS.items()},
+                     "slot": "a child of the logo's glyph box (so it bobs with it), in css px: left -(1 + k / dpr), "
+                             "top round(glyph x head) - (grid[1] - 1) x k / dpr, size grid x k / dpr; k as the badges'"},
     }
     with open(os.path.join(ROOT, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False, indent=1)
         f.write("\n")
     # companion.js (the characters) and companion-logo.js (the program's logo) carry the contract,
     # so a mod copies one file
-    data = {k: v for k, v in index.items() if not k.startswith("$") and k not in ("path", "fallback", "play")}
+    data = {k: v for k, v in index.items() if not k.startswith("$") and k not in ("path", "fallback", "play", "variants")}
     for acc in data["accessories"].values():
         acc.pop("about", None)
     logo_keys = ("accessory_grid", "frame_ms", "timing", "accessories", "tools", "tool_prefixes", "bash_rules")
@@ -509,6 +559,7 @@ def main():
         with open(js, "w", encoding="utf-8") as f:
             f.write(head + block + "// </data>" + tail)
     review(images, index)
+    review_variants()
     print(f"{len(images)} images x {len(SCALES)} scales x {len(OUTLINE)} themes -> {OUT}")
 
 
@@ -585,6 +636,118 @@ def review(images, index):
         gargs += ["-delay", str(max(2, round(ms / 10))), path]
     gargs += ["-background", "#1a1a1a", "-alpha", "remove", "-loop", "0", os.path.join(ROOT, "demo.gif")]
     subprocess.run(gargs, check=True, capture_output=True)
+    shutil.rmtree(tmp)
+
+
+# ── The variants' sheet (#71): each coiffe on the logo's tile as companion-logo.js draws it, at dpr 2
+APP = os.path.dirname(os.path.dirname(ROOT))  # ~/.config/herdr-app: icons/<key>.svg
+TILE = "#1c1d21"  # the tile Herdr's program table gives claude and codex
+SHEET = {  # the kbrdn-threads themes: the sidebar (chrome), text, t.background, the marks' colors
+    "dark": {"bg": "#0f0f0f", "fg": "#d0d0d0", "card": "#191919", "error": "#e06060", "blocked": "#ffdf61"},
+    "light": {"bg": "#f5f5f5", "fg": "#3a3a3a", "card": "#ffffff", "error": "#c43c3c", "blocked": "#a07800"},
+}
+DPR, MARGIN = 2, 3  # device px per css px; css px round the tile, for what sticks out of it
+STATES = ["working", "done", "error", "blocked", "idle"]
+
+
+def jsround(x):
+    return math.floor(x + 0.5)  # Math.round: Python's round() halves to even (4.5 -> 4)
+
+
+def logo_tile(w, h):
+    """companion-logo.js's geometry, css px: the glyph's size and place, the corner, the bob, the badges' k."""
+    g = jsround(h * 0.7)
+    return {"g": g, "left": jsround((w - g) / 2), "top": jsround((h - g) / 2), "radius": jsround(h * 0.3),
+            "bob": max(1, min(2, jsround(h / 16 * 2) / 2)), "k": 2 if w <= 24 else 3}
+
+
+def tile_frame(path, tmp, key, theme, w, h, variant=None, up=False, state=None):
+    """One frame of a program's tile, real size (device px): up, the bob's top; state, its corner mark."""
+    T, L, d, m = SHEET[theme], logo_tile(w, h), DPR, MARGIN
+    g, k = L["g"], L["k"]
+    icon = os.path.join(tmp, f"{key}-{g}.png")
+    if not os.path.exists(icon):
+        subprocess.run(["rsvg-convert", "-w", str(g * d), "-h", str(g * d), "-o", icon,
+                        os.path.join(APP, "icons", f"{key}.svg")], check=True)
+    at = lambda x, y: f"+{round(x * d)}+{round(y * d)}"
+    ix, iy = m + L["left"], m + L["top"] - (L["bob"] if up else 0)
+    r = L["radius"] * d
+    args = ["magick", "-size", f"{(w + 2 * m) * d}x{(h + 2 * m) * d}", f"xc:{T['bg']}",
+            "-fill", TILE, "-stroke", "#00000033", "-strokewidth", str(d),
+            "-draw", f"roundrectangle {m * d + 1},{m * d + 1} {(m + w) * d - 2},{(m + h) * d - 2} {r},{r}",
+            icon, "-geometry", at(ix, iy), "-composite"]
+    if variant:  # companion-logo.js: a child of the glyph's box, so it bobs with it
+        args += [os.path.join(OUT, theme, f"var/{variant}@{k}x.png"), "-geometry",
+                 at(ix - (1 + k / d), iy + jsround(g * HEAD) - (CH - 1) * k / d), "-composite"]
+    bs = AW * k / d  # a badge, css px
+    if state == "working":
+        args += [os.path.join(OUT, theme, f"acc/edit-0@{k}x.png"), "-geometry", at(m + w + 1 - bs, m + h + 1 - bs), "-composite"]
+    elif state == "done":
+        args += [os.path.join(OUT, theme, f"acc/sparkle-2@{k}x.png"), "-geometry", at(m + w + 2 - bs, m - 2), "-composite"]
+    elif state in ("error", "blocked"):  # its dot, the glyph drawn as strokes (the app sets "×" / "!" in its font)
+        dot = max(8, jsround(h * 0.42))
+        cx, cy = (m + w + 1 - dot / 2) * d, (m - 1 + dot / 2) * d
+        args += ["-fill", T[state], "-stroke", T["card"], "-strokewidth", str(d),
+                 "-draw", f"circle {cx},{cy} {cx},{cy - dot}", "-stroke", T["card"], "-strokewidth", str(d)]
+        args += ["-draw", f"line {cx - 3},{cy - 3} {cx + 3},{cy + 3}", "-draw", f"line {cx - 3},{cy + 3} {cx + 3},{cy - 3}"] \
+            if state == "error" else ["-draw", f"line {cx},{cy - 4} {cx},{cy + 1}", "-draw", f"point {cx},{cy + 4}"]
+    subprocess.run(args + [path], check=True)
+    return path
+
+
+def review_variants():
+    """../review-variants.png: per program and theme, the ten variants; above, x4 at rest | at the bob's top;
+    below, real size (device px at dpr 2): 20x16 (the size sub-agents are drawn at: kt-threads' branches,
+    kbrdn-agents' sub rows) rest, top, then 24x20 (the cards' size, for reference).
+    Last line: the parent's own tile (no coiffe), then each variant in a state the branches show."""
+    tmp = os.path.join(HERE, ".review-variants")
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp)
+    env = {**os.environ, "FONTCONFIG_FILE": "/dev/null"}
+    n = iter(range(10 ** 6))
+    f = lambda: os.path.join(tmp, f"{next(n):05d}.png")
+    run = lambda *a: subprocess.run(["magick", *a], check=True, env=env, capture_output=True)
+
+    def zoom(p):
+        run(p, "-scale", "400%", q := f())
+        return q
+
+    sections = []
+    for key in PROGRAMS:
+        for theme, T in SHEET.items():
+            pad = ["-background", T["bg"], "-bordercolor", T["bg"]]
+            cells = []
+            for v in VARIANTS:
+                real = [tile_frame(f(), tmp, key, theme, w, h, v, up) for w, h in ((20, 16), (24, 20)) for up in (False, True)]
+                run(*pad, "(", zoom(real[0]), zoom(real[1]), "-border", "6", "+append", ")",
+                    "(", *real, "-border", "4", "+append", ")", "-gravity", "west", "-append", cell := f())
+                cells.append((cell, f"{list(VARIANTS).index(v) + 1}. {v}"))
+            states = [(None, "working", "parent")] + [(v, STATES[i % len(STATES)], None) for i, v in enumerate(VARIANTS)]
+            for v, st, label in states:
+                real = tile_frame(f(), tmp, key, theme, 20, 16, v, False, st)
+                run(*pad, "(", zoom(real), "-border", "6", ")", "(", real, "-border", "4", ")", "-gravity", "west", "-append", cell := f())
+                cells.append((cell, f"{label or v} · {st}"))
+            head = f()
+            run(*pad, "-fill", T["fg"], "-font", FONT, "-pointsize", "22", f"label:{key} · {theme}", "-border", "12", head)
+            grid = []
+            for part, tile in ((cells[:10], "5x"), (cells[10:], "11x")):
+                args = ["montage"]
+                for path, label in part:
+                    args += ["-label", label, path]
+                grid.append(out := f())
+                subprocess.run(args + ["-font", FONT, "-pointsize", "13", "-fill", T["fg"], "-background", T["bg"],
+                                       "-tile", tile, "-geometry", "+10+8", out], check=True, env=env, capture_output=True)
+            run(*pad, head, *grid, "-gravity", "west", "-append", "-border", "8", sec := f())
+            sections.append(sec)
+    legend = ("Dix variantes de sous-agent (#71) : une coiffe sur la tuile du logo, le parent n'en a pas.\n"
+              "En haut de chaque case, zoom x4 : au repos | en haut du bob (working). Dessous, taille réelle en px écran "
+              "(dpr 2) : 20x16 (branches de kt-threads, sous-agents de kbrdn-agents) repos, haut ; 24x20 (taille des cartes, "
+              "pour mémoire) repos, haut.\n"
+              "Dernière ligne : le parent, puis chaque variante dans un état (marques ! et x redessinées, approchées).")
+    run("-background", "#808080", "-fill", "#ffffff", "-font", FONT, "-pointsize", "18", f"label:{legend}",
+        "-bordercolor", "#808080", "-border", "12", key_png := f())
+    run("-background", "#808080", key_png, *sections, "-gravity", "west", "-append", "+repage",
+        os.path.join(ROOT, "review-variants.png"))
     shutil.rmtree(tmp)
 
 

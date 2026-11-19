@@ -11,7 +11,8 @@ mascot, and no pixel of a third-party asset is copied.
 | every other program | its logo | the icon Herdr ships in `icons/<key>.svg`, referenced, not copied | Simple Icons CC0 1.0, LobeHub MIT, Lucide ISC (see `icons/LICENSES.md`) |
 
 The accessories (magnifier, pencil, terminal, globe, branch, flask, bubble, z's, exclamation
-mark, sparkles) are original too. The palette and the painting rules come from the author's own
+mark, sparkles) are original too, and so are the ten variants' coiffes (crown, cap, bow, sprout,
+wizard's hat, beanie, halo, top hat, bird, flower), laid on a logo's tile, never on the logo itself. The palette and the painting rules come from the author's own
 portfolio, `kbrdn.dev-v2` (`app/utils/cameos/art.ts`).
 
 Trademarks: Claude and Claude Code are Anthropic's, Codex is OpenAI's, and the other programs'
