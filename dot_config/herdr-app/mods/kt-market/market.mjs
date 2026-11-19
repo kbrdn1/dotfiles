@@ -31,6 +31,8 @@ const MIN = 6e4, HOUR = 36e5, DAY = 864e5;
 const TTL = { official: 0, known: 0, community: DAY, "herdr-dev": HOUR, aitmpl: 7 * DAY };
 const LOCAL = ["official", "community", "known", "herdr-dev", "aitmpl"];
 const LIVE_TTL = DAY, DETAIL_TTL = 7 * DAY, GH_TTL = 7 * DAY;
+// The detail's shape: a cached one of another shape is inspected again (2: plan.addMarket).
+const DETAIL_V = 2;
 const UA = { "user-agent": "kt-market" };
 // A download's bounds: per file, in all, files.
 const FILE_MAX = 256 * 1024, TREE_MAX = 8 * 1024 * 1024, FILES_MAX = 400;
@@ -535,8 +537,8 @@ async function detail(id, args) {
   if (!it) return out({ error: "unknown-id", id: clean(id ?? "", 200) });
   const file = `${DATA}/detail/${hash(id)}.json`;
   const c = await readJson(file);
-  if (!args.includes("--force") && c?.id === id && c.pin === (it.pin?.value ?? null) && now() - Date.parse(c.at) < DETAIL_TTL) return out({ ...c, cached: true });
-  const d = { id, at: new Date().toISOString(), pin: it.pin?.value ?? null, item: ROW_OF(it), head: null, flags: [...it.flags], errors: [],
+  if (!args.includes("--force") && c?.v === DETAIL_V && c.id === id && c.pin === (it.pin?.value ?? null) && now() - Date.parse(c.at) < DETAIL_TTL) return out({ ...c, cached: true });
+  const d = { v: DETAIL_V, id, at: new Date().toISOString(), pin: it.pin?.value ?? null, item: ROW_OF(it), head: null, flags: [...it.flags], errors: [],
     readme: null, files: [], findings: [], plan: null };
   try {
     if (it.type === "plugin") await inspectPlugin(it, d);

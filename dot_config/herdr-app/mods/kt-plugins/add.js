@@ -4,9 +4,13 @@
 //   marketplace's .claude-plugin/marketplace.json (its clone, or its folder); a preview (plugin.json
 //   and components, read in the marketplace's clone when the source is a folder of it; a remote
 //   source is only known once downloaded) and Installer: `claude plugin install <id> --scope user`.
-//   props.market: opened on that marketplace (after adding it).
+//   props.market: opened on that marketplace (after adding it). props.select: a plugin id
+//   (name@marketplace, kt-market's Installer): the cursor on it once the catalogs are read, else a note.
 // - "marketplace": GitHub owner/repo, a git URL or a local folder (pickFolder):
 //   `claude plugin marketplace add <source>`; on success, "browse" opens on it.
+//   props.source: the field filled in (owner/repo or a git URL; kt-market, for Anthropic's community
+//   catalog), nothing run before this form's own confirmation; props.select goes on to "browse" when
+//   the added marketplace is that plugin's.
 // - "folder": a plugin in development (pickFolder). With a .claude-plugin/marketplace.json, one of
 //   its plugins through `claude plugin install <name> --marketplace <folder>` (the CLI adds the
 //   folder as a marketplace first); a lone plugin.json can't be installed by the CLI: refused, with
@@ -74,6 +78,8 @@ export class Add {
     this.typing = false;
     this.hl = 0; // the menu's row, the browse list's cursor
     this.market = props()?.market ?? null; // browse: a marketplace chip
+    // browse (and marketplace, passed on): a plugin to put the cursor on (kt-market), once.
+    this.select = isPluginId(props()?.select) ? props().select : null;
     this.kind = "github"; // marketplace: the source's kind
     this.folder = null; // marketplace (directory) and folder: the picked folder
     this.info = null; // its folderInfo()
@@ -90,6 +96,12 @@ export class Add {
     this.mkRow = filterState(); // Parcourir's marketplace row
     this.headW = 0; // the band's measured width (its dither waits for it)
     this.kindW = {}; // the source kinds' measured widths: where their ink glides
+    // marketplace: a source handed in (kt-market) fills the field; only this form runs it, confirmed.
+    const src = view === "marketplace" ? props()?.source : null;
+    if (isRepo(src) || isGitUrl(src)) {
+      this.kind = isRepo(src) ? "github" : "git";
+      this.input.set_value(src);
+    }
     if (this.field) {
       this.input.focus();
       cx.timer.after(500, () => { if (!this.handle.is_focused()) this.input.focus(); });
@@ -137,6 +149,12 @@ export class Add {
         this.markets = got.markets;
         this.errors = got.errors;
         if (this.market && !this.items.some((x) => x.market === this.market)) this.note = tr("noMore", { market: this.market });
+        // A plugin asked for (kt-market): the cursor on it, once; gone (installed, removed): said.
+        if (this.view === "browse" && this.select) {
+          const i = this.rows().findIndex((x) => x.id === this.select);
+          if (i >= 0) { this.hl = i; this.reveal = true; } else this.note = tr("selectGone", { id: this.select });
+          this.select = null;
+        }
       } catch (e) {
         this.items = [];
         this.note = String(e?.message ?? e);
@@ -273,7 +291,8 @@ export class Add {
       notify({ level: "success", title: p.done, body: p.then === "browse" ? tr("opensInBrowse") : RELOAD(), timeout: 5000 });
       if (p.then === "browse") {
         const added = Object.keys((await marketplaces()).markets).find((n) => !before.includes(n));
-        this.open("browse", added ? { market: added } : {});
+        const keep = added && this.select && split(this.select).market === added ? { select: this.select } : {};
+        this.open("browse", added ? { market: added, ...keep } : {});
       } else if (this.view === "browse") this.load(cx); // the installed one leaves the list
       else this.dismiss();
       cx.notify();

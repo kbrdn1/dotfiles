@@ -154,6 +154,10 @@ export default {
     "plan.noLines": "Rien à lancer.",
     "plan.writes": "Écrit : {list}",
     "plan.readOnly": "Lecture seule pour l'instant : cette page montre le plan, rien ne s'exécute d'ici.",
+    "install": "Installer…",
+    "installTip": "Ouvre la page Plugins sur ce plugin : elle montre ce qu'il apporte, la commande exacte, et te la fait confirmer.",
+    "installNote": "La page Plugins s'ouvre sur ce plugin et te fait confirmer la commande. Rien ne s'installe d'ici.",
+    "installCommunity": "D'abord la marketplace de la communauté d'Anthropic, ajoutée à tes réglages après sa propre confirmation. Ensuite, ce plugin, confirmé à son tour.",
 
     "parts": "Ce qu'il apporte",
     "noParts": "Aucun composant trouvé.",
@@ -352,6 +356,10 @@ export default {
     "plan.noLines": "Nothing to run.",
     "plan.writes": "Writes: {list}",
     "plan.readOnly": "Read-only for now: this page shows the plan, nothing runs from here.",
+    "install": "Install…",
+    "installTip": "Opens the Plugins page on this plugin: it shows what it brings and the exact command, and asks you to confirm it.",
+    "installNote": "The Plugins page opens on this plugin and asks you to confirm the command. Nothing installs from here.",
+    "installCommunity": "First Anthropic's community marketplace, added to your settings after its own confirmation. Then this plugin, confirmed in turn.",
 
     "parts": "What it brings",
     "noParts": "No component found.",

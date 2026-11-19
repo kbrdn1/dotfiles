@@ -12,7 +12,8 @@
 // The page: the band (count, freshness, Rafraîchir, ?), the filter and the sort, the type and source
 // rows; the list (60 a page); the detail beside it: what the index knows, then once inspected the exact
 // source and commit, the licence, what an install would run or write, the risks, the parts, the README.
-// No install in this lot: the plan is shown, nothing runs.
+// Installer (an inspected plugin, issue #70 lot 3): kt-plugins' dialog on it (install()); kt-market
+// itself runs nothing. The other types show their plan only, for now.
 // Keys (vim.js): the page opens typing in the filter (INSERT: ctrl-n/p ↓ ↑ move, enter opens the
 // detail, esc NORMAL). NORMAL: j/k gg/G ctrl-d/u (j past the last row: the next page; k before the
 // first: the previous page, then the filter), / the filter, tab / shift-tab the type, enter/o/l the
@@ -262,6 +263,17 @@ export default class Market extends View {
   // The repo's page on GitHub (the row's `repo` is owner/name, checked by model.js).
   browse(x) {
     if (x?.repo && /^[\w.-]+\/[\w.-]+$/.test(x.repo)) exec("open", [`https://github.com/${x.repo}`]).catch(() => {});
+  }
+
+  // Installer, on an inspected plugin: kt-plugins' own dialog (browse, the cursor on it), which shows
+  // what it brings and the exact command, and confirms it (kt-confirm). Anthropic's community catalog
+  // not known yet: kt-plugins' "marketplace" view first, filled in, with its own confirmation, then
+  // browse on the plugin. kt-market runs no command itself.
+  install(x, d) {
+    if (checking() || x.type !== "plugin" || d?.plan?.route !== "kt-plugins" || !x.market) return;
+    const select = `${x.name}@${x.market}`;
+    const p = d.plan.addMarket ? { view: "marketplace", source: d.plan.addMarket, select } : { view: "browse", market: x.market, select };
+    openOverlay({ mod: "kt-plugins", kind: "dialog", frame: "none", width: 1, height: 1, props: p });
   }
 
   // y: the plan's first line once inspected, else the id.
@@ -605,6 +617,8 @@ export default class Market extends View {
         .child(h_flex().child(this.chip(t, "ktmk-retry", tr("retry"), false, (cx) => this.inspect(cx, x, true))));
     }
     const p = d.plan;
+    // Lot 3: the plugins (kt-plugins); the other types show their plan only, for now.
+    const installable = x.type === "plugin" && p?.route === "kt-plugins";
     const lic = d.repoFacts?.license && d.repoFacts.license !== "NOASSERTION" ? d.repoFacts.license : null;
     const doc = d.readme?.text ? docOf(this.md, noImages(d.readme.text)) : null;
     this.docShown = Boolean(doc);
@@ -620,7 +634,10 @@ export default class Market extends View {
         .child(this.eyebrow(t, tr("plan.title")))
         .child(p?.route ? this.block(t, p.lines.length ? p.lines.join("\n") : tr("plan.noLines")) : this.block(t, tr(`why.${p?.why}`) || tr("why.no-route"), t.blocked))
         .when(Boolean(p?.writes?.length), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.writes", { list: p.writes.join(", ") }))))
-        .child(div().text_size(11.5).text_color(t.dim).child(tr("plan.readOnly"))))
+        .when(installable, (el) => el.child(h_flex().pt(2).gap(10).items_center()
+          .child(this.chip(t, "ktmk-install", tr("install"), true, () => this.install(x, d), tr("installTip")))
+          .child(div().flex_1().min_w(0).text_size(11.5).line_height("17px").text_color(t.dim).child(tr(p.addMarket ? "installCommunity" : "installNote")))))
+        .when(!installable, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.readOnly")))))
       .child(this.risks(t, d.flags ?? []))
       .children(this.specifics(t, x, d))
       .when(files.length > 0, (el) => el.child(v_flex().gap(6)

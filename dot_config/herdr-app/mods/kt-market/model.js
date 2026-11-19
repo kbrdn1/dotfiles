@@ -413,7 +413,8 @@ export function plan(it, extra = {}) {
     const lines = [];
     if (extra.addMarket) lines.push(`claude plugin marketplace add ${extra.addMarket} --json`);
     lines.push(`claude plugin install ${it.name}@${it.market} --scope user --json`);
-    return { route: it.route, why: null, lines, writes: ["~/.claude/settings.json", "~/.claude/plugins/"] };
+    // addMarket: kt-plugins' "marketplace" view comes first, filled with it (kt-market runs nothing).
+    return { route: it.route, why: null, lines, writes: ["~/.claude/settings.json", "~/.claude/plugins/"], addMarket: extra.addMarket ?? null };
   }
   if (it.type === "mcp") {
     const v = extra.variant;

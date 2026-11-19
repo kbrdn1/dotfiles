@@ -218,6 +218,8 @@ assert.equal(loopRecipe("no code", {}).prompt, null);
 // ── plans ───────────────────────────────────────────────────────────────────
 assert.deepEqual(plan(P.pinned).lines, ["claude plugin install pinned@acme-market --scope user --json"]);
 assert.equal(plan(P.pinned, { addMarket: "anthropics/claude-plugins-community" }).lines[0], "claude plugin marketplace add anthropics/claude-plugins-community --json");
+assert.equal(plan(P.pinned, { addMarket: "anthropics/claude-plugins-community" }).addMarket, "anthropics/claude-plugins-community", "the marketplace view comes first");
+assert.equal(plan(P.pinned).addMarket, null);
 assert.equal(plan(P.cmd).route, null);
 assert.equal(plan(P.cmd).why, "command-source");
 const mp = plan(m1, { variant: m1.variants[0] });
