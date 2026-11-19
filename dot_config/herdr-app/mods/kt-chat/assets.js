@@ -2,8 +2,10 @@
 // capture: what the model saw, from the transcript itself), the files a tool read or wrote that
 // preview (an image, a PDF, a markdown document), and the files the answer cites by their path. Pure:
 // each comes out shaped as att-model.js' attachments, so the view draws and opens them as #80's
-// (photo, docChip, openAtts, chat-att.ts). Whether a cited or written file is on the disk is the view's
-// to ask (once per path); nothing here reads the disk. Checked by assets.check.mjs.
+// (photo, docChip, openAtts, chat-att.ts). Nothing here reads the disk: the indexer (chat-index.ts, in
+// bun) finds a text block's cited files and keeps the ones on the disk (citesOf, `exists` given), the
+// model carries them on its prose blocks (`cites`), and main.js works a turn's assets out once, when it
+// builds the turn (turnAssets, never in render). Checked by assets.check.mjs.
 
 import { baseOf, extOfMedia, kindOf } from "./att-model.js";
 
@@ -62,6 +64,21 @@ export function citedPaths(text) {
   return [...new Set(found.sort((a, b) => a[0] - b[0]).map(([, p]) => p))];
 }
 
+/**
+ * A text's cited files for the index: { path (as written), abs }, in order, at most CITED_MAX, only those
+ * `exists(abs)` says are on the disk (the indexer's existsSync; a regex pass over the text, too dear for a
+ * render: chat-index.ts runs it, in bun).
+ */
+export function citesOf(text, cwd, home, exists) {
+  const out = [];
+  for (const p of citedPaths(text)) {
+    const abs = resolve(p, cwd, home);
+    if (abs && !out.some((c) => c.abs === abs) && exists(abs)) out.push({ path: p, abs });
+    if (out.length >= CITED_MAX) break;
+  }
+  return out;
+}
+
 /** A file on the disk as an attachment (att-model.js attachmentsOf's shape), `from`: read | write | cite. */
 const fileAsset = (path, abs, from) => ({ id: `f:${abs}`, key: abs, path, abs, name: baseOf(path), from, ...kindOf(path) });
 
@@ -71,10 +88,15 @@ const fileAsset = (path, abs, from) => ({ id: `f:${abs}`, key: abs, path, abs, n
  * is already its embedded image: not twice).
  */
 export function toolAssets(block, { session, cwd, home } = {}) {
-  const out = [];
   const res = block?.result;
   const input = block?.input ?? {};
   const imgs = res?.ok !== false ? res?.imgs ?? [] : [];
+  const from = block?.kind === "read" ? "read" : block?.kind === "edit" ? "write" : null;
+  // Most tools have neither (a command, a search, a read of code): out before any path work (a busy
+  // turn holds hundreds of them, and rebuild() goes over every new turn).
+  const shows = Boolean(from && input.path && SHOWN.has(kindOf(input.path).kind));
+  if (!imgs.length && !shows) return [];
+  const out = [];
   const read = input.path ? resolve(input.path, cwd, home) : null;
   for (const im of imgs) {
     out.push({
@@ -91,17 +113,16 @@ export function toolAssets(block, { session, cwd, home } = {}) {
       from: block.kind === "read" ? "read" : "tool",
     });
   }
-  const from = block?.kind === "read" ? "read" : block?.kind === "edit" ? "write" : null;
-  const abs = from ? read : null;
-  if (abs && SHOWN.has(kindOf(abs).kind) && res?.ok !== false && !(from === "read" && imgs.length)) out.push(fileAsset(input.path, abs, from));
+  if (shows && read && res?.ok !== false && !(from === "read" && imgs.length)) out.push(fileAsset(input.path, read, from));
   return out;
 }
 
 /**
- * A turn's assets, in order: its tools' (block by block), then the files its answer cites, at most
- * CITED_MAX; each once (an embedded image by its key, a file by its absolute path), and none the
- * prompt already shows (`seen`: its attachments' keys and absolute paths). { all, byTool, cited }:
- * byTool maps a tool block's id to its own.
+ * A turn's assets, in order: its tools' (block by block), then the files its answer cites (its prose
+ * blocks' `cites`, citesOf's, found by the indexer: no text is searched here), at most CITED_MAX; each
+ * once (an embedded image by its key, a file by its absolute path), and none the prompt already shows
+ * (`seen`: its attachments' keys and absolute paths). { all, byTool, cited }: byTool maps a tool
+ * block's id to its own.
  */
 export function turnAssets(turn, { session, cwd, home, seen = [] } = {}) {
   const have = new Set(seen.filter(Boolean));
@@ -115,18 +136,25 @@ export function turnAssets(turn, { session, cwd, home, seen = [] } = {}) {
     if (a.of) have.add(a.of); // an image read from a file stands for that file
     return true;
   };
+  // One pass over the blocks (a busy turn holds hundreds; rebuild() goes over every new turn): most tools
+  // show nothing and are skipped before any call; the prose blocks that cite something wait for the tools.
+  const ctx = { session, cwd, home };
+  const citing = [];
   for (const b of turn?.blocks ?? []) {
-    if (b.role !== "tool") continue;
-    const own = toolAssets(b, { session, cwd, home }).filter(fresh);
+    if (b.role === "prose") {
+      if (b.cites) citing.push(b);
+      continue;
+    }
+    if (b.role !== "tool" || (!b.result?.imgs && b.kind !== "read" && b.kind !== "edit")) continue;
+    const own = toolAssets(b, ctx).filter(fresh);
     if (own.length) byTool.set(b.id, own);
     tools.push(...own);
   }
-  for (const b of turn?.blocks ?? []) {
-    if (b.role !== "prose" || cited.length >= CITED_MAX) continue;
-    for (const p of citedPaths(b.text)) {
-      const abs = resolve(p, cwd, home);
-      const a = abs && fileAsset(p, abs, "cite");
-      if (a && fresh(a)) cited.push(a);
+  for (const b of citing) {
+    if (cited.length >= CITED_MAX) break;
+    for (const c of b.cites) {
+      const a = fileAsset(c.path, c.abs, "cite");
+      if (fresh(a)) cited.push(a);
       if (cited.length >= CITED_MAX) break;
     }
   }

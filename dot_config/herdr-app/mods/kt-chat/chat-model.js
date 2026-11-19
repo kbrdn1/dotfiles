@@ -313,7 +313,7 @@ export function build(entries, opts = {}) {
       // The model that answered (Monocode's « Opus 5.5 worked for 3m »): the turn's first real one.
       if (!cur.model && e.model && !String(e.model).startsWith("<")) cur.model = e.model;
       e.blocks.forEach((b, n) => {
-        if (b.t === "text") cur.blocks.push({ role: "prose", id: `${e.uuid}:${n}`, text: b.text, at: e.at });
+        if (b.t === "text") cur.blocks.push({ role: "prose", id: `${e.uuid}:${n}`, text: b.text, at: e.at, ...(b.cites ? { cites: b.cites } : {}) });
         else if (b.t === "thinking") cur.blocks.push({ role: "thinking", id: `${e.uuid}:${n}`, ms: b.ms ?? null, text: b.text ?? "" });
         else if (b.t === "tool") {
           const block = { role: "tool", id: b.id, name: b.name, kind: b.kind, title: b.title, input: b.input, at: e.at, result: null };

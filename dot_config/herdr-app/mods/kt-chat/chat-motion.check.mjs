@@ -88,7 +88,7 @@ function chat({ reduced = false } = {}) {
   Object.assign(c, {
     turns: [], win: { from: 0, to: 0 }, hts: new Map(), marks: [], builtLive: false, follow: false, cur: -1, queued: [],
     open: new Set(), shownSteps: new Map(), hover: null, copied: null, md: mdState(), att: new Map(), attQ: [],
-    fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(), drafts: [], assetsOf: new Map(),
+    fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(), drafts: [],
     motion: motionState(), bgMenu: false, bgNote: null, bgBusy: new Set(), line: null, state: ingest(null, read),
   });
   c.rebuild(false);
@@ -186,6 +186,23 @@ const pr = { key: "p", name: "Projet" };
   assert.equal(x.timers.length, 1, "ONE one-shot timer");
   x.timers[0][1](cx());
   assert.equal(c.bgMenu, false, "then it goes");
+}
+
+// ── #93: a turn's assets are worked out when the turn is built (rebuild()), never in render: render reads
+// `turn.assets` (turnAssets over a busy turn's tools and texts made a closed turn ~3x dearer to draw) ──
+{
+  const c = chat();
+  assert.ok(c.turns.every((t) => Array.isArray(t.assets)), "rebuild() gave every turn its assets");
+  const t = c.turns[k];
+  // What render draws is the field, whatever the turn holds: a made-up asset shows...
+  t.assets = [{ id: "t:x:0", key: "s:1:x:0", kind: "image", drawn: true, name: "cap.png", ref: { o: 1, tool: "x", n: 0 } }];
+  assert.ok(draw(c, k).some((n) => callsOf(n, "id").some(([v]) => v === `kc-ph-${t.id}-as-0`)), "render draws turn.assets");
+  // ...and an empty field shows nothing, though the turn has an image a tool got back and a cited file:
+  // were render to work the assets out again, they would show.
+  t.assets = [];
+  t.blocks = [...t.blocks, { role: "tool", id: "x", kind: "read", input: { path: "/w/proj/cap.png" }, result: { o: 1, ok: true, imgs: [{ n: 0, media: "image/png", bytes: 1 }] } },
+    { role: "prose", id: "p:x", text: "voir /w/proj/doc.md", cites: [{ path: "/w/proj/doc.md", abs: "/w/proj/doc.md" }] }];
+  assert.ok(!draw(c, k).some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith(`kc-as-${t.id}`))), "render never works the assets out again");
 }
 
 // ── #93: the field's pieces. The composer's height changes at once when one comes or goes, never frame

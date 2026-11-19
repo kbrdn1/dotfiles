@@ -1,7 +1,7 @@
 // bun assets.check.mjs: a turn's assets (#93), from made-up turns: what its tools got back, read or
 // wrote, the paths its answer cites, each once, none the prompt already shows.
 import assert from "node:assert/strict";
-import { CITED_MAX, citedPaths, normalize, resolve, toolAssets, turnAssets } from "./assets.js";
+import { CITED_MAX, citedPaths, citesOf, normalize, resolve, toolAssets, turnAssets } from "./assets.js";
 
 // Paths as written, made absolute.
 assert.equal(normalize("/a/./b/../c.png"), "/a/c.png");
@@ -40,19 +40,31 @@ const shot = { role: "tool", id: "tu4", kind: "execute", input: { command: "scre
 assert.deepEqual(toolAssets(shot, ctx).map((a) => [a.name, a.from, a.ref.tool]), [["image-1.jpg", "tool", "tu4"]], "an image a command gave back");
 assert.deepEqual(toolAssets({ role: "tool", id: "tu5", kind: "read", input: { path: "/p/a.png" }, result: null }, ctx).map((a) => a.abs), ["/p/a.png"], "no result yet: the file read");
 
-// A turn: tools first, then what the answer cites; each once; none the prompt shows; at most CITED_MAX.
+// The index's cites (citesOf): resolved, only what `exists` finds on the disk, once, at most CITED_MAX.
+const on = new Set(["/p/repo/RAPPORT.md", "/p/repo/out/cap.png", "/h/Desktop/maquette.png", "/h/Desktop/devis.pdf"]);
+const there = (p) => on.has(p);
+assert.deepEqual(citesOf("Voir ./out/cap.png, puis out/cap.png et ~/Desktop/absent.png.", "/p/repo", "/h", there), [{ path: "./out/cap.png", abs: "/p/repo/out/cap.png" }],
+  "the same file once; a file not on the disk left out");
+assert.equal(citesOf(Array.from({ length: 12 }, (_, i) => `/tmp/f${i}.png`).join(" "), "/p", "/h", () => true).length, CITED_MAX);
+assert.deepEqual(citesOf("rien ici", "/p", "/h", () => true), []);
+
+// A turn: tools first, then what the answer cites (its blocks' `cites`); each once; none the prompt shows.
+const said = (id, text) => ({ role: "prose", id, text, cites: citesOf(text, "/p/repo", "/h", there) });
 const turn = { blocks: [
   readImg,
-  { role: "prose", id: "a:0", text: "J'ai écrit RAPPORT.md et lu ./out/cap.png ; la maquette est dans `~/Desktop/maquette.png`." },
+  said("a:0", "J'ai écrit RAPPORT.md et lu ./out/cap.png ; la maquette est dans `~/Desktop/maquette.png`."),
   wrote,
-  { role: "prose", id: "a:1", text: "Le devis joint : /h/Desktop/devis.pdf." },
+  said("a:1", "Le devis joint : /h/Desktop/devis.pdf."),
 ] };
 const r = turnAssets(turn, { ...ctx, seen: ["/h/Desktop/devis.pdf"] });
 assert.deepEqual(r.all.map((a) => a.id), ["t:tu1:0", "f:/p/repo/RAPPORT.md", "f:/h/Desktop/maquette.png"]);
 assert.deepEqual([...r.byTool.keys()], ["tu1", "tu3"]);
 assert.deepEqual(r.cited.map((a) => a.path), ["~/Desktop/maquette.png"], "RAPPORT.md written, cap.png read as an image, devis.pdf the prompt's");
 assert.deepEqual(citedPaths("b.pdf avant `a.png`, puis [c](c.md)"), ["b.pdf", "a.png", "c.md"], "in the text's order");
-const many = { blocks: [{ role: "prose", id: "a:0", text: Array.from({ length: 12 }, (_, i) => `/tmp/f${i}.png`).join(" ") }] };
+// No text is searched there: a prose block without `cites` cites nothing (the regex pass is the
+// indexer's, in bun; it was what made a render ~3x dearer).
+assert.deepEqual(turnAssets({ blocks: [{ role: "prose", id: "a:0", text: "Voir /h/Desktop/maquette.png" }] }, ctx).all, [], "turnAssets never reads a text");
+const many = { blocks: [{ role: "prose", id: "a:0", cites: Array.from({ length: 12 }, (_, i) => ({ path: `/tmp/f${i}.png`, abs: `/tmp/f${i}.png` })) }] };
 assert.equal(turnAssets(many, ctx).cited.length, CITED_MAX);
 assert.deepEqual(turnAssets(null, ctx).all, []);
 
@@ -68,7 +80,12 @@ const lines = [
   { type: "assistant", uuid: "a-2", sessionId: "s-a", cwd: "/w/proj", timestamp: at(3), message: { id: "m2", model: "model-x", role: "assistant", content: [{ type: "text", text: "Vu. Le rapport est dans `docs/rapport.md`, la capture dans out/cap.png." }] } },
 ];
 const bytes = new TextEncoder().encode(lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
-const ix = index(bytes, { from: 0, size: bytes.length, path: "/x/s-a.jsonl", home: "/w" });
+// The disk, made up: docs/rapport.md is there (out/cap.png is the image read: not twice).
+const ix = index(bytes, { from: 0, size: bytes.length, path: "/x/s-a.jsonl", home: "/w", exists: (p) => p === "/w/proj/docs/rapport.md" || p === "/w/proj/out/cap.png" });
+assert.deepEqual(ix.entries.find((e) => e.k === "assistant" && e.blocks[0].t === "text").blocks[0].cites, [
+  { path: "docs/rapport.md", abs: "/w/proj/docs/rapport.md" }, { path: "out/cap.png", abs: "/w/proj/out/cap.png" },
+], "the indexer keeps the text's cited files that are on the disk");
+assert.ok(!index(bytes, { from: 0, size: bytes.length, path: "/x/s-a.jsonl", home: "/w", exists: () => false }).entries.some((e) => e.blocks?.some((b) => b.cites)), "none on the disk: no cites");
 assert.ok(!JSON.stringify(ix).includes("TOOL-IMAGE-DATA"), "no base64 in the index");
 const third = new TextEncoder().encode(lines.slice(0, 2).map((l) => JSON.stringify(l) + "\n").join("")).length;
 assert.deepEqual(ix.entries.find((e) => e.k === "result").imgs, [{ n: 0, media: "image/png", bytes: 11, paste: null }]);

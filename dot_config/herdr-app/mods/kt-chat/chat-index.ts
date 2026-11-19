@@ -12,8 +12,10 @@
 //   `start` is where the emitted part
 //   begins (a line start), `more` says there is something before it (`--to start` reads it).
 // A --from past the end of the file (a file rewritten) starts again from 0.
+import { existsSync } from "node:fs";
 import { toolKind, toolTitle, classify, taskOf } from "./chat-model.js";
 import { imagesOf } from "./att-model.js";
+import { citesOf } from "./assets.js";
 
 const HEAVY = /^\{"type":"(api-request|file-history|session-owner|bridge-session|atis-latch|tools-used|frame-link|last-prompt)/;
 const ATTACHMENT = /"attachment":\{"type":"([a-z_]+)"/;
@@ -168,7 +170,7 @@ function result(part: any, tur: any, o: any, off: number, at: number | null): En
 }
 
 /** One JSONL line → 0..n entries (a user line can carry several tool results). */
-export function normalize(o: any, off: number, meta: Meta, home: string): Entry[] {
+export function normalize(o: any, off: number, meta: Meta, home: string, exists: (p: string) => boolean = existsSync): Entry[] {
   if (o.isSidechain) return [];
   const at = Date.parse(o.timestamp) || null;
   if (o.sessionId && !meta.session) meta.session = o.sessionId;
@@ -193,7 +195,12 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
       const blocks: Entry[] = [];
       const extra: Entry[] = [];
       for (const b of o.message?.content ?? []) {
-        if (b.type === "text") blocks.push({ t: "text", text: cap(b.text, 40000) });
+        if (b.type === "text") {
+          // #93: the files it cites that are on the disk (assets.js citesOf), found here in bun: the view
+          // never searches a text nor asks the disk while it draws.
+          const cites = citesOf(b.text, o.cwd ?? meta.cwd ?? null, home, exists);
+          blocks.push({ t: "text", text: cap(b.text, 40000), ...(cites.length ? { cites } : {}) });
+        }
         else if (b.type === "thinking" || b.type === "redacted_thinking") blocks.push({ t: "thinking", ms: o.thinkingDurationMs ?? null, text: cap(b.thinking, 4000) });
         else if (b.type === "tool_use" || b.type === "server_tool_use") {
           blocks.push({ t: "tool", id: b.id, name: b.name, kind: toolKind(b.name), title: toolTitle(b.name, b.input, o.cwd, home), input: slimInput(b.name, b.input) });
@@ -274,7 +281,7 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
   return [];
 }
 
-export type Options = { from?: number; size?: number; lastTurns?: number; budget?: number; maxEntries?: number; home?: string; path?: string };
+export type Options = { from?: number; size?: number; lastTurns?: number; budget?: number; maxEntries?: number; home?: string; path?: string; exists?: (p: string) => boolean };
 
 /**
  * The pure core. `bytes` is the part of the file to read, starting at byte `from` of a file of
@@ -314,7 +321,7 @@ export function index(bytes: Uint8Array, opts: Options = {}) {
       bad++;
       continue;
     }
-    for (const e of normalize(o, off, meta, opts.home ?? "")) entries.push(e);
+    for (const e of normalize(o, off, meta, opts.home ?? "", opts.exists)) entries.push(e);
   }
   const end = from + pos;
 

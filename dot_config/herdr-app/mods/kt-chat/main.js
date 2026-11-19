@@ -339,13 +339,11 @@ export default class Chat extends View {
       cx.notify();
     });
     this.composer.on("blur", (_e, cx) => { this.typing = false; this.closeMenu(cx); cx.notify(); });
-    // #93: the files waiting above the field (attach.js), a paste or a chooser running, a turn's assets
-    // worked out once per turn and blocks (turnAssets).
+    // #93: the files waiting above the field (attach.js), a paste or a chooser running (a turn's assets are
+    // worked out in rebuild(), on the turn).
     this.drafts = [];
     this.pasting = false;
     this.picking = false;
-    // ponytail: never pruned (a few small objects per turn seen); drop the turns that left `this.turns` if it grows.
-    this.assetsOf = new Map(); // turn id -> { sig, list }
     // A paste the field found no text in: the Finder's files, else the clipboard's image (attach.js).
     this.composer.on("paste_other", (_e, cx) => this.paste(cx));
     if (checking()) return;
@@ -514,11 +512,17 @@ export default class Chat extends View {
     this.queued = live && this.state ? pendingQueue(this.state.entries) : [];
     // The counts, once per turn built rather than on every render: the fold's, each phase's (a turn
     // buildInc kept has its own already).
+    // #93: its assets too (assets.js turnAssets: its tools', the files its answer cites, found and checked
+    // on the disk by the indexer), here and never in render: render only reads `turn.assets`.
+    const session = this.state?.session, cwd = this.state?.meta?.cwd ?? null;
     for (const turn of this.turns) {
       if (turn.counted) continue;
       turn.counted = true;
       turn.tally = turn.fold ? tally(foldedSteps(turn.items, turn.fold)) : null;
       for (const it of turn.items) if (it.type === "activity") it.tally = tally(it.steps);
+      const seen = attachmentsOf(turn.user, turn.files, session)
+        .map((a) => (a.ref ? a.key : a.abs ?? (a.path?.startsWith("/") ? a.path : cwd && a.path ? `${cwd}/${a.path}` : null)));
+      turn.assets = turnAssets(turn, { session, cwd, home: home(), seen }).all;
     }
     // The timeline's messages, here rather than in render; the heights of turns gone (trim) go too.
     this.marks = markList(this.turns);
@@ -1144,33 +1148,20 @@ export default class Chat extends View {
   }
 
   /**
-   * Under an answer: what its tools got back, read or wrote, and the files it cites (assets.js turnAssets,
-   * worked out once per turn and blocks), images as #80's photos at 160, the rest as chips; a file not on
-   * the disk (chat-att.ts: « missing ») never shows, one being looked at not yet. A click opens the viewer.
+   * Under an answer: what its tools got back, read or wrote, and the files it cites (`turn.assets`, worked
+   * out in rebuild(): render only reads it; a cited file the indexer didn't find on the disk isn't there),
+   * images as #80's photos at 160, the rest as chips. A click opens the viewer. Known with its turn, it
+   * comes as its turn does (landing()): no motion of its own.
    */
   assetsRow(t, cx, turn) {
-    const sig = `${turn.blocks?.length ?? 0}:${(turn.blocks ?? []).filter((b) => b.result).length}`;
-    let got = this.assetsOf.get(turn.id);
-    if (got?.sig !== sig) {
-      const cwd = this.state?.meta?.cwd ?? null;
-      const seen = attachmentsOf(turn.user, turn.files, this.state?.session)
-        .map((a) => (a.ref ? a.key : a.abs ?? (a.path?.startsWith("/") ? a.path : cwd && a.path ? `${cwd}/${a.path}` : null)));
-      got = { sig, list: turnAssets(turn, { session: this.state?.session, cwd, home: home(), seen }).all };
-      this.assetsOf.set(turn.id, got);
-    }
-    const atts = got.list.filter((a) => {
-      if (a.ref) return true;
-      const info = this.attOf(cx, a);
-      return Boolean(info) && !info.busy && !info.error;
-    });
+    const atts = turn.assets ?? [];
     if (!atts.length) return null;
     const own = { id: `${turn.id}-as` }; // its elements' ids, apart from the prompt's attachments'
     const photos = atts.map((a, i) => (a.kind === "image" ? this.photo(t, cx, own, atts, a, i, 160) : null)).filter(Boolean);
     const docs = atts.map((a, i) => (a.kind !== "image" ? this.docChip(t, cx, own, atts, a, i) : null)).filter(Boolean);
-    // It fades in once its files are known (motion.js enter: in place, no height of its own moving).
-    return enter(this.m, v_flex().pt(12).gap(8).min_w(0)
+    return v_flex().id(`kc-as-${turn.id}`).pt(12).gap(8).min_w(0)
       .when(photos.length > 0, (el) => el.child(h_flex().gap(8).flex_wrap().children(photos)))
-      .when(docs.length > 0, (el) => el.child(h_flex().gap(6).flex_wrap().children(docs))), `kc-as-${turn.id}`, { dy: 0 });
+      .when(docs.length > 0, (el) => el.child(h_flex().gap(6).flex_wrap().children(docs)));
   }
 
   // The blocked agent's request (decide.js reads the bridge's cache, or the screen for a held message):
