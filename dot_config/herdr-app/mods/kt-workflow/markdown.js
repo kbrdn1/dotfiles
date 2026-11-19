@@ -459,7 +459,7 @@ function fieldsCard(t, f) {
   return v_flex().flex_none().gap(6).px(14).py(10).rounded(12).border(1).border_color(t.border)
     .children(f.map(([k, v]) => h_flex().gap(10).items_start()
       .child(div().w(130).flex_none().pt(1).truncate().font_family(MONO).text_size(11).text_color(t.muted).child(k.toUpperCase()))
-      .child(div().flex_1().min_w(0).font_family(MONO).text_size(12).line_height("18px").text_color(t.foreground).child(v || "—"))));
+      .child(div().flex_1().min_w(0).font_family(MONO).text_size(12).line_height("18px").text_color(t.foreground).child(v || "-"))));
 }
 
 // GitHub's five alerts, in the theme's tints (FILTERS.md's pale fills).

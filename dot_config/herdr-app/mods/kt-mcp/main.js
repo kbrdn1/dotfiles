@@ -53,6 +53,7 @@ import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
+import { split } from "./tiers.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { roll, rollText } from "./roll.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the bulk Vérifier's progress as a dithered bar.
@@ -648,7 +649,8 @@ export default class Mcp extends View {
     else if (a === "escape" && this.query) {
       this.query = "";
       this.cur = null;
-    } else if (a === "escape" || a === "quit") {
+    } else if (a === "escape" && this.open) this.open = null; // the detail first (narrow: back to the list)
+    else if (a === "escape" || a === "quit") {
       if (props()?.overlay) closeOverlay(props().overlay);
       else run("layout.select", { stack: "view", child: "thread" });
     } else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } });
@@ -731,7 +733,7 @@ export default class Mcp extends View {
         .child(where)
         .when(Boolean(this.scope), (el) => el.child(globalPill))
         // The filter: the keys' ring (and the ink) while typing in it; the mode beside it.
-        .child(h_flex().id("ktm-filter").w(260).h(32).px(12).gap(8).items_center().rounded_full().border(1)
+        .child(h_flex().id("ktm-filter").w(260).max_w_full().h(32).px(12).gap(8).items_center().rounded_full().border(1)
           .border_color(typing ? alpha(t.accent, "99") : t.border).when(typing, (el) => el.bg(alpha(t.accent, "24"))).cursor_text()
           .track_focus(this.handle)
           .on_key_down((e, cx) => this.key(e, cx))
@@ -861,7 +863,8 @@ export default class Mcp extends View {
       .children(String(text).split("\n").map((l) => div().child(l || " ")));
   }
 
-  detail(t, x, w) {
+  // `solo`: the narrow tier (tiers.js), the detail alone: its × is a way back to the list.
+  detail(t, x, w, solo) {
     const k = this.known(x);
     const st = this.state(x);
     const g = this.gets[x.key];
@@ -881,7 +884,7 @@ export default class Mcp extends View {
           iconBtn(t, "ktm-d-zed", I("external-link"), tr("openConfigZedO"), () => this.zed([x.file])),
           this.canGet(x) && pulse(this.m, iconBtn(t, "ktm-d-get", I("circle-check"), running ? "claude mcp get…" : tr("testTip"),
             (cx) => { if (!this.getting) this.getMany([x], cx); }, running), running),
-          iconBtn(t, "ktm-close", I("x"), tr("close"), () => { this.open = null; })] }))
+          iconBtn(t, "ktm-close", I(solo ? "chevron-left" : "x"), tr(solo ? "back" : "close"), () => { this.open = null; })] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.accent, "4d")))
       .child(v_flex().id("ktm-detail").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.detailScroll).px(10).pt(10).pb(16).gap(14)
         .child(h_flex().gap(8).items_center().child(this.stateView(t, st))
@@ -940,15 +943,19 @@ export default class Mcp extends View {
     const q = this.queried();
     const shown = this.listed(q);
     const x = this.items.find((i) => i.key === this.open);
+    // The width's tier (tiers.js, the root's width less a dialog's padding): list and detail side by
+    // side, or one of them (narrow). A tier change fades the body in (as does, narrow, list <-> detail);
+    // the selection and the scrolls (their handles) stay.
+    const s = split(this.width - (props()?.overlay ? 8 : 0), 0.42);
     // No frame of its own as a page: the work card around it (center: radius 20, padding 4) paints it.
     // As a frameless dialog (frame "none"), the same card drawn here.
     return v_flex().id("ktm-root").size_full().gap(4).text_color(t.foreground)
       .when(Boolean(props()?.overlay), (el) => el.p(4).rounded(20).border(1).border_color(t.border).bg(t.chrome))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t, q, shown.length))
-      .child(h_flex().flex_1().min_h(0).gap(4)
-        .child(this.list(t, shown, cx))
-        .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.42)))))
+      .child(enter(this.m, h_flex().flex_1().min_h(0).gap(4), `ktm-tier-${s.tier}${s.solo ? (x ? "-d" : "-l") : ""}`, { dy: 0 })
+        .when(!(s.solo && x), (el) => el.child(this.list(t, shown, cx)))
+        .when(Boolean(x), (el) => el.child(this.detail(t, x, s.detail, s.solo))))
       // The head's ⋯, last so that it draws over the list.
       .when(this.more, (el) => el.relative().child(moreMenu(t, "ktm-more", props()?.overlay ? 60 : 56, this.moreItems(), () => { this.more = false; })));
   }

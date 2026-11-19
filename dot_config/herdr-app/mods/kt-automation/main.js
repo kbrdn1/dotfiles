@@ -43,6 +43,7 @@ import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
 import { skeleton } from "./skeleton.js";
+import { tierOf } from "./tiers.js";
 import { viz } from "./viz.js";
 // kt-keys' roll.js (a byte-identical copy): viz's figures, the head's and the sections' counts roll.
 import { roll, rollText } from "./roll.js";
@@ -135,6 +136,7 @@ export default class Automation extends View {
     this.iter = {}; // terminal address -> { n, m } (the last « Itération N/M » read)
     this.headW = 0;
     this.width = 1100;
+    this.tier = "wide"; // tiers.js, from the width, each render
     this.cur = null; // the keys' cursor: an item id
     this.items = []; // the cursor's items, as the last render listed them
     this.reveal = null;
@@ -622,11 +624,13 @@ export default class Automation extends View {
     const seg = filterRow({ id: "kta-seg", t, state: this.filt, active: this.sec, reduced: Boolean(shared("kt.reducedMotion")),
       items: SECS.map(([key, tint]) => ({ key, label: tr(`sec.${key}`), tint, count: count[key] ?? null })),
       onPick: (k) => { this.sec = k; this.cur = null; } });
-    const sessionBtn = h_flex().id("kta-session").flex_none().h(30).px(13).gap(6).items_center().rounded_full()
+    // Narrow (tiers.js): the icon alone, its tooltip says it.
+    const narrow = this.tier === "narrow";
+    const sessionBtn = h_flex().id("kta-session").flex_none().h(30).px(narrow ? 8 : 13).gap(6).items_center().rounded_full()
       .bg(t.solid).text_color(t.solid_foreground).text_size(12.5).font_medium().cursor_pointer()
       .hover((x) => x.opacity(0.9)).tooltip(s ? tr("sessionLive", { name: NAME }) : tr("sessionNew"))
       .on_click((_e, cx) => { this.openSession(null, cx); cx.notify(); })
-      .child(svg(I("bot")).size(13)).child(s ? tr("sessionBtn", { name: NAME }) : tr("openSession"));
+      .child(svg(I("bot")).size(13)).when(!narrow, (el) => el.child(s ? tr("sessionBtn", { name: NAME }) : tr("openSession")));
     return this.card(t).id("kta-head").relative().flex_none().px(4).pb(4).gap(4)
       .on_size_change((x, cx) => { if (x.width !== this.headW) { this.headW = x.width; cx.notify(); } })
       .children([dither(this.headW, 60, 16, t.ansi5)].filter(Boolean))
@@ -705,6 +709,10 @@ export default class Automation extends View {
     this.items.push({ id, family: "loops", path: l.path, yank: `/me:loop:${l.name}`,
       primary: () => this.openSkill(`me:loop:${l.name}`), launch: (cx) => { if (l.cale) this.openLaunch(l, cx); }, edit: (cx) => this.editLoop(l, cx) });
     const dims = [def.mode, def.trigger, def.exec].filter(Boolean);
+    // Narrow (tiers.js): the tags on their own line, the name keeps the title's.
+    const narrow = this.tier === "narrow";
+    const tags = [...dims.map((x) => this.tag(t, t.ansi5, x)), PR_LOOPS.has(l.name) && this.tag(t, t.ansi2, "PR"),
+      mine.length > 0 && this.tag(t, t.working, tr("running", { n: mine.length }))].filter(Boolean);
     return this.row(t, `kta-loop-${l.key}`, on).cursor_pointer()
       .when(Boolean(alert) && !on, (el) => el.border_color(alpha(alert[0], "66")))
       .tooltip(def.description ?? `me:loop:${l.name}`)
@@ -715,15 +723,14 @@ export default class Automation extends View {
           .child(h_flex().min_w(0).items_center().font_family(MONO).text_size(13).font_medium()
             .child(div().flex_none().text_color(t.dim).child("/me:loop:"))
             .child(div().min_w(0).truncate().text_color(t.foreground).child(l.name)))
-          .children(dims.map((x) => this.tag(t, t.ansi5, x)))
-          .when(PR_LOOPS.has(l.name), (el) => el.child(this.tag(t, t.ansi2, "PR")))
-          .when(mine.length > 0, (el) => el.child(this.tag(t, t.working, tr("running", { n: mine.length }))))
+          .when(!narrow, (el) => el.children(tags))
           .child(div().flex_1())
           .child(h_flex().flex_none().gap(2)
             .child(this.icon(t, `kta-l-run-${l.key}`, OWN("play"), tr("launchTip"), (cx) => this.openLaunch(l, cx), !l.cale ? tr("noCale") : null))
             .child(this.icon(t, `kta-l-see-${l.key}`, "mods/kt-skills/eye.svg", tr("seeSkills"), () => this.openSkill(`me:loop:${l.name}`)))
             .child(this.icon(t, `kta-l-zed-${l.key}`, I("external-link"), tr("openZed"), () => this.zed(l.path)))
             .child(this.icon(t, `kta-l-edit-${l.key}`, I("square-pen"), tr("editE"), (cx) => this.editLoop(l, cx)))))
+        .when(narrow && tags.length > 0, (el) => el.child(h_flex().flex_wrap().gap(4).children(tags)))
         .child(div().text_size(12.5).line_height("18px").text_color(def.goal ? t.muted : t.dim).child(l.unreadable ? tr("unreadableSkill") : def.goal ?? def.description ?? tr("noGoal")))
         .child(h_flex().gap(10).items_center().font_family(MONO).text_size(11).text_color(t.dim)
           .child(div().flex_none().child(tr("max", { n: def.max ?? "—" })))
@@ -742,16 +749,19 @@ export default class Automation extends View {
     const sp = spaces().find((s) => s.id === r.space);
     const it = this.iter[r.address];
     if (!gone) this.items.push({ id, family: "loops", yank: r.address, primary: () => this.showRunning(r) });
+    // Narrow (tiers.js): no place column (the tooltip has the address), the name takes it, a shorter bar.
+    const narrow = this.tier === "narrow";
+    const bar = narrow ? 120 : 180;
     return this.row(t, `kta-run-${r.address}`, on).items_center()
       .tooltip(tr(r.via === "thread" ? "runTip.thread" : "runTip.label", { address: r.address, name: r.name }))
       .when(!gone, (el) => el.cursor_pointer().on_click((_e, cx) => { this.cur = id; this.showRunning(r); cx.notify(); }))
       .child(this.statusDot(t, r.status))
-      .child(div().w(190).flex_none().truncate().font_family(MONO).text_size(12.5).font_medium().text_color(t.foreground).child(r.name))
-      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child([sp?.name, r.cwd ? tilde(r.cwd, home()) : null].filter(Boolean).join(" · ") || r.address))
+      .child((narrow ? div().flex_1().min_w(0) : div().w(190).flex_none()).truncate().font_family(MONO).text_size(12.5).font_medium().text_color(t.foreground).child(r.name))
+      .when(!narrow, (el) => el.child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child([sp?.name, r.cwd ? tilde(r.cwd, home()) : null].filter(Boolean).join(" · ") || r.address)))
       .child(div().flex_none().font_family(MONO).text_size(11).text_color(t[r.status] ?? t.dim).child(statusText(r.status)))
       // « Itération N/M » as read on its screen (viz.js' dithered bar); nothing read yet: said.
-      .child(it ? div().w(180).flex_none().child(this.V.progress(tr("iteration", { n: it.n, m: it.m }), it.n, { max: it.m, width: 180, color: "working", id: `kta-it-${r.address}`, live: r.status === "working" }))
-        : div().w(180).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(tr("noIteration")));
+      .child(it ? div().w(bar).flex_none().child(this.V.progress(tr("iteration", { n: it.n, m: it.m }), it.n, { max: it.m, width: bar, color: "working", id: `kta-it-${r.address}`, live: r.status === "working" }))
+        : div().w(bar).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(tr("noIteration")));
   }
 
   // Where to launch: the worktrees, by project; the PR as gwm last saw it (gh checks it on the pick).
@@ -771,7 +781,7 @@ export default class Automation extends View {
       rows.push(this.row(t, `kta-wt-${w.path}`, on).items_center().cursor_pointer()
         .on_click((_e, cx) => { this.cur = id; this.pick(w, cx); cx.notify(); })
         .child(svg(I("git-branch")).size(13).flex_none().text_color(t.ansi2))
-        .child(div().w(240).flex_none().truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(w.name ?? w.path.split("/").pop()))
+        .child(div().w(this.tier === "narrow" ? 140 : 240).flex_none().truncate().font_family(MONO).text_size(12.5).text_color(t.foreground).child(w.name ?? w.path.split("/").pop()))
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.dim).child(w.branch ?? ""))
         .when(Boolean(twin), (el) => el.child(this.tag(t, t.working, tr("alreadyRuns"))))
         .child(w.pr ? this.tag(t, t.ansi2, `PR #${w.pr}`) : div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(pr ? tr("noPr") : "")) // i18n: tech
@@ -832,15 +842,17 @@ export default class Automation extends View {
     const runs = (cx) => this.automate(`Runs · ${s.name}`, ["runs", s.path], cx);
     this.items.push({ id, family: "herdr", path: s.path, yank: s.path, primary: (cx) => { if (!off) plan(cx); }, launch: () => { if (!off) this.runNow(s); }, edit: (cx) => this.editScript(s, cx) });
     const sum = s.sum;
+    // Narrow (tiers.js): the tags on their own line, the name keeps the title's.
+    const narrow = this.tier === "narrow";
+    const tags = [this.tag(t, t.muted, s.repo ? s.repo.split("/").pop() : tr("personal")),
+      sum.agent && this.tag(t, t.ansi1, tr("agentTokens")), sum.worktree && this.tag(t, t.ansi3, "worktree")].filter(Boolean); // i18n: tech
     return this.row(t, `kta-script-${s.key}`, on).cursor_pointer()
       .on_click((_e, cx) => { this.cur = id; cx.notify(); })
       .child(svg(I("clock")).size(13).flex_none().mt(3).text_color(t.ansi6))
       .child(v_flex().flex_1().min_w(0).gap(3)
         .child(h_flex().h(20).gap(8).items_center()
           .child(div().min_w(0).truncate().font_family(MONO).text_size(13).font_medium().text_color(t.foreground).child(s.name))
-          .child(this.tag(t, t.muted, s.repo ? s.repo.split("/").pop() : tr("personal")))
-          .when(sum.agent, (el) => el.child(this.tag(t, t.ansi1, tr("agentTokens"))))
-          .when(sum.worktree, (el) => el.child(this.tag(t, t.ansi3, "worktree"))) // i18n: tech
+          .when(!narrow, (el) => el.children(tags))
           .child(div().flex_1())
           .child(h_flex().flex_none().gap(2)
             .child(this.icon(t, `kta-s-plan-${s.key}`, I("file-text"), tr("planTip"), plan, off))
@@ -849,6 +861,7 @@ export default class Automation extends View {
             .child(this.icon(t, `kta-s-runs-${s.key}`, I("list"), "Runs", runs, off)) // i18n: tech
             .child(this.icon(t, `kta-s-zed-${s.key}`, I("external-link"), tr("openZed"), () => this.zed(s.path)))
             .child(this.icon(t, `kta-s-edit-${s.key}`, I("square-pen"), tr("editE"), (cx) => this.editScript(s, cx)))))
+        .when(narrow, (el) => el.child(h_flex().flex_wrap().gap(4).children(tags)))
         .child(div().truncate().text_size(12.5).text_color(sum.triggers.length ? t.muted : t.dim)
           .child(s.unreadable ? tr("unreadable") : sum.triggers.map((x) => (x.name ? `${x.name} : ${when(x)}` : when(x))).join(" · ") || tr("noTrigger")))
         .child(div().truncate().font_family(MONO).text_size(11).text_color(t.dim).child(`${sum.steps.join(", ") || tr("noStep")}${sum.caps ? tr("caps", { caps: sum.caps }) : tr("noCaps")}`))
@@ -911,7 +924,8 @@ export default class Automation extends View {
       if (this.idx[this.reveal] != null) this.scroll.scroll_to_item(this.idx[this.reveal]);
       this.reveal = null;
     }
-    return enter(this.m, v_flex().flex_1().min_h(0), `kta-in-${this.sec}`, { dy: 0 })
+    // A section or a width tier (tiers.js) changes: the body fades in (the scroll stays, its handle).
+    return enter(this.m, v_flex().flex_1().min_h(0), `kta-in-${this.sec}-${this.tier}`, { dy: 0 })
       .child(v_flex().id("kta-body").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).pb(16).gap(2).children(kids));
   }
 
@@ -939,6 +953,7 @@ export default class Automation extends View {
     this.keyed = this.handle.is_focused();
     const t = theme();
     this.V = viz(t, this.m, { roll });
+    this.tier = tierOf(this.width - (props()?.overlay ? 8 : 0)); // the root's width, less a dialog's padding
     // No frame of its own as a page: the layout's center column (chrome, radius 20, padding 4) holds it.
     // As a frameless dialog it draws that same frame.
     return v_flex().id("kta-root").size_full().gap(4).text_color(t.foreground)

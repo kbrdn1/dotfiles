@@ -38,6 +38,7 @@ import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse } from "./motion.js";
 import { skeleton } from "./skeleton.js";
+import { tierOf } from "./tiers.js";
 import { refreshOn } from "./bus.js";
 
 const tr = makeT(strings);
@@ -152,6 +153,7 @@ export default class Workflow extends View {
     this.shown = false;
     this.headW = 0;
     this.width = 1100;
+    this.tier = "wide"; // tiers.js, from the width, each render
     this.cur = null; // the keys' cursor: an item id
     this.items = []; // the cursor's items, as the last render listed them
     this.reveal = null; // an item to scroll to once drawn
@@ -433,18 +435,21 @@ export default class Workflow extends View {
     const bar = (id, w) => S.pulse(S.line(w, { h: 7, lh: 15 }).id(id));
     const chezText = !d ? bar("ktw-f-chez-sk", 110) : chez.error ? tr("chezError", { error: chez.error }) : chez.n ? tr("drift", { n: chez.n }) : tr("upToDate");
     const chezColor = !d ? t.dim : chez.error ? t.ansi1 : chez.n ? t.ansi3 : t.done;
-    const fact = (id, label, value, color, tip) => v_flex().id(id).flex_1().min_w(0).gap(2).px(10).py(6)
+    // At least 150 px each: on a narrow page, the facts go to the next line rather than to nothing.
+    const fact = (id, label, value, color, tip) => v_flex().id(id).flex_1().min_w(150).gap(2).px(10).py(6)
       .when(Boolean(tip), (el) => el.tooltip(tip))
       .child(this.eyebrow(t, label, t.dim))
       .child(div().truncate().font_family(MONO).text_size(11.5).text_color(color ?? t.foreground).child(value));
     const items = SECS.map(([key, tint]) => ({ key, label: tr(`sec.${key}`), tint, count: this.count(key) }));
     const seg = filterRow({ id: "ktw-seg", t, state: this.filt, active: this.sec, items, reduced: Boolean(shared("kt.reducedMotion")),
       onPick: (k) => { this.sec = k; this.cur = null; } });
-    const configure = h_flex().id("ktw-configure").flex_none().h(30).px(13).gap(6).items_center().rounded_full()
+    // Narrow (tiers.js): the icon alone, its tooltip says it.
+    const narrow = this.tier === "narrow";
+    const configure = h_flex().id("ktw-configure").flex_none().h(30).px(narrow ? 8 : 13).gap(6).items_center().rounded_full()
       .bg(t.solid).text_color(t.solid_foreground).text_size(12.5).font_medium().cursor_pointer()
       .hover((s) => s.bg(alpha(t.solid, "d9"))).tooltip(tr("configureTip"))
       .on_click((_e, cx) => { this.configure(null, cx); cx.notify(); })
-      .child(svg(I("bot")).size(13)).child(tr("configure"));
+      .child(svg(I("bot")).size(13)).when(!narrow, (el) => el.child(tr("configure")));
     const live = session(NAME);
     return this.card(t).id("ktw-head").relative().flex_none().px(4).pb(4).gap(4)
       .on_size_change((s, cx) => { if (s.width !== this.headW) { this.headW = s.width; cx.notify(); } })
@@ -458,7 +463,7 @@ export default class Workflow extends View {
           div().w(4).flex_none(),
           configure] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi3, "4d")))
-      .child(h_flex().flex_none().gap(4).items_center()
+      .child(h_flex().flex_none().flex_wrap().gap(4).items_center()
         .child(fact("ktw-f-md", "WORKFLOW.md", !d ? bar("ktw-f-md-sk", 150) : d.md == null ? tr("notFound")
           : [d.updated ? tr("updated", { date: d.updated }) : null, d.mdTime ? tr("modified", { ago: ago(d.mdTime * 1000) }) : null].filter(Boolean).join(" · "),
           d && d.md == null ? t.ansi1 : null))
@@ -553,7 +558,7 @@ export default class Workflow extends View {
   workflows(t, kids) {
     // i18n: agent (the intention)
     kids.push(this.head(t, "workflows", tr("sec.workflows"), WORKFLOWS.length, "les points d'entrée du workflow (/me:*)", kids.length === 0));
-    const cols = this.width >= 1180 ? 3 : this.width >= 760 ? 2 : 1;
+    const cols = { wide: 3, medium: 2, narrow: 1 }[this.tier]; // tiers.js
     const card = (id) => {
       const st = this.state(id);
       const r = st.r;
@@ -588,6 +593,13 @@ export default class Workflow extends View {
     }
   }
 
+  // A table cell on a narrow page (tiers.js): its column's name, then the cell.
+  stacked(t, label, el) {
+    return h_flex().gap(10).items_start()
+      .child(this.eyebrow(t, label, t.dim).w(80).flex_none().pt(2))
+      .child(div().flex_1().min_w(0).child(el));
+  }
+
   loops(t, kids) {
     const loops = this.d.loops;
     // kt-automation's page, pre-filtered on its loops (its command reaches the shown copy: after the select).
@@ -599,11 +611,17 @@ export default class Workflow extends View {
     // i18n: agent (the intention)
     kids.push(this.head(t, "loops", tr("sec.loops"), loops.length, "les loops me:loop:*", kids.length === 0, auto));
     const COLS = [["name", 200], ["goal", null], ["max", 44], ["exit", null], ["check", 92]];
-    const row = (cells, extra) => h_flex().px(12).py(8).gap(12).items_start().children(cells.map((c, i) => {
-      const w = COLS[i][1];
-      return (w ? div().w(w).flex_none() : div().flex_1().min_w(0)).child(c);
-    })).when(Boolean(extra), extra);
-    kids.push(row(COLS.map(([h]) => this.eyebrow(t, tr(`col.${h}`), t.dim))));
+    // Narrow (tiers.js): no columns, each loop stacked: its name and check, then goal, exit, max.
+    const narrow = this.tier === "narrow";
+    const row = (cells, extra) => (narrow
+      ? v_flex().px(12).py(8).gap(4)
+        .child(h_flex().gap(8).items_center().child(cells[0].flex_1()).child(cells[4]))
+        .children([1, 3, 2].map((i) => this.stacked(t, tr(`col.${COLS[i][0]}`), cells[i])))
+      : h_flex().px(12).py(8).gap(12).items_start().children(cells.map((c, i) => {
+        const w = COLS[i][1];
+        return (w ? div().w(w).flex_none() : div().flex_1().min_w(0)).child(c);
+      }))).when(Boolean(extra), extra);
+    if (!narrow) kids.push(row(COLS.map(([h]) => this.eyebrow(t, tr(`col.${h}`), t.dim))));
     if (!loops.length) kids.push(div().px(12).py(8).text_size(12.5).text_color(t.dim).child(tr("noLoop")));
     for (const x of loops) {
       const st = this.state(x.id);
@@ -632,15 +650,23 @@ export default class Workflow extends View {
     kids.push(this.head(t, "tools", tr("tools"), tb?.rows.length ?? 0, "les outils et priorités (WORKFLOW.md, « Outils & priorités »)", kids.length === 0));
     if (!tb) return void kids.push(div().px(12).py(8).text_size(12.5).text_color(t.dim).child(tr("noTable")));
     const n = tb.head.length;
-    const row = (cells, head, i) => h_flex().px(12).py(head ? 6 : 8).gap(12).items_start()
-      .when(!head && i > 0, (el) => el.border_t(1).border_color(alpha(t.border, "99")))
-      .children(Array.from({ length: n }, (_, k) => {
+    // Narrow (tiers.js): no columns, each row stacked: its first cell as the title, then each other
+    // under its column's name.
+    const narrow = this.tier === "narrow";
+    const row = (cells, head, i) => {
+      const cell = (k) => {
         const text = stripMd(cells[k] ?? "");
-        const box = k === 0 ? div().w(200).flex_none() : div().flex_1().min_w(0);
+        const box = narrow ? div() : k === 0 ? div().w(200).flex_none() : div().flex_1().min_w(0);
         return head ? box.child(this.eyebrow(t, text, t.dim))
           : box.text_size(12).line_height("17px").text_color(k === 0 ? t.foreground : t.muted).when(k === 0, (el) => el.font_medium()).child(text || "—");
-      }));
-    kids.push(row(tb.head, true));
+      };
+      return (narrow
+        ? v_flex().px(12).py(8).gap(4).child(cell(0))
+          .children(Array.from({ length: n - 1 }, (_, k) => this.stacked(t, stripMd(tb.head[k + 1] ?? ""), cell(k + 1))))
+        : h_flex().px(12).py(head ? 6 : 8).gap(12).items_start().children(Array.from({ length: n }, (_, k) => cell(k))))
+        .when(!head && i > 0, (el) => el.border_t(1).border_color(alpha(t.border, "99")));
+    };
+    if (!narrow) kids.push(row(tb.head, true));
     tb.rows.forEach((r, i) => kids.push(row(r, false, i)));
   }
 
@@ -652,9 +678,11 @@ export default class Workflow extends View {
         .child(div().flex_1().text_size(13).font_semibold().text_color(t.foreground).child(title))
         .child(this.icon(t, `ktw-g-edit-${id}`, I("square-pen"), tr("editWith", { intent }), (cx) => this.configure(intent, cx))))
       .children(body);
-    // A settings key as written (camelCase), not an eyebrow.
-    const key = (k, color) => div().w(170).flex_none().pt(1).font_family(MONO).text_size(11).text_color(color ?? t.dim).child(k);
-    const kv = (k, v, color) => h_flex().gap(10).items_start()
+    // A settings key as written (camelCase), not an eyebrow. Narrow (tiers.js): above its value.
+    const narrow = this.tier === "narrow";
+    const pairBox = () => (narrow ? v_flex().gap(2) : h_flex().gap(10).items_start());
+    const key = (k, color) => div().when(!narrow, (el) => el.w(170).flex_none()).pt(1).font_family(MONO).text_size(11).text_color(color ?? t.dim).child(k);
+    const kv = (k, v, color) => pairBox()
       .child(key(k))
       .child(div().flex_1().min_w(0).font_family(MONO).text_size(12).text_color(color ?? t.foreground).child(mask(v ?? "—")));
     const chip = (text, color) => div().flex_none().px(8).py(3).rounded(8).border(1).border_color(alpha(color ?? t.border, "66")).bg(alpha(color ?? t.dim, "14"))
@@ -680,7 +708,7 @@ export default class Workflow extends View {
       const hooks = Object.entries(s.hooks ?? {});
       // i18n: agent (the intention)
       kids.push(box("hooks", tr("hooks", { n: hooks.length }), "les hooks (settings.json)",
-        ...(hooks.length ? hooks.map(([ev, arr]) => h_flex().gap(10).items_start()
+        ...(hooks.length ? hooks.map(([ev, arr]) => pairBox()
           .child(key(ev, /^Worktree/.test(ev) ? t.ansi2 : null))
           .child(v_flex().flex_1().min_w(0).gap(2).children((Array.isArray(arr) ? arr : []).flatMap((m) => (m?.hooks ?? []).map((h) =>
             div().font_family(MONO).text_size(11.5).line_height("17px").text_color(t.foreground)
@@ -735,7 +763,8 @@ export default class Workflow extends View {
       this.scroll.scroll_to_item(to.child);
       this.reveal = null;
     }
-    return enter(this.m, v_flex().flex_1().min_h(0), `ktw-in-${this.sec}`, { dy: 0 })
+    // A section or a width tier (tiers.js) changes: the body fades in (the scroll stays, its handle).
+    return enter(this.m, v_flex().flex_1().min_h(0), `ktw-in-${this.sec}-${this.tier}`, { dy: 0 })
       .child(v_flex().id("ktw-body").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).pb(16).gap(2).children(kids));
   }
 
@@ -760,6 +789,7 @@ export default class Workflow extends View {
     this.shown = vis;
     this.keyed = this.handle.is_focused();
     const t = theme();
+    this.tier = tierOf(this.width); // tiers.js: the root's width
     // No frame of its own: the layout's center column (chrome, radius 20, padding 4) holds it.
     return v_flex().id("ktw-root").size_full().gap(4).text_color(t.foreground)
       .track_focus(this.handle)

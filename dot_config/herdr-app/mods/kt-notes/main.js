@@ -48,6 +48,7 @@ import { exec, theme, spaces, panes, run, layout, openOverlay, notify, nextComma
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse, rows as motionRows } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
+import { split } from "./tiers.js";
 import { mdState, mdBudget, docOf, preview as mdPreview, rawList, rawScroll } from "./markdown.js";
 // kt-keys' roll.js (a byte-identical copy): the head's counts roll to their new digits.
 import { rollText } from "./roll.js";
@@ -112,7 +113,9 @@ export default class Notes extends View {
     this.motion = motionState();
     this.query = "";
     this.sec = "all"; // the section filter: all | project | wt | orphan
-    this.zone = "list"; // where NORMAL's keys go: the list, or the open note
+    this.zone = "list"; // where NORMAL's keys go: the list, or the open note (narrow: the one shown)
+    this.width = 1100; // the root's (on_size_change), for its tier (tiers.js)
+    this.tiers = split(this.width);
     this.cur = null; // the list's cursor (a row id)
     this.task = 0; // the open note's box under the cursor
     this.md = mdState(); // reading: Aperçu or Brut (md.raw, kept from one note to the next), colors, parses
@@ -771,15 +774,20 @@ export default class Notes extends View {
       : d.mark ? tr("st.dirty") : d.savedAt ? tr("st.saved", { ago: ago(d.savedAt / 1000) }) : d.readonly ? tr("st.readonly") : "";
     const stateColor = d.error || d.conflict ? t.ansi3 : d.mark ? t.foreground : t.dim;
     const rel = d.path ? tilde(d.path) : "";
+    // Below the wide tier (tiers.js), Aperçu / Brut / Édition get their own row under the title: whole
+    // labels, and the title keeps its room. Narrow, the note is alone: a way back to the list first.
+    const { tier, solo } = this.tiers;
+    const pills = h_flex().flex_none().gap(4)
+      .child(this.pill(t, "kn-preview", tr("preview"), "mods/kt-skills/eye.svg", reading && !this.md.raw, tr("previewTip"), (cx) => this.face(false, cx)))
+      .child(this.pill(t, "kn-raw", tr("raw"), I("file-text"), reading && this.md.raw, tr("rawTip"), (cx) => this.face(true, cx)))
+      .when(!d.readonly, (el) => el.child(this.pill(t, "kn-edit", tr("edit"), I("square-pen"), !reading, tr("editTip"), (cx) => this.edit(cx))));
     const head = h_flex().flex_none().h(56).px(16).gap(10).items_center()
+      .when(solo, (el) => el.child(iconBtn(t, "kn-back", I("chevron-left"), tr("back"), () => { this.zone = "list"; })))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().truncate().text_size(14).font_semibold().text_color(t.foreground).child(d.kind === "project" ? tr("projectNote") : d.title))
         .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child([d.branch, rel].filter(Boolean).join(" · "))))
       .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(stateColor).child(state))
-      .child(h_flex().flex_none().gap(4)
-        .child(this.pill(t, "kn-preview", tr("preview"), "mods/kt-skills/eye.svg", reading && !this.md.raw, tr("previewTip"), (cx) => this.face(false, cx)))
-        .child(this.pill(t, "kn-raw", tr("raw"), I("file-text"), reading && this.md.raw, tr("rawTip"), (cx) => this.face(true, cx)))
-        .when(!d.readonly, (el) => el.child(this.pill(t, "kn-edit", tr("edit"), I("square-pen"), !reading, tr("editTip"), (cx) => this.edit(cx)))))
+      .when(tier === "wide", (el) => el.child(pills))
       .child(iconBtn(t, "kn-copy", "mods/kt-gwm/copy.svg", tr("copyPath"), (cx) => this.copy(cx)));
     const banner = d.conflict && h_flex().flex_none().mx(12).mb(8).px(12).py(8).gap(10).items_center().rounded(12).border(1)
       .border_color(alpha(t.ansi3, "66")).bg(alpha(t.ansi3, "1a"))
@@ -822,7 +830,9 @@ export default class Notes extends View {
             : d.kind === "project" ? tr("howto.project")
             : tr("howto.wt", { path: relativePath(d.branch) ?? "" })));
     }
-    return v_flex().size_full().child(head).child(div().flex_none().mx(12).mb(8).h(0).border_t(1).border_dashed().border_color(t.border))
+    return v_flex().size_full().child(head)
+      .when(tier !== "wide", (el) => el.child(h_flex().flex_none().px(16).pb(8).child(pills)))
+      .child(div().flex_none().mx(12).mb(8).h(0).border_t(1).border_dashed().border_color(t.border))
       .when(Boolean(banner), (el) => el.child(banner)).when(Boolean(why), (el) => el.child(why)).child(body);
   }
 
@@ -923,17 +933,26 @@ export default class Notes extends View {
       }));
     }
     const none = !shown.length ? tr("noMatch") : null;
-    const listCard = this.box(t).w(340).flex_none()
+    // The width's tier (tiers.js): the list 340 px wide, narrower (medium), or alone with the note
+    // (narrow: the zone shown, the list or the note; esc and the note's chevron go back to the list).
+    const { tier, list: listW, solo } = this.tiers;
+    const listCard = (solo ? this.box(t).flex_1().min_w(0) : this.box(t).w(tier === "wide" ? 340 : listW).flex_none())
       .child(S.swap(`kn-list-${repo.id}`, Boolean(d), () => v_flex().id("kn-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(6).gap(2)
         .when(Boolean(none), (el) => el.child(div().px(10).py(12).text_size(12.5).text_color(t.dim).child(none)))
         .children(list)
         .when(Boolean(d?.listError), (el) => el.child(div().px(10).py(8).text_size(12).text_color(t.ansi3).child(`gwm list : ${d.listError}`))),
       () => div().p(6).child(S.list(6, { h: 54, icon: 28, lines: [0.45, 0.75], gap_y: 2 })), { grow: true }));
     const doc = this.doc && this.doc.repo.id === repo.id ? this.doc : null;
-    const noteCard = this.box(t).flex_1().min_w(0)
+    // Built only when shown (narrow, the list alone doesn't build the note).
+    const noteCard = () => this.box(t).flex_1().min_w(0)
       .child(doc ? enter(this.m, v_flex().size_full(), `kn-doc-${doc.id}`, { dy: 0 }).child(this.note(t, doc, keyed, cx)) : div());
-    // h_flex centres its children: the two cards stretch to the page's height instead.
-    return v_flex().size_full().gap(4).child(head).child(h_flex().flex_1().min_h(0).items_stretch().gap(4).child(listCard).child(noteCard));
+    // h_flex centres its children: the two cards stretch to the page's height instead. A tier change
+    // (narrow: list <-> note too) fades them in; the selection and the scrolls (their handles) stay.
+    const one = solo ? (doc && this.zone === "note" ? "note" : "list") : null;
+    return v_flex().size_full().gap(4).child(head)
+      .child(enter(this.m, h_flex().flex_1().min_h(0).items_stretch().gap(4), `kn-tier-${tier}${one ? `-${one}` : ""}`, { dy: 0 })
+        .when(one !== "note", (el) => el.child(listCard))
+        .when(one !== "list", (el) => el.child(noteCard())));
   }
 
   everyView(t, sc, cx) {
@@ -1015,7 +1034,9 @@ export default class Notes extends View {
       });
       this.shown = true;
     }
-    const root = v_flex().id("kn-root").size_full().text_color(t.foreground).track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx));
+    this.tiers = split(this.width); // tiers.js
+    const root = v_flex().id("kn-root").size_full().text_color(t.foreground).track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
+      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } });
     if (sc.kind === "repo") return root.child(this.repoView(t, sc, cx));
     if (sc.kind === "all") return root.child(this.everyView(t, sc, cx));
     // The scope not known yet: the head with its subtitle as a bar (skeleton.js), breathing.
