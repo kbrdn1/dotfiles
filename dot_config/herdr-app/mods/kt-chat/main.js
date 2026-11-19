@@ -16,6 +16,9 @@
 // radius 12 in the flow under the transcript (Monocode's isn't over it: conversation.rs:3849-3932).
 // Kept from Kylian's setup: the fonts (Inter, Monaspace). Not possible in a mod: the blur behind
 // the card, the transcript's edge mask.
+// Attachments (#80): a prompt's images as photos above its bubble, its files as chips in it (name,
+// kind, size); chat-att.ts (bun, by exec, argv) makes the thumbnails into data/kt-chat/att, a bounded
+// cache swept to its own names; a click opens kt-viewer on the message's attachments.
 //
 // Keys (focusable): j k turns, gg G, ctrl-d ctrl-u, o / enter fold, y copy the turn's answer, r
 // reread, i write. `kt-chat.file:<path>` shows that JSONL instead (tests), `file:` back.
@@ -25,7 +28,7 @@
 
 import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
-import { agents, focused, panes, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, checking, nextCommand, notify, props, layout, run } from "herdr";
+import { agents, focused, panes, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, checking, nextCommand, notify, props, layout, run, openOverlay } from "herdr";
 // #56: the composer (pure, composer.check.mjs); kt-threads' decide.js (a byte-identical copy, with
 // decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser; kt-head's view.js (a
 // byte-identical copy): « Ouvrir le terminal », the thread's other face.
@@ -39,6 +42,7 @@ import {
   foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
 import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markdown.js";
+import { attachmentsOf, photoSize } from "./att-model.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
 import { motionState, frame, enter } from "./motion.js";
@@ -71,6 +75,8 @@ const CODE_MAX = 400; // and at most, opened
 const CODE_SPANS = 600;
 const CODE_ROWS = 240;
 const BG = "kt.chat.backgrounds"; // shared: { [project key]: chat-view.js bgSettings }
+const ATT_DIR = "data/kt-chat/att"; // #80: attachments' thumbnails and decoded images (chat-att.ts, swept there)
+const sizeText = (n) => (n >= 1048576 ? tr("size.mb", { n: num(n / 1048576, 1) }) : n >= 1024 ? tr("size.kb", { n: num(n / 1024, 1) }) : tr("size.b", { n }));
 const IMAGE = /\.(png|jpe?g|gif|webp|heic|heif|tiff?|bmp|avif)$/i;
 const I = (name) => `mods/kt-threads/${name}.svg`;
 const OWN = (name) => `mods/kt-chat/${name}.svg`;
@@ -144,6 +150,12 @@ export default class Chat extends View {
     this.roots = {}; // folder -> its repo's main checkout (null: no repo), git asked once per folder
     this.bgDone = new Map(); // `${src}|${cell}|${tint}` -> chat-bg.ts' { path, w, h }
     this.bgBusy = new Set();
+    // #80: an attachment's key -> chat-att.ts' answer ({ thumb, w, h, bytes } | { kind, bytes } |
+    // { busy } | { error }), what is waiting for it, whether its task runs, thumbnails made since a sweep.
+    this.att = new Map();
+    this.attQ = [];
+    this.attRun = false;
+    this.attMade = 0;
     this.bgMenu = false;
     this.bgNote = null; // { busy } | { err } of the last image chosen
     this.cleanDue = true; // sweepBg() at the next render: once at start, then after each setting
@@ -1101,7 +1113,7 @@ export default class Chat extends View {
   // the time under it. The bubble never takes the width its words would like: a path or a JSON line
   // with no space wraps (or is cut) inside its 576, it never pushes the bubble out of the column.
   // Another agent's message, a task's notice, a system reminder: never Kylian's bubble (classify()).
-  opener(t, turn) {
+  opener(t, turn, cx) {
     const u = turn.user;
     if (!u) return null;
     if (u.from?.kind === "system") return null;
@@ -1112,19 +1124,27 @@ export default class Chat extends View {
     const open = this.open.has(`o:${turn.id}`);
     const folded = clampText(text, { lines: 4, cols: 76 });
     const shown = open || !folded.cut ? text : folded.text;
-    const chips = [];
-    if (u.images) chips.push(this.chip(t, OWN("image"), tr("images", { n: u.images })));
-    for (const f of turn.files) chips.push(this.chip(t, I("file-text"), f));
+    // #80: the message's attachments (att-model.js), its images as photos above the bubble, its other
+    // files as chips in it (attachments.rs split_photos); an index from before #80 (a count, no `imgs`)
+    // keeps its « N images » chip.
+    const cwd = this.state?.meta?.cwd ?? null;
+    const atts = attachmentsOf(u, turn.files, this.state?.session).map((a) => ({ ...a, abs: a.abs ?? (a.path?.startsWith("/") ? a.path : cwd && a.path ? `${cwd}/${a.path}` : null) }));
+    const photos = atts.map((a, i) => (a.kind === "image" ? this.photo(t, cx, turn, atts, a, i) : null)).filter(Boolean);
+    const docs = atts.map((a, i) => (a.kind !== "image" ? this.docChip(t, cx, turn, atts, a, i) : null)).filter(Boolean);
+    if (!u.imgs && u.images) docs.unshift(this.chip(t, OWN("image"), tr("images", { n: u.images })));
     const hov = this.hover === id;
     const copied = this.copied === id;
+    const row = () => h_flex().gap(6).flex_wrap().justify_end().max_w(BUBBLE_MAX);
     return h_flex().id(`kc-u-${turn.id}`).pt(4).pl(BUBBLE_ROW_PAD).w_full().min_w(0).justify_end()
       .on_hover((h, cx) => this.setHover(cx, id, h))
       .child(v_flex().items_end().max_w(BUBBLE_MAX).min_w(0)
-        .when(chips.length > 0, (el) => el.child(h_flex().mb(8).gap(6).flex_wrap().justify_end().max_w(BUBBLE_MAX).children(chips)))
+        .when(photos.length > 0, (el) => el.child(row().mb(8).children(photos)))
+        .when(docs.length > 0 && !text.trim(), (el) => el.child(row().mb(8).children(docs)))
         .when(Boolean(text.trim()), (el) => el.child(div().id(`kc-ub-${turn.id}`).max_w(BUBBLE_MAX).min_w(0).overflow_hidden()
-          .px(12).py(8).rounded(pill ? 18 : 12).bg(ink(t, 0.1))
+          .px(12).py(8).rounded(pill && !docs.length ? 18 : 12).bg(ink(t, 0.1))
           .text_size(14).line_height("20px").text_color(ink(t, 1))
           .when(Boolean(u.cmd), (el) => el.font_family(CODE).text_size(13))
+          .when(docs.length > 0, (el) => el.child(h_flex().mb(6).gap(6).flex_wrap().children(docs)))
           .child(u.cmd ? text : TextView.markdown(`kc-ut-${turn.id}${open ? "-all" : ""}`, shown).selectable(true))))
         .when(folded.cut, (el) => el.child(this.more(t, `kc-um-${turn.id}`, open, () => this.toggle(`o:${turn.id}`))))
         // Monocode shows these on hover; their place stays (no jump).
@@ -1139,9 +1159,100 @@ export default class Chat extends View {
       .child(svg(icon).size(16).flex_none().text_color(ink(t, 0.5))).child(div().max_w(140).truncate().child(text));
   }
 
+  // attachments.rs photo_row + photo_size (#80): an image whole in a 240 square, its own shape, radius
+  // 16, its thumbnail made by chat-att.ts (480 px, the bounded cache); a quiet square holds its place
+  // until then (the square: its size isn't known yet). A click opens the viewer on the message's
+  // attachments, at this one.
+  photo(t, cx, turn, atts, a, i) {
+    const info = this.attOf(cx, a);
+    const [w, h] = photoSize(info?.w, info?.h);
+    const src = info?.thumb ? `${ATT_DIR}/${info.thumb}` : null;
+    return div().id(`kc-ph-${turn.id}-${i}`).w(w).h(h).flex_none().rounded(16).overflow_hidden().bg(ink(t, 0.06))
+      .cursor_pointer().on_click((_e, cx) => this.openAtts(cx, atts, i))
+      .when(Boolean(src), (el) => el.child(image(src).size_full().rounded(16)))
+      .when(Boolean(info?.error), (el) => el.flex().items_center().justify_center().child(svg(OWN("image")).size(16).text_color(ink(t, 0.35))));
+  }
+
+  // A file of the message (#80): a chip (attachments.rs:272-311), its type's icon, its name, then its
+  // kind and size at 0.45 (Kylian: « nom, type, taille »); a click opens the viewer at it.
+  docChip(t, cx, turn, atts, a, i) {
+    const info = this.attOf(cx, a);
+    const meta = [tr(`att.${a.kind}`), info?.bytes != null ? sizeText(info.bytes) : null].filter(Boolean).join(" · ");
+    const icon = a.kind === "pdf" || a.kind === "markdown" || a.kind === "text" ? I("file-text") : a.kind === "code" ? I("square-pen") : I("file");
+    return h_flex().id(`kc-dc-${turn.id}-${i}`).p(4).pr(8).gap(6).items_center().rounded(6).bg(ink(t, 0.06)).text_size(11)
+      .cursor_pointer().hover((s) => s.bg(ink(t, 0.1)))
+      .on_click((_e, cx) => this.openAtts(cx, atts, i))
+      .child(svg(icon).size(16).flex_none().text_color(ink(t, 0.5)))
+      .child(div().min_w(0).max_w(140).truncate().text_color(ink(t, 0.7)).child(a.name))
+      .when(Boolean(meta), (el) => el.child(div().flex_none().text_color(ink(t, 0.45)).child(meta)));
+  }
+
+  /** chat-att.ts's argv for an attachment (by argv, never a shell): from the transcript or its file. */
+  attArgv(a, full) {
+    const tail = ["--out", `${appHome()}/${ATT_DIR}`, ...(full ? ["--full"] : [])];
+    const bun = [`${home()}/.nix-profile/bin/bun`, `${appHome()}/mods/kt-chat/chat-att.ts`];
+    if (a.ref) return this.state?.path ? [...bun, "embedded", this.state.path, "--at", String(a.ref.o), "--n", String(a.ref.n), ...tail] : null;
+    if (a.abs?.startsWith("/")) return [...bun, "file", a.abs, ...tail];
+    return null;
+  }
+
+  // An attachment's files (#80): asked once, from the render on a miss (never under checking()), one
+  // at a time in a task: a thumbnail for an image or a PDF, a document's kind and size. Every 20 made,
+  // the cache is swept to its bounds (chat-att.ts sweep: its own names only), what is shown kept.
+  attOf(cx, a) {
+    const got = this.att.get(a.key);
+    if (got || checking() || !cx) return got ?? null;
+    this.att.set(a.key, { busy: true });
+    this.attQ.push(a);
+    if (!this.attRun) {
+      this.attRun = true;
+      cx.spawn(async (cx) => {
+        while (this.attQ.length) {
+          const next = this.attQ.shift();
+          const argv = this.attArgv(next, false);
+          const r = argv ? await exec(argv[0], argv.slice(1), { timeout: 30000 }).catch(() => null) : null;
+          let j = null;
+          try { j = JSON.parse(r?.stdout ?? ""); } catch { /* said as failed */ }
+          this.att.set(next.key, j && !j.error ? j : { error: j?.error ?? "failed" }); // i18n: tech
+          if (j?.thumb) this.attMade++;
+          cx.notify();
+        }
+        this.attRun = false;
+        if (this.attMade >= 20) {
+          this.attMade = 0;
+          const keep = [...this.att.values()].map((x) => x.thumb).filter(Boolean).join(",");
+          exec(`${home()}/.nix-profile/bin/bun`, [`${appHome()}/mods/kt-chat/chat-att.ts`, "sweep", "--out", `${appHome()}/${ATT_DIR}`, "--keep", keep], { timeout: 30000 }).catch(() => null);
+        }
+      });
+    }
+    return this.att.get(a.key);
+  }
+
+  // A click on an attachment (#80): the viewer (kt-viewer) on all of the message's, at this one. A
+  // pasted image is decoded from the transcript now (chat-att --full, into the bounded cache), an image
+  // file shown through a link to it; a PDF, markdown, code or text by its path (the viewer reads them,
+  // and builds a PDF's page command itself); anything else by its path, for « Afficher dans le Finder ».
+  openAtts(cx, atts, index) {
+    if (checking()) return;
+    cx.spawn(async (cx) => {
+      const items = [];
+      for (const a of atts) {
+        if (a.kind === "image") {
+          const argv = this.attArgv(a, true);
+          const r = argv ? await exec(argv[0], argv.slice(1), { timeout: 30000 }).catch(() => null) : null;
+          let j = null;
+          try { j = JSON.parse(r?.stdout ?? ""); } catch { /* the viewer says it's missing */ }
+          items.push(j?.full ? { kind: "image", path: `${ATT_DIR}/${j.full}`, name: a.name, w: j.w ?? undefined, h: j.h ?? undefined, size: j.bytes ?? undefined } : { kind: "image", name: a.name });
+        } else items.push({ kind: a.kind, src: a.abs, name: a.name, lang: a.lang ?? undefined, size: this.att.get(a.key)?.bytes ?? undefined });
+      }
+      openOverlay({ mod: "kt-viewer", kind: "dialog", frame: "none", width: 1, height: 1, props: { items, index } });
+      cx.notify();
+    });
+  }
+
   turn(t, cx, turn, i, keyed) {
     const out = [];
-    const op = this.opener(t, turn);
+    const op = this.opener(t, turn, cx);
     if (op) out.push(op);
     const f = turn.fold;
     const opened = f && this.open.has(`f:${turn.id}`);

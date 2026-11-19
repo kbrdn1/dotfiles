@@ -13,6 +13,7 @@
 //   begins (a line start), `more` says there is something before it (`--to start` reads it).
 // A --from past the end of the file (a file rewritten) starts again from 0.
 import { toolKind, toolTitle, classify, taskOf } from "./chat-model.js";
+import { imagesOf } from "./att-model.js";
 
 const HEAVY = /^\{"type":"(api-request|file-history|session-owner|bridge-session|atis-latch|tools-used|frame-link|last-prompt)/;
 const ATTACHMENT = /"attachment":\{"type":"([a-z_]+)"/;
@@ -218,7 +219,11 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
       if (!text.trim() && !images) return out;
       if (o.isMeta && !turn) return out;
       const e: Entry = { k: "user", o: off, uuid: o.uuid, at, turn, text: "" };
-      if (images) e.images = images;
+      if (images) {
+        e.images = images;
+        // #80: where each image is in this line (its block, media, size, « [Image #N] »), never its data.
+        e.imgs = imagesOf(content, o.imagePasteIds);
+      }
       if (o.isMeta) e.meta = true;
       const cmd = /^\s*<command-(name|message)>/.test(text) ? tag(text, "command-name") : undefined;
       const bash = /^\s*<bash-input>/.test(text) ? tag(text, "bash-input") : undefined;
@@ -248,7 +253,8 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
     }
     case "attachment": {
       const a = o.attachment ?? {};
-      if (a.type === "file") return a.displayPath || a.filename ? [{ k: "file", o: off, at, path: a.displayPath ?? a.filename }] : [];
+      // An @-mentioned file: shown as written (displayPath), opened by its absolute path (filename).
+      if (a.type === "file") return a.displayPath || a.filename ? [{ k: "file", o: off, at, path: a.displayPath ?? a.filename, ...(a.filename ? { abs: a.filename } : {}) }] : [];
       if (a.type !== "queued_command") return [];
       const { text } = textOf(a.prompt);
       if (a.commandMode === "task-notification" || /^\s*<task-notification>/.test(text)) {

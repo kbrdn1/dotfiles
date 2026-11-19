@@ -308,7 +308,7 @@ export function build(entries, opts = {}) {
     }
     if (e.k === "queue" || e.k === "meta") continue;
     if (!cur) open(null);
-    if (e.k === "file") cur.files.push(e.path);
+    if (e.k === "file") cur.files.push({ path: e.path, abs: e.abs ?? null });
     else if (e.k === "assistant") {
       // The model that answered (Monocode's « Opus 5.5 worked for 3m »): the turn's first real one.
       if (!cur.model && e.model && !String(e.model).startsWith("<")) cur.model = e.model;

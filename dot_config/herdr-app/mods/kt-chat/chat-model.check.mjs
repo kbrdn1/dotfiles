@@ -59,7 +59,11 @@ assert.equal(res("t5"), undefined, "the interrupted call has no result");
 const u1 = full.entries.find((e) => e.uuid === "u-01");
 assert.equal(u1.text, "Ajoute un bouton « thé » 🍵");
 assert.equal(u1.images, 1);
-assert.deepEqual(full.entries.find((e) => e.k === "file"), { k: "file", o: full.entries.find((e) => e.k === "file").o, at: Date.parse("2026-01-01T10:00:00.100Z"), path: "src/thé.js" });
+// #80: where the image is (its block, media, size), never its data.
+assert.deepEqual(u1.imgs, [{ n: 0, media: "image/png", bytes: 12, paste: null }]);
+assert.ok(!JSON.stringify(full).includes("BASE64-IMAGE-DATA"));
+// An @-mentioned file: as written, and its absolute path to open it.
+assert.deepEqual(full.entries.find((e) => e.k === "file"), { k: "file", o: full.entries.find((e) => e.k === "file").o, at: Date.parse("2026-01-01T10:00:00.100Z"), path: "src/thé.js", abs: "/w/proj/src/thé.js" });
 
 // Turn openers: prompt, task-notification, prompt, peer (meta), command, teammate.
 const openers = full.entries.filter((e) => e.k === "user" && e.turn);
@@ -145,7 +149,7 @@ const [t1, t2, t3, t4, t5, t6] = turns;
 // Turn 1: pairing, items, fold, tally, duration, the model that answered.
 assert.equal(t1.ms, 65000);
 assert.equal(t1.model, "model-x");
-assert.deepEqual(t1.files, ["src/thé.js"]);
+assert.deepEqual(t1.files, [{ path: "src/thé.js", abs: "/w/proj/src/thé.js" }]);
 const read = t1.blocks.find((b) => b.id === "t1");
 assert.equal(read.result.file.lines, 3);
 assert.equal(read.state, "ok");
