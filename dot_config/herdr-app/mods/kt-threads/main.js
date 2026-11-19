@@ -309,6 +309,18 @@ export default class Threads extends View {
       cx.timer.every(15000, (cx) => this.readReports(cx));
       cx.timer.every(5000, (cx) => this.syncProjects(cx));
       pollMachines(cx); // #60: shared "kt.machines" from hc machine ls, every 15 s (machines.js)
+      // The registry's request file (registry.js): read now, then at each change of data/kt-threads/, one
+      // request at a time; a watch refused, released or reclaimed (64 folders at most for every mod) looks
+      // again 10 s later.
+      cx.spawn(async (cx) => {
+        const dir = `${appHome()}/data/kt-threads`;
+        await fs.mkdir(dir, { recursive: true }).catch(() => {});
+        for (;;) {
+          if (await this.registryRequest(dir)) cx.notify();
+          const changed = await watchFolder(dir).catch(() => []);
+          if (!changed.length) await cx.sleep(10e3);
+        }
+      });
       // `kt-threads.density` (a key, or `herdr-app do`) flips the cards like the icon by THREADS;
       // `kt-threads.projects` opens or closes the project picker; `kt-threads.every` flips every
       // project / the shown one (the icon by THREADS); `kt-threads.archived` flips the archived view;
@@ -378,6 +390,30 @@ export default class Threads extends View {
         }
       });
     }
+  }
+
+  // The registry's request file, data/kt-threads/registry-request.json (registry.js' header): read, set aside
+  // when too old or its id was applied already, else applied (registry.settle: the folder looked for on the
+  // disk first, nothing written on a refusal), then deleted, whatever came of it. The outcome goes to shared
+  // "kt.registry.last" and to registry-result.json beside it ({ at, received (200 characters at most), id, ok,
+  // project, entry, maps | reason }): shared.json is saved in the background, the file at once. A text read
+  // a second time unchanged (its unlink failed, and the result written woke the watch) is left alone.
+  // true: there was a request.
+  async registryRequest(dir) {
+    const file = `${dir}/registry-request.json`;
+    const text = await readTextFile(file).catch(() => null);
+    if (!text || text === this.requestDone) return false;
+    this.requestDone = text;
+    const req = registry.requestOf(text, Date.now(), shared("kt.registry.applied") ?? []);
+    const exists = req.folder ? await exec("test", ["-d", req.folder]).then((r) => r.code === 0).catch(() => false) : false;
+    const state = { projects: shared("kt.projects"), maps: { "kt.chat.backgrounds": shared("kt.chat.backgrounds") ?? {} }, applied: shared("kt.registry.applied") };
+    const { out, writes } = registry.settle(req, state, exists);
+    for (const [key, value] of Object.entries(writes)) setShared(key, value);
+    await fs.unlink(file).catch(() => {});
+    const last = { at: Date.now(), received: text.slice(0, 200), id: req.id ?? null, ...out };
+    setShared("kt.registry.last", last);
+    await fs.writeFile(`${dir}/registry-result.json`, `${JSON.stringify(last, null, 2)}\n`).catch(() => {});
+    return true;
   }
 
   // `project-move:<json>` / `project-add:<json>` (registry.js, from `herdr-app do`): the registry moved where

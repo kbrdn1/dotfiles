@@ -1,11 +1,14 @@
-// registry.js: the project registry (shared "kt.projects") moved or grown by a command, where neither
+// registry.js: the project registry (shared "kt.projects") moved or grown on request, where neither
 // kt-projects nor kt-threads' own sync can: a project's folder renamed on disk (k-hub -> kbrdn-hub), a
-// project added before any space opens on it. kt-threads runs them, from `herdr-app do`, the JSON as
-// base64url (a raw JSON value doesn't reach the mod intact through the CLI); the outcome is written to
-// shared "kt.registry.last" ({ at, received, ok, id | reason }), read with jq:
+// project added before any space opens on it.
 //
-//   herdr-app do "kt-threads.project-move:b64:$(printf %s '{"from":"/…/k-hub","to":"/…/kbrdn-hub"}' | base64 | tr '+/' '-_' | tr -d '=\n')"
-//   jq '."kt.registry.last"' ~/.config/herdr-app/shared.json
+// The way in is a request file kt-threads watches: ~/.config/herdr-app/data/kt-threads/registry-request.json,
+// { "id": "<name>", "at": <ms since the epoch>, "kind": "project-move" | "project-add", ...its fields }.
+// kt-threads reads it (requestOf), applies it once per id (settle), deletes it, and writes the outcome to
+// data/kt-threads/registry-result.json and shared "kt.registry.last" ({ at, received, id, ok, project, entry,
+// maps | reason }). A request older than 2 minutes, or whose id was applied already, is set aside. `herdr-app do
+// kt-threads.project-move:…` exists too, but the CLI only reaches a mod shown in an overlay: kt-threads, a
+// layout block, never gets it.
 //
 // project-move {from, to, name?, logos?, force?}: the entry of this computer whose folder is `from` takes
 //   `to`'s id ([null, to]) and folder, and the name and logos given; its color, order and other fields stay.
@@ -87,6 +90,44 @@ export function fromBase64url(s) {
 }
 
 const no = (reason) => ({ ok: false, reason });
+
+// The request file: how long it stays good, and the ids kept as applied (the newest ones).
+export const REQUEST_TTL = 2 * 60e3;
+export const APPLIED_KEPT = 50;
+const REQUEST_ID = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** The request file's text, read: { ok, id, kind, input, folder } (input: the fields for moveProject /
+ *  addProject; folder: the one to look for on the disk, `to` or `folder`), or { ok: false, id?, reason }.
+ *  `applied`: the ids already applied; `now`: ms since the epoch. Set aside: not a JSON object, a bad id, no
+ *  `at`, older than REQUEST_TTL (or as far in the future), an id applied already, an unknown kind. */
+export function requestOf(text, now, applied = []) {
+  const p = parse(text);
+  if (!p.ok) return p;
+  const { id, at, kind, ...input } = p.value;
+  if (typeof id !== "string" || !REQUEST_ID.test(id)) return no("id must match ^[A-Za-z0-9._-]{1,64}$"); // i18n: tech
+  const set = (reason) => ({ ok: false, id, reason });
+  if (!Number.isFinite(at)) return set("at (ms since the epoch) missing"); // i18n: tech
+  if (Math.abs(now - at) > REQUEST_TTL) return set("older than 2 minutes (or in the future): set aside"); // i18n: tech
+  if (applied.includes(id)) return set("applied already"); // i18n: tech
+  if (kind !== "project-move" && kind !== "project-add") return set("kind must be project-move or project-add"); // i18n: tech
+  return { ok: true, id, kind, input, folder: folderOf(kind === "project-move" ? input.to : input.folder) };
+}
+
+/** A request read by requestOf, settled: { out, writes }. out: { ok: true, project, entry, maps } (the entry as
+ *  it now stands, the maps re-keyed) or { ok: false, reason }; writes: the shared keys to set, none unless
+ *  applied (kt.projects, the maps changed, and the id added to "kt.registry.applied", the last APPLIED_KEPT).
+ *  state: { projects, maps, applied }; exists: whether req.folder is on the disk. */
+export function settle(req, state, exists) {
+  if (!req.ok) return { out: { ok: false, reason: req.reason }, writes: {} };
+  const r = req.kind === "project-move"
+    ? moveProject(state.projects ?? [], state.maps ?? {}, req.input, exists)
+    : addProject(state.projects ?? [], req.input, exists);
+  if (!r.ok) return { out: { ok: false, reason: r.reason }, writes: {} };
+  return {
+    out: { ok: true, project: r.id, entry: r.list.find((x) => x.id === r.id), maps: Object.keys(r.maps ?? {}) },
+    writes: { "kt.projects": r.list, ...r.maps, "kt.registry.applied": [...(state.applied ?? []), req.id].slice(-APPLIED_KEPT) },
+  };
+}
 
 /** project-move. `list`: kt.projects; `maps`: { key: { [project id]: value } } (kt.chat.backgrounds);
  *  `exists`: whether `to` is a folder on the disk. Returns { ok, list, maps (only those changed), id } or

@@ -3,9 +3,11 @@
 // kt.chat.backgrounds (and leaves the other keys alone), absorbs an entry already added for the new folder,
 // refuses a folder that isn't on the disk unless forced; project-add appends last, refuses a duplicate. Every
 // malformed input (relative folder, "..", a name out of ^[A-Za-z0-9._ -]{1,64}$, a logo outside brand/projects/,
-// not JSON) is refused with a reason, and nothing is changed. Not loaded by Herdr.
+// not JSON) is refused with a reason, and nothing is changed. The request file (requestOf + settle): applied
+// once per id (a replay set aside), set aside past 2 minutes either way (120000 ms still good), and a request
+// set aside or refused writes nothing. Not loaded by Herdr.
 import assert from "node:assert/strict";
-import { idOf, folderOf, parse, fromBase64url, moveProject, addProject } from "./registry.js";
+import { idOf, folderOf, parse, fromBase64url, moveProject, addProject, requestOf, settle, REQUEST_TTL, APPLIED_KEPT } from "./registry.js";
 
 const P = "/Users/someone/Projects";
 const entry = (name, order, extra = {}) => ({ id: idOf(`${P}/${name}`), name, folder: `${P}/${name}`, machine: null, color: "ansi3", order,
@@ -111,5 +113,78 @@ assert.equal(fromBase64url(Buffer.from([0x80]).toString("base64url")), null);
 assert.equal(fromBase64url(Buffer.from("ok", "utf8").toString("base64url")), "ok");
 // And the decoded payload goes through as it would: the move succeeds.
 assert.equal(moveProject(list, {}, parse(`b64:${b64url(JSON.stringify(payload))}`).value, true).ok, true);
+
+// The request file, as kt-threads takes it: requestOf, then settle against the shared keys; the writes applied
+// to a copy of the state the way setShared would.
+const NOW = 1_800_000_000_000;
+const state0 = { projects: list, maps: { "kt.chat.backgrounds": backgrounds }, applied: [] };
+const frozen = structuredClone(state0);
+const take = (text, state, now = NOW, exists = true) => settle(requestOf(text, now, state.applied), state, exists);
+const next = (state, writes) => ({
+  projects: writes["kt.projects"] ?? state.projects,
+  maps: { "kt.chat.backgrounds": writes["kt.chat.backgrounds"] ?? state.maps["kt.chat.backgrounds"] },
+  applied: writes["kt.registry.applied"] ?? state.applied,
+});
+const tvMove = { id: "req-c", at: NOW, kind: "project-move", from: `${P}/tv-old`, to: `${P}/tv-new/`, name: "tv-new", logos: "brand/projects/tv-new.svg" };
+
+// Applied: the entry as it now stands (color and order kept), the background re-keyed, the id kept.
+assert.equal(requestOf(JSON.stringify(tvMove), NOW).folder, `${P}/tv-new`, "the folder to look for, normalized");
+const t1 = take(JSON.stringify(tvMove), state0);
+assert.equal(t1.out.ok, true, t1.out.reason);
+assert.deepEqual([t1.out.project, t1.out.entry.name, t1.out.entry.color, t1.out.entry.order, t1.out.maps], [idOf(`${P}/tv-new`), "tv-new", "ansi3", 2, ["kt.chat.backgrounds"]]);
+assert.deepEqual(Object.keys(t1.writes).sort(), ["kt.chat.backgrounds", "kt.projects", "kt.registry.applied"]);
+assert.deepEqual(t1.writes["kt.registry.applied"], ["req-c"]);
+assert.deepEqual(t1.writes["kt.chat.backgrounds"]["root:/Users/someone"], { src: "/tmp/root.png" }, "other backgrounds kept");
+const state1 = next(state0, t1.writes);
+
+// The same id again: set aside, even with a fresh `at`, and nothing written.
+for (const replay of [tvMove, { ...tvMove, at: NOW + 5000 }, { ...tvMove, from: `${P}/alpha`, to: `${P}/alpha2` }]) {
+  const r = take(JSON.stringify(replay), state1, NOW + 5000);
+  assert.deepEqual(r, { out: { ok: false, reason: "applied already" }, writes: {} }, "a replayed id");
+}
+
+// The delay: 2 minutes either way still good, a millisecond past it set aside.
+const addAt = (at, id = "req-b") => JSON.stringify({ id, at, kind: "project-add", folder: `${P}/interface`, name: "interface", logos: "brand/projects/interface.svg" });
+assert.equal(REQUEST_TTL, 120000);
+assert.equal(take(addAt(NOW - 120000), state1).out.ok, true, "120000 ms old: good");
+assert.equal(take(addAt(NOW + 120000), state1).out.ok, true, "120000 ms ahead: good");
+for (const at of [NOW - 120001, NOW + 120001, 0]) {
+  const r = take(addAt(at), state1);
+  assert.deepEqual(r.writes, {}, `at ${at - NOW}: nothing written`);
+  assert.match(r.out.reason, /older than 2 minutes/);
+}
+const b2 = take(addAt(NOW), state1);
+assert.deepEqual([b2.out.entry.name, b2.out.entry.color, b2.out.entry.order, b2.writes["kt.projects"].at(-1).name], ["interface", null, 3, "interface"], "added last, no color yet");
+
+// Invalid requests: a reason, nothing written, the state untouched.
+for (const [what, text, exists = true] of [
+  ["not JSON", "{nope"],
+  ["an array", "[1]"],
+  ["no id", JSON.stringify({ ...tvMove, id: undefined })],
+  ["a bad id", JSON.stringify({ ...tvMove, id: "../x" })],
+  ["an id too long", JSON.stringify({ ...tvMove, id: "x".repeat(65) })],
+  ["no at", JSON.stringify({ ...tvMove, id: "r1", at: undefined })],
+  ["at as text", JSON.stringify({ ...tvMove, id: "r2", at: String(NOW) })],
+  ["an unknown kind", JSON.stringify({ ...tvMove, id: "r3", kind: "project-delete" })],
+  ["no kind", JSON.stringify({ ...tvMove, id: "r4", kind: undefined })],
+  ["a bad name", JSON.stringify({ ...tvMove, id: "r5", name: "a/b" })],
+  ["a logo outside brand", JSON.stringify({ ...tvMove, id: "r6", logos: "/etc/passwd" })],
+  ["a relative folder", JSON.stringify({ ...tvMove, id: "r7", to: "tv-new" })],
+  ["no project there", JSON.stringify({ ...tvMove, id: "r8", from: `${P}/ghost` })],
+  ["not on the disk", JSON.stringify({ ...tvMove, id: "r9" }), false],
+  ["force not true", JSON.stringify({ ...tvMove, id: "r10", force: "yes" }), false],
+  ["an add of a folder there already", JSON.stringify({ id: "r11", at: NOW, kind: "project-add", folder: `${P}/alpha`, name: "alpha" })],
+]) {
+  const r = take(text, state0, NOW, exists);
+  assert.equal(r.out.ok, false, `refused: ${what}`);
+  assert.equal(typeof r.out.reason, "string", `a reason: ${what}`);
+  assert.deepEqual(r.writes, {}, `nothing written: ${what}`);
+}
+assert.deepEqual(state0, frozen, "the state read, never changed");
+
+// The applied ids kept: the last APPLIED_KEPT.
+const many = { ...state0, applied: Array.from({ length: APPLIED_KEPT }, (_, i) => `old-${i}`) };
+const kept = take(JSON.stringify(tvMove), many).writes["kt.registry.applied"];
+assert.deepEqual([kept.length, kept[0], kept.at(-1)], [APPLIED_KEPT, "old-1", "req-c"]);
 
 console.log("registry: ok");
