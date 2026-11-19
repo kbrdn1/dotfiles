@@ -1881,9 +1881,12 @@ export default class Threads extends View {
     const hasNotes = (this.hasNotes = stack.some((c) => c.id === "notes"));
     // Kanban (kt-kanban: the threads as a board by status), under Inbox, once the stack has it.
     const hasKanban = (this.hasKanban = stack.some((c) => c.id === "kanban"));
+    // Accueil (kt-hub, #46: the agents' activity), first of the navigation, once the stack has it.
+    const hasHub = (this.hasHub = stack.some((c) => c.id === "hub"));
     const agentsOpen = (this.agentsOpen = Boolean(shared("kt.nav.agents")) || agentPages.includes(navPage));
     this.nav = {
       "kt-project": () => this.openProjects(),
+      ...(hasHub ? { "kt-hub": () => show("hub") } : {}),
       "kt-new": () => { show("thread"); run("mod.open", { name: "kt-new" }); },
       "kt-inbox": () => show("inbox"),
       ...(hasKanban ? { "kt-kanban": () => show("kanban") } : {}),
@@ -2002,7 +2005,7 @@ export default class Threads extends View {
 
     // The ink under the page's line, the lines counted as drawn (the Agents pages only while the group
     // is open): it glides to the next page's, and fades out on the thread (no page), staying where it was.
-    const navRows = ["new", "inbox", ...(this.hasKanban ? ["kanban"] : []), "agents", ...(agentsOpen ? agentPages : []), "gwm", ...(this.hasNotes ? ["notes"] : []), "search"];
+    const navRows = [...(this.hasHub ? ["hub"] : []), "new", "inbox", ...(this.hasKanban ? ["kanban"] : []), "agents", ...(agentsOpen ? agentPages : []), "gwm", ...(this.hasNotes ? ["notes"] : []), "search"];
     const navAt = navPage === "thread" ? -1 : navRows.indexOf(navPage);
     if (navAt >= 0) this.navAt = navAt;
     // Under a page of the Agents group it starts where that page's box does, after its branch's bend.
@@ -2075,6 +2078,7 @@ export default class Threads extends View {
       )
       .child(v_flex().relative()
         .child(navInk)
+        .when(this.hasHub, (el) => el.child(tool("kt-hub", "house", tr("hub"), () => show("hub"), null, navPage === "hub")))
         .child(
           tool("kt-new", "square-pen", tr("newThread"), () => {
             show("thread");

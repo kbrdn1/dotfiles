@@ -10,14 +10,18 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, theme, shared, props, layout, settings, window as win, setShared, exec, home, agents, focused, openOverlay, nextCommand, checking } from "herdr";
+import { spaces, panes, run, theme, shared, props, layout, settings, window as win, setShared, exec, home, agents, focused, openOverlay, nextCommand, checking, machines } from "herdr";
 import { motionState, frame, enter, fade, sharpen } from "./motion.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 // Copied byte for byte from mods/kt-threads/halo.js: the halo the brand part draws, kt-threads below.
 import { HALO, haloLayers } from "./halo.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine away refuses at once (#61).
-import { guard, reachable } from "./machines.js";
+import { guard, reachable, stateOf } from "./machines.js";
+// #47: when the home page shows by itself (pure, autohub.check.mjs).
+import { facts, shouldShow } from "./autohub.js";
+// #54: the thread's two faces, Terminal | Chat (pure, view.check.mjs).
+import { view } from "./view.js";
 
 const tr = makeT(strings);
 const ask = guard(exec);
@@ -39,6 +43,8 @@ const PAGES = {
   notes: ["Notes", "file-text"],
   // kt-automation, in the Agents group with kt-threads' icon for it; its name is words (page.automation).
   automation: [null, "refresh-cw", "Agents"],
+  // kt-hub (#46), the home page: words too (page.hub).
+  hub: [null, "house"],
 };
 const alpha = (c, a) => (c ?? "#000000").slice(0, 7) + a;
 
@@ -148,12 +154,16 @@ function splitRight() {
 // copy only: both copies get them, and the crumbs one is always shown (the sidebar can be hidden).
 // `panel:<child>` shows the right panel on that surface; `attention` shows the first agent that
 // needs you, else the first done; `picker:<group>` opens Search on a group (0 all, 2 projects);
-// `worktree` opens New thread on a new worktree; `close-pane` / `close-tab` ask kt-confirm first.
+// `worktree` opens New thread on a new worktree; `close-pane` / `close-tab` ask kt-confirm first;
+// `view` (ctrl-b space) switches the thread between its terminal and its Chat, and from a page brings
+// the thread back on its Chat (view.js), `view:chat` / `view:main` pick one.
 const confirm = (title, detail, label, command) =>
   openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { title, detail, label, danger: true, command } });
+const face = (which) => view(which, { layout, run, setShared, panes, focused });
 function route(c) {
   const [name, arg] = [c.split(":")[0], c.slice(c.indexOf(":") + 1)];
-  if (name === "panel") {
+  if (name === "view") face(c.includes(":") ? arg : "");
+  else if (name === "panel") {
     run("layout.show", { id: "panel" });
     run("layout.select", { stack: "panel-body", child: arg });
   } else if (name === "attention") {
@@ -245,7 +255,28 @@ export default class Head extends View {
           .text_size(13)
           .child(div().text_color(t.foreground).child("@"))
           .child(div().text_color(t.accent).child("kbrdn1")), // i18n: tech
-      );
+      )
+      // #47: the home page, beside the name (ctrl-b shift-h too); lit while it shows.
+      .when(Boolean(find(layout(), "hub")), (el) => el.child(button(m, t, "kt-h-hub", "house",
+        () => run("layout.select", { stack: "view", child: "hub" }), find(layout(), "view")?.active === "hub", false, tr("hub"))));
+  }
+
+  // #47, the crumbs copy (always drawn): the home page at its three moments (autohub.js), the facts of the
+  // render before kept to see the transition. Only where the layout has it, and never twice in a row.
+  autoHub(cx) {
+    if (checking() || !find(layout(), "hub")) return;
+    const f = facts({
+      // This computer's layout still read is "loading" too (stateOf calls this computer always ready).
+      machines: machines().map((x) => ({ name: x.name, status: x.layout === "loading" ? "loading" : stateOf(x.name).status })), // i18n: tech
+      spaces: spaces(), agents: agents(), home: home(),
+    });
+    // A copy that starts with the machines already read is a reload (a save, a layout switch), not the
+    // app's start: it only takes the world as it is. ponytail: an app whose layouts are read before kt-head's
+    // first render misses the start's show; ctrl-b shift-h then.
+    if (this.auto === undefined && f.ready) { this.auto = f; return; }
+    const go = shouldShow(this.auto ?? null, f);
+    this.auto = f;
+    if (go && find(layout(), "view")?.active !== "hub") cx.spawn(async () => run("layout.select", { stack: "view", child: "hub" }));
   }
 
   // Project tile: Home's house, else the registry logo, else the initial on the project's color.
@@ -268,6 +299,24 @@ export default class Head extends View {
       .child(s === "working" ? svg(SPIN).size(10).spin(900) : div().size(6).rounded_full().bg(color)
         .when(s === "blocked", (el) => el.loop("opacity", { from: 0.3, to: 1, period: 1200 })))
       .child(text);
+  }
+
+  // #54: the thread's face, Terminal | Chat, the shown one raised; a click picks it (view.js), as
+  // ctrl-b space. Nothing in a layout without the thread-body stack.
+  faces(t) {
+    const body = find(layout(), "thread-body");
+    if (!body) return null;
+    const on = (body.active ?? body.children?.[0]?.id) === "chat" ? "chat" : "main";
+    const seg = (id, which, name) => own(h_flex().id(id).h(20).px(8).items_center().rounded_full().border(1)
+      .font_family(MONO).text_size(10.5).cursor_pointer()
+      .border_color(on === which ? t.border : alpha(t.border, "00")).bg(on === which ? t.raised : alpha(t.raised, "00"))
+      .text_color(on === which ? t.foreground : t.muted).hover((s) => s.text_color(t.foreground))
+      .on_click(() => face(which))
+      .child(name));
+    return h_flex().id("kt-h-faces").flex_none().h(24).px(1).gap(1).items_center().rounded_full().border(1).border_color(t.border)
+      .tooltip(tr("faces"))
+      .child(seg("kt-h-face-main", "main", "Terminal")) // i18n: tech
+      .child(seg("kt-h-face-chat", "chat", "Chat")); // i18n: tech
   }
 
   crumbs(t, w, cx) {
@@ -320,8 +369,14 @@ export default class Head extends View {
               .child(svg(I("git-branch")).size(11).text_color(t.dim))
               .child(div().max_w(220).truncate().child(lead.branch))))
             .when(Boolean(this.status(t, lead)), (el) => el.child(this.status(t, lead)))
-            .child(div().flex_1())),
+            .child(div().flex_1())
+            .when(Boolean(this.faces(t)), (el) => el.child(this.faces(t)))),
       )
+      // No space at all (#46): only the page's title, the home page's most often.
+      .when(!p && Boolean(page), (el) => el
+        .child(svg(I(page?.[1] ?? "layers")).size(14).flex_none().text_color(t.accent))
+        .child(((name) => sharpen(m, `kh-page:${name}`, () => div().text_size(14).font_medium().text_color(t.foreground).child(name)).flex_none())(
+          page ? page[0] ?? tr(`page.${active}`) : "")))
       .when(!p, (el) => el.child(div().flex_1()))
       .child(
         h_flex()
@@ -347,6 +402,7 @@ export default class Head extends View {
   render(cx) {
     const w = win() ?? {};
     const t = theme();
+    if (props()?.part !== "brand") this.autoHub(cx);
     return props()?.part === "brand" ? this.brand(t, w) : this.crumbs(t, w, cx);
   }
 }

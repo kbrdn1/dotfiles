@@ -15,9 +15,8 @@ import { h_flex } from "gpui-base";
 // kt-threads' ring (a copy of its ring.js): the context and the quotas fill a 14 px ring.
 import { ring, ringColor } from "./ring.js";
 import { costLevel, levelColor } from "./levels.js";
-import { agents, focused, theme, panes, spaces, home, readTextFile, exec, checking, openOverlay, notify, nextCommand, shared, setShared, layout, run } from "herdr";
+import { agents, focused, theme, panes, spaces, home, readTextFile, exec, checking, openOverlay, notify, nextCommand, shared, setShared } from "herdr";
 import { motionState, frame, enter, MS } from "./motion.js";
-import { view } from "./view.js";
 // kt-keys' skeleton.js (a byte-identical copy): the focused agent's figures as bars while they are read.
 import { skeleton, readyFor } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the figures that change roll to their new digits.
@@ -107,8 +106,6 @@ export default class SessionLine extends View {
         for (;;) {
           const c = await nextCommand();
           if (c === "switch") this.switchBranch(cx);
-          // ctrl-b space: the thread's terminal or its Chat (view.js).
-          else if (c === "view" || c.startsWith("view:")) view(c.slice(5), { layout, run, setShared, panes, focused });
         }
       });
     }
