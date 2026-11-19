@@ -2338,7 +2338,7 @@ export default class Threads extends View {
           .gap(4)
           .items_center()
           .child(this.button("kt-settings", "", "settings", () => run("app.settings")))
-          .child(this.button("kt-keys", "", "keyboard", () => run("app.help")))
+          .child(this.button("kt-keys", "", "keyboard", () => run("mod.open", { name: "kt-keys" }))) // the layout's help (ctrl-b ?)
           .child(this.button("kt-layout", "", "layers", () => run("layout.switch")))
           // kt-usage's console (its own icon: button() takes its icons from this folder, so as the label).
           // Its hover shows the peek (usagePeek) in place of a tooltip: the two would show together.

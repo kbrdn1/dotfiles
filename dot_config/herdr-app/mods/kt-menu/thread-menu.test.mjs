@@ -89,3 +89,18 @@ test("Renommer asks the name in kt-prompt: tab.rename never goes out bare (Herdr
   expect(opened.map((o) => [o.mod, o.props])).toEqual([["kt-prompt", { rename: { tab: "c1" } }]]);
   expect(ran.filter(([name]) => name === "tab.rename")).toEqual([]);
 });
+
+test("Touches opens the layout's help (kt-keys), never Herdr's app.help; its key is the one of ctrl-b ?", async () => {
+  ran.length = 0;
+  asked = [];
+  props = { overlay: "o1" }; // the global menu: no thread, no space
+  const m = new Menu();
+  m.init(props, { focus_handle: () => ({ focus() {} }), spawn() {} });
+  m.render({});
+  const i = seen.findIndex((s) => s[1] === "mod.open");
+  expect(i).toBeGreaterThan(-1);
+  expect(seen.some((s) => s[1] === "app.help")).toBe(false);
+  expect(asked[i]).toEqual(["mod.open:kt-keys", "mod.open"]);
+  m.choose(i, { write_to_clipboard() {}, notify() {} });
+  expect(ran).toEqual([["mod.open", { name: "kt-keys" }]]);
+});

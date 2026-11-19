@@ -106,7 +106,7 @@ function items(p, git, session) {
     default:
       return [
         [tr("newProject"), "space.new", {}],
-        [tr("keys"), "app.help", {}],
+        [tr("keys"), "mod.open", { name: "kt-keys" }], // the layout's own help (ctrl-b ?), not Herdr's app.help
         [tr("theme", { name: "graphite" }), "app.theme", { name: "graphite" }],
         [tr("theme", { name: "ink" }), "app.theme", { name: "ink" }],
         [tr("theme", { name: "moss" }), "app.theme", { name: "moss" }],
@@ -117,7 +117,7 @@ function items(p, git, session) {
 
 function menuIcon(command) {
   if (command === "copy") return "mods/kt-menu/copy.svg";
-  const name = command.endsWith(".close") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "panel-right" : command === "pane.zoom" ? "square" : "terminal";
+  const name = command.endsWith(".close") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.theme" ? "settings" : command === "pane.split" ? "panel-right" : command === "pane.zoom" ? "square" : "terminal";
   return `mods/workspace-chrome/${name}.svg`;
 }
 
@@ -177,7 +177,7 @@ export default class Menu extends View {
     // first, at once, as before: that dialog comes in on its own and takes the keyboard last. The rest
     // runs, then the menu leaves.
     const opens = (it[1] === "worktree" && it[2].action === "new") || ["tab.close", "pane.close", "space.close"].includes(it[1])
-      || it[1].endsWith(".rename") || it[1] === "app.help";
+      || it[1].endsWith(".rename") || it[1] === "mod.open";
     if (opens) closeOverlay(props()?.overlay);
     const full = { kind: "dialog", width: 1, height: 1, frame: "none" };
     if (it[1] === "worktree") {
@@ -224,7 +224,7 @@ export default class Menu extends View {
       .children(
         rows(m, cx, "km-items", list, (it) => it[0], (it, i) =>
           v_flex()
-            .when(i > 0 && (it[1].endsWith(".close") || it[1] === "app.help" || (["app.theme", "copy"].includes(it[1]) && list[i - 1][1] !== it[1])), el => el.child(div().mx(7).my(4).h(1).bg(t.border)))
+            .when(i > 0 && (it[1].endsWith(".close") || it[1] === "mod.open" || (["app.theme", "copy"].includes(it[1]) && list[i - 1][1] !== it[1])), el => el.child(div().mx(7).my(4).h(1).bg(t.border)))
             .child(h_flex()
             .id(`mi-${i}`)
             .h(31)
