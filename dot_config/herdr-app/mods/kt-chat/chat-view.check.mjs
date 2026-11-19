@@ -2,7 +2,7 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown } from "./chat-view.js";
+import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep } from "./chat-view.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
 const claude = (address, tab) => ({ address, tab, program: { key: "claude", name: "Claude Code" }, app: "claude-code" });
@@ -73,5 +73,18 @@ assert.equal(chatShown(lay("main", "thread")), false);
 assert.equal(chatShown(lay()), false, "thread-body shows main by default");
 assert.equal(chatShown(lay("chat", "inbox")), false, "a page covers the thread");
 assert.equal(chatShown({ id: "root", children: [] }), false, "another layout");
+
+// ── The live tail's moves (#55) ─────────────────────────────────────────────
+const at = (o) => liveStep({ shown: true, wasShown: true, status: "idle", lastStatus: "idle", hasState: true, fixed: null, ...o });
+assert.deepEqual(at({}), { delta: false, tick: false }, "at rest: nothing");
+assert.deepEqual(at({ status: "working", lastStatus: "working" }), { delta: false, tick: true }, "shown and working: the timer");
+assert.deepEqual(at({ status: "working", lastStatus: "idle" }), { delta: true, tick: true }, "it starts working: a delta now, then the timer");
+assert.deepEqual(at({ status: "idle", lastStatus: "working" }), { delta: true, tick: false }, "it stops: the last lines, timer off");
+assert.deepEqual(at({ status: "blocked", lastStatus: "working" }), { delta: true, tick: false });
+assert.deepEqual(at({ shown: false, status: "working", lastStatus: "working" }), { delta: false, tick: false }, "hidden: no timer");
+assert.deepEqual(at({ wasShown: false }), { delta: true, tick: false }, "back on screen: catch up once");
+assert.deepEqual(at({ lastStatus: undefined }), { delta: false, tick: false }, "the first render: no status change yet");
+assert.deepEqual(at({ hasState: false, status: "working", lastStatus: "idle" }), { delta: false, tick: true }, "nothing read yet: the full read comes first");
+assert.deepEqual(at({ fixed: "/f.jsonl", status: "working", lastStatus: "working" }), { delta: false, tick: false }, "a fixed file has no agent to follow");
 
 console.log("chat-view ok");

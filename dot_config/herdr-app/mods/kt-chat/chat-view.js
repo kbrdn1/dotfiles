@@ -59,6 +59,17 @@ export function chatShown(root) {
   return shownChild(body) === "chat" && (!page || shownChild(page) === "thread");
 }
 
+/**
+ * The live tail's next move (#55), at a render: `delta` reads what the session wrote since the last
+ * read (the face came back on screen, or the agent's status changed: the last lines of a turn),
+ * `tick` keeps a timer reading deltas (the face shows and its agent works). At rest: neither.
+ */
+export function liveStep({ shown, wasShown, status, lastStatus, hasState, fixed }) {
+  const delta = Boolean(hasState) && ((shown && !wasShown) || (lastStatus !== undefined && status !== lastStatus));
+  const tick = Boolean(shown) && status === "working" && !fixed;
+  return { delta, tick };
+}
+
 /** The first turn drawn, of n, when the last `show` are. */
 export const firstShown = (n, show) => Math.max(0, n - show);
 

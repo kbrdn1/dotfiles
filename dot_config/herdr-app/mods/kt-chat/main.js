@@ -13,12 +13,16 @@
 // API error, command output, background task), sub-agents' cards in a live turn, « Tours
 // précédents » at the top. Keys (focusable): j k turns, gg G, ctrl-d ctrl-u, o / enter fold, y copy
 // the turn's answer, r reread. `kt-chat.file:<path>` shows that JSONL instead (tests), `file:` back.
+//
+// Live (#55, live()): while this face shows and the agent works, a delta (`--from end`) every TICK
+// ms, plus one at each status change and on coming back on screen; nothing at rest. Under the live
+// turn, « Travaille… » and the messages typed meanwhile (« en file »).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
 import { agents, focused, panes, theme, settings, shared, home, appHome, exec, readTextFile, checking, nextCommand, notify, props, layout } from "herdr";
-import { ingest, prepend, build, tally, foldedSteps } from "./chat-model.js";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown } from "./chat-view.js";
+import { ingest, prepend, build, tally, foldedSteps, trim, pendingQueue } from "./chat-model.js";
+import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep } from "./chat-view.js";
 import { preview, docOf, mdState, mdBudget, target as linkTarget } from "./markdown.js";
 import { motionState, frame, enter } from "./motion.js";
 import { skeleton, readyFor } from "./skeleton.js";
@@ -34,6 +38,9 @@ const K = 30; // turns read at first, and per read of « Tours précédents »
 const SHOW = 10;
 const BUDGET = 500000; // chat-index.ts --budget: characters of JSON per read
 const MAX_ENTRIES = 900; // --max-entries: JSON.parse + build() stay ~15 ms in the mod engine
+const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before the oldest go
+// The live tail: a delta read this often, only while the Chat shows and its agent works.
+const TICK = 750;
 const STEPS = 6; // steps an activity shows before « N étapes de plus »
 const MORE = 30; // steps each « N étapes de plus » adds
 const LINES = 60; // lines a detail box shows
@@ -61,6 +68,10 @@ export default class Chat extends View {
     this.state = null; // chat-model's state (ingest / prepend)
     this.turns = [];
     this.builtLive = false;
+    this.queued = []; // pendingQueue() of a live turn
+    this.ticker = null; // the live tail's timer, only while the face shows and the agent works
+    this.wasShown = false;
+    this.lastStatus = undefined;
     this.err = null; // { code, path?, why? }: why the transcript isn't shown
     this.readFor = undefined; // the target the shown data was read for (skeleton.js readyFor)
     this.loadedFor = undefined;
@@ -136,16 +147,24 @@ export default class Chat extends View {
     return JSON.parse(r.stdout);
   }
 
-  /** Reads the last K turns of what is shown now. Coalesced: one read at a time, one more after. */
-  load(cx) {
+  /**
+   * Reads what is shown now: the last K turns (`delta` false), or the live tail (`delta`: what the
+   * session wrote since the last read, `--from end`, appended). A delta falls back to a full read
+   * when there is nothing to continue (another agent, another session's file after /clear).
+   * Coalesced: one read at a time, one more after (a full one wins over a delta). A delta redraws
+   * only when something came, and a failed one keeps what is shown (the next tick tries again).
+   */
+  load(cx, delta = false) {
     if (this.busy) {
-      this.again = true;
+      this.again = this.again === "full" || !delta ? "full" : "delta";
       return;
     }
     this.busy = true;
     const tg = target();
     const want = this.wanted(tg);
+    const live = tg.agent?.status === "working" && !this.fixed;
     cx.spawn(async (cx) => {
+      let changed = true;
       try {
         if (!want) {
           this.state = null;
@@ -153,42 +172,75 @@ export default class Chat extends View {
           this.err = null;
         } else {
           const path = this.fixed ?? (await this.locate(want));
-          const out = path ? await this.index(path) : null;
-          if (!path) this.err = { code: "noSession" };
-          else if (out.error === "missing") this.err = { code: "missing", path };
-          else {
-            this.err = null;
-            this.state = ingest(null, out);
-            this.rebuild(tg.agent?.status === "working" && !this.fixed);
-            this.follow = true;
-            this.cur = -1;
-            this.show = SHOW;
-            this.reveal = "bottom";
-          }
-          if (this.err) {
-            this.state = null;
-            this.turns = [];
+          if (delta && path && this.state?.path === path && this.readFor === want) {
+            changed = await this.tail(path, live);
+          } else {
+            const out = path ? await this.index(path) : null;
+            if (!path) this.err = { code: "noSession" };
+            else if (out.error === "missing") this.err = { code: "missing", path };
+            else {
+              this.err = null;
+              this.state = ingest(null, out);
+              this.rebuild(live);
+              this.follow = true;
+              this.cur = -1;
+              this.show = SHOW;
+              this.reveal = "bottom";
+            }
+            if (this.err) {
+              this.state = null;
+              this.turns = [];
+            }
           }
         }
       } catch (e) {
-        this.state = null;
-        this.turns = [];
-        this.err = { code: "failed", why: String(e?.message ?? e).slice(0, 300) };
+        if (delta && this.state) changed = false;
+        else {
+          this.state = null;
+          this.turns = [];
+          this.err = { code: "failed", why: String(e?.message ?? e).slice(0, 300) };
+        }
       } finally {
         this.readFor = want;
         this.busy = false;
-        cx.notify();
+        if (changed) cx.notify();
       }
       if (this.again) {
+        const again = this.again;
         this.again = false;
-        this.load(cx);
+        this.load(cx, again === "delta");
       }
     });
+  }
+
+  /** The live tail of `path` into the state. Answers whether anything changed (a redraw is due). */
+  async tail(path, live) {
+    const out = await this.index(path, ["--from", String(this.state.end)]);
+    if (out.error === "missing") {
+      this.err = { code: "missing", path };
+      this.state = null;
+      this.turns = [];
+      return true;
+    }
+    const before = this.state;
+    this.state = trim(ingest(before, out), KEEP);
+    // ingest keeps the entries array when nothing came (skipped lines only), trim when under KEEP.
+    const grew = this.state.entries !== before.entries;
+    if (!grew && live === this.builtLive) return false; // the state still moves on to the new end
+    // The cursor follows its turn by id (turns come in at the bottom, old ones go at the top); the
+    // drawn window keeps its size.
+    const curId = this.cur >= 0 ? this.turns[this.cur]?.id : null;
+    this.rebuild(live);
+    this.cur = curId ? this.turns.findIndex((t) => t.id === curId) : -1;
+    if (this.follow) this.reveal = "bottom";
+    return true;
   }
 
   rebuild(live) {
     this.builtLive = live;
     this.turns = this.state ? build(this.state.entries, { live }) : [];
+    // Messages typed while it works, not taken yet: their « en file » bubbles under the live turn.
+    this.queued = live && this.state ? pendingQueue(this.state.entries) : [];
     // The fold's counts, once per build rather than on every render.
     for (const turn of this.turns) turn.tally = turn.fold ? tally(foldedSteps(turn.items, turn.fold)) : null;
   }
@@ -552,6 +604,19 @@ export default class Chat extends View {
     return h_flex().flex_none().justify_center().py(8).child(this.label(t, tr("start")));
   }
 
+  // Under a live turn: the agent at work (a native spin, no timer), then what was typed meanwhile and
+  // not taken yet, in pale « en file » bubbles (queue-operation), as the TUI shows them.
+  working(t) {
+    return v_flex().id("kc-working").flex_none().w_full().px(12).pb(10).gap(6)
+      .child(h_flex().h(24).px(4).gap(8).items_center()
+        .child(svg(SPIN).size(13).flex_none().text_color(t.working).spin(900))
+        .child(div().text_size(12).text_color(t.muted).child(tr("working"))))
+      .children(this.queued.map((q, i) => v_flex().items_end().gap(3)
+        .child(div().id(`kc-q-${i}`).max_w(this.bubbleW()).px(12).py(6).rounded(14).border(1).border_dashed().border_color(t.border)
+          .text_size(12.5).text_color(t.muted).children(lines(q.text).slice(0, 6).map((l) => div().child(l || " "))))
+        .child(this.label(t, tr("queued")))));
+  }
+
   empty(t, title, body, retry) {
     return v_flex().flex_1().min_h(0).p(16).gap(10).items_center().justify_center()
       .child(svg(MSG).size(22).text_color(t.dim))
@@ -581,7 +646,9 @@ export default class Chat extends View {
     const budget = mdBudget(); // one per render, shared by every prose block (markdown.js)
     const from = this.first();
     // The 1 px end mark: revealing it shows the bottom of a last turn taller than the view.
-    const children = [this.head(t), ...this.turns.slice(from).map((turn, i) => this.turn(t, cx, turn, from + i, budget, keyed)), div().flex_none().h(1)];
+    const children = [this.head(t), ...this.turns.slice(from).map((turn, i) => this.turn(t, cx, turn, from + i, budget, keyed))];
+    if (this.builtLive) children.push(this.working(t));
+    children.push(div().flex_none().h(1));
     if (this.reveal != null) {
       this.scroll.scroll_to_item(this.reveal === "bottom" ? children.length - 1 : Math.min(this.reveal, children.length - 1));
       this.reveal = null;
@@ -597,6 +664,44 @@ export default class Chat extends View {
         .child(svg(I("chevron-down")).size(14).text_color(t.muted)))));
   }
 
+  /**
+   * The live tail (#55), driven by the agent's status, never by a folder watch (a session's folder is
+   * its whole project's: a team's sub-agents write there all the time):
+   * - a delta every TICK ms, only while this face shows and its agent works (the timer stops itself
+   *   when either goes: a hidden copy doesn't draw, so its tick notices);
+   * - one delta at each status change (working → idle / blocked / done: the last lines) and when
+   *   the face shows again after being hidden;
+   * - nothing at rest.
+   */
+  live(cx, tg, want) {
+    if (checking() || want == null || want !== this.loadedFor) return;
+    const shown = this.isShown();
+    const status = tg.agent?.status ?? null;
+    const { delta, tick } = liveStep({ shown, wasShown: this.wasShown, status, lastStatus: this.lastStatus, hasState: Boolean(this.state), fixed: this.fixed });
+    if (delta) this.load(cx, true);
+    this.wasShown = shown;
+    this.lastStatus = status;
+    if (tick && !this.ticker) {
+      this.ticker = cx.timer.every(TICK, (cx) => {
+        if (!this.isShown() || target().agent?.status !== "working") {
+          this.ticker?.cancel();
+          this.ticker = null;
+          this.wasShown = this.isShown();
+          return;
+        }
+        this.load(cx, true);
+      });
+    } else if (!tick && this.ticker) {
+      this.ticker.cancel();
+      this.ticker = null;
+    }
+  }
+
+  /** This face is on screen: the layout's thread shows its Chat, or this copy shows a fixed file. */
+  isShown() {
+    return Boolean(this.fixed) || chatShown(layout());
+  }
+
   render(cx) {
     const t = theme();
     this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
@@ -608,9 +713,7 @@ export default class Chat extends View {
       this.shownSteps.clear();
       this.load(cx);
     }
-    // The agent started or stopped working: only the last turn's live state moves (a cheap rebuild).
-    const live = tg.agent?.status === "working" && !this.fixed;
-    if (this.state && live !== this.builtLive && !checking()) cx.spawn(async (cx) => { this.rebuild(live); cx.notify(); });
+    this.live(cx, tg, want);
     // The thread switched to its Chat face: take the keyboard, once per request, only when the
     // layout shows this face (a hidden copy doesn't draw anyway).
     const ask = shared("kt.chat.focus");

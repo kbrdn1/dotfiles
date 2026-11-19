@@ -72,6 +72,8 @@ export default {
     "bottom": "Aller au dernier tour (G)",
     "reread": "Relire (r)",
     "hint": "j k tours · o replier · gg G · ctrl-d ctrl-u · y copier · r relire",
+    "working": "Travaille…",
+    "queued": "En file",
   },
   en: {
     "empty.noAgent.title": "No agent in this thread",
@@ -144,5 +146,7 @@ export default {
     "bottom": "Go to the latest turn (G)",
     "reread": "Reread (r)",
     "hint": "j k turns · o fold · gg G · ctrl-d ctrl-u · y copy · r reread",
+    "working": "Working…",
+    "queued": "Queued",
   },
 };

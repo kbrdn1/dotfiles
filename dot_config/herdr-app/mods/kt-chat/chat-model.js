@@ -127,6 +127,22 @@ export function ingest(state, out) {
   };
 }
 
+/**
+ * A state grown past `max` entries by the live tail: its oldest turns go, whole (the cut falls on a
+ * turn's opener, else on a line start inside a turn longer than `max`), and `more` says they can be
+ * read again. Keeps build() within the ~50 ms a mod call has.
+ */
+export function trim(state, max) {
+  const n = state?.entries?.length ?? 0;
+  if (n <= max) return state;
+  const e = state.entries;
+  let i = n - max;
+  while (i < n && !(e[i].k === "user" && e[i].turn)) i++;
+  if (i >= n) i = n - max;
+  while (i > 0 && e[i - 1].o === e[i].o) i--;
+  return { ...state, entries: e.slice(i), start: e[i].o, more: true };
+}
+
 /** Older turns (`--to state.start`) put in front. */
 export function prepend(state, out) {
   if (!state || out.path !== state.path || out.end !== state.start) return state;

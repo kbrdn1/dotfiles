@@ -3,7 +3,7 @@
 // turns, items, fold, tally, queue, ingest) on chat-fixture.jsonl, an invented session.
 import assert from "node:assert/strict";
 import { index, startsTurn } from "./chat-index.ts";
-import { build, fold, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle } from "./chat-model.js";
+import { build, fold, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
 
 const all = new Uint8Array(await Bun.file(new URL("./chat-fixture.jsonl", import.meta.url)).arrayBuffer());
 const run = (from = 0, to = all.length, opts = {}) => index(all.subarray(from, to), { from, size: all.length, path: "/f.jsonl", home: "/w", ...opts });
@@ -199,6 +199,27 @@ assert.equal(ingest(s1, { ...full, start: full.end, from: full.end, entries: [] 
 const gap = ingest(s1, { ...last2, start: last2.start + 1 });
 assert.equal(gap.entries.length, last2.entries.length, "a delta cut by the budget replaces");
 assert.equal(ingest(s1, { ...full, path: "/g.jsonl" }).path, "/g.jsonl");
+
+// The live tail tells « nothing came » by identity: a delta without entries keeps the entries array
+// (its end still moves on), trim under the cap keeps the state.
+const s0 = ingest(null, run(0, full.entries[5].o));
+const quiet = ingest(s0, { ...run(s0.end, s0.end), path: s0.path });
+assert.equal(quiet.entries, s0.entries);
+assert.equal(trim(quiet, 1000), quiet);
+const moved = ingest(s0, run(s0.end));
+assert.notEqual(moved.entries, s0.entries);
+
+// Trim: the live tail past `max` entries drops whole turns from the top, then reads them back.
+const big = ingest(null, full);
+assert.equal(trim(big, 1000), big, "under the cap: untouched");
+const cut = trim(big, 12);
+assert.ok(cut.entries.length <= 12 && cut.more);
+assert.equal(cut.entries[0].k === "user" && cut.entries[0].turn, true, "the cut falls on a turn's opener");
+assert.equal(cut.start, cut.entries[0].o);
+assert.deepEqual(prepend(cut, run(0, cut.start)).entries, full.entries, "what was trimmed reads back with --to start");
+const inside = trim({ ...big, entries: big.entries.filter((e) => !(e.k === "user" && e.turn)) }, 5);
+assert.equal(inside.entries.length, 5, "no opener in reach: a cut inside the turn, on a line start");
+assert.equal(inside.start, inside.entries[0].o);
 
 // Tool kinds and titles.
 assert.deepEqual(["Read", "Edit", "Write", "MultiEdit", "Bash", "Grep", "Glob", "Agent", "Task", "Skill", "TodoWrite", "WebFetch"].map(toolKind), ["read", "edit", "edit", "edit", "execute", "search", "search", "agent", "agent", "skill", "tasks", "other"]);
