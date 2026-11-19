@@ -18,6 +18,10 @@ marge qu'elle a au-dessus (56 px). `CHROME=…` change le binaire.
 
 Notes :
 - `--screenshot` de Chrome peut écrire le PNG sans rendre la main : le script attend le fichier puis tue Chrome.
+- `<outdir>` **absolu**, et **sans `#`** dans le chemin. Un outdir relatif donne `file://docs/_assets/dark.html`
+  (ERR_INVALID_URL), et un `#` (un worktree `docs-#77-…`) est lu par Chrome comme un fragment : dans les
+  deux cas, le rendu « réussit » et sort deux PNG de la page d'erreur de Chrome, à la bonne taille. Depuis
+  un tel dossier, rendre vers un outdir du scratchpad puis copier les PNG. Toujours regarder les PNG.
 - Vérifier le PNG (`sips -g pixelWidth -g pixelHeight`) puis l'afficher (Read) pour validation.
 - Chrome introuvable ou rendu KO → fallback : servir le dossier (`python3 -m http.server 8799`),
   charger `http://localhost:8799/dark.html` via playwright MCP (`browser_resize` W×H →
