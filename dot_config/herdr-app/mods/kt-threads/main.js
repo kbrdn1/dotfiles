@@ -54,6 +54,7 @@ import { Vim, keysOf, step } from "./vim.js";
 import { decide, decisionButtons, pillKeys, press } from "./decide.js";
 // Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
 import { motionState, frame, enter, collapse, ink, fade, sheet, leave, leaving, rows as motionRows } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 import { skeleton } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the nav's counts, the group heads', the focus card's figures,
 // and (12 threads or fewer listed) the cards' ages and durations roll to their new digits.
@@ -239,6 +240,7 @@ const SQUARE = 30, BAR_GAP = 6, BAR_PAD = 12, ARROW = 20;
 
 export default class Threads extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     this.hover = null;
     this.showSnoozed = false;
     this.snoozing = null; // the row showing its snooze choices
@@ -1091,10 +1093,15 @@ export default class Threads extends View {
           cx.notify();
         })
         .when(!drag, (el) => el.on_click(onClick))
-        .child(
-          div().size_full().rounded(6).bg(logo || icon ? t.raised : color).flex().items_center().justify_center()
+        // Without a logo: the initial on the logos' dithered background of its color (projtile.js,
+        // 24 = the square less its padding and border).
+        .child(logo || icon
+          ? div().size_full().rounded(6).bg(t.raised).flex().items_center().justify_center()
             .when(dim, (el) => el.opacity(0.4))
-            .child(icon ?? (logo ? image(logo).size(18) : div().text_size(11).font_semibold().text_color(t.chrome).child([...name][0]?.toUpperCase() ?? "?"))),
+            .child(icon ?? image(logo).size(18))
+          : projTile(this.tiles, { color, size: 24,
+            letter: div().text_size(11).font_semibold().text_color(LETTER).child([...name][0]?.toUpperCase() ?? "?") })
+            .when(dim, (el) => el.opacity(0.4)),
         );
     };
     // Another machine's project (#64): its name says the machine (and its state when it doesn't answer),
@@ -1382,8 +1389,9 @@ export default class Threads extends View {
   // ---------- grouped by project (threads-model.js' projectGroups) ----------
 
   // A project's header, one thin line (no frame, no rule: the space between groups is enough): its
-  // 14 px logo (the registry's, for the appearance now), else its initial on its color, Home's
-  // house; its name as a mono eyebrow, how many threads, "N te demandent" only when some do; a
+  // 14 px logo (the registry's, for the appearance now), else its initial on the logos' dithered
+  // background of its color (projtile.js), Home's house; its name as a mono eyebrow, how many
+  // threads, "N te demandent" only when some do; a
   // chevron only once folded (a click, or h on it or one of its threads, folds it).
   groupHead(t, g, i) {
     const name = g.home ? this.homeLabel(g.space) : g.entry?.name ?? g.space.name;
@@ -1394,8 +1402,8 @@ export default class Threads extends View {
       ? svg(I("house")).size(12).text_color(t.muted)
       : logo
         ? image(logo).size(14).rounded(3)
-        : div().size(14).rounded(3).bg(paint(t, g.entry?.color) ?? spaceColor(t, g.space)).flex().items_center().justify_center()
-          .child(div().text_size(8.5).font_semibold().text_color(t.chrome).child([...name][0]?.toUpperCase() ?? "?"));
+        : projTile(this.tiles, { color: paint(t, g.entry?.color) ?? spaceColor(t, g.space), size: 14,
+          letter: div().text_size(8.5).font_semibold().text_color(LETTER).child([...name][0]?.toUpperCase() ?? "?") });
     return h_flex()
       .id(`kt-grp-${i}`)
       .mx(8)
@@ -1936,6 +1944,7 @@ export default class Threads extends View {
 
   // panel.js: the whole sidebar glides in and out with its column (#73).
   render(cx) {
+    tilesFrame(this.tiles, cx);
     return columnIn("side", this.motion, this.draw(cx));
   }
 
@@ -2211,11 +2220,10 @@ export default class Threads extends View {
           .child(((logo) => shown && this.isHome(shown)
             ? svg(I("house")).size(14).flex_none().text_color(t.accent)
             // The project's registry logo when it has one, as in the bar below; else its letter tile (the
-            // group headers' mark: the project's colour, its initial in chrome).
+            // group headers' mark: its initial on the logos' dithered background of its colour, projtile.js).
             : logo ? image(logo).size(16).flex_none()
-            : shown ? div().size(16).rounded(4).flex_none().bg(paint(t, this.entryOf(shown, registry())?.color) ?? spaceColor(t, shown))
-              .flex().items_center().justify_center()
-              .child(div().text_size(9.5).font_semibold().text_color(t.chrome).child([...shown.name][0]?.toUpperCase() ?? "?"))
+            : shown ? projTile(this.tiles, { color: paint(t, this.entryOf(shown, registry())?.color) ?? spaceColor(t, shown), size: 16,
+              letter: div().text_size(9.5).font_semibold().text_color(LETTER).child([...shown.name][0]?.toUpperCase() ?? "?") })
             : div().size(10).rounded(3).flex_none().bg(t.dim))(shown && !this.isHome(shown) ? logoOf(this.entryOf(shown, registry())) : null))
           .child(div().min_w(0).truncate().text_size(14).font_medium().child(shown ? (this.isHome(shown) ? this.homeLabel(shown) : shown.name) : tr("noProject")))
           .child(svg(I("chevron-down")).size(14).flex_none().text_color(t.muted))
