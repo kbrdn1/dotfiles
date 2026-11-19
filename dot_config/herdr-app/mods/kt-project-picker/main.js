@@ -365,7 +365,7 @@ export default class ProjectPicker extends View {
     // 24 px (6 + 16 + 2): the height stays a sum of whole lines (kt-threads' formula). The section's
     // name, how many lines it has, a dashed rule (h 0: it adds nothing to the height).
     // Another machine's header (#64, kbrdn-spaces' model, still 24 px): its state's dot, ROOT, its state
-    // in a word (a login's copies the command), a linger warning (opens machine-add), and « + » (a
+    // in a word (a login's copies the command), a linger warning (opens kt-machine-add), and « + » (a
     // project there) while it answers.
     const machineBits = (m) => {
       const st = stateOf(m);
@@ -379,7 +379,7 @@ export default class ProjectPicker extends View {
             .on_click((_e, cx) => { cx.write_to_clipboard(login); notify({ title: tr("copied"), body: login, level: "success", timeout: 2000 }); }))
           .child(word),
         st.linger === false && div().id(`pp-linger-${m}`).flex_none().text_color(t.blocked).cursor_pointer().tooltip(tr("machine.lingerTip"))
-          .on_click(() => { closeOverlay(props().overlay); openOverlay({ mod: "machine-add", kind: "dialog", width: 560 }); }).child("⚠"),
+          .on_click(() => { closeOverlay(props().overlay); run("mod.open", { name: "kt-machine-add" }); }).child("⚠"),
       ].filter(Boolean);
     };
     const eyebrow = (text, n, m) => h_flex().flex_none().h(24).px(8).pt(6).pb(2).gap(8).items_center().font_family(MONO).text_size(10.5).line_height("16px")

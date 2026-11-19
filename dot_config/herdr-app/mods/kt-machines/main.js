@@ -2,9 +2,9 @@
 // navigation (#64, Kylian's decision of 2026-11-19). For each one (machines.js: shared "kt.machines",
 // published by kt-threads, and machines()): its state's dot and name, ROOT when it logs in as root,
 // its account and core; a login to do again (the command, Copy); its programs stopping at logout (the
-// warning, « Voir » opens machine-add, which has the administrator's command); « + projet » opens a
+// warning, « Voir » opens kt-machine-add, which has the administrator's command); « + projet » opens a
 // project there (space.new {machine}: a shell in its home, never an agent, so never asked first). The
-// foot: Add a machine (machine-add) and Settings › Machines (rename, update, remove, reconnect a
+// foot: Add a machine (kt-machine-add) and Settings › Machines (rename, update, remove, reconnect a
 // rebuilt one). Nothing here runs anything on a machine.
 // Keys (vim.js; kt-keys lists them, Modales): j / k (↓ ↑), gg / G move; enter or o: copy the login,
 // else open a project there; y copies the login; q or esc closes; ? the keys.
@@ -63,10 +63,11 @@ export default class Machines extends View {
     this.dismiss(cx);
   }
 
-  // machine-add, over this dialog's place: its linger card has the administrator's command.
-  add(cx) {
-    this.dismiss(cx);
-    openOverlay({ mod: "machine-add", kind: "dialog", width: 560 });
+  // kt-machine-add (machine-add's clone, in our look), over this dialog's place: its linger card has the
+  // administrator's command. This dialog closes at once, as kt-menu's do: two veils never stack.
+  add() {
+    closeOverlay(props().overlay);
+    run("mod.open", { name: "kt-machine-add" });
   }
 
   // enter / o on a card (card.js primary): copy its login, else open a project there.

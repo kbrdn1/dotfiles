@@ -4,7 +4,7 @@
 //   { name, status, root, account, version, why, login, linger, primary }
 //   login:   `hc machine login <name>` when it needs one (Copy), else null
 //   linger:  true when its programs stop at logout (keeps_running_after_logout false): the warning,
-//            whose button opens machine-add (the administrator's command is there)
+//            whose button opens kt-machine-add (the administrator's command is there)
 //   primary: what enter (or o) does on it: "login" (copies the command), "project" (opens a project
 //            there: space.new {machine}, a shell in its home, never an agent), null when it's away
 
