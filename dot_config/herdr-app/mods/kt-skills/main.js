@@ -56,6 +56,7 @@ import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
 import { split } from "./tiers.js";
+import { rowBadges } from "./badges.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
@@ -700,6 +701,8 @@ export default class Skills extends View {
     if (x.model) badges.push(tr("badge.model", { model: x.model }));
     if (x.tools) badges.push(tr("badge.tools"));
     if (x.off) badges.push(tr("badge.off"));
+    // A narrow list (badges.js): the name keeps its room first, the badges go (the detail has them).
+    const kept = rowBadges(this.listW ?? 1100, badges, tr(`src.${x.source}`));
     return h_flex().id(`kts-row-${x.key}`).pl(10).pr(14).py(10).gap(10).items_start().rounded(12).border(1)
       .border_color(cursor === "ring" ? alpha(t.accent, "99") : on ? alpha(t.accent, "66") : t.border)
       .bg(on || cursor === "ring" ? alpha(t.accent, "24") : picked ? alpha(t.accent, "14") : cursor === "mark" ? t.hover : t.background)
@@ -719,7 +722,7 @@ export default class Skills extends View {
         .child(h_flex().min_w(0).items_center().font_family(MONO).text_size(13).font_medium()
           .when(x.invocable, (el) => el.child(div().flex_none().text_color(t.dim).child("/")))
           .child(div().min_w(0).truncate().text_color(t.foreground).child(x.name)))
-        .children(badges.map((b) => this.tag(t, t.dim, b)))
+        .children(kept.map((b) => this.tag(t, t.dim, b)))
         .child(div().flex_1())
         .child(this.tag(t, t.muted, tr(`src.${x.source}`)))
         .child(div().w(46).flex_none().font_family(MONO).text_size(11).text_color(t.dim).child(x.harness)))
@@ -945,7 +948,9 @@ export default class Skills extends View {
     // hysteresis): list and detail side by side, or one of them (narrow). Side by side the widths are
     // continuous: the body keeps its id and only a column that appears fades in (the list here, the
     // detail by its own enter); the selection and the scrolls (their handles) stay.
-    const s = (this.tiers = split(this.width - (props()?.overlay ? 8 : 0), { ratio: 0.45, prev: this.tiers?.tier }));
+    const w = this.width - (props()?.overlay ? 8 : 0);
+    const s = (this.tiers = split(w, { ratio: 0.45, prev: this.tiers?.tier }));
+    this.listW = x && !s.solo ? s.list : w; // the list's real width, for its rows' badges (badges.js)
     // No frame of its own as a page: the layout's center column (chrome, radius 20, padding 4)
     // holds it. As a frameless dialog (frame: "none") it draws that same frame.
     return v_flex().id("kts-root").size_full().gap(4).text_color(t.foreground)
