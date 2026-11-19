@@ -19,13 +19,15 @@ import { panelIn, togglePanel } from "./panel.js";
 
 const tr = makeT(strings);
 
+// [id, name, icon]. The name as is for a product's or a view's own name, the same in every language; null
+// for a plain word, translated under its id in strings.js (surfaces.check.mjs).
 const SURFACES = [
   ["files", "Files", "mods/kt-threads/folder-tree.svg"],
   ["diff", "Changes", "mods/kt-threads/file-diff.svg"],
   ["history", "History", "mods/kt-panel-head/history.svg"],
   ["flow", "Flow", "mods/kt-panel-head/workflow.svg"],
   ["crosstalk", "Crosstalk", "mods/kt-panel-head/messages-square.svg"],
-  ["context", "Context", "mods/kt-panel-head/gauge.svg"],
+  ["context", null, "mods/kt-panel-head/gauge.svg"],
   ["gwm-panel", "GWM", "mods/kt-threads/git-branch.svg"],
 ];
 // What gives each surface the keyboard after a click on its segment (#78), as [ ] do (kt-files' panelTab):
@@ -85,8 +87,9 @@ export default class PanelHead extends View {
             .border(1).border_color(alpha(t.accent, "66")).bg(alpha(t.accent, "24")))
           : div().id("ph-ink-wait").absolute().w(0).h(0))
         .children(
-        SURFACES.map(([id, label, icon]) => {
+        SURFACES.map(([id, literal, icon]) => {
           const on = id === active;
+          const label = literal ?? tr(id); // null: a plain word, translated (strings.js)
           return own(
             h_flex()
               .id(`ph-${id}`)

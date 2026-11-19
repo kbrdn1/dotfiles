@@ -41,16 +41,18 @@ export function merge(state, path, read) {
 }
 
 /**
- * The context now: { tokens, pct, compacted }. The status line's tokens are the last call's (exact); a
- * compaction after that call makes them stale (its ctx_pct reads 0 until the next call): then the
- * compaction's postTokens, `compacted` its time. `window`: the status line's, 1M unknown.
+ * The context now: { tokens, pct, compacted }. The transcript's last call (ctx-index.ts: its last
+ * iteration's), else the status line's tokens (they are the call's top-level usage: an advisor consulted
+ * mid-call sums its iterations there, past the window); a compaction after that call makes both stale (the
+ * line's ctx_pct reads 0 until the next call): then the compaction's postTokens, `compacted` its time.
+ * `window`: the status line's, 1M unknown.
  */
 export function current(state, line) {
   const size = line?.window || 1_000_000;
   const turn = state?.turns?.at(-1), cut = state?.compactions?.at(-1);
   const after = cut && Number.isFinite(cut.post) && (!turn || (cut.at && turn.at && cut.at > turn.at));
   const fromLine = (line?.input_tokens ?? 0) + (line?.cache_read_input_tokens ?? 0) + (line?.cache_creation_input_tokens ?? 0);
-  const tokens = after ? cut.post : fromLine || turn?.tokens || 0;
+  const tokens = after ? cut.post : turn?.tokens || fromLine || 0;
   const pct = tokens > 0 ? Math.round((tokens / size) * 100) : Math.round(line?.ctx_pct ?? 0);
   return { tokens, pct, window: size, compacted: after ? cut.at : null };
 }

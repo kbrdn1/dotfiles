@@ -137,5 +137,25 @@ eq("nothing", current(null, { ctx_pct: 12, window: 200000 }), { tokens: 0, pct: 
 eq("session id", sessionId("665f5244-2fd6-4059-8db9-050182eeedc3"), "665f5244-2fd6-4059-8db9-050182eeedc3");
 for (const bad of ["../../etc/passwd", "a/b", "*", "x y", "", "$(id)", "abc\n", "a\nb", null, 42]) eq(`session id refused: ${JSON.stringify(bad)}`, sessionId(bad), null);
 
+// 9. A call that consulted an advisor mid-call (seen for real, 2026-11-19: the curve peaked at 1,9 M on a 1 M
+// window): its top-level usage sums its iterations; its context is the last "message" iteration's.
+{
+  const dir = mkdtempSync(join(tmpdir(), "kt-context-iter-"));
+  const f = join(dir, "s.jsonl");
+  try {
+    const it = (type, input, created, cached) => ({ type, input_tokens: input, cache_creation_input_tokens: created, cache_read_input_tokens: cached, output_tokens: 9 });
+    const advised = call("V", "2026-11-19T13:00:00Z", 4, 10767, 1110367);
+    advised.message.usage.iterations = [it("message", 2, 6073, 552147), it("advisor_message", 561813, 0, 0), it("message", 2, 4694, 558220)];
+    const onlyAdvisor = call("W", "2026-11-19T13:01:00Z", 5, 6, 7);
+    onlyAdvisor.message.usage.iterations = [it("advisor_message", 900000, 0, 0)];
+    writeFileSync(f, line(advised) + line(onlyAdvisor) + line(call("P", "2026-11-19T13:02:00Z", 1, 2, 3)));
+    eq("iterations: the last message's", read(f).turns.map((x) => [x.id, x.tokens]), [["V", 562916], ["W", 18], ["P", 6]]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // The status line carries the top-level sum: the transcript's call wins.
+  eq("current: the call over the line", current({ turns: [{ id: "V", at: "2026-11-19T13:00:00Z", tokens: 562916 }], compactions: [] }, lineOf(1121138, 56)).tokens, 562916);
+}
+
 if (fails) { console.error(`${fails} failure(s)`); process.exit(1); }
 console.log("ok");

@@ -6,7 +6,8 @@
 //        shape: { system, tools, mcp: { <server>: chars } } | null }
 // - from: where this read started (0 when the file is shorter than --from: rewritten, read whole).
 // - turns: one per API call (assistant line with message.usage), its context = input + cache creation +
-//   cache read tokens; a call written in several lines (one per content block) keeps one entry, the last.
+//   cache read tokens (its last iteration's when it has `iterations`); a call written in several lines (one
+//   per content block) keeps one entry, the last.
 //   Sidechain lines (a sub-agent's) are left out: they aren't this context.
 // - compactions: `system` lines of subtype `compact_boundary` (trigger auto / manual, tokens before, after).
 // - shape: the last `api-request-shape` line (written when the request's shape changes), measured in
@@ -43,7 +44,11 @@ function take(line: string) {
   try { e = JSON.parse(line); } catch { return; }
   if (e?.isSidechain === true) return;
   if (e?.type === "assistant" && e.message?.usage) {
-    const u = e.message.usage;
+    // A call that ran iterations server-side (an advisor consulted mid-call: message, advisor_message,
+    // message) sums them in its top-level usage: 552 k + 558 k read showed as 1,1 M on a 1 M window (the
+    // Context tab's curve, 2026-11-19). Its context is its last "message" iteration's; the advisor's is
+    // another model's.
+    const u = (Array.isArray(e.message.usage.iterations) && e.message.usage.iterations.findLast((x) => (x?.type ?? "message") === "message")) || e.message.usage;
     const tokens = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
     if (tokens > 0) byId.set(e.message.id ?? e.uuid, { id: e.message.id ?? e.uuid, at: e.timestamp ?? null, tokens });
   } else if (e?.type === "system" && e.subtype === "compact_boundary") {
