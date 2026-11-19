@@ -1,7 +1,8 @@
 // kbrdn Threads' project picker: the popup kt-threads opens from the shown project ("Home ▾").
 // What its fold-out was, floating: Home first; the open projects by machine (a header only once
 // there are several), worktrees under their repo, status dots and thread counts; the registry's
-// closed projects, dimmed (a click opens them again); then New project and Manage projects. A
+// closed projects, dimmed (a click opens them again; not the archived ones, #88: Manage projects
+// lists those, under « Archivés »); then New project and Manage projects. A
 // registry project's line drags to reorder (shared "kt.projects", as in kt-threads). Picking
 // shows the thread again and closes the popup; so does a click outside it.
 // Props: { real, homeReal, repos }, kt-threads' maps (same keys and values): Home, projects and
@@ -23,6 +24,8 @@ import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine header's state (#64).
 import { stateOf, stateWord, stateColor, loginOf } from "./machines.js";
+// kt-threads' projects.js (a byte-identical copy): the archived projects stay out (#88).
+import { shown } from "./projects.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -307,7 +310,7 @@ export default class ProjectPicker extends View {
     const q = this.query.trim().toLowerCase();
     const hit = (...s) => !q || s.some((x) => x && String(x).toLowerCase().includes(q));
     // kt-threads' fold-out: Home first, on its own; the rest are projects, by machine, worktrees
-    // under their repo, in the registry's order; then the registry's closed projects.
+    // under their repo, in the registry's order; then the registry's closed projects, less the archived.
     const all = spaces();
     const homes = all.filter((s) => this.isHome(s));
     const ps = all.filter((s) => !this.isHome(s));
@@ -315,7 +318,7 @@ export default class ProjectPicker extends View {
     const groups = [...(ps.some((s) => !s.machine) ? [null] : []), ...names];
     const reg = registry();
     const rank = (s) => reg.indexOf(this.entryOf(s, reg)) >>> 0; // not in it (-1): last
-    const closed = reg.filter((e) => !ps.some((s) => this.entryOf(s, reg) === e));
+    const closed = shown(reg).filter((e) => !ps.some((s) => this.entryOf(s, reg) === e));
     const trees = groups.map((m) => this.projectTree(ps.filter((s) => (s.machine ?? null) === m)).sort((a, b) => rank(a.s) - rank(b.s)));
     // The list as shown, filtered line by line: { head } an eyebrow, else a line the cursor stops
     // on ({ draw(cursor), open, on, drag: its registry id when it drags }).

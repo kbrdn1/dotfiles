@@ -1,5 +1,6 @@
 // kt-project-picker's check (bun picker.check.mjs): gpui-kit, gpui-base and herdr mocked; renders
-// Home, two machines, a worktree and a closed project, then drives keys, the filter and a drag.
+// Home, two machines, a worktree, a closed project and an archived one (left out, #88), then drives keys,
+// the filter and a drag.
 // Not a layout check: herdr-app check does that.
 import { plugin } from "bun";
 
@@ -67,6 +68,8 @@ log.shared["kt.projects"] = [
   { id: JSON.stringify([null, "/r/a"]), name: "alpha", folder: "/r/a", machine: null, color: "ansi6", logos: { light: null, dark: null }, order: 0 },
   { id: JSON.stringify(["vps", "/srv/b"]), name: "beta", folder: "/srv/b", machine: "vps", color: null, logos: { light: null, dark: null }, order: 1 },
   { id: JSON.stringify([null, "/r/c"]), name: "cee", folder: "/r/c", machine: null, color: "ansi3", logos: { light: null, dark: null }, order: 2 },
+  // Archived (#88): neither in FERMÉS nor found by the filter.
+  { id: JSON.stringify([null, "/r/d"]), name: "dee", folder: "/r/d", machine: null, color: null, logos: { light: null, dark: null }, order: 3, archived: 1 },
 ];
 log.shared["space.colors"] = { s2: "ansi6", s3: "ansi6", s4: "ansi4" };
 globalThis.__props = {
@@ -124,6 +127,9 @@ assert(v.rows.length === 3 && outline(root)[0].startsWith("eyebrow|VPS"), "filte
 v.query = ""; v.cur = null; root = v.render();
 keys("c e e enter"); // one batch, no render between: enter must see the filtered lines
 assert(log.run.some(([n, a]) => n === "space.new" && a.folder === "/r/c" && a.machine === ""), "closed project: space.new");
+v.query = ""; v.cur = null; v.vim.edit(); root = v.render();
+keys("d e e");
+assert(v.rows.length === 2 && outline(root)[0].startsWith("pp-empty|"), "filter 'dee': the archived project isn't there (no result, the foot only)");
 
 // Nouveau projet: closes, then kt-threads asks the folder (it outlives the popup).
 log.run = []; log.close = [];
@@ -136,7 +142,7 @@ v.cur = 0; root = v.render();
 const lineOf = (id) => listOf(root).kids.find((k) => k.props.id === id);
 lineOf("pp-s2").handlers["on_mouse_down:left"]();
 lineOf("pp-closed-0").handlers["on_mouse_up:left"](null, cx);
-assert(JSON.stringify(log.shared["kt.projects"].map((e) => e.name)) === JSON.stringify(["beta", "cee", "alpha"]), "drag alpha onto cee: reordered");
+assert(JSON.stringify(log.shared["kt.projects"].map((e) => e.name)) === JSON.stringify(["beta", "cee", "alpha", "dee"]), "drag alpha onto cee: reordered, the archived one kept last");
 // A press released on itself: a click.
 log.run = [];
 root = v.render();
