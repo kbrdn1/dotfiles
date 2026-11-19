@@ -65,6 +65,10 @@ import { attachmentsOf, photoSize } from "./att-model.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
 import { motionState, frame, enter, MS } from "./motion.js";
+// The context as the composer's status line says it (kt-composer): kt-threads' ring and its threshold
+// colors (ring.js, levels.js), the percent rolling (roll.js); byte-identical copies.
+import { ring, ringColor } from "./ring.js";
+import { roll } from "./roll.js";
 import { TL, marks as markList, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 // #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
 import * as win from "./turn-window.js";
@@ -115,7 +119,6 @@ const BUBBLE_MAX = 576; // transcript.rs:217, PROMPT_BUBBLE_MAX
 const BUBBLE_ROW_PAD = 56; // transcript.rs:5590, the bubble's row: pl 56, justify_end
 const ERR = "#f87171"; // tools.rs:436-545, an error's words
 const ERR_TARGET = "#ff6467"; // its target and its cross
-const WARN = "#fbbf24"; // context_meter.rs, the ring past 75 %
 const FULL_ACCESS = "#ffb900e6"; // conversation.rs, « Full access » at 0.9
 // The phase tiles' gradients (tab_tile.rs:465-503), drawn at their middle color. A gradient exists
 // (paint_path + Background.linear_gradient, as filters.js), but not on a rounded 22×18 box: radius 5.
@@ -1817,8 +1820,13 @@ export default class Chat extends View {
       .when(Boolean(pr), (el) => el.child(bar(I(pr.worktree ? "folder-tree" : "folder"), pr.worktree ? tr("ws.worktree") : tr("ws.checkout"), "kc-ws")))
       .when(Boolean(pr?.branch), (el) => el.child(bar(I("git-branch"), pr.branch, "kc-br")))
       .child(div().flex_1().min_w(0).truncate().flex().justify_end().text_size(11).text_color(this.sendErr ? ERR : ink(t, 0.45)).child(say))
-      .when(Number.isFinite(ctx), (el) => el.child(div().flex_none().text_size(11).text_color(ctx >= 90 ? ERR : ctx >= 75 ? WARN : ink(t, 0.45))
-        .child(tr("ctx", { n: Math.round(ctx) }))));
+      // kt-composer's CTX item: its label, the 14 px ring, the percent rolling in the ring's color (levels.js'
+      // context thresholds by the window's size); the ring's tooltip says « Contexte 77 % » (ring.strings.js).
+      .when(Number.isFinite(ctx), (el) => el.child(h_flex().gap(7).items_center().flex_none().whitespace_nowrap()
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child("CTX")) // i18n: tech
+        .child(ring(t, "kc-ctx-ring", ctx, 14, { kind: "ctx", window: this.line?.window }))
+        .child(roll(this.m, "kc-ctx-n", `${Math.round(ctx)}%`, 16).font_family(MONO).text_size(11)
+          .text_color(ringColor(t, Math.round(ctx), { kind: "ctx", window: this.line?.window ?? 1_000_000 })))));
     return h_flex().w_full().flex_none().justify_center()
       .child(v_flex().w_full().max_w(COLUMN).px(10).pb(6).gap(8)
         .when(Boolean(blocked), (el) => el.child(blocked))
