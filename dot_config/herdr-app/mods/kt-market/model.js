@@ -4,7 +4,7 @@
 //   untrusted: text cleaned (control, ANSI, OSC, bidi), names and ids checked, URLs https only;
 // - the search (every token must match), the facet counts and the sorts;
 // - the risk rules (codes, never words: main.js says them), the scans of a downloaded tree;
-// - what an install would run (the MCP JSON for `claude mcp add-json`, the lines of each route).
+// - what an install would run (each route's lines; a variant as kt-mcp's form takes it, mcpForm()).
 
 export const SOURCES = ["official", "community", "known", "mcp-registry", "skills-sh", "herdr-dev", "aitmpl"];
 /** Sources asked at query time (too big to mirror, or no listing): a query needs words. */
@@ -161,7 +161,7 @@ function argList(list) {
   return { args, needs };
 }
 
-/** What `claude mcp add-json` could get from a server.json: stdio packages (npm, pypi, oci) then
+/** What `claude mcp add` could run from a server.json: stdio packages (npm, pypi, oci) then
  *  remotes (http, sse), each { kind, config, secrets, env, needs, pinned, host }. Secret values are
  *  always empty strings: the person types them in kt-mcp's form. Dead hosts are left out. */
 export function mcpVariants(s) {
@@ -406,6 +406,18 @@ export function loopRecipe(md, meta = {}) {
 
 const shq = (s) => (/^[\w@%+=:,./~-]+$/.test(s) ? s : `'${String(s).replace(/'/g, "'\\''")}'`);
 
+/** What kt-mcp's form gets for a variant (issue #70 lot 4): its method ("stdio" or "http") and the
+ *  public values. A secret is never there: env and header NAMES only (the pairs' keys), every value
+ *  empty, typed by the person in kt-mcp's masked fields. The command line splits back with kt-mcp's
+ *  splitArgs() (model.check.mjs). null: nothing kt-mcp's forms take. */
+export function mcpForm(name, v) {
+  const c = v?.config;
+  if (!c || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name ?? "")) return null;
+  if (c.type === "stdio") return { add: "stdio", prefill: { name, cmd: [c.command, ...c.args].map(shq).join(" "), env: Object.keys(c.env ?? {}), scope: "user" } };
+  if (c.type === "http" || c.type === "sse") return { add: "http", prefill: { name, url: c.url, transport: c.type, headers: Object.keys(c.headers ?? {}), scope: "user" } };
+  return null;
+}
+
 /** The route's command lines and the files it writes, for the detail. Codes and commands only. */
 export function plan(it, extra = {}) {
   if (!it.route) return { route: null, why: it.why ?? "no-route", lines: [], writes: [] };
@@ -417,9 +429,14 @@ export function plan(it, extra = {}) {
     return { route: it.route, why: null, lines, writes: ["~/.claude/settings.json", "~/.claude/plugins/"], addMarket: extra.addMarket ?? null };
   }
   if (it.type === "mcp") {
-    const v = extra.variant;
-    if (!v) return { route: null, why: "no-variant", lines: [], writes: [] };
-    return { route: it.route, why: null, lines: [`claude mcp add-json -s user ${shq(it.name)} ${shq(JSON.stringify(v.config))}`], writes: ["~/.claude.json"] };
+    const f = mcpForm(it.name, extra.variant);
+    if (!f) return { route: null, why: "no-variant", lines: [], writes: [] };
+    // As kt-mcp's form will show it, the values to type as … (never a secret here).
+    const p = f.prefill;
+    const line = f.add === "stdio"
+      ? ["claude mcp add", shq(p.name), "-s user", ...p.env.map((k) => `-e ${k}=…`), "--", p.cmd].join(" ")
+      : ["claude mcp add --transport", p.transport, "-s user", shq(p.name), shq(p.url), ...p.headers.map((h) => `--header '${h}: …'`)].join(" ");
+    return { route: it.route, why: null, lines: [line], writes: ["~/.claude.json"], form: f.add };
   }
   if (it.type === "skill") {
     if (extra.skillPath == null) return { route: null, why: "no-skill-md", lines: [], writes: [] };

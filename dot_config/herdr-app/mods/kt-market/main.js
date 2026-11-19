@@ -12,8 +12,9 @@
 // The page: the band (count, freshness, Rafraîchir, ?), the filter and the sort, the type and source
 // rows; the list (60 a page); the detail beside it: what the index knows, then once inspected the exact
 // source and commit, the licence, what an install would run or write, the risks, the parts, the README.
-// Installer (an inspected plugin, issue #70 lot 3): kt-plugins' dialog on it (install()); kt-market
-// itself runs nothing. The other types show their plan only, for now.
+// Installer (issue #70): an inspected plugin opens kt-plugins' dialog on it (lot 3), an MCP server
+// kt-mcp's form filled with public values only (lot 4); kt-market itself runs nothing. The other types
+// show their plan only, for now.
 // Keys (vim.js): the page opens typing in the filter (INSERT: ctrl-n/p ↓ ↑ move, enter opens the
 // detail, esc NORMAL). NORMAL: j/k gg/G ctrl-d/u (j past the last row: the next page; k before the
 // first: the previous page, then the filter), / the filter, tab / shift-tab the type, enter/o/l the
@@ -35,7 +36,7 @@ import { split } from "./tiers.js";
 import { rollText } from "./roll.js";
 import { docOf, mdState, view, tabs, target } from "./markdown.js";
 import { makeT, relative, compact } from "./i18n.js";
-import { TYPES, SOURCES, levelOf, code } from "./model.js";
+import { TYPES, SOURCES, levelOf, code, mcpForm } from "./model.js";
 import strings from "./strings.js";
 
 const tr = makeT(strings);
@@ -269,11 +270,22 @@ export default class Market extends View {
   // what it brings and the exact command, and confirms it (kt-confirm). Anthropic's community catalog
   // not known yet: kt-plugins' "marketplace" view first, filled in, with its own confirmation, then
   // browse on the plugin. kt-market runs no command itself.
-  install(x, d) {
-    if (checking() || x.type !== "plugin" || d?.plan?.route !== "kt-plugins" || !x.market) return;
-    const select = `${x.name}@${x.market}`;
-    const p = d.plan.addMarket ? { view: "marketplace", source: d.plan.addMarket, select } : { view: "browse", market: x.market, select };
-    openOverlay({ mod: "kt-plugins", kind: "dialog", frame: "none", width: 1, height: 1, props: p });
+  // An MCP server (lot 4): kt-mcp's own form (stdio or HTTP), filled with the public values only (the
+  // name, the command or the URL, the env and header NAMES); every value of a secret is typed by the
+  // person there, masked, and kt-mcp confirms the exact command. `i`: the variant (0: the suggested one).
+  install(x, d, i = 0) {
+    if (checking() || !d?.plan?.route) return;
+    if (x.type === "plugin" && d.plan.route === "kt-plugins" && x.market) {
+      const select = `${x.name}@${x.market}`;
+      const p = d.plan.addMarket ? { view: "marketplace", source: d.plan.addMarket, select } : { view: "browse", market: x.market, select };
+      openOverlay({ mod: "kt-plugins", kind: "dialog", frame: "none", width: 1, height: 1, props: p });
+    } else if (x.type === "mcp" && d.plan.route === "kt-mcp") {
+      const f = mcpForm(x.name, d.variants?.[i]);
+      if (!f) return;
+      // kt-mcp's context: user scope only here (local and project belong to a project's folder).
+      openOverlay({ mod: "kt-mcp", kind: "dialog", width: 1, height: 1, frame: "none", modal: true,
+        props: { add: f.add, prefill: f.prefill, space: activeSpace()?.id ?? null, cwd: home(), project: false } });
+    }
   }
 
   // y: the plan's first line once inspected, else the id.
@@ -578,7 +590,11 @@ export default class Market extends View {
     if (x.type === "mcp" && d.variants?.length) {
       out.push(v_flex().gap(8).child(this.eyebrow(t, tr("variants")))
         .children(d.variants.map((v, i) => v_flex().gap(4)
-          .child(div().font_family(MONO).text_size(10.5).text_color(t.dim).child(i === 0 ? tr("variantFirst", { kind: v.kind }) : v.kind))
+          .child(h_flex().gap(8).items_center()
+            .child(div().flex_1().min_w(0).font_family(MONO).text_size(10.5).text_color(t.dim).child(i === 0 ? tr("variantFirst", { kind: v.kind }) : v.kind))
+            // Another way than the suggested one: kt-mcp's form filled with it.
+            .when(i > 0 && d.plan?.route === "kt-mcp" && Boolean(mcpForm(x.name, v)), (el) => el
+              .child(this.chip(t, `ktmk-install-v${i}`, tr("installVariant"), false, () => this.install(x, d, i), tr("installTipMcp")))))
           .child(this.block(t, JSON.stringify(v.config, null, 2)))
           .children(v.flags.map((f) => div().text_size(11.5).text_color(levelColor(t, levelOf([f]))).child(flagText(f)))))));
     }
@@ -617,8 +633,9 @@ export default class Market extends View {
         .child(h_flex().child(this.chip(t, "ktmk-retry", tr("retry"), false, (cx) => this.inspect(cx, x, true))));
     }
     const p = d.plan;
-    // Lot 3: the plugins (kt-plugins); the other types show their plan only, for now.
-    const installable = x.type === "plugin" && p?.route === "kt-plugins";
+    // Lots 3 and 4: the plugins (kt-plugins) and the MCP servers (kt-mcp); the others show their plan only.
+    const installable = (x.type === "plugin" && p?.route === "kt-plugins") || (x.type === "mcp" && p?.route === "kt-mcp" && Boolean(mcpForm(x.name, d.variants?.[0])));
+    const note = x.type === "mcp" ? "installNoteMcp" : p?.addMarket ? "installCommunity" : "installNote";
     const lic = d.repoFacts?.license && d.repoFacts.license !== "NOASSERTION" ? d.repoFacts.license : null;
     const doc = d.readme?.text ? docOf(this.md, noImages(d.readme.text)) : null;
     this.docShown = Boolean(doc);
@@ -635,8 +652,8 @@ export default class Market extends View {
         .child(p?.route ? this.block(t, p.lines.length ? p.lines.join("\n") : tr("plan.noLines")) : this.block(t, tr(`why.${p?.why}`) || tr("why.no-route"), t.blocked))
         .when(Boolean(p?.writes?.length), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.writes", { list: p.writes.join(", ") }))))
         .when(installable, (el) => el.child(h_flex().pt(2).gap(10).items_center()
-          .child(this.chip(t, "ktmk-install", tr("install"), true, () => this.install(x, d), tr("installTip")))
-          .child(div().flex_1().min_w(0).text_size(11.5).line_height("17px").text_color(t.dim).child(tr(p.addMarket ? "installCommunity" : "installNote")))))
+          .child(this.chip(t, "ktmk-install", tr("install"), true, () => this.install(x, d), tr(x.type === "mcp" ? "installTipMcp" : "installTip")))
+          .child(div().flex_1().min_w(0).text_size(11.5).line_height("17px").text_color(t.dim).child(tr(note)))))
         .when(!installable, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.readOnly")))))
       .child(this.risks(t, d.flags ?? []))
       .children(this.specifics(t, x, d))

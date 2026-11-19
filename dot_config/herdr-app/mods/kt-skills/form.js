@@ -4,6 +4,11 @@
 // { add: <method id>, ...context } (AddForm: its fields, then a confirmation showing the exact
 // command, secrets masked, then the run). Props carry only the context (space, folders), never what
 // is typed: values stay in the form's memory and go to the command as argv.
+// props.prefill (kt-market's Installer, issue #70): { <field id>: value } of PUBLIC values only, set
+// once when the form opens, then the person's to change: a text field's text, a choice's value, a
+// pairs field's KEYS (its values stay empty). A `secret` field and a pairs' value are never filled,
+// whatever prefill says: they are typed here, masked. The focus goes to the first empty input.
+// prefill is not context: it is not passed on to another overlay.
 // A method (the mod's add.js): { id, label, hint, icon, badge?, title, intro, fields | fields(ctx),
 // plan(values, ctx) -> { error } | { shown, cwd?, preview?, previewLabel?, note?, label?, run, cancel? }
 // } or { ..., direct(ctx) } (no form). `run()` answers a toast ({ level, title, body }), masked.
@@ -33,7 +38,7 @@ const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const veil = () => (settings().dark ? alpha("#000000", "8c") : alpha("#0a0a0a", "59"));
 export const tilde = (p) => (p && (p === home() || p.startsWith(home() + "/")) ? `~${p.slice(home().length)}` : p ?? "");
 // Props for the next overlay: the context, without this one's overlay id.
-const context = () => { const { overlay, add, ...ctx } = props() ?? {}; return ctx; };
+const context = () => { const { overlay, add, prefill, ...ctx } = props() ?? {}; return ctx; };
 const fieldsOf = (m, ctx) => (typeof m.fields === "function" ? m.fields(ctx) : m.fields ?? []);
 
 // The popup's size for `n` ways (its rows are 54 px).
@@ -133,9 +138,31 @@ export class AddForm {
       else if (d.kind === "pairs") { this.st[d.id] = { rows: [] }; this.addRow(d); }
       else this.st[d.id] = { input: this.input(d, d.id, d.kind === "json") };
     }
-    const first = this.stops()[0];
+    this.prefilled = this.fill(props()?.prefill);
+    const stops = this.stops();
+    const first = (this.prefilled && stops.find(([, s]) => !String(s.value() ?? "").trim())) || stops[0];
     if (first) this.focusOn(first);
     else this.handle.focus();
+  }
+
+  // props.prefill: public values only (see the head). Never a secret field, never a pairs' value.
+  // true when something was filled (the form then says so under its intro).
+  fill(pre) {
+    if (!pre || typeof pre !== "object" || Array.isArray(pre)) return false;
+    let any = false;
+    for (const d of this.fields) {
+      const v = pre[d.id];
+      const s = this.st[d.id];
+      if (v == null || d.secret) continue;
+      if (d.kind === "choice") {
+        if (d.choices.some(([c]) => c === v)) { s.value = v; any = true; }
+      } else if (d.kind === "pairs") {
+        const keys = (Array.isArray(v) ? v : []).filter((k) => typeof k === "string" && k).slice(0, 20);
+        keys.forEach((k, i) => { if (i >= s.rows.length) this.addRow(d); s.rows[i].k.set_value(k); });
+        any = any || keys.length > 0;
+      } else if (typeof v === "string" && s.input) { s.input.set_value(v); any = true; }
+    }
+    return any;
   }
 
   // One real field: its focus and blur keep `focus` (the ring, INSERT) and mask a revealed secret again.
@@ -452,6 +479,9 @@ export class AddForm {
             .child(mode(t, typing ? "INSERT" : "NORMAL", typing))
             .child(kbd("esc")))
           .child(div().text_size(12.5).line_height("18px").text_color(t.muted).child(confirm ? tr("nothingYet", { label: this.plan?.label ?? tr("add") }) : this.m.intro))
+          .when(!confirm && this.prefilled, (el) => el.child(h_flex().gap(8).items_start()
+            .child(svg(I("circle-alert")).size(13).flex_none().mt(2).text_color(t.ansi3))
+            .child(div().flex_1().min_w(0).text_size(12).line_height("17px").text_color(t.muted).child(tr("prefilled")))))
           .children(confirm && this.plan ? this.confirmView(t) : this.fields.map((d, i) => this.field(t, d, i))))
         .child(div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border))
         .child(h_flex().flex_none().px(12).py(10).gap(8).items_center()

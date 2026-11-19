@@ -158,6 +158,9 @@ export default {
     "installTip": "Ouvre la page Plugins sur ce plugin : elle montre ce qu'il apporte, la commande exacte, et te la fait confirmer.",
     "installNote": "La page Plugins s'ouvre sur ce plugin et te fait confirmer la commande. Rien ne s'installe d'ici.",
     "installCommunity": "D'abord la marketplace de la communauté d'Anthropic, ajoutée à tes réglages après sa propre confirmation. Ensuite, ce plugin, confirmé à son tour.",
+    "installTipMcp": "Ouvre le formulaire de la page MCP, pré-rempli sans aucun secret : tu tapes les valeurs, puis tu confirmes la commande.",
+    "installNoteMcp": "Le formulaire de la page MCP s'ouvre avec le nom, la commande ou l'URL, et le nom des variables. Leurs valeurs, secrets compris, se tapent là-bas, masquées. Portée user, sur ce Mac.",
+    "installVariant": "Installer celle-ci…",
 
     "parts": "Ce qu'il apporte",
     "noParts": "Aucun composant trouvé.",
@@ -360,6 +363,9 @@ export default {
     "installTip": "Opens the Plugins page on this plugin: it shows what it brings and the exact command, and asks you to confirm it.",
     "installNote": "The Plugins page opens on this plugin and asks you to confirm the command. Nothing installs from here.",
     "installCommunity": "First Anthropic's community marketplace, added to your settings after its own confirmation. Then this plugin, confirmed in turn.",
+    "installTipMcp": "Opens the MCP page's form, filled in without any secret: you type the values, then confirm the command.",
+    "installNoteMcp": "The MCP page's form opens with the name, the command or URL, and the variables' names. Their values, secrets included, are typed there, masked. User scope, on this Mac.",
+    "installVariant": "Install this one…",
 
     "parts": "What it brings",
     "noParts": "No component found.",

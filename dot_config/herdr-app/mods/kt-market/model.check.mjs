@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   clean, https, github, safeRel, hash, normalizeMarketplace, marketSource, mcpVariants, normalizeRegistry, normalizeSkillsSh,
   normalizeHerdr, normalizeLoop, levelOf, code, unpinnedRun, scanHerdr, scanSkill, pluginFlags, repoFlags, findSkill,
-  loopRecipe, plan, query, tokens, typeMatch, dedupe, LIVE, SOURCES, TYPES,
+  loopRecipe, plan, mcpForm, query, tokens, typeMatch, dedupe, LIVE, SOURCES, TYPES,
 } from "./model.js";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -223,9 +223,26 @@ assert.equal(plan(P.pinned).addMarket, null);
 assert.equal(plan(P.cmd).route, null);
 assert.equal(plan(P.cmd).why, "command-source");
 const mp = plan(m1, { variant: m1.variants[0] });
-assert.equal(mp.lines[0], `claude mcp add-json -s user demo-tool '${JSON.stringify(m1.variants[0].config)}'`);
-assert.ok(!mp.lines[0].includes("DEMO_KEY\":\"x"), "secrets are empty in the plan");
+assert.equal(mp.lines[0], "claude mcp add demo-tool -s user -e DEMO_KEY=… -e DEMO_MODE=… -- npx -y @acme/demo-mcp@1.4.0 --port 7", "as kt-mcp's stdio form shows it");
+assert.equal(mp.form, "stdio");
 assert.equal(plan(m1, {}).why, "no-variant");
+const mr = plan(m2, { variant: m2.variants[0] });
+assert.equal(mr.lines[0], "claude mcp add --transport http -s user remote-tool https://mcp.example.test/mcp");
+assert.equal(mr.form, "http");
+
+// kt-mcp's forms (lot 4): public values only, never a secret; the command splits back as typed.
+const f1 = mcpForm("demo-tool", m1.variants[0]);
+assert.equal(f1.add, "stdio");
+assert.deepEqual(f1.prefill, { name: "demo-tool", cmd: "npx -y @acme/demo-mcp@1.4.0 --port 7", env: ["DEMO_KEY", "DEMO_MODE"], scope: "user" });
+assert.ok(!JSON.stringify(f1).includes("\"DEMO_KEY\":"), "env names only, no value field at all");
+const f2 = mcpForm("remote", rem[0]);
+assert.deepEqual(f2, { add: "http", prefill: { name: "remote", url: "https://mcp.example.test/mcp", transport: "http", headers: ["Authorization"], scope: "user" } });
+assert.equal(mcpForm("bad name", m1.variants[0]), null, "a name kt-mcp refuses");
+assert.equal(mcpForm("x", null), null);
+const { splitArgs } = await import("../kt-mcp/mcp.js");
+const odd = { config: { type: "stdio", command: "uvx", args: ["--from", "a b", "it's", "pkg==1.0", "~/x"] } };
+assert.deepEqual(splitArgs(mcpForm("odd", odd).prefill.cmd), ["uvx", "--from", "a b", "it's", "pkg==1.0", "~/x"], "kt-mcp's splitArgs reads back what mcpForm wrote");
+assert.deepEqual(splitArgs(f1.prefill.cmd), ["npx", ...m1.variants[0].config.args]);
 const sp = plan(s1, { skillPath: "skills/demo" });
 assert.equal(sp.src, "acme/skills/skills/demo");
 assert.deepEqual(sp.writes, ["~/.agents/skills/demo", "~/.claude/skills/demo"]);

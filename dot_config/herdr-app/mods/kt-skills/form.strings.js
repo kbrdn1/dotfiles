@@ -20,6 +20,7 @@ export default {
     back: "Retour",
     cancel: "Annuler",
     verify: "Vérifier",
+    prefilled: "Pré-rempli par Marketplaces avec des données publiques : relis chaque champ. Les secrets et les valeurs des variables ne sont jamais pré-remplis, tu les tapes ici.",
   },
   en: {
     add: "Add",
@@ -40,5 +41,6 @@ export default {
     back: "Back",
     cancel: "Cancel",
     verify: "Check",
+    prefilled: "Filled in by Marketplaces with public data: read every field again. Secrets and variables' values are never filled in, you type them here.",
   },
 };
