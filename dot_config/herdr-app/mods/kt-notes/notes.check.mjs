@@ -1,6 +1,6 @@
 // bun mods/kt-notes/notes.check.mjs: gwm's note store as notes.js mirrors it.
 import assert from "node:assert/strict";
-import { relativePath, branchFromRelative, notePath, projectPath, normalize, present, parseItem, segments, toggleTask,
+import { relativePath, branchFromRelative, notePath, projectPath, normalize, present, parseItem, segments, chunks, toggleTask,
   preview, parseFind, classify, caseRival, external } from "./notes.js";
 
 // Paths (notes.rs relative_path / branch_from_relative).
@@ -49,6 +49,20 @@ assert.deepEqual(segments(doc), [
   { kind: "task", line: 8, done: false, indent: 2, text: "sous-tâche" },
 ]);
 assert.deepEqual(segments(""), []);
+
+// A note without boxes cut into blocks for the reader's cursor (#78): at a blank line then column 0,
+// a list item's indented continuation and a fence's blank lines kept whole.
+assert.deepEqual(chunks("# Titre\n\nUn paragraphe\nsur deux lignes.\n\n- a\n\n  suite de a\n- b\n\n```\nx\n\ny\n```\n\nFin"), [
+  "# Titre", "Un paragraphe\nsur deux lignes.", "- a\n\n  suite de a\n- b", "```\nx\n\ny\n```", "Fin",
+]);
+assert.deepEqual(chunks("seul"), ["seul"]);
+// The frontmatter whole, a blank line in it or not.
+assert.deepEqual(chunks("---\ntitle: x\n\ntags: a\n---\n\nCorps."), ["---\ntitle: x\n\ntags: a\n---", "Corps."]);
+// A long note: at most `max` blocks, neighbours joined in order.
+const many = Array.from({ length: 10 }, (_, i) => `p${i}`).join("\n\n");
+assert.deepEqual(chunks(many, 4), ["p0\n\np1\n\np2", "p3\n\np4\n\np5", "p6\n\np7\n\np8", "p9"]);
+assert.equal(chunks(many).length, 10);
+assert.deepEqual(chunks("\n\n"), []);
 
 // Toggling (toggle_checkbox + rewrite_marker): only the marker moves, the rest is kept byte for byte.
 assert.equal(toggleTask("- [ ] a", 0), "- [x] a");

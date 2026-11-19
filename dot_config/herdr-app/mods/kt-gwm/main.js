@@ -11,7 +11,7 @@
 //   ask first through kt-confirm, which calls back `kt-gwm.confirmed`; remove is refused on a
 //   dirty worktree, an active agent or a Herdr terminal in it, and never forced. On Home, outside
 //   git or with "Global": every repo of the projects registry (shared "kt.projects"), grouped.
-//   Typing filters (the field takes the keyboard while the page shows). Under it, a state row
+//   / then typing filters (the page takes the keyboard while it shows). Under it, a state row
 //   (filters.js, FILTERS.md): Tous, Modifiés, PR ouverte, PR mergée, Agent actif.
 //   Selection (select.js, page only): ⌘-click toggles a card, ⇧-click selects from the anchor, the
 //   box left of its name (on hover, or once one is selected) toggles it; a plain click empties it.
@@ -36,9 +36,9 @@
 // plus every 15 s for dirty and agent freshness, which no git event announces; only while shown.
 // Keys (vim.js; kt-keys lists them under Pages and Panneau): ctrl-b h/l (pane.go, "focus") or
 // `kt-gwm.key:<keys>` give a copy the keyboard in NORMAL (both copies get a `kt-gwm.<command>` when
-// both show). Page: it opens typing in the filter (INSERT): type to filter, ctrl-n/ctrl-p,
-// ctrl-j/ctrl-k, ↓ ↑ move the cursor, enter opens it, esc: NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N
-// move the cursor over the cards (k on the first card: the filter, INSERT), / the filter, tab /
+// both show). Page: it opens in NORMAL (#78), as does a click on a card. INSERT (/): type to filter,
+// ctrl-n/ctrl-p, ctrl-j/ctrl-k, ↓ ↑ move the cursor, enter opens it, esc: NORMAL. NORMAL: j/k, gg/G,
+// ctrl-d/u, n/N move the cursor over the cards (k stops on the first card), / the filter, tab /
 // shift-tab the next / previous repo (Global), enter/o/l open as a space (Ouvrir), O its PR (else
 // issue) on GitHub, y copy the path, r refresh, dd remove (kt-confirm, refused when unsafe), ?
 // kt-keys, q back to the thread; x or space toggle the card's selection, V a visual range (j/k
@@ -1011,6 +1011,19 @@ export default class Worktrees extends View {
     this.reveal = true;
   }
 
+  // The page shown (ctrl-b shift-o, the sidebar): the keyboard in NORMAL, so j moves and / types (#78:
+  // it came in INSERT, and a first j filtered the cards), unless pane.go or a key command gave it.
+  arrive() {
+    if (this.visible() && !this.handle.is_focused()) this.focusIn();
+  }
+
+  // A click on a card or a line: the keys' cursor goes there, and the keyboard, in NORMAL (#78).
+  pick(id) {
+    this.cur = id;
+    this.vim.normal();
+    this.handle.focus();
+  }
+
   // What the cursor walks, in order. Page: each card shown ({ id: path, repo, d, w, here }); `all`:
   // the filter's misses too (the bulk bar acts on a selection the filter may hide).
   // Panel: a linked worktree's issue and PR lines ({ id, kind, x, repo, d, w }), else the repo's
@@ -1069,8 +1082,8 @@ export default class Worktrees extends View {
     if (a === "type" || a === "backspace") {
       this.query = a === "type" ? this.query + this.vim.char : this.query.slice(0, -1);
       this.cur = null;
-    } else if (a === "up" && i <= 0 && !this.panel && !this.vim.insert) this.vim.edit(); // k on the first card: the filter
-    else if (["down", "up", "top", "bottom", "half-down", "half-up", "next", "prev"].includes(a)) {
+    } else if (["down", "up", "top", "bottom", "half-down", "half-up", "next", "prev"].includes(a)) {
+      // k stops on the first card (#78: climbing into the filter in INSERT made the next j type there).
       const j = step(a === "next" ? "down" : a === "prev" ? "up" : a, i, stops.length, this.vim.count, 8);
       if (j >= 0) this.cur = stops[j].id;
       this.reveal = true;
@@ -1150,7 +1163,7 @@ export default class Worktrees extends View {
           if (next !== this.hot) { this.hot = next; cx.notify(); }
         })
         .on_click((e, cx) => {
-          this.cur = w.path;
+          this.pick(w.path);
           this.multi.click(e.modifiers, w.path, this.stops().map((s) => s.id));
           cx.notify();
         }))
@@ -1389,7 +1402,8 @@ export default class Worktrees extends View {
     return h_flex().id(id).h(30).px(8).mx(-8).gap(8).items_center().rounded(12).border(1)
       .border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00")).when(cursor, (el) => el.bg(alpha(t.accent, "24")))
       .cursor_pointer().when(!cursor, (el) => el.hover((s) => s.bg(t.hover)))
-      .on_click(() => this.inInbox(repo, kind, x))
+      // The keys' cursor follows the click (#78); the keyboard goes with the Inbox it opens.
+      .on_click(() => { this.cur = kind; this.inInbox(repo, kind, x); })
       .child(svg(I(lk.icon)).size(14).flex_none().text_color(t[lk.color]))
       .child(div().flex_none().font_family(MONO).text_size(12).text_color(t.foreground).child(`${kind === "pr" ? "PR " : ""}#${x.number}`))
       .when(Boolean(lk.label), (el) => el.child(this.tag(t, t[lk.color], lk.label)))
@@ -1519,7 +1533,8 @@ export default class Worktrees extends View {
         .children(linked.slice(0, 8).map((x) => h_flex().id(`kg-p-w-${x.path}`).h(30).px(8).mx(-8).gap(8).items_center().rounded(12).border(1)
           .border_color(x.path === cur ? alpha(t.accent, "99") : alpha(t.accent, "00")).when(x.path === cur, (el) => el.bg(alpha(t.accent, "24")))
           .cursor_pointer().when(x.path !== cur, (el) => el.hover((s) => s.bg(t.hover)))
-          .on_click(() => this.openSpace(d, x))
+          // The keys' cursor follows the click (#78); the keyboard goes with the space it opens.
+          .on_click(() => { this.cur = x.path; this.openSpace(d, x); })
           .child(svg(I("git-branch")).size(13).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(12).text_color(t.foreground).child(x.branch ?? x.name))
           .when(Boolean(x.status?.is_dirty), (el) => el.child(div().size(6).rounded_full().flex_none().bg(t.ansi3)))
@@ -1596,16 +1611,9 @@ export default class Worktrees extends View {
     }
     if (!vis && this.shown) this.unwatch();
     if (!this.panel && live) {
-      // The thread's terminal is hidden under this page: take the keyboard (typing filters),
-      // after the app has settled its own focus on the switch (kt-inbox's way). INSERT then, unless
-      // pane.go or a key command already gave it the keyboard (NORMAL).
-      if (vis && !this.shown) cx.timer.after(150, (cx) => {
-        if (this.visible() && !this.handle.is_focused()) {
-          this.handle.focus();
-          this.vim.edit();
-        }
-        cx.notify();
-      });
+      // The thread's terminal is hidden under this page: take the keyboard (arrive), after the app has
+      // settled its own focus on the switch (kt-inbox's way).
+      if (vis && !this.shown) cx.timer.after(150, (cx) => { this.arrive(); cx.notify(); });
       // Back to the thread: the keyboard goes back to its terminal.
       if (!vis && this.shown && this.handle.is_focused()) {
         const tab = spaces().find((s) => s.active)?.tabs.find((c) => c.active)?.id;

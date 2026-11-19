@@ -6,7 +6,7 @@
 // right panel shows Files.
 // Keys (vim.js; kt-keys lists them, group "panel"): ctrl-b l (pane.go, "focus") or
 // `kt-files.key:<keys>` gives the tree the keyboard: a cursor (an accent ring on the ink) on a
-// row, or on Search files. j k gg G ctrl-d ctrl-u move; k past the first row, or /, goes to
+// row, or on Search files. j k gg G ctrl-d ctrl-u move (k stops on the first row, #78); / goes to
 // Search files and types there (INSERT: ctrl-n / ctrl-p move, enter opens, esc back to NORMAL,
 // the filter stays); h folds the folder (on a file or a folded one: folds its parent and goes
 // there); l unfolds a folder or opens a file; enter / o as a click; O opens in Zed; y copies the
@@ -158,6 +158,13 @@ export default class Files extends View {
     this.reveal = true;
   }
 
+  // A click on a row: the keys' cursor goes there, and the keyboard, in NORMAL (#78).
+  pick(id) {
+    this.cur = id;
+    this.vim.normal();
+    this.handle.focus();
+  }
+
   key(e, cx) {
     if (!this.act(this.vim.handle(e), cx)) return; // not ours: ctrl-b, cmd-* go on
     cx.stop_propagation();
@@ -179,7 +186,8 @@ export default class Files extends View {
       this.cur = "search"; // the first match next
     } else if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
       let j = step(a, i, flat.length, this.vim.count, 20);
-      if (j === 0 && a !== "up" && flat.length > 1) j = 1; // only k climbs into the field
+      // NORMAL never climbs into the field (j would type there, #78): / goes; INSERT's ctrl-p does.
+      if (j === 0 && !this.vim.insert && flat.length > 1) j = 1;
       if (j >= 0) to(flat[j].id);
     } else if (a === "next" || a === "prev") {
       if (!this.query) return false;
@@ -320,7 +328,7 @@ export default class Files extends View {
       .text_color(m === "U" ? t.ansi2 : m === "M" ? t.ansi3 : t.muted)
       .when(on || cursor, (el) => el.bg(alpha(t.accent, "24")).text_color(t.foreground))
       .when(!on && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
-      .on_click((_e, cx) => this.show(path, cx))
+      .on_click((_e, cx) => { this.pick(id); this.show(path, cx); cx.notify(); })
       .child(image(catIcon(this.map, path.split("/").pop(), { dark: settings().dark !== false })).size(14).flex_none())
       .child(div().flex_1().truncate().child(name))
       .when(Boolean(m), (el) => el.child(div().font_family("Monaspace Krypton").text_size(10.5).child(m)));
@@ -350,6 +358,7 @@ export default class Files extends View {
           .cursor_pointer()
           .when(!cursor, (el) => el.hover((s) => s.bg(t.hover)))
           .on_click((_e, cx) => {
+            this.pick(`d:${path}`);
             if (open) this.open.delete(path);
             else this.open.add(path);
             cx.notify();
@@ -403,7 +412,7 @@ export default class Files extends View {
     const ready = readyFor(this.readFor, here ? loc : null);
     const paths = ready && here ? this.paths : [];
     const file = ready && here ? this.file : null;
-    // Search files first (k climbs into it), then the rows: tf-list's children are flat[1..].
+    // Search files first (/ goes there, INSERT's ctrl-p too), then the rows: tf-list's children are flat[1..].
     const flat = [{ id: "search", field: true }];
     const list = q
       ? paths

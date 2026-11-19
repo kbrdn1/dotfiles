@@ -97,13 +97,14 @@ const TABLE = {
     ["p", "pg.mdRaw", "Skills, Plugins, Inbox, Workflow, Notes, Marketplaces"], // i18n: tech
     ["ctrl-e / ctrl-y", "pg.mdScroll", "Skills, Plugins, Inbox, Notes"], // i18n: tech
     ["j / k, ctrl-d / ctrl-u, gg / G", "pg.notesRawScroll", "Notes · Brut"], // i18n: tech
+    ["j / k, ctrl-d / ctrl-u, gg / G", "pg.notesBlocks", "Notes · Aperçu"], // i18n: tech
     ["esc", "pg.skillsEsc", "Skills, Plugins, MCP, Marketplaces"], // i18n: tech
     ["[ / ]", "pg.relation", "Inbox"],
     ["j / k", "r.line"],
     ["gg / G", "r.ends"],
     ["ctrl-d / ctrl-u", "r.half"],
     ["/", "pg.filter"],
-    ["k", "pg.above"],
+    ["k", "pg.above", "Skills, MCP, Plugins, Marketplaces"], // i18n: tech
     ["n / N", "pg.match"],
     ["tab / shift-tab", "pg.segment"],
     ["enter / o", "pg.open"],
@@ -154,7 +155,7 @@ const TABLE = {
     ["gi / gI", "pn.flowIssue", "Flow"], // i18n: tech
     ["gp / gP", "pn.flowPr", "Flow"], // i18n: tech
     ["O", "pn.flowGithub", "Flow"],
-    ["k", "pn.above", "Files, Changes"], // i18n: tech
+    ["/", "pn.field", "Files, Changes"], // i18n: tech
     ["tab", "pn.commits", "History"],
     ["tab / shift-tab", "pn.xtFilter", "Crosstalk"],
     ["l / enter / o", "pn.xtOpen", "Crosstalk"],
@@ -189,6 +190,7 @@ const TABLE = {
     ["j / k", "md.option", "kt-thread-filter"],
     ["enter / space / l", "md.check", "kt-thread-filter"],
     ["k", "md.aboveFilter", "md.projects"],
+    ["j / k, gg / G, enter / o, q / esc", "md.menu", "kt-menu"],
     ["y / enter", "r.confirm", "kt-confirm"],
     ["n / esc / q", "md.cancel", "kt-confirm"],
     ["h j k l", "md.pan", "kt-viewer"],

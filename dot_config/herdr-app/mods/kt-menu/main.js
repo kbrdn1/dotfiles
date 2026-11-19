@@ -1,6 +1,7 @@
 // Context menus (Herdr's items). Opened as a popup with
 // props { tab: "pane" | "tab" | "space" | "global", target }.
-// ↑/↓ move, Enter runs, Esc closes. An item is [label, command, args].
+// Keys (vim.js, #78): j/k or ↑/↓ move (round), gg/G the ends, ctrl-d/ctrl-u half the menu, Enter or o
+// runs, Esc or q closes. An item is [label, command, args].
 // kt-menu (a clone of the shipped `menu`, layout kbrdn-threads): every close goes through kt-confirm,
 // which describes what closes and runs it confirmed; worktrees go through gwm, never Herdr's own
 // worktree dialog (it creates checkouts outside gwm and removes without the dirty guard): New opens
@@ -20,6 +21,8 @@ import { label, leads } from "./threads-model.js";
 import { shortcut, kbd } from "./shortcuts.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// Copied byte for byte from mods/kt-keys/vim.js: the vim keys every kt-* mod shares.
+import { Vim, step } from "./vim.js";
 
 const tr = makeT(strings);
 
@@ -129,6 +132,7 @@ export default class Menu extends View {
   init(_props, cx) {
     this.at = 0;
     this.git = null;
+    this.vim = new Vim(); // no field: NORMAL only
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.motion = motionState(); // ANIMATIONS.md: the menu rises in on its first layout, fades and sinks 6 px out
@@ -200,11 +204,12 @@ export default class Menu extends View {
       .bg(t.popover)
       .text_size(12.8)
       .on_key_down((e, cx) => {
-        if (e.key === "down") this.at = (this.at + 1) % list.length;
-        else if (e.key === "up") this.at = (this.at + list.length - 1) % list.length;
-        else if (e.key === "enter") this.choose(this.at, cx);
-        else if (e.key === "escape") this.dismiss(cx);
-        else return;
+        const a = this.vim.handle(e), n = list.length;
+        if ((a === "down" || a === "up") && n) this.at = (((this.at + (a === "down" ? 1 : -1) * this.vim.count) % n) + n) % n;
+        else if (["top", "bottom", "half-down", "half-up"].includes(a)) this.at = Math.max(0, step(a, this.at, n, this.vim.count, n));
+        else if (a === "open") this.choose(this.at, cx);
+        else if (a === "escape" || a === "quit") this.dismiss(cx);
+        else if (a !== "pending" && a !== "count") return; // the first g of gg, a count: kept, stopped
         cx.stop_propagation(); // Herdr's own Esc would close the popup at once, cutting the exit short
         cx.notify();
       })

@@ -27,6 +27,9 @@ const SURFACES = [
   ["crosstalk", "Crosstalk", "mods/kt-panel-head/messages-square.svg"],
   ["gwm-panel", "GWM", "mods/kt-threads/git-branch.svg"],
 ];
+// What gives each surface the keyboard after a click on its segment (#78), as [ ] do (kt-files' panelTab):
+// a moment later, the new child shown; gwm-panel: kt-gwm's panel copy only (its page copy may show too).
+const FOCUS = { files: "kt-files.focus", diff: "kt-diff.focus", history: "kt-history.focus", flow: "kt-flow.focus", crosstalk: "kt-crosstalk.focus", "gwm-panel": "kt-gwm.panel-focus" };
 const MONO = "Monaspace Krypton";
 // A theme color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
@@ -106,7 +109,10 @@ export default class PanelHead extends View {
               .cursor_pointer()
               .hover((s) => s.text_color(on ? t.accent : t.foreground))
               .tooltip(tip(label, shortcut(keys(), shared("layout"), `kt-head.panel:${id}`)))
-              .on_click(() => run("layout.select", { stack: "panel-body", child: id }))
+              .on_click((_e, cx) => {
+                run("layout.select", { stack: "panel-body", child: id });
+                cx.timer.after(120, () => run(FOCUS[id]));
+              })
               .child(svg(icon).size(14))
               .when(on || wide, (el) => el.child(label.toUpperCase())),
           );

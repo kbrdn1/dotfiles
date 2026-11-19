@@ -32,8 +32,8 @@
 // gg/G, ctrl-d/u move, enter/o/l open the note, i opens it to edit, / searches the notes (INSERT), tab
 // / shift-tab the section filter (Tout, Projet, Worktrees, Orphelines), y copies the note's path, r
 // rereads, h back to every project (when one was picked), esc clears the search, then back to the
-// thread, q back to the thread, ? kt-keys. Note: j/k move over its boxes, x or space ticks one (Aperçu);
-// in Brut j/k scroll a row, ctrl-d/u half the rows on screen, gg/G the ends; ctrl-e / ctrl-y a row
+// thread, q back to the thread, ? kt-keys (k stops on the first row, #78). Note: j/k move over its
+// boxes, x or space ticks one (Aperçu); without boxes, over its blocks (#78); in Brut j/k scroll a row, ctrl-d/u half the rows on screen, gg/G the ends; ctrl-e / ctrl-y a row
 // (from the list too); p Aperçu / Brut, i edits, h or esc back to the list. Editing: the editor types;
 // ctrl-s saves, esc back to reading (Aperçu or Brut, as it was).
 // For tests: `kt-notes.key:<keys>` types keys, `kt-notes.select:<row id>` opens a row,
@@ -54,7 +54,7 @@ import { mdState, mdBudget, docOf, preview as mdPreview, rawList, rawScroll } fr
 import { rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
-import { notePath, projectPath, normalize, present, segments, toggleTask, preview, parseFind, classify, caseRival, external, relativePath } from "./notes.js";
+import { notePath, projectPath, normalize, present, segments, chunks, toggleTask, preview, parseFind, classify, caseRival, external, relativePath } from "./notes.js";
 import { makeT, relative } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -118,6 +118,8 @@ export default class Notes extends View {
     this.tiers = split(this.width);
     this.cur = null; // the list's cursor (a row id)
     this.task = 0; // the open note's box under the cursor
+    this.block = 0; // without boxes, in Aperçu: the reader's block under the cursor (of this.blocks)
+    this.blocks = 0;
     this.md = mdState(); // reading: Aperçu or Brut (md.raw, kept from one note to the next), colors, parses
     this.repos = {}; // "machine|folder" -> repo | null (outside git)
     this.data = {}; // repo.id -> { at, notes, project, branches, wts, listError }
@@ -388,6 +390,7 @@ export default class Notes extends View {
       readonly: it.readonly ?? null, base: it.text ?? null, buf: it.text ?? "", ed: null, mode: "read", loading: Boolean(it.path),
       conflict: null, saving: false, savedAt: 0, error: null, gen: 0, mark: false });
     this.task = 0;
+    this.block = 0;
     this.zone = "note";
     if (!it.path) return;
     // The file as it is now: the cached text is only what the list showed.
@@ -588,6 +591,12 @@ export default class Notes extends View {
     this.reveal = true;
   }
 
+  // A click on a row: the keyboard in NORMAL (#78: from the search, the next j typed there).
+  clicked() {
+    this.vim.normal();
+    this.handle.focus();
+  }
+
   key(e, cx) {
     if (!this.press(e, cx)) return; // not ours: typing in the editor, ctrl-b, cmd-* go on
     cx.stop_propagation();
@@ -661,10 +670,13 @@ export default class Notes extends View {
       // rawScroll); its boxes are source, no cursor on them.
       if (moves.includes(a) && this.md.raw && this.doc?.mode !== "edit") {
         rawScroll(this.md, { down: "down", next: "down", up: "up", prev: "up", top: "top", bottom: "bottom", "half-down": "half-down", "half-up": "half-up" }[a]);
-      } else if (moves.includes(a)) {
-        const n = this.tasks().length;
-        const j = step(mv(a), this.task, n, this.vim.count, 8);
+      } else if (moves.includes(a) && this.tasks().length) {
+        const j = step(mv(a), this.task, this.tasks().length, this.vim.count, 8);
         if (j >= 0) this.task = j;
+      } else if (moves.includes(a)) {
+        // Aperçu without boxes (#78: j / k did nothing): block to block (notes.js chunks), the reader follows.
+        const j = step(mv(a), this.block, this.blocks, this.vim.count, 6);
+        if (j >= 0) { this.block = j; this.readReveal = true; }
       } else if (a === "open" || a === "submit") this.edit(cx);
       // The editor still shown (it lost the keyboard to a click or ctrl-b): back to reading first.
       else if ((a === "left" || a === "escape") && this.doc?.mode === "edit") this.read(cx);
@@ -675,9 +687,11 @@ export default class Notes extends View {
     }
     const items = this.items();
     const it = this.cursorItem();
-    const i = items.indexOf(it);
-    if (a === "up" && i <= 0 && !this.vim.insert) this.vim.edit(); // k on the first row: the search
-    else if (moves.includes(a)) {
+    // By id: items() builds its rows afresh at each call, so indexOf never found the cursor's (#78: j went
+    // to the first row, k to the last).
+    const i = items.findIndex((x) => x.id === it?.id);
+    if (moves.includes(a)) {
+      // k stops on the first row (#78: climbing into the search in INSERT made the next j type there).
       const j = step(mv(a), i, items.length, this.vim.count, 8);
       if (j >= 0) this.cur = items[j].id;
       this.reveal = true;
@@ -750,7 +764,7 @@ export default class Notes extends View {
       .border_color(cursor ? alpha(t.accent, "99") : open ? alpha(t.accent, "4d") : alpha(t.accent, "00"))
       .bg(cursor ? alpha(t.accent, "24") : open ? alpha(t.accent, "14") : alpha(t.accent, "00"))
       .when(!gone, (el) => el.cursor_pointer().when(!cursor && !open, (el) => el.hover((s) => s.bg(t.hover)))
-        .on_click((_e, cx) => { this.open(it, cx); cx.notify(); }))
+        .on_click((_e, cx) => { this.clicked(); this.open(it, cx); cx.notify(); }))
       .child(div().relative().flex_none().size(28).rounded(8).border(1).border_color(alpha(tint, "4d")).bg(alpha(tint, "1a")).flex().items_center().justify_center()
         .child(svg(icon).size(14).text_color(tint))
         .when(Boolean(it.text), (el) => el.child(div().absolute().right(-2).top(-2).size(8).rounded_full().border(2).border_color(t.background).bg(tint))))
@@ -809,6 +823,14 @@ export default class Notes extends View {
       const tasks = segs.filter((s) => s.kind === "task");
       if (this.task >= tasks.length) this.task = Math.max(0, tasks.length - 1);
       const curLine = keyed && this.zone === "note" ? tasks[this.task]?.line : null;
+      // Without boxes (#78): the prose block by block (notes.js chunks), so j / k have somewhere to go; the
+      // cursor's block ringed as a box is, brought into view once after it moved.
+      const blocks = tasks.length ? null : segs.flatMap((s) => chunks(s.text));
+      this.blocks = blocks?.length ?? 0;
+      if (this.block >= this.blocks) this.block = Math.max(0, this.blocks - 1);
+      if (blocks && this.readReveal && !this.md.raw) this.readScroll.scroll_to_item(this.block);
+      this.readReveal = false;
+      const ringed = (i) => keyed && this.zone === "note" && i === this.block;
       // While it is read: its lines as bars (skeleton.js), breathing, in the reader's place.
       const S = skeleton(t, this.m);
       body = d.loading && !segs.length ? S.pulse(v_flex().id(`kn-reader-sk-${d.id}`).flex_1().px(18).pt(4).gap(6)
@@ -820,7 +842,10 @@ export default class Notes extends View {
         : segs.length
         ? v_flex().id(`kn-reader-${d.id}`).flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.readScroll).px(18).pt(4).pb(18).gap(6)
           // The boxes stay ours (ticked here); the markdown between them by markdown.js, a frontmatter only at the top.
-          .children(segs.map((s, i) => (s.kind === "md"
+          .children(blocks ? blocks.map((b, i) => div().id(`kn-blk-${d.id}-${i}`).mx(-6).px(6).py(2).rounded(8).border(1)
+            .border_color(ringed(i) ? alpha(t.accent, "99") : alpha(t.accent, "00")).when(ringed(i), (el) => el.bg(alpha(t.accent, "24")))
+            .text_size(13).text_color(t.foreground).child(mdPreview(t, cx, this.md, { id: `kn-md-${d.id}-${i}`, mod: "kt-notes", doc: docOf(this.md, b, { meta: i === 0 }), budget })))
+          : segs.map((s, i) => (s.kind === "md"
             ? div().text_size(13).text_color(t.foreground).child(mdPreview(t, cx, this.md, { id: `kn-md-${d.id}-${i}`, mod: "kt-notes", doc: docOf(this.md, s.text, { meta: i === 0 }), budget }))
             : this.taskRow(t, d, s, s.line === curLine))))
         : v_flex().flex_1().items_center().justify_center().gap(8).p(24)
@@ -971,7 +996,7 @@ export default class Notes extends View {
         .border_color(on ? alpha(t.accent, "99") : alpha(t.accent, "00")).bg(on ? alpha(t.accent, "24") : alpha(t.accent, "00"))
         .when(!p.has, (el) => el.opacity(0.6))
         .when(!gone, (el) => el.cursor_pointer().when(!on, (el) => el.hover((s) => s.bg(t.hover)))
-          .on_click((_e, cx) => { this.open(p, cx); cx.notify(); }))
+          .on_click((_e, cx) => { this.clicked(); this.open(p, cx); cx.notify(); }))
         .child(this.mark(t, p.e, p.e.name, 24))
         .child(v_flex().flex_1().min_w(0).gap(2)
           .child(h_flex().gap(8).items_center()

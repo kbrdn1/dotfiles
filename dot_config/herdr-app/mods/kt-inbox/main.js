@@ -23,10 +23,10 @@
 // moves to that repo, the filters that would hide it go (bulk.js fitAsked), the item
 // opens as if clicked (on `tab`, a PR's summary | code | checks), the cursor on its
 // row brought into view; not listed, the list is read again, and its detail fetches it.
-// Keys (vim.js; kt-keys lists them under Pages): the page opens typing in the filter (INSERT);
-// ctrl-b h/l (pane.go, "focus") or `kt-inbox.key:<keys>` give it the keyboard in NORMAL.
+// Keys (vim.js; kt-keys lists them under Pages): the page opens with the keyboard in NORMAL (#78),
+// as do ctrl-b h/l (pane.go, "focus"), `kt-inbox.key:<keys>` and a click on a row.
 // INSERT: type to filter, ctrl-n/ctrl-p, ctrl-j/ctrl-k, ↓ ↑ move the cursor, enter opens it, esc:
-// NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N move the cursor (k on the first row: the filter, INSERT),
+// NORMAL. NORMAL: j/k, gg/G, ctrl-d/u, n/N move the cursor (k stops on the first row),
 // / the filter, tab / shift-tab the type pills, [ ] the relation pills, enter/o/l open (a click), O
 // GitHub, y copy the link, r refresh, dd close it (kt-confirm, open ones), p the body's Aperçu / Brut,
 // ctrl-e / ctrl-y scroll Brut a row (any mode), ? kt-keys, q back to the thread, esc empties the
@@ -938,6 +938,12 @@ export default class Inbox extends View {
     this.reveal = true;
   }
 
+  // The page shown (ctrl-b i, a click in the sidebar): the keyboard in NORMAL, so j moves and / types
+  // (#78: it came in INSERT, and a first j filtered the list), unless pane.go or a key command gave it.
+  arrive() {
+    if (visible() && !this.handle.is_focused()) this.focusIn();
+  }
+
   // The Code zone takes the keys (NORMAL), on the open PR's Code tab: the cursor on `path`, else where it
   // was (code() puts it on the first file when that isn't there).
   codeIn(path) {
@@ -1048,8 +1054,8 @@ export default class Inbox extends View {
     if (a === "type" || a === "backspace") {
       this.query = a === "type" ? this.query + this.vim.char : this.query.slice(0, -1);
       this.cur = null;
-    } else if (a === "up" && i <= 0 && !this.vim.insert) this.vim.edit(); // k on the first row: the filter
-    else if (["down", "up", "top", "bottom", "half-down", "half-up", "next", "prev"].includes(a)) {
+    } else if (["down", "up", "top", "bottom", "half-down", "half-up", "next", "prev"].includes(a)) {
+      // k stops on the first row (#78: climbing into the filter in INSERT made the next j type there).
       const j = step(a === "next" ? "down" : a === "prev" ? "up" : a, i, list.length, this.vim.count, 8);
       if (j >= 0) this.cur = list[j].key;
       this.reveal = true;
@@ -1158,7 +1164,10 @@ export default class Inbox extends View {
       .when(!gone && !on && !picked && !cursor, (el) => el.hover((s) => s.bg(t.hover)))
       // ⌘-click toggles, ⇧-click a range (select.js); a plain click empties the selection and opens.
       .when(!gone, (el) => el.cursor_pointer().on_click((e, cx) => {
+        // The cursor, and the keyboard in NORMAL (#78: from the filter, a j after it typed there).
         this.cur = x.key;
+        this.vim.normal();
+        this.handle.focus();
         if (!this.multi.click(e.modifiers, x.key, order)) { this.select(x, cx); this.solo = "detail"; }
         cx.notify();
       }))
@@ -1504,16 +1513,9 @@ export default class Inbox extends View {
       // Back on the page: what moved while it was hidden (on GitHub, or by an agent), if read over 10 s ago.
       if (Date.now() - (load(this.listKey())?.at ?? 0) > 10e3) this.loadList(cx, true);
       if (this.sel && Date.now() - (this.details[this.sel.key]?.at ?? 0) > 10e3) this.loadDetail(cx, true);
-      // The thread's terminal is hidden under this page: take the keyboard (typing filters).
-      // Not during render, and after the app has settled its own focus on the switch.
-      // INSERT then, unless pane.go or a key command already gave it the keyboard (NORMAL).
-      cx.timer.after(150, (cx) => {
-        if (visible() && !this.handle.is_focused()) {
-          this.handle.focus();
-          this.vim.edit();
-        }
-        cx.notify();
-      });
+      // The thread's terminal is hidden under this page: take the keyboard (arrive). Not during render,
+      // and after the app has settled its own focus on the switch.
+      cx.timer.after(150, (cx) => { this.arrive(); cx.notify(); });
       this.loadList(cx, false);
       cx.spawn(async () => { await cleanPreviews(); await cleanTokens("kt-inbox"); });
     }

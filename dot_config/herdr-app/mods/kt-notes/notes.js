@@ -128,6 +128,32 @@ export function segments(text) {
   return out;
 }
 
+/** A note without boxes cut for the reader's cursor (#78: in Aperçu, j / k go from block to block and
+ *  the reader follows): at a blank line followed by a line at column 0, never inside a fence nor the
+ *  frontmatter at the top. An indented line (a list item's continuation, indented code) stays with what
+ *  is above it. At most `max` blocks (neighbours joined): each is parsed and kept by markdown.js' docOf,
+ *  a bounded cache (KEEP), and a render has ~50 ms. */
+export function chunks(md, max = 48) {
+  const lines = String(md ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const code = fenced(lines);
+  const front = lines[0]?.trim() === "---" ? lines.findIndex((l, i) => i > 0 && l.trim() === "---") : -1;
+  const out = [];
+  let cur = [];
+  const flush = () => {
+    const text = cur.join("\n").replace(/^\n+|\n+$/g, "");
+    if (text.trim()) out.push(text);
+    cur = [];
+  };
+  lines.forEach((line, i) => {
+    if (i > front + 1 && line.trim() && !/^\s/.test(line) && !lines[i - 1].trim() && !code.has(i - 1)) flush();
+    cur.push(line);
+  });
+  flush();
+  if (out.length <= max) return out;
+  const per = Math.ceil(out.length / max);
+  return Array.from({ length: Math.ceil(out.length / per) }, (_, k) => out.slice(k * per, k * per + per).join("\n\n"));
+}
+
 /** toggle_checkbox on line i, when it is a box: "- [ ] " <-> "- [x] " (rewrite_marker). Else unchanged. */
 export function toggleTask(text, i) {
   const lines = String(text ?? "").split("\n");

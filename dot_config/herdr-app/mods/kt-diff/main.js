@@ -9,8 +9,8 @@
 // `git commit -m`: hooks run, nothing is skipped. Polls every 3 s while shown.
 // Keys (vim.js; kt-keys lists them, group "panel"): ctrl-b l (pane.go, "focus") or
 // `kt-diff.key:<keys>` gives Changes the keyboard: a cursor (an accent ring on the ink) on the
-// message, a section's header or a file. j k gg G ctrl-d ctrl-u move; k past the first row, or /,
-// goes to the message (INSERT, the textarea types; ⌘↩ commits; esc back to NORMAL); h folds a
+// message, a section's header or a file. j k gg G ctrl-d ctrl-u move (k stops on the first row, #78);
+// / goes to the message (INSERT, the textarea types; ⌘↩ commits; esc back to NORMAL); h folds a
 // file's diff (on a folded file: folds its section and goes to its header), l unfolds; enter / o
 // as a click; O opens in Zed; y copies the path; dd / x discards a file of Changes (asked first,
 // the hover button's path); r reads again; ⌘↩ commits from the list too; esc gives the keyboard
@@ -191,6 +191,13 @@ export default class Changes extends View {
     this.reveal = true;
   }
 
+  // A click on a row: the keys' cursor goes there, and the keyboard, in NORMAL (#78).
+  pick(id) {
+    this.cur = id;
+    this.vim.normal();
+    this.handle.focus();
+  }
+
   key(e, cx) {
     // In the message the textarea types (⌘↩ is cg-message's): only esc comes back to the list.
     if (this.typing) {
@@ -215,7 +222,7 @@ export default class Changes extends View {
     if (a === "filter") to("message");
     else if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
       let j = step(a, i, flat.length, this.vim.count, 16);
-      if (j === 0 && a !== "up" && flat.length > 1) j = 1; // only k climbs into the message
+      if (j === 0 && flat.length > 1) j = 1; // k stops on the first row (#78): / goes to the message
       if (j >= 0) to(flat[j].id);
     } else if (x?.id === "message" && (a === "open" || a === "right")) to("message");
     else if (a === "left") {
@@ -541,7 +548,7 @@ export default class Changes extends View {
       tokens: (f) => { const tk = this.tokens[`${name}:${f.path}`]; return tk?.mode === (dark ? "dark" : "light") ? tk : null; },
       isOpen: (f) => this.open.has(`${name}:${f.path}`),
       isHot: (f) => this.hot === `${name}:${f.path}`,
-      toggle: (f, cx) => this.toggle(name, f, cx),
+      toggle: (f, cx) => { this.pick(`${name}:${f.path}`); this.toggle(name, f, cx); },
       hover: (f, on, cx) => {
         const k = `${name}:${f.path}`;
         const next = on ? k : this.hot === k ? null : this.hot;
@@ -556,7 +563,7 @@ export default class Changes extends View {
     flat.push({ id: head, head: true, section: name });
     // Its count rolls (roll.js); the repo in its reels' id: another repo's shows at once.
     put(head, sectionHead(t, { id: `cg-head-${name}`, label, count: files.length, folded, ring: ring(head), gap,
-      toggle: (cx) => { this.fold[name] = !folded; cx.notify(); }, actions: headActions, roll, m: this.motion, scope: this.root }));
+      toggle: (cx) => { this.pick(head); this.fold[name] = !folded; cx.notify(); }, actions: headActions, roll, m: this.motion, scope: this.root }));
     // diffview's fileItems (Inbox's Code and History draw theirs the same): the rows by path, opening and
     // closing on their height (a stage moves a file from one section to the other, a fold closes them),
     // the cursor's ring, each diff after its row, unfolding and folding on its height.

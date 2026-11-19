@@ -517,7 +517,8 @@ export default class History extends View {
       tokens: (f) => (this.tokens[f.path]?.mode === (dark ? "dark" : "light") ? this.tokens[f.path] : null),
       isOpen: (f) => this.open.has(f.path),
       isHot: (f) => this.hot === f.path,
-      toggle: (f, cx) => { this.toggle(f, cx); cx.notify(); },
+      // A click takes the files' cursor and the keyboard along (#78).
+      toggle: (f, cx) => { this.zone = "files"; this.fcur = f.path; this.handle.focus(); this.toggle(f, cx); cx.notify(); },
       hover: (f, on, cx) => {
         const next = on ? f.path : this.hot === f.path ? null : this.hot;
         if (next !== this.hot) { this.hot = next; cx.notify(); }
@@ -655,8 +656,8 @@ export default class History extends View {
           })
           .size_full()
           .track_scroll(this.listScroll)
-          // A click selects (toggles) and takes the cursor along.
-          .on_item_click((hash, cx) => { this.cur = hash; this.select(hash, cx); cx.notify(); }))
+          // A click selects (toggles) and takes the cursor along, and the keyboard (#78).
+          .on_item_click((hash, cx) => { this.cur = hash; this.zone = "commits"; this.handle.focus(); this.select(hash, cx); cx.notify(); }))
         .child(Scrollbar.vertical("hi-list").absolute().inset_0())));
     // The keyboard stays on the root; the content fades in each time the tab is shown.
     return v_flex().id("kt-history").size_full().text_color(t.foreground)

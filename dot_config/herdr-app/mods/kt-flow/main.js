@@ -231,6 +231,13 @@ export default class Flow extends View {
     this.reveal = true;
   }
 
+  // A click on a row that folds: the keys' cursor goes there, and the keyboard (#78).
+  pick(id) {
+    this.cur = id;
+    this.vim.normal();
+    this.handle.focus();
+  }
+
   key(e, cx) {
     if (!this.press(e, cx)) return; // not ours: ctrl-b, cmd-* go on
     cx.stop_propagation();
@@ -694,7 +701,7 @@ export default class Flow extends View {
       .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
       .when(on && !cursor, (el) => el.bg(alpha(t.accent, "14")))
       .when(folds, (el) => el.cursor_pointer().when(!on && !cursor, (e) => e.hover((st) => st.bg(t.hover)))
-        .on_click((_e, cx) => { if (ci) this.toggleCi(!open, cx); else if (impl) this.implOpen = !open; else this.reviewOpen = !open; cx.notify(); }))
+        .on_click((_e, cx) => { this.pick(`s:${s.id}`); if (ci) this.toggleCi(!open, cx); else if (impl) this.implOpen = !open; else this.reviewOpen = !open; cx.notify(); }))
       .child(v_flex().w(14).h_full().flex_none().items_center()
         .child(rail(!first)).child(this.dot(t, c, s, pulse)).child(rail(!last && !open)))
       .child(div().flex_none().text_size(12.5).text_color(s.state === "pending" ? t.muted : s.state === "skipped" ? t.dim : t.foreground).when(on, (el) => el.font_medium())
@@ -790,7 +797,7 @@ export default class Flow extends View {
         // « +N faites »: the done ones, folded past 12.
         const cursor = this.ring("tasks:done"), open = this.doneOpen;
         return row("~done", cursor, h_flex(), i).cursor_pointer().when(!cursor, (e) => e.hover((st) => st.bg(t.hover)))
-          .on_click((_e, cx) => { this.doneOpen = !open; cx.notify(); })
+          .on_click((_e, cx) => { this.pick("tasks:done"); this.doneOpen = !open; cx.notify(); })
           .child(h_flex().size(14).flex_none().items_center().justify_center()
             .child(svg(I(open ? "chevron-down" : "chevron-right")).size(11).text_color(open ? t.accent : t.dim)))
           .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("tasksDone", { n: L.done.length })));
@@ -830,7 +837,7 @@ export default class Flow extends View {
         .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
         .when(last && !cursor, (el) => el.bg(alpha(t.accent, "14")))
         .when(!last && !cursor, (el) => el.hover((st) => st.bg(t.hover)))
-        .on_click((_e, cx) => { this.openPass = open ? null : p.pass; this.openFinding = null; cx.notify(); })
+        .on_click((_e, cx) => { this.pick(`pass:${p.pass}`); this.openPass = open ? null : p.pass; this.openFinding = null; cx.notify(); })
         .child(svg(I(open ? "chevron-down" : "chevron-right")).size(11).flex_none().text_color(open ? t.accent : t.dim))
         .child(div().flex_none().text_size(12).text_color(last ? t.foreground : t.muted).when(last, (el) => el.font_medium()).child(tr("pass", { n: p.pass })))
         .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(String(p.sha ?? "").slice(0, 7)))
@@ -848,7 +855,7 @@ export default class Flow extends View {
           .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
           .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
           .when(shown && !cursor, (el) => el.bg(t.hover)).when(!shown && !cursor, (el) => el.hover((st) => st.bg(t.hover)))
-          .on_click((_e, cx) => { this.openFinding = shown ? null : f.id; cx.notify(); })
+          .on_click((_e, cx) => { this.pick(`f:${f.id}`); this.openFinding = shown ? null : f.id; cx.notify(); })
           .child(this.pill(t, `kf-fp-${f.id}`, f.prio ?? "?", prioColor(f.prio ?? "")))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(f.title ?? f.id))
           .when(Boolean(loc), (el) => el.child(div().id(`kf-fl-${f.id}`).flex_none().max_w(150).truncate().font_family(MONO).text_size(10.5).text_color(t.dim)
@@ -1045,7 +1052,7 @@ export default class Flow extends View {
         .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
         .when(head && !cursor, (el) => el.bg(alpha(t.accent, "14")))
         .when(!head && !cursor, (el) => el.hover((st) => st.bg(t.hover)))
-        .on_click((_e, cx) => { this.toggleCommit(p.sha); cx.notify(); })
+        .on_click((_e, cx) => { this.pick(`ci:${p.sha}`); this.toggleCommit(p.sha); cx.notify(); })
         .child(svg(I(open ? "chevron-down" : "chevron-right")).size(11).flex_none().text_color(open ? t.accent : t.dim))
         .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(head ? t.foreground : t.muted).child(p.sha.slice(0, 7)))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(head ? t.foreground : t.muted).when(head, (el) => el.font_medium()).child(p.subject))
@@ -1145,7 +1152,7 @@ export default class Flow extends View {
         .border(1).border_color(cursor ? alpha(t.accent, "99") : alpha(t.accent, "00"))
         .when(cursor, (el) => el.bg(alpha(t.accent, "24")))
         .when(!cursor, (el) => el.hover((s) => s.bg(t.hover)))
-        .on_click((_e, cx) => { this.fold[p.id] = !folded; cx.notify(); })
+        .on_click((_e, cx) => { this.pick(`p:${p.id}`); this.fold[p.id] = !folded; cx.notify(); })
         .child(svg(I(folded ? "chevron-right" : "chevron-down")).size(12).flex_none().text_color(t.muted))
         .when(all, (el) => el.child(svg(I("check")).size(12).flex_none().text_color(c.ok)))
         .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(p.current ? t.foreground : t.muted).child(p.label))

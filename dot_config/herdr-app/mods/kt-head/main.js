@@ -166,6 +166,9 @@ const confirm = (title, detail, label, command) =>
 const face = (which) => view(which, { layout, run, setShared, panes, focused });
 // The key bound to an action (shortcuts.js), for a tooltip.
 const keyOf = (...actions) => shortcut(keys(), shared("layout"), ...actions);
+// What gives each panel surface the keyboard (kt-files' panelTab, kt-panel-head): gwm-panel, kt-gwm's
+// panel copy only (`kt-gwm.focus` would reach its page copy too).
+const PANEL_FOCUS = { files: "kt-files.focus", diff: "kt-diff.focus", history: "kt-history.focus", flow: "kt-flow.focus", crosstalk: "kt-crosstalk.focus", "gwm-panel": "kt-gwm.panel-focus" };
 // `panel-toggle` (ctrl-b p) and `panel:<surface>` open and close the right panel through panel.js (#73),
 // `side-toggle` (ctrl-b shift-v) the left sidebar.
 function route(c, cx) {
@@ -176,6 +179,8 @@ function route(c, cx) {
   else if (name === "panel") {
     run("layout.select", { stack: "panel-body", child: arg });
     showPanel(cx);
+    // The surface takes the keyboard (#78), as [ ] give it: a moment later, once its child shows.
+    if (PANEL_FOCUS[arg]) cx.timer.after(120, () => run(PANEL_FOCUS[arg]));
   } else if (name === "attention") {
     const all = agents();
     const a = all.find((x) => x.status === "blocked") ?? all.find((x) => x.status === "done");
