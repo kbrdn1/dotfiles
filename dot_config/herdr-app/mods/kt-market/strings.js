@@ -220,7 +220,6 @@ export default {
     "loop.interval": "Intervalle",
     "loop.stop": "Arrêt",
     "loop.components": "Composants",
-    "loop.prompt": "La commande /loop",
     "files": { one: "{n} fichier", other: "{n} fichiers" },
     "filesMore": { one: "… et {n} autre", other: "… et {n} autres" },
 
@@ -464,7 +463,6 @@ export default {
     "loop.interval": "Interval",
     "loop.stop": "Stops when",
     "loop.components": "Components",
-    "loop.prompt": "The /loop command",
     "files": { one: "{n} file", other: "{n} files" },
     "filesMore": { one: "… and {n} more", other: "… and {n} more" },
 

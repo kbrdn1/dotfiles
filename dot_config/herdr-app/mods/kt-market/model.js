@@ -549,6 +549,25 @@ export function query(items, { q = "", types = [], sources = [], sort = "relevan
   return { rows: hits.slice(off, off + lim).map(ROW), total: hits.length, counts: { byType, bySource } };
 }
 
+// The types only a live source feeds (no catalog entry has them): counted only when that source was
+// asked, as their source chips (no words, or the type filtered out: not asked, so no number, not 0).
+const LIVE_TYPE = { mcp: "mcp-registry", skill: "skills-sh" };
+/** A type chip's count from market.mjs' `query` answer `r`; undefined: no number shown. */
+export function typeCount(r, type) {
+  const s = LIVE_TYPE[type];
+  const state = r?.sources?.[s]?.state;
+  if (s && (!state || state === "off" || state === "needs-query")) return undefined;
+  return r?.counts?.byType?.[type];
+}
+
+/** The pin shown for an item: its catalog's commit or version; a catalog pinning nothing, once inspected,
+ *  the commit read then (what Installer pins to); else the kind's word (main.js says it). */
+export function pinOf(x, d) {
+  if ((x.pinKind === "sha" || x.pinKind === "version") && x.pin) return { at: x.pin };
+  if (x.pinKind === "none" && typeof d?.head === "string" && d.head) return { at: d.head.slice(0, 12) };
+  return { kind: x.pinKind };
+}
+
 /** Items of several sources, one per id (the first wins). */
 export function dedupe(lists) {
   const seen = new Set();

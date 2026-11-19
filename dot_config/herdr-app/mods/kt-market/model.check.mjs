@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   clean, https, github, safeRel, hash, normalizeMarketplace, marketSource, mcpVariants, normalizeRegistry, normalizeSkillsSh,
   normalizeHerdr, normalizeLoop, levelOf, code, unpinnedRun, scanHerdr, scanSkill, pluginFlags, repoFlags, findSkill,
-  loopRecipe, plan, mcpForm, skillForm, query, tokens, typeMatch, dedupe, LIVE, SOURCES, TYPES,
+  loopRecipe, plan, mcpForm, skillForm, query, tokens, typeMatch, dedupe, LIVE, SOURCES, TYPES, typeCount, pinOf,
 } from "./model.js";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -323,5 +323,24 @@ assert.deepEqual(loopRecipe(loopFm.body, loopFm.meta), { interval: "10m", stop: 
 assert.ok(LIVE.has("mcp-registry") && LIVE.has("skills-sh") && !LIVE.has("herdr-dev"));
 assert.equal(SOURCES.length, 7);
 assert.ok(TYPES.includes("automation"));
+
+// ── chips and pins ──────────────────────────────────────────────────────────
+// A live type's count: none while its source wasn't asked (no words, or filtered out), 0 once asked.
+const ans = (mcp, skills) => ({ counts: { byType: { plugin: 4, mcp: 0, skill: 0 } }, sources: { "mcp-registry": mcp, "skills-sh": skills } });
+const notAsked = ans({ state: "needs-query" }, { state: "off" });
+assert.equal(typeCount(notAsked, "mcp"), undefined, "registry not asked: no number");
+assert.equal(typeCount(notAsked, "skill"), undefined, "skills.sh not asked: no number");
+assert.equal(typeCount(notAsked, "plugin"), 4, "a catalog type keeps its count");
+assert.equal(typeCount(ans({ state: "cache" }, { state: "live" }), "mcp"), 0, "asked and nothing found: 0");
+assert.equal(typeCount(ans({ state: "error", error: "timeout" }, { state: "off" }), "mcp"), 0);
+assert.equal(typeCount(null, "mcp"), undefined, "no answer yet");
+// The pin: the catalog's first; a catalog pinning nothing, the inspection's commit; else the kind.
+assert.deepEqual(pinOf({ pinKind: "sha", pin: "900b4f258f5c" }, { head: SHA }), { at: "900b4f258f5c" });
+assert.deepEqual(pinOf({ pinKind: "version", pin: "1.2.3" }, { head: SHA }), { at: "1.2.3" }, "a version stays the pin");
+assert.deepEqual(pinOf({ pinKind: "none" }, { head: SHA }), { at: SHA.slice(0, 12) }, "unpinned, inspected: its commit");
+assert.deepEqual(pinOf({ pinKind: "none" }, null), { kind: "none" }, "unpinned, not inspected");
+assert.deepEqual(pinOf({ pinKind: "none" }, { pending: true }), { kind: "none" });
+assert.deepEqual(pinOf({ pinKind: "market" }, { head: SHA }), { kind: "market" }, "a local clone isn't pinned by a commit");
+assert.deepEqual(pinOf({ pinKind: "remote" }, { head: SHA }), { kind: "remote" });
 
 console.log("kt-market model: ok");

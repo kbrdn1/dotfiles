@@ -40,7 +40,7 @@ import { rollText } from "./roll.js";
 import { refreshOn } from "./bus.js";
 import { docOf, mdState, view, tabs, target } from "./markdown.js";
 import { makeT, relative, compact } from "./i18n.js";
-import { TYPES, SOURCES, levelOf, code, mcpForm, skillForm } from "./model.js";
+import { TYPES, SOURCES, levelOf, code, mcpForm, skillForm, typeCount, pinOf } from "./model.js";
 import { loopForm, loopPrompt } from "./loops.js";
 import { threadArgs } from "./herdr.js";
 import strings from "./strings.js";
@@ -86,10 +86,10 @@ function popText(p) {
   if (!p) return null;
   return tr(`pop.${p.unit}`, { n: compact(p.n) }) || compact(p.n);
 }
-function pinText(x) {
-  if (x.pinKind === "sha" && x.pin) return `@${x.pin}`;
-  if (x.pinKind === "version" && x.pin) return `@${x.pin}`;
-  return tr(`pin.${x.pinKind}`) || null;
+// `d`: the item's finished inspection (its commit pins an unpinned catalog entry), else null.
+function pinText(x, d) {
+  const p = pinOf(x, d);
+  return p.at ? `@${p.at}` : tr(`pin.${p.kind}`) || null;
 }
 // A third party's README: its images become links (drawing it fetches nothing), its <img> and
 // <picture> out.
@@ -524,7 +524,7 @@ export default class Market extends View {
     const count = !r ? S.pulse(S.line(80, { h: 7, lh: 14 }).id("ktmk-count-sk"))
       : rollText(this.m, `ktmk-head-n-${filtered ? "f" : "a"}`, tr(filtered ? "shown" : "items", { n: r.total }), 14);
     const types = filterRow({ id: "ktmk-types", t, state: this.typeRow, active: this.type, reduced,
-      items: [{ key: "all", label: tr("all") }, ...TYPES.map((k) => ({ key: k, label: tr(`type.${k}`), tint: TYPE_TINT[k], count: r?.counts?.byType?.[k] }))],
+      items: [{ key: "all", label: tr("all") }, ...TYPES.map((k) => ({ key: k, label: tr(`type.${k}`), tint: TYPE_TINT[k], count: typeCount(r, k) }))],
       onPick: (k, cx) => { this.type = k; this.refilter(cx); } });
     const sources = filterRow({ id: "ktmk-sources", t, state: this.sourceRow, active: this.source, reduced,
       items: [{ key: "all", label: tr("all") }, ...SOURCES.map((k) => ({ key: k, label: tr(`src.${k}`), tint: SOURCE_TINT[k],
@@ -710,8 +710,7 @@ export default class Market extends View {
       out.push(v_flex().gap(6)
         .child(this.pair(t, tr("loop.interval"), d.loop.interval))
         .child(this.pair(t, tr("loop.stop"), d.loop.stop))
-        .when(d.loop.components.length > 0, (el) => el.child(this.pair(t, tr("loop.components"), d.loop.components.join(", "))))
-        .when(Boolean(d.loop.prompt), (el) => el.child(this.eyebrow(t, tr("loop.prompt"))).child(this.block(t, d.loop.prompt))));
+        .when(d.loop.components.length > 0, (el) => el.child(this.pair(t, tr("loop.components"), d.loop.components.join(", ")))));
     }
     return out;
   }
@@ -758,7 +757,8 @@ export default class Market extends View {
         .child(this.pair(t, tr("fact.inspected"), tr(d.cached ? "inspectedCached" : "inspectedNow", { ago: relative(d.at) }))))
       .child(v_flex().gap(6)
         .child(this.eyebrow(t, tr("plan.title")))
-        .child(p?.route ? this.block(t, p.lines.length ? p.lines.join("\n") : tr("plan.noLines")) : this.block(t, tr(`why.${p?.why}`) || tr("why.no-route"), t.blocked))
+        // A loop: its whole /loop command, once (the plan keeps its first line, what y copies).
+        .child(p?.route ? this.block(t, (loop && loopPrompt(d)) || (p.lines.length ? p.lines.join("\n") : tr("plan.noLines"))) : this.block(t, tr(`why.${p?.why}`) || tr("why.no-route"), t.blocked))
         .when(Boolean(p?.writes?.length), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.writes", { list: p.writes.join(", ") }))))
         // A herdr.dev mod (lot 6): the thread's instruction in full, then the warning, before the button.
         .when(herdrTask != null, (el) => el.child(v_flex().pt(4).gap(6)
@@ -833,7 +833,7 @@ export default class Market extends View {
     const tint = t[TYPE_TINT[x.type]] ?? t.accent;
     this.docShown = false;
     const facts = v_flex().gap(6)
-      .child(this.pair(t, tr("fact.source"), [x.repo, pinText(x)].filter(Boolean).join(" ")))
+      .child(this.pair(t, tr("fact.source"), [x.repo, pinText(x, done ? d : null)].filter(Boolean).join(" ")))
       .child(this.pair(t, tr("fact.author"), x.author))
       .child(this.pair(t, tr("fact.popularity"), popText(x.popularity) ?? tr("pop.none")))
       .child(this.pair(t, tr("fact.updated"), x.updatedAt ? relative(x.updatedAt) : null))
@@ -841,7 +841,7 @@ export default class Market extends View {
     const card = v_flex().w(w).flex_none().h_full().min_h(0).relative().px(4).pb(4).overflow_hidden().rounded(16).border(1).border_color(t.border).bg(t.background)
       .children([dither(w, 60, 16, tint)].filter(Boolean))
       .child(bandRow(t, { m: this.m, mark: this.tile(t, x.type, 32), dot: lvl !== "info" ? levelColor(t, lvl) : null, title: x.title || x.name,
-        sub: [tr(`type1.${x.type}`), srcLabel(x), pinText(x)].filter(Boolean),
+        sub: [tr(`type1.${x.type}`), srcLabel(x), pinText(x, done ? d : null)].filter(Boolean),
         buttons: [
           pulse(this.m, iconBtn(t, "ktmk-d-inspect", OWN("eye"), d?.pending ? tr("inspectingTip") : done ? tr("reinspectTip") : tr("inspectTip"),
             (cx) => this.inspect(cx, x, done), Boolean(d?.pending)), Boolean(d?.pending)),
