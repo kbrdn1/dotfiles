@@ -67,7 +67,7 @@ import strings from "./strings.js";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder, keys } from "herdr";
 // kt-keys' shortcuts.js (a byte-identical copy): each nav line's key as keycaps, read from keys() (#72).
-import { shortcut, kbd } from "./shortcuts.js";
+import { shortcut, kbd, tip } from "./shortcuts.js";
 import * as fs from "fs/promises";
 
 // The places' git and real paths go through machines.js' guard: a machine away refuses at once (#61).
@@ -1910,7 +1910,6 @@ export default class Threads extends View {
       ...(agentsOpen ? Object.fromEntries(agentPages.map((p) => [`kt-${p}`, () => show(p)])) : {}),
       "kt-gwm": () => show("gwm"),
       ...(hasNotes ? { "kt-notes": () => show("notes") } : {}),
-      "kt-machines": () => run("mod.open", { name: "kt-machines" }),
       "kt-search": () => run("mod.open", { name: "kt-picker" }),
     };
     // A thread's line, then its decision pills' (pillStops).
@@ -2120,12 +2119,6 @@ export default class Threads extends View {
             .font_family(MONO).text_size(10.5).text_color(navPage === "gwm" ? t.foreground : t.muted).child(roll(m, "kt-nav-gwm-n", String(worktrees), 14)), navPage === "gwm"))
         // file-text until kt-notes gives its own icon.
         .when(this.hasNotes, (el) => el.child(tool("kt-notes", "file-text", "Notes", () => show("notes"), null, navPage === "notes")))
-        // Machines (#64, kt-machines): the other machines' state, their logins, adding one. Its badge: how
-        // many, on the dot of the one that needs you most (login, away, loading), none without one.
-        .child(tool("kt-machines", "server", tr("machines"), () => run("mod.open", { name: "kt-machines" }), ((ms) => !ms.length ? null
-          : h_flex().flex_none().h(18).px(7).gap(5).items_center().rounded_full().border(1).border_color(t.border)
-            .child(div().size(6).flex_none().rounded_full().bg(stateColor(t, ["login", "away", "loading"].find((st) => ms.some((x) => x.status === st)) ?? "ready")))
-            .child(div().font_family(MONO).text_size(10.5).text_color(t.muted).child(String(ms.length))))(machineList())))
         .child(tool("kt-search", "search", tr("search"), () => run("mod.open", { name: "kt-picker" }))))
       // kbrdn.dev `.eyebrow` over the list, and the filter as a `.segment` pill.
       .child(
@@ -2230,6 +2223,14 @@ export default class Threads extends View {
             .accessibility_label(tr("usage")).on_hover((h, cx) => this.peekHover("btn", h, cx)))
           // kt-mods' console: blocks shown or hidden, root mods, kbrdn options, shared copies.
           .child(this.button("kt-mods", svg("mods/kt-mods/blocks.svg").size(13), "", () => run("mod.open", { name: "kt-mods" })).tooltip("Mods")) // i18n: tech
+          // Machines (#64, moved here from the navigation at Kylian's ask): kt-machines, the other machines'
+          // state, their logins, adding one. Its badge: the dot of the one that needs you most (login, away,
+          // loading), none without another machine. Its tooltip says its key when keys.json binds one.
+          .child(((ms) => this.button("kt-machines", div().relative().child(svg(I("server")).size(13))
+            .when(ms.length > 0, (el) => el.child(div().absolute().top(-2).right(-3).size(6).rounded_full().border(1).border_color(t.chrome)
+              .bg(stateColor(t, ["login", "away", "loading"].find((st) => ms.some((x) => x.status === st)) ?? "ready")))),
+          "", () => run("mod.open", { name: "kt-machines" }))
+            .tooltip(tip(tr("machines"), shortcut(keys(), shared("layout"), "mod.open:kt-machines"))))(machineList()))
           .child(div().flex_1())
           // Language and theme (i18n.js' cycleButton): one button each, the state now, a click to the
           // next; the face fades in on a change (enter, keyed by the state).
