@@ -32,7 +32,7 @@ import { viz } from "./viz.js";
 import { roll } from "./roll.js";
 import { ring } from "./ring.js";
 import { Vim, keysOf } from "./vim.js";
-import { merge, breakdown, curve, current } from "./model.js";
+import { merge, breakdown, curve, current, sessionId } from "./model.js";
 
 const tr = makeT(strings);
 const ME = "context"; // this block's id in the layout's "panel-body" stack
@@ -169,7 +169,8 @@ export default class Context extends View {
   }
 
   // A status line written before it published transcript_path: the session's file by its id (kt-chat's).
-  async bySession(id) {
+  async bySession(raw) {
+    const id = sessionId(raw); // model.js: a UUID's characters only, never a path
     if (!id) return null;
     const r = await exec("/bin/sh", ["-c", 'ls -1 "$HOME"/.claude/projects/*/"$1".jsonl 2>/dev/null | head -1', "sh", id]).catch(() => null); // i18n: tech
     return r?.stdout?.trim() || null;

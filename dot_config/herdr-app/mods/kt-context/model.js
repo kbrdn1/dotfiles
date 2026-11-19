@@ -17,6 +17,10 @@ export const MAX_TURNS = 4000; // calls kept per transcript, the newest
 
 export const emptyState = (path) => ({ path, offset: 0, turns: [], compactions: [], shape: null });
 
+/** A session id as Claude Code names its transcript (a UUID: letters, digits, dashes), else null: it goes
+ *  into a path under ~/.claude/projects, where « .. » or « / » would reach another file (cold review 2, 12). */
+export const sessionId = (id) => (typeof id === "string" && /^[A-Za-z0-9-]+$/.test(id) ? id : null);
+
 /** `read`: ctx-index.ts' output. Answers the new state, or null when it doesn't follow the state. */
 export function merge(state, path, read) {
   if (!read || !Number.isFinite(read.offset)) return null;

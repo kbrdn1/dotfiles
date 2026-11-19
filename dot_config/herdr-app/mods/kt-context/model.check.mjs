@@ -3,7 +3,7 @@
 import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { merge, breakdown, curve, current, emptyState, CHARS_PER_TOKEN } from "./model.js";
+import { merge, breakdown, curve, current, emptyState, sessionId, CHARS_PER_TOKEN } from "./model.js";
 
 const INDEX = join(import.meta.dir, "ctx-index.ts");
 let fails = 0;
@@ -104,6 +104,38 @@ eq("current after compaction", current(st("2026-11-19T09:13:39Z", "2026-11-19T10
 eq("compaction before the call", current(st("2026-11-19T10:09:00Z", "2026-11-19T10:08:31Z"), lineOf(350187, 35)).compacted, null);
 eq("no line, last call, 1M", current(st("2026-11-19T09:13:39Z"), null), { tokens: 350187, pct: 35, window: 1_000_000, compacted: null });
 eq("nothing", current(null, { ctx_pct: 12, window: 200000 }), { tokens: 0, pct: 12, window: 200000, compacted: null });
+
+// 7. Read by chunks (cold review 2, point 11; ctx-index.ts reads 1 MiB at a time): a line longer than two
+// chunks, lines across the chunks' edges, a line still being written at the end. And the memory: read
+// whole, this ~66 MB transcript peaked at 194 MB (its bytes, its text and its lines at once); by chunks, 78.
+{
+  const dir = mkdtempSync(join(tmpdir(), "kt-context-big-"));
+  const big = join(dir, "big.jsonl");
+  const partial = '{"type":"assistant","mess';
+  try {
+    const filler = line({ type: "user", timestamp: "2026-11-19T12:00:00Z", message: { content: "z".repeat(4000) } });
+    writeFileSync(big, filler.repeat(8000) + line(call("L", "2026-11-19T12:00:01Z", 1, 2, 3, { blob: "x".repeat(2_500_000) }))
+      + line(call("A", "2026-11-19T12:00:02Z", 1, 10, 100))
+      + line({ type: "system", subtype: "compact_boundary", timestamp: "2026-11-19T12:00:02Z", compactMetadata: { trigger: "manual", preTokens: 111, postTokens: 9 } })
+      + filler.repeat(8000) + line(call("B", "2026-11-19T12:00:03Z", 1, 10, 200)) + partial);
+    const size = Bun.file(big).size;
+    const r = Bun.spawnSync([process.execPath, INDEX, big]);
+    const out = JSON.parse(r.stdout.toString());
+    eq("chunks: every call", out.turns.map((x) => [x.id, x.tokens]), [["L", 6], ["A", 111], ["B", 211]]);
+    // Once: calls are kept by id, a compaction isn't, so bytes read twice (a chunk of the long line kept
+    // without copying it, the buffer reused under it) show here.
+    eq("chunks: the compaction once", out.compactions.map((c) => c.post), [9]);
+    eq("chunks: the partial line waits", out.offset, size - partial.length);
+    const mb = Math.round(r.resourceUsage.maxRSS / 1e6);
+    eq(`chunks: peak memory under the file's size + 48 MB (${mb} MB for ${Math.round(size / 1e6)} MB)`, r.resourceUsage.maxRSS < size + 48e6, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// 8. A session id goes into a path (main.js bySession): a UUID's characters only (cold review 2, point 12).
+eq("session id", sessionId("665f5244-2fd6-4059-8db9-050182eeedc3"), "665f5244-2fd6-4059-8db9-050182eeedc3");
+for (const bad of ["../../etc/passwd", "a/b", "*", "x y", "", "$(id)", "abc\n", "a\nb", null, 42]) eq(`session id refused: ${JSON.stringify(bad)}`, sessionId(bad), null);
 
 if (fails) { console.error(`${fails} failure(s)`); process.exit(1); }
 console.log("ok");

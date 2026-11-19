@@ -15,6 +15,8 @@
 // - offset: where the next read starts, after the last complete line (a line being written waits).
 // Reads only; nothing is sent anywhere.
 
+import { open } from "node:fs/promises";
+
 const args = process.argv.slice(2);
 const path = args[0];
 const fromAt = args.indexOf("--from");
@@ -28,20 +30,18 @@ if (!file || !(await file.exists())) {
 }
 const size = file.size;
 if (from > size) from = 0; // a new or rewritten file: from the start
-const bytes = new Uint8Array(await file.slice(from, size).arrayBuffer());
-const end = bytes.lastIndexOf(10); // the last "\n": the rest is a line still being written
-const text = end >= 0 ? new TextDecoder().decode(bytes.subarray(0, end + 1)) : "";
 out.from = from;
 out.size = size;
-out.offset = from + (end >= 0 ? end + 1 : 0);
 
 const byId = new Map();
 const chars = (v) => (typeof v === "string" ? v.length : JSON.stringify(v ?? "").length);
-for (const line of text.split("\n")) {
-  if (!line) continue;
+// Only lines holding one of these are parsed: a substring test, whatever the keys' order.
+const WANTED = ['"usage"', '"compact_boundary"', '"api-request-shape"'];
+function take(line: string) {
+  if (!line || !WANTED.some((w) => line.includes(w))) return;
   let e;
-  try { e = JSON.parse(line); } catch { continue; }
-  if (e?.isSidechain === true) continue;
+  try { e = JSON.parse(line); } catch { return; }
+  if (e?.isSidechain === true) return;
   if (e?.type === "assistant" && e.message?.usage) {
     const u = e.message.usage;
     const tokens = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
@@ -60,6 +60,36 @@ for (const line of text.split("\n")) {
     const system = (e.shape.system ?? []).reduce((n, b) => n + chars(b?.text ?? b), 0);
     out.shape = { system, tools, mcp };
   }
+}
+
+// By CHUNK into one buffer, never the whole file: read whole, a 287 MB transcript took ~1.2 GB (its bytes
+// and their text; cold review 2, point 11). A chunk's complete lines are decoded and read at once; the
+// bytes past its last "\n" are copied aside (the buffer is reused) for the next one, a line longer than a
+// chunk across several. What follows the file's last "\n" is a line still being written: it waits.
+const CHUNK = 1 << 20;
+const buf = new Uint8Array(CHUNK);
+const decoder = new TextDecoder();
+let pending: Uint8Array[] = [];
+let at = from;
+out.offset = from;
+const fh = await open(path, "r");
+try {
+  while (at < size) {
+    const { bytesRead: n } = await fh.read(buf, 0, Math.min(CHUNK, size - at), at);
+    if (!n) break;
+    const chunk = buf.subarray(0, n);
+    const nl = chunk.lastIndexOf(10);
+    if (nl < 0) pending.push(chunk.slice());
+    else {
+      const head = chunk.subarray(0, nl + 1);
+      for (const line of decoder.decode(pending.length ? Buffer.concat([...pending, head]) : head).split("\n")) take(line);
+      pending = nl + 1 < n ? [chunk.slice(nl + 1)] : [];
+      out.offset = at + nl + 1;
+    }
+    at += n;
+  }
+} finally {
+  await fh.close();
 }
 out.turns = [...byId.values()];
 console.log(JSON.stringify(out));
