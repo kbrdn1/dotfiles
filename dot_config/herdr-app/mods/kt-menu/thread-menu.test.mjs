@@ -1,6 +1,7 @@
 // kt-menu's thread menu (issue #69), which `herdr-app check` doesn't reach (it renders the global menu):
 // the copies, their order, the session id read after opening, a copy's clipboard and toast.
-// herdr, gpui and motion.js are mocked; the fixtures are made up. Run: bun test mods/kt-menu/thread-menu.test.mjs
+// herdr, gpui and motion.js are mocked; the fixtures are made up.
+// Run with `bun test` (not plain `bun`, which doesn't know bun:test's mocks): bun test mods/kt-menu/thread-menu.test.mjs
 import { test, expect, mock } from "bun:test";
 
 const MOD = import.meta.dir;
@@ -24,13 +25,16 @@ mock.module("herdr", () => ({
   shared: () => null, notify: (n) => toasts.push(n), home: () => "/fake/home",
   readTextFile: async (p) => files[p] ?? null,
 }));
-// rows() hands over the items as rendered: [label, command, copied text, rows() key].
+// rows() hands over the items as rendered: [label, command, copied text, rows() key]; it builds each row.
 let seen = [];
 mock.module(`${MOD}/motion.js`, () => ({
   motionState: () => ({}), frame: () => ({}), sheet: () => ({ card: (x) => x, veil: (x) => x }),
   leave: (_m, _cx, _id, done) => done(), leaving: () => false,
-  rows: (_m, _cx, _id, items, keyOf) => { seen = items.map((it) => [it[0], it[1], it[2]?.text, keyOf(it)]); return []; },
+  rows: (_m, _cx, _id, items, keyOf, row) => { seen = items.map((it) => [it[0], it[1], it[2]?.text, keyOf(it)]); return items.map(row); },
 }));
+// The actions each row asks shortcuts.js for (its choice of key is shortcuts.check.mjs').
+let asked = [];
+mock.module(`${MOD}/shortcuts.js`, () => ({ shortcut: (_binds, _layout, actions) => (asked.push(actions), ""), kbd: chain }));
 
 const { default: Menu } = await import(`${MOD}/main.js`);
 const open = async (target) => {
@@ -64,4 +68,13 @@ test("a Claude thread whose statusline is missing: no session copy", async () =>
   delete files["/fake/home/.claude/cache/statusline/herdr-t9.json"];
   await open({ id: "c1", space: "s1" });
   expect(seen.filter((s) => s[1] === "copy").length).toBe(4);
+});
+
+test("each row's key: the layout's command for the same thing first (Close is kt-head's), then the command", async () => {
+  asked = [];
+  await open({ id: "c1", space: "s1" });
+  expect(asked[0]).toEqual(["tab.rename:c1", "tab.rename"]);
+  expect(asked[1]).toEqual(["tab.new:s1", "tab.new"]);
+  expect(asked.at(-1)).toEqual(["kt-head.close-tab", "tab.close:c1", "tab.close"]);
+  expect(asked.length).toBe(seen.length);
 });

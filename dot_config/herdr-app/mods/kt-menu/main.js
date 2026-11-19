@@ -16,6 +16,8 @@ import { motionState, frame, sheet, leave, leaving, rows } from "./motion.js";
 // Copied byte for byte from mods/kt-threads/threads-model.js (with its pr-pick.js and thread-filter.js):
 // the thread's name and terminals as its sidebar card has them.
 import { label, leads } from "./threads-model.js";
+// Copied byte for byte from mods/kt-keys/shortcuts.js: the key on the right, read from keys(), as keycaps.
+import { shortcut, kbd } from "./shortcuts.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -116,13 +118,12 @@ function menuIcon(command) {
   return `mods/workspace-chrome/${name}.svg`;
 }
 
-// The key bound to a command, for the hint on the right.
-function shortcut(name, args) {
-  // `pane.split:right` binds pane.split with { direction: "right" }.
-  const value = args && Object.values(args)[0];
-  const k = keys().find((b) => b.section === "global" && (b.action === name || b.action === `${name}:${value}`));
-  return k ? k.keys : "";
-}
+// The key bound to an item (shortcuts.js): the command this layout binds for the same thing (the closes and
+// the worktrees go through kt-head, as here), else the command with its first argument (`pane.split:right`),
+// else the command.
+const SAME = { "tab.close": "kt-head.close-tab", "pane.close": "kt-head.close-pane", "worktree:new": "kt-head.worktree", "worktree:open": "layout.select:gwm" };
+const keyOf = (name, args) => shortcut(keys(), shared("layout"),
+  [SAME[name], SAME[`${name}:${args?.action}`], `${name}:${args && Object.values(args)[0]}`, name].filter(Boolean));
 
 export default class Menu extends View {
   init(_props, cx) {
@@ -228,7 +229,7 @@ export default class Menu extends View {
             .on_click((_e, cx) => this.choose(i, cx))
             .child(svg(menuIcon(it[1])).size(14).flex_none().text_color(t.muted))
             .child(div().flex_1().child(it[0]))
-            .child(div().text_size(11).text_color(t.dim).child(shortcut(it[1], it[2])))),
+            .child(kbd(t, keyOf(it[1], it[2])))),
         ),
       );
   }
