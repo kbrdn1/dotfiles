@@ -42,6 +42,23 @@ export function tallyText(c, tr) {
   return parts.join(" · ");
 }
 
+function find(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = find(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+const shownChild = (stack) => stack?.active ?? stack?.children?.[0]?.id;
+
+/** Does the layout show the thread on its Chat face (stack view on thread, thread-body on chat)? */
+export function chatShown(root) {
+  const body = find(root, "thread-body");
+  const page = find(root, "view");
+  return shownChild(body) === "chat" && (!page || shownChild(page) === "thread");
+}
+
 /** The first turn drawn, of n, when the last `show` are. */
 export const firstShown = (n, show) => Math.max(0, n - show);
 

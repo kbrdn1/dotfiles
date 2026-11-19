@@ -16,9 +16,9 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView } from "gpui-base";
-import { agents, focused, panes, theme, settings, shared, home, appHome, exec, readTextFile, checking, nextCommand, notify, props } from "herdr";
+import { agents, focused, panes, theme, settings, shared, home, appHome, exec, readTextFile, checking, nextCommand, notify, props, layout } from "herdr";
 import { ingest, prepend, build, tally, foldedSteps } from "./chat-model.js";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead } from "./chat-view.js";
+import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown } from "./chat-view.js";
 import { preview, docOf, mdState, mdBudget, target as linkTarget } from "./markdown.js";
 import { motionState, frame, enter } from "./motion.js";
 import { skeleton, readyFor } from "./skeleton.js";
@@ -77,6 +77,11 @@ export default class Chat extends View {
     this.motion = motionState();
     this.handle = cx.focus_handle();
     this.vim = new Vim();
+    // ctrl-b space (kt-composer / kt-head view.js) asks for the keyboard through this shared stamp (a
+    // time). One older than 2 s when this copy starts is not a request; a fresh one is (the first
+    // ctrl-b space starts this copy: its stamp is written just before).
+    const stamp = shared("kt.chat.focus");
+    this.focusAsked = stamp && Date.now() - stamp > 2000 ? stamp : null;
     if (checking()) return;
     cx.spawn(async (cx) => {
       for (;;) {
@@ -606,6 +611,13 @@ export default class Chat extends View {
     // The agent started or stopped working: only the last turn's live state moves (a cheap rebuild).
     const live = tg.agent?.status === "working" && !this.fixed;
     if (this.state && live !== this.builtLive && !checking()) cx.spawn(async (cx) => { this.rebuild(live); cx.notify(); });
+    // The thread switched to its Chat face: take the keyboard, once per request, only when the
+    // layout shows this face (a hidden copy doesn't draw anyway).
+    const ask = shared("kt.chat.focus");
+    if (ask && ask !== this.focusAsked && !checking()) {
+      this.focusAsked = ask;
+      if (chatShown(layout())) cx.spawn(async (cx) => { this.focusIn(); cx.notify(); });
+    }
     const keyed = this.handle.is_focused();
     return v_flex().id("kt-chat").size_full().rounded(16).border(1).border_color(keyed ? t.accent : t.border).bg(t.background)
       .overflow_hidden().text_color(t.foreground)

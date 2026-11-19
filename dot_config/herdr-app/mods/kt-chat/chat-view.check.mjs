@@ -2,7 +2,7 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead } from "./chat-view.js";
+import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown } from "./chat-view.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
 const claude = (address, tab) => ({ address, tab, program: { key: "claude", name: "Claude Code" }, app: "claude-code" });
@@ -62,5 +62,16 @@ const to = 5;
 if (to < firstShown(n, show)) show = n - to;
 assert.equal(firstShown(n, show), 5);
 assert.equal(childOf(to, firstShown(n, show)), 1);
+
+// ── The Chat face shown (it takes the keyboard on ctrl-b space only then) ───
+const lay = (body, page) => ({ id: "root", children: [{ id: "view", ...(page ? { active: page } : {}), children: [
+  { id: "thread", children: [{ id: "thread-body", ...(body ? { active: body } : {}), children: [{ id: "main" }, { id: "chat" }] }] },
+  { id: "inbox" }] }] });
+assert.equal(chatShown(lay("chat", "thread")), true);
+assert.equal(chatShown(lay("chat")), true, "the stack view's first child is the thread");
+assert.equal(chatShown(lay("main", "thread")), false);
+assert.equal(chatShown(lay()), false, "thread-body shows main by default");
+assert.equal(chatShown(lay("chat", "inbox")), false, "a page covers the thread");
+assert.equal(chatShown({ id: "root", children: [] }), false, "another layout");
 
 console.log("chat-view ok");
