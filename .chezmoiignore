@@ -139,6 +139,8 @@
 # L'app reecrit ces types a chaque demarrage, dans chaque dossier de mod.
 .config/herdr-app/mods/*/jsconfig.json
 .config/herdr-app/mods/*/gpui-kit.d.ts
+# Config serena qu'une session pose dans le dossier d'un mod.
+.config/herdr-app/mods/*/.serena
 .config/herdr-app/layouts/kbrdn-threads-glass.json
 .config/herdr-app/layouts/kbrdn-threads.png
 .config/herdr-app/layouts/.state
