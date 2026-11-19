@@ -1,20 +1,29 @@
 // What an agent's terminal waits on from Kylian, and his answer from Herdr. Used by the toast; meant
 // for any card that shows an agent (kt-threads' "a besoin de toi"):
 //
-//   const d = await decide(terminal)    // { terminal, pending, accept(), refuse(), open() }
+//   const d = await decide(terminal)    // { terminal, pending, choose(key), open() }
 //   decisionButtons(d, { onDone })      // the pills, or null when there is nothing to show
 //
-// `pending` is { id, kind, title, detail, options: [{ key, label, tone }] } or null:
-// - kind "permission": herdr-bridge (>= 0.3.0) publishes it in ~/.claude/cache/herdr/<t>.json while a
-//   permission dialog is up. accept()/refuse() write <t>.decision.json = { id, choice }; the plugin
-//   applies it only for the id it still waits on, once, and answers the engine's dialog itself.
+// `pending` is { id, kind, title, detail, options: [{ key, kind, tone, label, note?, mode?, update?,
+// answer? }] } or null:
+// - kind "permission": herdr-bridge publishes it in ~/.claude/cache/herdr/<t>.json while a permission
+//   dialog is up; the plugin applies the answer only for the id it still waits on, once. Two versions
+//   live side by side until every session has restarted, told apart by their options (`tokened`):
+//   - >= 0.4.0: the terminal's own choices, each with its `kind`, and the request's one-time token in
+//     <t>.ask.json = { id, token }. choose(key) writes <t>.decision.json = { id, token, choice }, and
+//     the plugin returns that choice's own decision (never one from the file);
+//   - 0.3.1: Accepter / Refuser (`accept`, `refuse`), no kind, no token. choose(key) writes
+//     <t>.decision.json = { id, choice }.
 // - kind "held": a message from another session held for approval. No hook can release it: it is read
 //   off the screen (`hc read`) and answered with keys (`hc keys`), each step after reading the screen
 //   again and finding the same dialog; Enter only once the cursor is seen on the chosen line.
 // - kind "question" (AskUserQuestion, a plan) or "input" (blocked or idle, waiting for a reply): no
 //   options. Only open(): Kylian answers in the conversation.
-// Nothing here answers on its own: accept() and refuse() run from a click. "Always allow" and the like
-// are never offered: the options are yes/no (permission) or deliver/refuse (held), nothing else.
+// Nothing here answers on its own: choose() runs from a click. The cards (toast, sidebar, Kanban) get
+// the plain choices only: Yes, No, a plan's Yes, a question's answers. A choice that sets a rule or a
+// mode (`update`), or that takes a note, is offered by the Chat alone, `decide(t, { full: true })`,
+// where Kylian reads what it allows and types the note. choose() says `note: true` for such a choice:
+// the caller then sends the note as his own message.
 
 import { div } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -96,7 +105,10 @@ async function sendHeld(terminal, pending, target) {
   return held?.id === pending.id ? { ok: false, reason: tr("stillThere") } : { ok: true };
 }
 
-async function answer(terminal, pending, choice) {
+/** A request from herdr-bridge >= 0.4.0 (its options say their kind, and its token is apart), else 0.3.1. */
+export const tokened = (pending) => (pending?.options ?? []).some((o) => typeof o?.kind === "string");
+
+async function answer(terminal, pending, choice, withToken) {
   if (!pending?.options?.some((o) => o.key === choice)) return { ok: false, reason: tr("nothing") };
   if (answered.has(pending.id) || busy.has(pending.id)) return { ok: false, reason: tr("already") };
   busy.add(pending.id);
@@ -105,10 +117,17 @@ async function answer(terminal, pending, choice) {
     // The plugin answers only the id it still waits on: check it is still that one before writing.
     const live = await readJson(`${cache(terminal)}.json`);
     if (live?.pending?.id !== pending.id) return { ok: false, reason: tr("gone") };
+    let reply = { id: pending.id, choice }; // 0.3.1
+    if (withToken) {
+      // >= 0.4.0: the request's one-time token, for this id only: no token, no answer (it would be ignored).
+      const ask = await readJson(`${cache(terminal)}.ask.json`);
+      if (ask?.id !== pending.id || typeof ask.token !== "string" || !ask.token) return { ok: false, reason: tr("gone") };
+      reply = { id: pending.id, token: ask.token, choice };
+    }
     const path = `${cache(terminal)}.decision.json`;
-    await writeTextFile(path, JSON.stringify({ id: pending.id, choice }), await readTextFile(path));
+    await writeTextFile(path, JSON.stringify(reply), await readTextFile(path));
     answered.add(pending.id);
-    return { ok: true };
+    return { ok: true, note: pending.options.find((o) => o.key === choice)?.note === true };
   } catch (e) {
     return { ok: false, reason: tr("failed", { why: e?.message ?? e }) };
   } finally {
@@ -117,8 +136,9 @@ async function answer(terminal, pending, choice) {
 }
 
 // What `terminal` waits on now, and how to answer it. The screen is read only for a blocked agent the
-// plugin says nothing actionable about.
-export async function decide(terminal) {
+// plugin says nothing actionable about. `full`: every choice the terminal offers (the Chat); else the
+// plain ones only (the cards).
+export async function decide(terminal, { full = false } = {}) {
   let pending = (await readJson(`${cache(terminal)}.json`))?.pending ?? null;
   const blocked = agents().find((a) => a.address === terminal)?.status === "blocked";
   if (blocked && pending?.kind !== "permission" && pending?.kind !== "question") {
@@ -126,28 +146,31 @@ export async function decide(terminal) {
     if (held) pending = { id: held.id, kind: "held", title: tr("from", { sender: held.sender }), detail: held.body, options: HELD_OPTIONS };
     else pending ??= { id: `input:${terminal}`, kind: "input", title: tr("waiting"), options: [] };
   }
+  // Which bridge asks, read on the request as published (before any filter below).
+  const withToken = tokened(pending);
+  // The cards' choices: none that sets a rule or a mode, none that takes a note.
+  if (pending?.kind === "permission" && !full) pending = { ...pending, options: (pending.options ?? []).filter((o) => !o.note && !o.update) };
   // Answered once from here: the same dialog gets no buttons again.
   if (pending && answered.has(pending.id)) pending = { ...pending, options: [] };
   return {
     terminal,
     pending,
-    accept: () => answer(terminal, pending, "accept"),
-    refuse: () => answer(terminal, pending, "refuse"),
+    choose: (key) => answer(terminal, pending, key, withToken),
     open: () => run("agent.focus", { terminal }),
   };
 }
 
-// The pills' keys in order ("accept", "refuse", or "open"), for a keyboard cursor; [] when nothing waits.
+// The pills' keys in order (the options' keys, or "open"), for a keyboard cursor; [] when nothing waits.
 export const pillKeys = (d) => (d?.pending ? (d.pending.options?.length ? d.pending.options.map((o) => o.key) : ["open"]) : []);
 
-// What the pill `key` does, as a click on it: { ok, reason? }.
+// What the pill `key` does, as a click on it: { ok, reason?, note? }.
 export async function press(d, key) {
   if (key === "open") { d.open(); return { ok: true }; }
-  return key === "accept" ? d.accept() : d.refuse();
+  return d.choose(key);
 }
 
-// The pills for `d`: Accepter / Refuser when it has options, Ouvrir when it only has a conversation to
-// go to, null when nothing waits. A click stops there (the card under it is not opened) and hands its
+// The pills for `d`: its choices when it has options, Ouvrir when it only has a conversation to go
+// to, null when nothing waits. A click stops there (the card under it is not opened) and hands its
 // result to `onDone(result, cx)`: { ok, reason? }. Ids carry the terminal, so several cards can share
 // one view. `cursor`: the key of the pill under a keyboard cursor, drawn with an accent ring.
 export function decisionButtons(d, { onDone, cursor = null } = {}) {
@@ -166,8 +189,8 @@ export function decisionButtons(d, { onDone, cursor = null } = {}) {
       })
       .child(label.toUpperCase());
   if (!p.options?.length) return h_flex().flex_none().child(pill("open", tr("open"), null));
-  // accept / refuse said in the language shown (herdr-bridge publishes its labels in French); any
-  // other option keeps its own label.
-  const said = (o) => (o.key === "accept" || o.key === "refuse" ? tr(o.key) : o.label);
+  // yes / no (and a held message's accept / refuse) said in the language shown (herdr-bridge publishes
+  // its labels in French); any other option keeps its own label.
+  const said = (o) => (["yes", "no", "accept", "refuse"].includes(o.key) ? tr(o.key) : o.label);
   return h_flex().flex_none().gap(4).children(p.options.map((o) => pill(o.key, said(o), o.tone === "positive" ? t.done : t.ansi1)));
 }
