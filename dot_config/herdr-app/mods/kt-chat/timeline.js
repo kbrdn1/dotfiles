@@ -108,8 +108,17 @@ export function wheelTop({ top, inRow, inView, dy, max }) {
 }
 
 /**
+ * How far a wheel event moves the scroll area, which scrolls y only: its delta.y, or its delta.x when
+ * delta.y is 0 (gpui takes the other axis then: a sideways swipe scrolls the transcript, A14).
+ */
+export const wheelDy = (delta) => (delta?.y ? delta.y : delta?.x ?? 0);
+
+/**
  * A wheel event reaches the row under the pointer and the scroll area, in an order the host chooses:
- * each half is kept (the latest of each kind) until both halves of one event are in, the same pointer.
+ * each half is kept (the latest of each kind) until both halves of one event are in: the same pointer
+ * and the same delta. The pointer alone isn't enough (A6): it stays still under a wheel, so an event
+ * whose row half never came (the pointer over the area's padding) would pair its area half with the
+ * next event's row. Two events with the same pointer and delta pair right either way.
  * `half`: { row (the row's id, absent for the area's half), px, py (the pointer, window), y (the
  * pointer in the row or the view), dy }. Answers { keep, pair }: what to keep for the next half, and
  * once complete { id, inRow, inView, dy } for wheelTop.
@@ -117,7 +126,7 @@ export function wheelTop({ top, inRow, inView, dy, max }) {
 export function pairWheel(kept, half) {
   const next = half.row != null ? { ...kept, row: half } : { ...kept, view: half };
   const { row, view } = next;
-  if (row && view && row.px === view.px && row.py === view.py) return { keep: null, pair: { id: row.row, inRow: row.y, inView: view.y, dy: view.dy } };
+  if (row && view && row.px === view.px && row.py === view.py && row.dy === view.dy) return { keep: null, pair: { id: row.row, inRow: row.y, inView: view.y, dy: view.dy } };
   return { keep: next, pair: null };
 }
 

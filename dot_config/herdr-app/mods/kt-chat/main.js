@@ -75,7 +75,7 @@ import { companion, variantFor } from "./companion-logo.js";
 // colors (ring.js, levels.js), the percent rolling (roll.js); byte-identical copies.
 import { ring, ringColor } from "./ring.js";
 import { roll } from "./roll.js";
-import { TL, marks as markList, barStack, barLift, cardTop, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+import { TL, marks as markList, barStack, barLift, cardTop, offsets, pairWheel, wheelDy, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 // #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
 import * as win from "./turn-window.js";
 import { skeleton, readyFor } from "./skeleton.js";
@@ -190,8 +190,12 @@ export default class Chat extends View {
     this.marks = [];
     this.hts = new Map();
     this.vh = 0;
+    this.areaW = 0; // the scroll area's width (design px): a reflow under a view that follows (areaSized)
+    this.pinned = false; // the render being described brings the bottom (body(): its rows' sizes are covered)
     this.tlId = null;
     this.tlAbove = false;
+    this.tlLost = false; // the view moved where no event says (a press on the scrollbar): nothing lit
+    this.bgBtn = false; // the background's button shows, over the scrollbar's top (areaPress)
     this.tlHover = -1;
     this.tlOpen = false;
     this.tlOpening = false;
@@ -457,6 +461,7 @@ export default class Chat extends View {
       this.win = win.older(this.win);
       this.reveal = childOf(was, this.first());
       this.cur = was; // j k go on from what is read, not from a turn the window left
+      this.light(was);
       if (this.end() < this.turns.length) this.follow = false;
       return;
     }
@@ -464,7 +469,11 @@ export default class Chat extends View {
     this.olderBusy = true;
     cx.spawn(async (cx) => {
       try {
-        const next = prepend(this.state, await this.index(this.state.path, ["--to", String(this.state.start)]));
+        // The state as it is when the read lands, not as it was when it left (A3): a live tick or
+        // another agent may have replaced it meanwhile; prepend() refuses a read that no longer
+        // continues it (another file, a start the trim moved).
+        const out = await this.index(this.state.path, ["--to", String(this.state.start)]);
+        const next = prepend(this.state, out);
         if (next !== this.state) {
           this.state = next;
           this.rebuild(this.builtLive, false); // the same turns drawn, now after the read ones
@@ -472,6 +481,7 @@ export default class Chat extends View {
           this.win = win.older(this.win);
           this.reveal = childOf(at, this.first());
           this.cur = at;
+          this.light(at);
           if (this.end() < this.turns.length) this.follow = false;
         }
       } catch (e) {
@@ -489,6 +499,14 @@ export default class Chat extends View {
     this.win = win.newer(this.win, this.turns.length);
     this.reveal = childOf(was, this.first());
     this.cur = was;
+    this.light(was);
+  }
+
+  /** No wheel measures a scroll the Chat makes itself: the timeline lights the message of the turn it brings (A7). */
+  light(i) {
+    this.tlId = this.marks[ownerOf(this.marks, i)]?.id ?? null;
+    this.tlAbove = false;
+    this.tlLost = false;
   }
 
   // ---------- keys ----------
@@ -521,9 +539,7 @@ export default class Chat extends View {
       this.win = win.reach(this.win, n, to); // the cursor draws the turn it reaches, CAP at most
       this.reveal = childOf(to, this.first());
       this.jump = null; // a jump still waiting for its rows: this move wins
-      // No wheel measures this scroll: the timeline lights the cursor's message.
-      this.tlId = this.marks[ownerOf(this.marks, to)]?.id ?? null;
-      this.tlAbove = false;
+      this.light(to); // the timeline lights the cursor's message
     };
     switch (a) {
       case "down":
@@ -897,6 +913,7 @@ export default class Chat extends View {
     this.reveal = null;
     this.tlId = m.id;
     this.tlAbove = false;
+    this.tlLost = false;
   }
 
   /** `tl:hover:<n>` (its card open, no delay), `tl:jump:<n>`, `tl:off`: the captures' pointer. */
@@ -938,12 +955,29 @@ export default class Chat extends View {
     cx.notify();
   }
 
-  /** A row's height (design px). A redraw only when a jump waits for it. */
-  measured(id, size, cx) {
+  /**
+   * A row's height (design px). A redraw when a jump waits for it, and (A2) when the last row grows
+   * under a view that follows the bottom by something no render brought the bottom for (a fold or
+   * « Afficher plus » opened at rest): the bottom again. A render that brings the bottom (`pinned`:
+   * the live tail, a send, the runner's band) covers its own rows' new sizes.
+   */
+  measured(id, size, cx, pinned = false) {
     const h = size.height / this.zoom();
-    if (Math.abs((this.hts.get(id) ?? -9) - h) < 0.5) return;
+    const was = this.hts.get(id);
+    if (Math.abs((was ?? -9) - h) < 0.5) return;
     this.hts.set(id, h);
-    if (this.jump != null) cx.notify();
+    if (this.follow && !pinned && was != null && h > was && id === this.lastRow()) {
+      this.reveal = "bottom";
+      cx.notify();
+    } else if (this.jump != null) cx.notify();
+  }
+
+  /** The scroll area's last row before its end mark, as body() draws them (geom()'s order). */
+  lastRow() {
+    if (this.end() < this.turns.length) return "kc-later";
+    if (this.builtLive) return "kc-working";
+    const t = this.turns[this.end() - 1];
+    return t ? `kc-turn-${t.id}` : "kc-head";
   }
 
   /** The scroll area's rows, top to bottom (as body() draws them): { tops: turn id -> top, at: row id -> top, end, known }. */
@@ -964,7 +998,8 @@ export default class Chat extends View {
    */
   wheel(cx, row, ev) {
     if (!ev.local_position) return;
-    const { keep, pair: w } = pairWheel(this.wheelAt, { row, px: ev.position.x, py: ev.position.y, y: ev.local_position.y, dy: ev.delta.y });
+    // A14: the area moves by delta.x when delta.y is 0 (it scrolls y only); both halves carry it (A6).
+    const { keep, pair: w } = pairWheel(this.wheelAt, { row, px: ev.position.x, py: ev.position.y, y: ev.local_position.y, dy: wheelDy(ev.delta) });
     this.wheelAt = keep;
     if (!w || this.vh <= 0) return;
     const g = this.geom();
@@ -984,11 +1019,59 @@ export default class Chat extends View {
     const cur = this.follow ? -1 : this.marks.findIndex((m) => m.id === this.tlId);
     const r = activeAt({ marks: this.marks, tops: g.tops, first: this.first(), scrollTop, vh: this.vh, end: g.end + 8, follow: this.follow, whole, cur });
     const id = this.marks[r.k]?.id ?? null;
-    if (id !== this.tlId || r.above !== this.tlAbove) {
+    if (id !== this.tlId || r.above !== this.tlAbove || this.tlLost) {
       this.tlId = id;
       this.tlAbove = r.above;
+      this.tlLost = false;
       cx.notify();
     }
+  }
+
+  // ---------- the scroll area's own events (body()) ----------
+
+  /**
+   * The scroll area's size (design px). A view following the bottom stays there when its box changes:
+   * gpui keeps the offset from the top, so the last lines would slip under the composer. Shorter (a
+   * ledge opening, a dialog's card, the composer growing, the window) or narrower (the text reflows,
+   * taller: A2): the bottom again.
+   */
+  areaSized(size, cx) {
+    const z = this.zoom(), h = size.height / z, w = size.width / z;
+    const tall = Math.abs(h - this.vh) > 0.5, wide = Math.abs(w - this.areaW) > 0.5;
+    if (!tall && !wide) return;
+    this.vh = h;
+    this.areaW = w;
+    if (this.follow) this.reveal = "bottom";
+    if (tall || this.follow) cx.notify();
+  }
+
+  /** Scrolling up leaves the bottom: new turns no longer pull the view down (G or the button bring it back). */
+  areaWheel(ev, cx) {
+    if (wheelDy(ev.delta) > 0 && this.follow) {
+      this.follow = false;
+      cx.notify();
+    }
+    // gpui scrolls whether or not the event pairs: unknown until it does (wheel() sets it back).
+    this.top = null;
+    this.wheel(cx, null, ev);
+  }
+
+  /**
+   * A press on the scrollbar (the area's right edge, SCROLLBAR_W) moves the view where no event says:
+   * the bottom isn't followed any more (A1: else the next live tick pulls the view back down), the
+   * view's top is unknown, and the timeline lights nothing until a wheel measures it again (A7). A
+   * press on the text, or on the background's button over the bar's top (bgControls), leaves them.
+   */
+  areaPress(ev, cx) {
+    if (!ev.local_position || !ev.bounds) return;
+    const z = this.zoom(), { x, y } = ev.local_position, w = ev.bounds.width;
+    if (x <= w - SCROLLBAR_W * z) return;
+    if (this.bgBtn && y >= 10 * z && y <= 36 * z && x >= w - 36 * z) return;
+    this.top = null;
+    const changed = this.follow || !this.tlLost;
+    this.follow = false;
+    this.tlLost = true;
+    if (changed) cx.notify();
   }
 
   /**
@@ -1001,13 +1084,14 @@ export default class Chat extends View {
     const list = this.marks, n = list.length;
     if (n < TL.MIN || this.width < TL.MIN_W || this.vh <= 0) return null;
     const active = this.tlIndex();
+    const on = this.tlLost && !this.follow ? -1 : active; // A7: where the view is isn't known, nothing lit
     const { start, end, gap } = barStack(n, active, Math.min(TL.STACK_MAX, Math.floor(this.vh * TL.SHARE)));
     const hov = this.tlHover >= start && this.tlHover < end ? this.tlHover : -1;
     const row = TL.BAR_H + gap;
     const bars = [];
     for (let k = start; k < end; k++) {
       const m = list[k];
-      const lit = hov >= 0 ? k === hov : k === active;
+      const lit = hov >= 0 ? k === hov : k === on;
       // The wave reaches the outer bars a beat after the hovered one; back at rest, all at once.
       const p = { duration: TL.MS, delay: hov >= 0 ? Math.min(Math.abs(k - hov), TL.RIPPLE) * TL.STEP : 0, easing: "ease-out" };
       let bar = div().id(`kc-tlb-${m.id}`).h(TL.BAR_H).w(TL.BAR_W + (TL.BAR_LIFT - TL.BAR_W) * barLift(k, hov)).rounded_full()
@@ -1056,8 +1140,9 @@ export default class Chat extends View {
     const s = this.slide;
     if (s && !this.m.reduced)
       inner = inner.id(`${id}~g${s.gen}`).relative().top(s.ready ? 0 : s.dy).transition("top", { duration: MS.panel, easing: "ease-out" });
+    const pinned = this.pinned; // this render brings the bottom: the sizes it makes are covered (measured())
     return h_flex().id(id).w_full().flex_none().justify_center()
-      .on_size_change((size, cx) => this.measured(id, size, cx))
+      .on_size_change((size, cx) => this.measured(id, size, cx, pinned))
       .on_scroll_wheel((ev, cx) => this.wheel(cx, id, ev))
       .child(inner);
   }
@@ -1698,6 +1783,7 @@ export default class Chat extends View {
     // The window (#59): [from, to), CAP turns at most, « Tours suivants » under it when it stops
     // before the end (the live turn and its « travaille… » row are then below too).
     const from = this.first(), to = this.end();
+    this.pinned = this.reveal === "bottom"; // the rows described below: their sizes are this reveal's (col())
     // The timeline's jump (#85), once the rows above its turn are measured: an anchor at the turn's top,
     // a view tall (never past the end), after the end mark (the turns' child indices stay): the
     // smallest scroll that reveals it puts its top at the view's top, from above as from below. Worked
@@ -1752,24 +1838,9 @@ export default class Chat extends View {
     const rail = this.rail(t);
     return div().relative().flex_1().min_h(0).flex().flex_col()
       .child(v_flex().id("kc-scroll").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).pt(TOP_INSET).pb(8)
-        .on_size_change((size, cx) => {
-          const h = size.height / this.zoom();
-          // A view following the bottom stays there when its box changes (a ledge opening, the window):
-          // gpui keeps the offset from the top, so the last lines would slip under the composer.
-          if (Math.abs(h - this.vh) > 0.5) { this.vh = h; if (this.follow) this.reveal = "bottom"; cx.notify(); }
-        })
-        // Scrolling up leaves the bottom: new turns no longer pull the view down (G or the button bring it back).
-        .on_scroll_wheel((ev, cx) => {
-          if (ev.delta.y > 0 && this.follow) { this.follow = false; cx.notify(); }
-          // gpui scrolls whether or not the event pairs: unknown until it does (wheel() sets it back).
-          this.top = null;
-          this.wheel(cx, null, ev);
-        })
-        // A press on the scrollbar (the area's right edge) moves the view where no event says: the
-        // glide's start is unknown again (a press on the text leaves it).
-        .on_mouse_down("left", (ev) => {
-          if (ev.local_position && ev.bounds && ev.local_position.x > ev.bounds.width - SCROLLBAR_W * this.zoom()) this.top = null;
-        })
+        .on_size_change((size, cx) => this.areaSized(size, cx))
+        .on_scroll_wheel((ev, cx) => this.areaWheel(ev, cx))
+        .on_mouse_down("left", (ev, cx) => this.areaPress(ev, cx))
         .children(children))
       .when(Boolean(rail), (el) => el.child(rail))
       // transcript.rs:5986-6062, « jump to bottom »: 30 round, border 0.1, ground 0.04, chevron 16 at 0.7.
@@ -2199,6 +2270,7 @@ export default class Chat extends View {
     if (keepBottom(this.follow, this.band, band)) this.reveal = "bottom";
     this.band = band;
     const pr = this.project(t, cx, tg);
+    this.bgBtn = Boolean(pr); // bgControls draws its button (areaPress leaves a press on it)
     const bg = this.background(t, cx, pr);
     // shell/project_settings.rs:304-317: the image first, the conversation over it; nothing paints a
     // ground (conversation.rs:3833-3852, transcript.rs:5880-5918).

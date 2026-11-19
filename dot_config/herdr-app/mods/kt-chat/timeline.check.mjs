@@ -3,7 +3,7 @@
 // without a scroll offset, which message is on screen, the jump's anchor and the [ ] step. Fixtures
 // are made up (no real session).
 import assert from "node:assert/strict";
-import { TL, label, marks, barWindow, barStack, barLift, cardTop, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+import { TL, label, marks, barWindow, barStack, barLift, cardTop, offsets, pairWheel, wheelDy, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 
 // ── The hover card stays in the transcript's box (never over the composer under it) ─────────
 assert.equal(cardTop(100, 200, 600), 40, "room around: centred on its bar (mid - 60)");
@@ -74,17 +74,31 @@ assert.equal(wheelTop({ top: 360, inRow: 120, inView: 300, dy: 400, max: 1000 })
 assert.equal(wheelTop({ top: 360, inRow: 120, inView: 300, dy: -2000, max: 1000 }), 1000);
 
 // The two halves of one wheel event, in either order; a half of another event (another pointer) waits.
-const row = (y, px = 5, py = 400) => ({ row: "kc-turn-c", px, py, y });
+const row = (y, dy, px = 5, py = 400) => ({ row: "kc-turn-c", px, py, y, dy });
 const view = (y, dy, px = 5, py = 400) => ({ row: null, px, py, y, dy });
-let w = pairWheel(null, row(120));
+let w = pairWheel(null, row(120, -50));
 assert.equal(w.pair, null);
 w = pairWheel(w.keep, view(300, -50));
 assert.deepEqual(w, { keep: null, pair: { id: "kc-turn-c", inRow: 120, inView: 300, dy: -50 } }, "the row first");
-w = pairWheel(pairWheel(null, view(300, -50)).keep, row(120));
+w = pairWheel(pairWheel(null, view(300, -50)).keep, row(120, -50));
 assert.deepEqual(w.pair, { id: "kc-turn-c", inRow: 120, inView: 300, dy: -50 }, "the area first");
-w = pairWheel(pairWheel(null, view(300, -50, 5, 380)).keep, row(120));
+w = pairWheel(pairWheel(null, view(300, -50, 5, 380)).keep, row(120, -20));
 assert.equal(w.pair, null, "the area's half of an earlier event (the pointer moved) is not this one's");
 assert.deepEqual(pairWheel(w.keep, view(300, -20)).pair, { id: "kc-turn-c", inRow: 120, inView: 300, dy: -20 }, "its own half pairs");
+// A6: the pointer still over the area's top padding, an event brings only the area's half (dy -10);
+// the next one (dy -40), the content moved, a row under the pointer: its row half must wait for its own
+// area half, not take the kept one (that one was 30 px off: top 20 where the view was at 50).
+w = pairWheel(null, view(30, -10, 400, 30));
+w = pairWheel(w.keep, row(20, -40, 400, 30));
+assert.equal(w.pair, null, "an earlier event's area half, the same pointer but another delta, is not this one's");
+w = pairWheel(w.keep, view(30, -40, 400, 30));
+assert.deepEqual(w.pair, { id: "kc-turn-c", inRow: 20, inView: 30, dy: -40 }, "its own area half pairs");
+assert.equal(wheelTop({ top: 20, inRow: w.pair.inRow, inView: w.pair.inView, dy: w.pair.dy, max: 5000 }), 50, "the view's top after it");
+// A14: the area scrolls y only, so a delta of 0 in y moves it by delta.x.
+assert.equal(wheelDy({ x: 0, y: -40 }), -40);
+assert.equal(wheelDy({ x: 25, y: 0 }), 25, "a sideways swipe scrolls the transcript");
+assert.equal(wheelDy({ x: 25, y: -3 }), -3, "a y of its own wins");
+assert.equal(wheelDy(undefined), 0);
 
 // ── The message on screen (measure_active) ──────────────────────────────────
 // Turns a (top 60), c (360, with its note n1), e (1260); a view of 500, the content ending at 1461.
