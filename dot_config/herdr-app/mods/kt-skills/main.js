@@ -55,6 +55,7 @@ import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
+import { split } from "./tiers.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { rollText } from "./roll.js";
 import { bump, refreshOn } from "./bus.js";
@@ -642,7 +643,7 @@ export default class Skills extends View {
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi4, "4d")))
       .child(h_flex().flex_wrap().gap(4).items_center()
         // The filter: the keys' ring (and the ink) while typing in it; the mode beside it.
-        .child(h_flex().id("kts-filter").w(280).h(36).px(12).gap(8).items_center().rounded(12).border(1)
+        .child(h_flex().id("kts-filter").w(280).max_w_full().h(36).px(12).gap(8).items_center().rounded(12).border(1)
           .border_color(typing ? alpha(t.accent, "99") : t.border).when(typing, (el) => el.bg(alpha(t.accent, "24"))).cursor_text()
           .track_focus(this.handle)
           .on_key_down((e, cx) => this.key(e, cx))
@@ -812,7 +813,8 @@ export default class Skills extends View {
 
   // ---------- detail ----------
 
-  detail(t, x, w, cx) {
+  // `solo`: the narrow tier (tiers.js), the detail alone: its × is a way back to the list.
+  detail(t, x, w, cx, solo) {
     const meta = Object.entries(x.meta).filter(([k]) => k !== "description");
     const pair = (k, v) => h_flex().gap(10).items_start()
       .child(this.eyebrow(t, k).w(150).flex_none().pt(1))
@@ -843,7 +845,7 @@ export default class Skills extends View {
           iconBtn(t, "kts-d-copy", OWN("copy"), x.invocable ? tr("copySlashY", { name: x.name }) : tr("copyNameY"), (cx) => this.copy(x, cx)),
           iconBtn(t, "kts-d-zed", I("external-link"), tr("openZedO"), () => this.zed([file])),
           iconBtn(t, "kts-d-finder", I("folder"), tr("revealFinder"), () => exec("open", ["-R", file]).catch(() => {})),
-          iconBtn(t, "kts-close", I("x"), tr("close"), () => { this.sel = null; this.doc = null; })] }))
+          iconBtn(t, "kts-close", I(solo ? "chevron-left" : "x"), tr(solo ? "back" : "close"), () => { this.sel = null; this.doc = null; })] }))
       .child(div().flex_none().mx(-4).h(0).border_t(1).border_dashed().border_color(alpha(t.ansi4, "4d")))
       .child(v_flex().flex_none().px(10).py(8).gap(2)
         .child(path(tr("path.file"), x.real))
@@ -933,15 +935,19 @@ export default class Skills extends View {
     const x = this.items.find((i) => i.key === this.sel);
     const q = this.queried();
     const shown = q.filter((i) => this.matches(i, this.seg));
+    // The width's tier (tiers.js, the root's width less a dialog's padding): list and detail side by
+    // side, or one of them (narrow). A tier change fades the body in (as does, narrow, list <-> detail);
+    // the selection and the scrolls (their handles) stay.
+    const s = split(this.width - (props()?.overlay ? 8 : 0));
     // No frame of its own as a page: the layout's center column (chrome, radius 20, padding 4)
     // holds it. As a frameless dialog (frame: "none") it draws that same frame.
     return v_flex().id("kts-root").size_full().gap(4).text_color(t.foreground)
       .when(Boolean(props()?.overlay), (el) => el.p(4).rounded(20).border(1).border_color(t.border).bg(t.chrome))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t, q, shown.length))
-      .child(h_flex().flex_1().min_h(0).gap(4)
-        .child(this.list(t, shown, cx))
-        .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45), cx))))
+      .child(enter(this.m, h_flex().flex_1().min_h(0).gap(4), `kts-tier-${s.tier}${s.solo ? (x ? "-d" : "-l") : ""}`, { dy: 0 })
+        .when(!(s.solo && x), (el) => el.child(this.list(t, shown, cx)))
+        .when(Boolean(x), (el) => el.child(this.detail(t, x, s.detail, cx, s.solo))))
       // The head's ⋯, last so that it draws over the list.
       .when(this.more, (el) => el.relative().child(moreMenu(t, "kts-more", props()?.overlay ? 60 : 56, this.moreItems(), () => { this.more = false; })));
   }

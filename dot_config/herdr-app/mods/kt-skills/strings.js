@@ -54,6 +54,7 @@ export default {
     copyNameY: "Copier le nom (y)",
     openZedO: "Ouvrir dans Zed (O)",
     close: "Fermer",
+    back: "Retour à la liste (esc)",
     "path.file": "Fichier",
     // add.js
     badName: "Nom : lettres, chiffres, . _ -, sans espace ni /, 64 au plus.",
@@ -188,6 +189,7 @@ export default {
     copyNameY: "Copy the name (y)",
     openZedO: "Open in Zed (O)",
     close: "Close",
+    back: "Back to the list (esc)",
     "path.file": "File",
     badName: "Name: letters, digits, . _ -, no spaces or /, 64 at most.",
     noFrontmatter: "(no frontmatter)",

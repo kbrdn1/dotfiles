@@ -52,6 +52,7 @@ import { MONO, I, OWN, alpha, tilde, ago, card, eyebrow, dashed, empty, tag, mod
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, pulse, rows as rowsOf } from "./motion.js";
 import { skeleton, still } from "./skeleton.js";
+import { split } from "./tiers.js";
 // kt-keys' roll.js (a byte-identical copy): the head's and the selection's counts roll to their new digits.
 import { rollText } from "./roll.js";
 import { makeT } from "./i18n.js";
@@ -540,7 +541,8 @@ export default class Plugins extends View {
       }))
       .child(bandRule(tint))
       .child(h_flex().p(4).gap(8).items_center()
-        .child(h_flex().id("ktp-filter").flex_none().w(240).h(36).px(12).gap(8).items_center().rounded(12).border(1)
+        // 240 px, down to 120 on a narrow page (the pills beside it scroll).
+        .child(h_flex().id("ktp-filter").w(240).min_w(120).h(36).px(12).gap(8).items_center().rounded(12).border(1)
           .border_color(typing ? alpha(t.accent, "99") : t.border).when(typing, (el) => el.bg(alpha(t.accent, "24"))).cursor_text()
           .track_focus(this.handle)
           .on_key_down((e, cx) => this.key(e, cx))
@@ -714,7 +716,8 @@ export default class Plugins extends View {
 
   // ---------- detail ----------
 
-  detail(t, x, w, cx) {
+  // `solo`: the narrow tier (tiers.js), the detail alone: its × is a way back to the list.
+  detail(t, x, w, cx, solo) {
     const path = (label, p) => h_flex().gap(8).items_center()
       .child(eyebrow(t, label, t.dim).w(64).flex_none())
       .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.muted).child(tilde(p)));
@@ -736,7 +739,7 @@ export default class Plugins extends View {
         actions: [
           iconBtn(t, "ktp-d-web", OWN("github"), x.web ? "GitHub (O)" : tr("noRepoLocal"), () => exec("open", [x.web]).catch(() => {}), { off: !x.web }),
           iconBtn(t, "ktp-d-zed", I("external-link"), tr("openZed"), () => this.zed(x.dir)),
-          iconBtn(t, "ktp-close", I("x"), tr("close"), () => { this.sel = null; this.doc = null; }),
+          iconBtn(t, "ktp-close", I(solo ? "chevron-left" : "x"), tr(solo ? "back" : "close"), () => { this.sel = null; this.doc = null; }),
         ],
       }))
       .child(bandRule(tint))
@@ -841,15 +844,18 @@ export default class Plugins extends View {
     const x = this.items.find((i) => i.key === this.sel);
     const q = this.queried();
     const shown = q.filter((i) => this.matches(i));
+    // The width's tier (tiers.js): list and detail side by side, or one of them (narrow). A tier change
+    // fades the body in (as does, narrow, list <-> detail); the selection and the scrolls stay.
+    const s = split(this.width);
     // The page fades in each time it shows (enter(), the show's count in the id; no rise: nothing
     // may slide past the block). The "⋯" menu is the root's last child: it paints over the list.
     return v_flex().id("ktp-root").relative().size_full().text_color(t.foreground)
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(enter(this.m, v_flex().size_full().gap(4), `ktp-page-${this.showGen}`, { dy: 0 })
         .child(this.header(t, q, shown.length))
-        .child(h_flex().flex_1().min_h(0).gap(4)
-          .child(this.list(t, shown, cx))
-          .when(Boolean(x), (el) => el.child(this.detail(t, x, Math.round(this.width * 0.45), cx)))))
+        .child(enter(this.m, h_flex().flex_1().min_h(0).gap(4), `ktp-tier-${s.tier}${s.solo ? (x ? "-d" : "-l") : ""}`, { dy: 0 })
+          .when(!(s.solo && x), (el) => el.child(this.list(t, shown, cx)))
+          .when(Boolean(x), (el) => el.child(this.detail(t, x, s.detail, cx, s.solo)))))
       .when(this.menu, (el) => el.child(this.more(t)));
   }
 }
