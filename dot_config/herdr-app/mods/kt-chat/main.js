@@ -476,12 +476,19 @@ export default class Chat extends View {
 
   /** The live tail of `path` into the state. Answers whether anything changed (a redraw is due). */
   async tail(path, live) {
-    const out = await this.index(path, ["--from", String(this.state.end)]);
+    // #59: the chain's last link read, so a prompt that went back (a rewind) is seen in the delta.
+    const out = await this.index(path, ["--from", String(this.state.end), ...(this.state.tail ? ["--tail", this.state.tail] : [])]);
     if (out.error === "missing") {
       this.err = { code: "missing", path };
       this.state = null;
       this.turns = [];
       return true;
+    }
+    // It went back to a message read before this delta: its abandoned branch is in the state, the
+    // whole tail is read again (chat-index.ts drops the branch there). Rare: a rewind.
+    if (out.rewound) {
+      this.again = "full";
+      return false;
     }
     const before = this.state;
     const grown = ingest(before, out);

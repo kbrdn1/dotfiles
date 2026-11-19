@@ -210,11 +210,13 @@ export function ingest(state, out) {
       size: out.size,
       entries: out.entries.length ? state.entries.concat(out.entries) : state.entries,
       meta: { ...state.meta, ...out.meta },
+      // #59: the chain's last link, for the next delta (chat-index.ts --tail).
+      tail: out.tail ?? state.tail ?? null,
     };
   }
   return {
     path: out.path, session: out.session, start: out.start, end: out.end, size: out.size,
-    more: out.more, entries: out.entries, meta: { ...out.meta },
+    more: out.more, entries: out.entries, meta: { ...out.meta }, tail: out.tail ?? null,
   };
 }
 

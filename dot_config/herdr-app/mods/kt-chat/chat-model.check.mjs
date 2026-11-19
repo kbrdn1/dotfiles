@@ -387,4 +387,68 @@ const same = (entries, live, cache) => {
   }
 }
 
+// ── #59, a rewind: the abandoned branch hidden by the parentUuid chain ──────
+// An invented session (no real id): a prompt, its attachment (skipped by the indexer: its parent at its
+// head, its uuid at its end), the answer, a stop hook's system line, a second prompt and its answer,
+// then the second prompt typed again from the stop hook's line (a rewind), and its answer.
+{
+  const line = (o) => JSON.stringify({ parentUuid: null, isSidechain: false, sessionId: "s-rw", timestamp: "2026-01-02T10:00:00.000Z", ...o });
+  const prompt = (uuid, parentUuid, text) => line({ type: "user", parentUuid, uuid, message: { role: "user", content: text } });
+  const answer = (uuid, parentUuid, text) => line({ type: "assistant", parentUuid, uuid, message: { id: `m-${uuid}`, role: "assistant", model: "model-x", content: [{ type: "text", text }] } });
+  // As Claude Code writes it: parentUuid first, the uuid right after the attachment object (a long
+  // content before it, a long rendered copy after it); the indexer skips it without parsing it.
+  const attach = (uuid, parentUuid) => `{"parentUuid":"${parentUuid}","isSidechain":false,"attachment":{"type":"environment","content":"${"x".repeat(900)}"},"type":"attachment","uuid":"${uuid}","timestamp":"2026-01-02T10:00:00.000Z","rendered":[{"content":"${"y".repeat(900)}"}]}`;
+  const A1 = "00000000-0000-4000-8000-0000000000a1";
+  const A2 = "00000000-0000-4000-8000-0000000000a2";
+  const enc = (lines) => new TextEncoder().encode(lines.join("\n") + "\n");
+  const read = (bytes, o = {}) => index(bytes, { from: 0, size: bytes.length, exists: () => false, ...o });
+  // A prompt whose parent is a skipped attachment: the chain goes through it, no rewind seen.
+  const via = read(enc([prompt("v-u1", null, "un"), answer("v-m1", "v-u1", "r"), attach(A2, "v-m1"), prompt("v-u2", A2, "deux"), answer("v-m2", "v-u2", "r")]));
+  assert.equal(via.skipped, 1, "the attachment is skipped (not parsed)");
+  assert.equal(via.rewound, false, "but linked, read at its ends: the prompt after it goes on, no rewind");
+  assert.deepEqual(build(via.entries).map((t) => t.user.text), ["un", "deux"]);
+  const stop = (uuid, parentUuid) => line({ type: "system", subtype: "stop_hook_summary", parentUuid, uuid });
+  const rwLines = [
+    prompt("r-u1", null, "premier"),
+    attach(A1, "r-u1"),
+    answer("r-m1", A1, "réponse un"),
+    stop("r-s1", "r-m1"),
+    prompt("r-u2", "r-s1", "deuxième, abandonné"),
+    answer("r-m2", "r-u2", "réponse abandonnée"),
+    prompt("r-u3", "r-s1", "deuxième, repris"),
+    answer("r-m3", "r-u3", "réponse reprise"),
+  ];
+  const rwBytes = enc(rwLines);
+  const rw = read(rwBytes, { path: "/rw.jsonl", home: "/w" });
+  assert.deepEqual(rw.entries.filter((e) => e.uuid).map((e) => e.uuid), ["r-u1", "r-m1", "r-u3", "r-m3"], "the abandoned prompt and its answer are gone, the rest stays");
+  assert.equal(rw.rewound, false, "found within the read: no reread");
+  assert.equal(rw.tail, "r-m3", "the chain's last link, for the next delta");
+  assert.deepEqual(build(rw.entries).map((t) => t.user.text), ["premier", "deuxième, repris"], "the turns as the conversation is now");
+  // Without the rewind, nothing goes: the attachment (skipped, read at its ends) and the system line keep the chain.
+  const plainBytes = enc(rwLines.slice(0, 6));
+  assert.deepEqual(read(plainBytes).entries.filter((e) => e.uuid).map((e) => e.uuid), ["r-u1", "r-m1", "r-u2", "r-m2"]);
+  // A delta: the prompt goes back to a link of an earlier read: reread the whole tail.
+  const off6 = plainBytes.length;
+  const delta = index(rwBytes.subarray(off6), { from: off6, size: rwBytes.length, tail: "r-m2", exists: () => false });
+  assert.equal(delta.rewound, true, "the rewind seen in a delta: the caller reads the whole tail again");
+  const goingOn = index(plainBytes.subarray(enc(rwLines.slice(0, 4)).length), { from: 0, tail: "r-s1", exists: () => false });
+  assert.equal(goingOn.rewound, false, "a prompt on the line just before: going on, nothing to reread");
+  // Parallel tool calls branch too (two children of one call): not a rewind, nothing goes.
+  const pr = read(enc([
+    prompt("p-u1", null, "lis deux fichiers"),
+    line({ type: "assistant", parentUuid: "p-u1", uuid: "p-t1", message: { id: "m-p", role: "assistant", model: "model-x", content: [{ type: "tool_use", id: "tu-a", name: "Read", input: { file_path: "/w/a" } }] } }),
+    line({ type: "assistant", parentUuid: "p-t1", uuid: "p-t2", message: { id: "m-p", role: "assistant", model: "model-x", content: [{ type: "tool_use", id: "tu-b", name: "Read", input: { file_path: "/w/b" } }] } }),
+    line({ type: "user", parentUuid: "p-t1", uuid: "p-r1", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu-a", content: "a" }] } }),
+    line({ type: "user", parentUuid: "p-t2", uuid: "p-r2", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu-b", content: "b" }] } }),
+    answer("p-m1", "p-r2", "les deux lus"),
+    prompt("p-u2", "p-m1", "merci"),
+  ]));
+  assert.equal(pr.entries.filter((e) => e.k === "result").length, 2, "both results stay");
+  assert.deepEqual(build(pr.entries).map((t) => t.user.text), ["lis deux fichiers", "merci"]);
+  assert.equal(pr.rewound, false);
+  // ingest keeps the chain's last link for the next delta.
+  assert.equal(ingest(null, rw).tail, "r-m3");
+  assert.equal(ingest(ingest(null, { ...rw, tail: "r-s1" }), { ...goingOn, path: "/rw.jsonl", session: "s-rw", start: rw.end, end: rw.end + 1, entries: [] }).tail, goingOn.tail);
+}
+
 console.log("chat-model ok");

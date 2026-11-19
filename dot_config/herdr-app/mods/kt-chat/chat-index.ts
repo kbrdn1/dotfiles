@@ -281,7 +281,24 @@ export function normalize(o: any, off: number, meta: Meta, home: string, exists:
   return [];
 }
 
-export type Options = { from?: number; size?: number; lastTurns?: number; budget?: number; maxEntries?: number; home?: string; path?: string; exists?: (p: string) => boolean };
+export type Options = { from?: number; size?: number; lastTurns?: number; budget?: number; maxEntries?: number; home?: string; path?: string; exists?: (p: string) => boolean; tail?: string };
+
+// #59, a rewind: Claude Code keeps the abandoned branch in the file and writes the new prompt with
+// the parentUuid of the message it went back to. Every line of the conversation is a link of that
+// chain (assistant, user, attachment, system); a typed prompt whose parent is not the line just before
+// it went back: the links between its parent and it are the abandoned branch. A skipped line (an
+// attachment not kept) still counts, without parsing it: its parent at its head, its uuid right after
+// its attachment object (`…},"type":"attachment","uuid":"…"`, a key the escaped content can't hold).
+const PARENT_AT_HEAD = /^\{"parentUuid":(?:null|"([^"]+)")/;
+const UUID_KEY = new TextEncoder().encode('"type":"attachment","uuid":"');
+function skippedLink(line: Uint8Array, head: string, dec: TextDecoder): [string, string | null] | null {
+  const p = head.match(PARENT_AT_HEAD);
+  if (!p || /"isSidechain":true/.test(head)) return null;
+  const at = Buffer.from(line.buffer, line.byteOffset, line.length).lastIndexOf(UUID_KEY);
+  if (at < 0) return null;
+  const uuid = dec.decode(line.subarray(at + UUID_KEY.length, at + UUID_KEY.length + 36));
+  return /^[0-9a-f-]{36}$/.test(uuid) ? [uuid, p[1] ?? null] : null;
+}
 
 /**
  * The pure core. `bytes` is the part of the file to read, starting at byte `from` of a file of
@@ -301,6 +318,22 @@ export function index(bytes: Uint8Array, opts: Options = {}) {
   let pos = 0;
   let skipped = 0;
   let bad = 0;
+  // #59, the chain: the last link read (`tail`, the previous read's for a delta), each link's offset in
+  // this read, the abandoned branches found ([after, before): offsets, both out), and whether a prompt
+  // went back to a link before this read (the caller then reads the whole tail again).
+  let prev: string | null = opts.tail ?? null;
+  const seen = new Map<string, number>();
+  const cuts: [number, number][] = [];
+  let rewound = false;
+  const link = (uuid: string, parent: string | null, off: number, prompt: boolean) => {
+    if (prompt && parent && prev && parent !== prev) {
+      const at = seen.get(parent);
+      if (at !== undefined) cuts.push([at, off]);
+      else rewound = true;
+    }
+    seen.set(uuid, off);
+    prev = uuid;
+  };
   for (;;) {
     const nl = bytes.indexOf(10, pos);
     if (nl < 0) break;
@@ -312,6 +345,8 @@ export function index(bytes: Uint8Array, opts: Options = {}) {
     const att = head.match(ATTACHMENT);
     if (HEAVY.test(head) || (att && !KEPT_ATTACHMENTS.has(att[1]))) {
       skipped++;
+      const l = att ? skippedLink(line, head, dec) : null;
+      if (l) link(l[0], l[1], off, false);
       continue;
     }
     let o: any;
@@ -321,9 +356,17 @@ export function index(bytes: Uint8Array, opts: Options = {}) {
       bad++;
       continue;
     }
-    for (const e of normalize(o, off, meta, opts.home ?? "", opts.exists)) entries.push(e);
+    const got = normalize(o, off, meta, opts.home ?? "", opts.exists);
+    for (const e of got) entries.push(e);
+    if (o.uuid && !o.isSidechain) link(o.uuid, o.parentUuid ?? o.logicalParentUuid ?? null, off, got.some((e) => e.k === "user" && e.turn && e.uuid === o.uuid));
   }
   const end = from + pos;
+  // The abandoned branches' entries go (a queue operation is the session's, not the branch's).
+  if (cuts.length) {
+    const kept = entries.filter((e) => e.k === "queue" || !cuts.some(([a, b]) => e.o > a && e.o < b));
+    entries.length = 0;
+    entries.push(...kept);
+  }
 
   // Keep the last K turns within the budget. A cut always falls on a line start, with every
   // entry of that line; no cut means everything from `from`.
@@ -346,7 +389,7 @@ export function index(bytes: Uint8Array, opts: Options = {}) {
   while (cut && first > 0 && entries[first - 1].o === entries[first].o) first--;
   const start = cut ? entries[first].o : from;
   const { session, ...rest } = meta;
-  return { path: opts.path ?? null, session: session ?? null, from, start, end, size, more: start > from, entries: entries.slice(first), meta: rest, skipped, bad };
+  return { path: opts.path ?? null, session: session ?? null, from, start, end, size, more: start > from, entries: entries.slice(first), meta: rest, skipped, bad, tail: prev, rewound };
 }
 
 if (import.meta.main) {
@@ -370,6 +413,8 @@ if (import.meta.main) {
   if (from > size) from = 0;
   const to = Math.min(size, num("--to") ?? size);
   const bytes = new Uint8Array(await file.slice(from, Math.max(from, to)).arrayBuffer());
-  const out = index(bytes, { from, size, lastTurns: num("--last-turns"), budget: num("--budget"), maxEntries: num("--max-entries"), home: process.env.HOME ?? "", path });
+  const t = args.indexOf("--tail");
+  const tail = t >= 0 && args[t + 1] && !args[t + 1].startsWith("--") ? args[t + 1] : undefined;
+  const out = index(bytes, { from, size, lastTurns: num("--last-turns"), budget: num("--budget"), maxEntries: num("--max-entries"), home: process.env.HOME ?? "", path, tail });
   process.stdout.write(JSON.stringify(out));
 }
