@@ -98,7 +98,11 @@ export function collapse(m, id, open, body, { ms = MS.open, cx } = {}) {
   if (m.reduced) return body;
   m.used.set(id, m.gen);
   const h = m.h.get(id);
-  return div().id(id).w_full().flex_none().overflow_hidden().h(h ?? 0).opacity(h === undefined ? 0 : 1)
+  // `m.rest` (a state passed as { ...m, rest: true }): drawn again, not opened now (kt-chat's turn back
+  // from its box, turn-band.js): at its own height, no motion; the size it reports holds it there after.
+  let el = div().id(id).w_full().flex_none().overflow_hidden();
+  if (h !== undefined || !m.rest) el = el.h(h ?? 0);
+  return el.opacity(h === undefined && !m.rest ? 0 : 1)
     .transition("height", policy(ms)).transition("opacity", policy(ms))
     .child(div().id(`${id}~in`).w_full().flex_none().child(body)
       .on_size_change((size, cx) => {

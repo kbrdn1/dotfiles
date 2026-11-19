@@ -73,6 +73,18 @@ assert.deepEqual(f.props.h, [240]);
 assert.deepEqual(f.props.opacity, [1]);
 M.collapse(M.frame(m, false), "f", false, el());
 assert.deepEqual(M.collapse(M.frame(m, false), "f", true, el()).props.h, [0], "reopening opens again");
+// m.rest: drawn again after a gap that forgot its height (frame()), not opened now: at its own height
+// (no h), shown, measured; then held at that height, no motion.
+const g = M.motionState();
+M.collapse(M.frame(g, false), "g", true, el()).kids[0].on.on_size_change({ width: 100, height: 120 }, cx);
+M.frame(M.frame(g, false), false); // two renders without it: forgotten
+assert.equal(g.h.has("g"), false);
+const back = M.collapse({ ...M.frame(g, false), rest: true }, "g", true, el());
+assert.equal(back.props.h, undefined, "drawn again: no h(0)");
+assert.deepEqual(back.props.opacity, [1]);
+back.kids[0].on.on_size_change({ width: 100, height: 120 }, cx);
+assert.deepEqual(M.collapse(M.frame(g, false), "g", true, el()).props.h, [120], "then held at its height");
+assert.deepEqual(M.collapse(M.frame(M.motionState(), false), "h", true, el()).props.h, [0], "without rest: opens from 0 as before");
 
 // ink glides on its four edges; fade moves its layer's opacity; pulse loops only while loading.
 assert.deepEqual(M.ink(M.frame(m, false), el()).tr.sort(), ["height", "left", "top", "width"]);
