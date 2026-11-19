@@ -484,6 +484,27 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   agentsFake = () => [];
 }
 
+// ── #59: a turn back from its box (turn-band.js) with a detail open: at its height, not opening from 0
+// (motion.js m.rest, kt-keys/motion.check.mjs) ──
+{
+  // main.js whole(): the fixture's folded turn, its fold and a step's detail open.
+  const c = chat();
+  c.inBand = new Set();
+  c.open.add(`f:${id}`);
+  const turn = c.turns[k];
+  const step = turn.items.slice(turn.fold.start, turn.fold.end + 1).flatMap((it) => (it.type === "activity" ? it.steps : [])).find((s) => s.role === "tool");
+  assert.ok(step, "the fold has a tool's step");
+  c.open.add(`s:${step.id}`);
+  const detail = (nodes) => nodes.find((n) => callsOf(n, "id").some(([v]) => v === `kc-sd-${step.id}`));
+  const back = detail(flat(c.whole(T, cx(), turn, k, false)));
+  assert.ok(back, "its detail drawn");
+  assert.equal(callsOf(back, "h").length, 0, "back from its box: the detail at its height, no h(0)");
+  assert.equal(c.m.rest, undefined, "the render's motion state as it was after");
+  c.inBand = new Set([id]);
+  const kept = detail(flat(c.whole(T, cx(), turn, k, false)));
+  assert.deepEqual(callsOf(kept, "h").at(-1), [0], "drawn in the last render too: as before (a detail just opened opens from 0)");
+}
+
 // ── #81 review, P1: kt-confirm's « yes » runs only the ask it answers, in the copy that asked it ──
 {
   const overlays = [];

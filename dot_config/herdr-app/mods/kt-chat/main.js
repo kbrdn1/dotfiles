@@ -99,6 +99,7 @@ import { roll } from "./roll.js";
 import { TL, marks as markList, barStack, barLift, cardTop, offsets, pairWheel, wheelDy, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 // #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
 import * as win from "./turn-window.js";
+import { band as turnBand, bottomBand, jumpBand, aroundBand, estimate, rowPlan } from "./turn-band.js";
 import { skeleton, readyFor, still } from "./skeleton.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { makeT, duration, time, num, relative } from "./i18n.js";
@@ -171,6 +172,9 @@ const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const COLUMN = 832; // theme.rs:8, the reading column
 const COLUMN_PAD = 23; // theme.rs:12, its sides (the composer's 10 + 1 + 12: prose lines up with its text)
 const TOP_INSET = 20; // transcript.rs:208
+const HEAD_H = 42; // the scroll area's first row (head()): « Début de la session », or the read upward
+const VH0 = 900; // the view's height before the area first reports it (turn-band.js picks the turns from it)
+const READ_WAITS = [5000, 30000]; // a read upward that failed (an error, a timeout) is tried again after these, then given up
 const SCROLLBAR_W = 16; // the band on the scroll area's right edge where a press is taken for the scrollbar's
 const ROOM = 8; // #92: the room a turn's clipping box keeps on its sides (landing()): more than a row's ml(-6)
 const BUBBLE_MAX = 576; // transcript.rs:217, PROMPT_BUBBLE_MAX
@@ -258,6 +262,27 @@ export default class Chat extends View {
     this.tlOpening = false;
     this.jump = null;
     this.wheelAt = null;
+    this.moveAt = null; // a pointer move's half (seen()): the view's top found again after the scrollbar moved it
+    this.placing = false; // body() puts the view's top at this.top (an anchor): heights above it changed
+    this.inBand = new Set(); // the turns the last render drew whole (turn-band.js); the others were boxes
+    this.guesses = new WeakMap(); // turn -> its estimated height (turn-band.js estimate), until it is measured
+    this.posed = new Map(); // row id -> the height a box was last drawn at, never measured (boxH())
+    // #59 bis (the lot 2 Kylian saw jump under a trackpad): what moves the view's top, each counted once.
+    this.shift = 0; // a row above the view grew as painted (keepAbove()): added to the top the next event measures
+    this.clipNow = new Map(); // row id -> the height a turn entering the band above the view is drawn at, clipped
+    this.clipped = new Map(); // the same, as the last render drew them (rowsNow(): what is painted)
+    this.released = new Map(); // row id -> a clipped turn's own height, measured inside: drawn whole next render
+    this.clipAge = new Map(); // row id -> renders it has been drawn clipped (drawBand(): three at most)
+    this.steady = new Set(); // turns the last render drew in the view or above it (codeBlock(): their lines stay)
+    this.codeRows = new Map(); // code block key -> { n, full, all }: what it drew in the last render
+    this.codeRowsNow = new Map(); // the same, this render
+    this.held = new Set(); // turns the budget held closed in the last render (holds(): kept in the view)
+    this.inView = new Set(); // turns whose row meets the view in this render (drawBand())
+    this.wasInView = new Set(); // the same, in the last render (holds(): what the reader saw stays)
+    this.pendingRead = null; // a read upward landed while the view's top was unknown (landRead())
+    this.olderKey = false; // the read upward was asked by a key (gg, k): it reveals the cursor's turn
+    this.readStuck = null; // `path:start` a read upward got nothing new from (or failed thrice): not read again
+    this.readWait = null; // { at, n, until }: a failed read upward, tried again after READ_WAITS[n - 1]
     // The jump's glide (glide(), timeline.js): the view's top as last known (design px; null unknown:
     // after a reveal or a press on the scrollbar), where a jump leaves from, the slide drawn ({ gen, dy, ready }).
     this.top = null;
@@ -462,6 +487,8 @@ export default class Chat extends View {
             else {
               this.err = null;
               this.state = ingest(null, out);
+              this.pendingRead = null; // a read upward of the state before is let go (#59)
+              this.olderBusy = false;
               this.rebuild(live);
               this.follow = true;
               this.cur = -1;
@@ -512,9 +539,9 @@ export default class Chat extends View {
     }
     const before = this.state;
     const grown = ingest(before, out);
-    // Not following the bottom, the turns drawn stay (#59: a « Tours précédents » read while it works
-    // would go at the next tick): the trim stops at the window's first turn.
-    this.state = trim(grown, win.keepFor(grown.entries, this.follow ? null : this.turns[this.first()]?.id ?? null, KEEP));
+    // Not following the bottom, every loaded turn stays: each is a row of the scroll area (turn-band.js), and
+    // one going above the view would move it (a read upward while it works would go at the next tick too).
+    this.state = trim(grown, win.keepFor(grown.entries, this.follow ? null : this.turns[0]?.id ?? null, KEEP));
     // ingest keeps the entries array when nothing came (skipped lines only), trim when under KEEP.
     const grew = this.state.entries !== before.entries;
     if (!grew && live === this.builtLive) return false; // the state still moves on to the new end
@@ -556,6 +583,7 @@ export default class Chat extends View {
     this.marks = markList(this.turns);
     const rows = new Set(this.turns.map((t) => `kc-turn-${t.id}`));
     for (const k of this.hts.keys()) if (k.startsWith("kc-turn-") && !rows.has(k)) this.hts.delete(k);
+    if (this.posed) for (const k of this.posed.keys()) if (!rows.has(k)) this.posed.delete(k);
     if (this.byState) for (const k of this.byState.keys()) if (!rows.has(k.slice(0, k.lastIndexOf("|")))) this.byState.delete(k);
     this.noteFresh(was, live);
   }
@@ -642,56 +670,89 @@ export default class Chat extends View {
   }
 
   /**
-   * « Tours précédents »: the loaded turns not drawn yet first, then a read before the first one;
-   * the window fills up to CAP first (the live turn stays), then slides, the bottom ones going to
-   * « Tours suivants » (turn-window.js older). Either way the turn that was first drawn stays
-   * where the reader was looking. The caller redraws.
+   * The read before the first loaded turn (#59), on its own once the view comes within a view of the
+   * head (nearTop()), or by a key (gg, k at the first turn: `key`). It lands in landRead(). A start that
+   * read nothing new (prepend refused it) isn't read again (readStuck): no read in a loop. A read that
+   * failed (an error, a timeout) is tried again later (READ_WAITS), then given up the same way.
    */
-  older(cx) {
-    const was = this.first();
-    if (was > 0) {
-      this.win = win.older(this.win);
-      this.reveal = childOf(was, this.first());
-      this.cur = was; // j k go on from what is read, not from a turn the window left
-      this.light(was);
-      if (this.end() < this.turns.length) this.follow = false;
-      return;
+  older(cx, key = false) {
+    // A read waiting for the view's top (landRead()), the reader gone to the keys: it lands as theirs.
+    if (key && this.pendingRead) {
+      this.olderKey = true;
+      this.landRead(this.pendingRead);
+      this.olderBusy = false;
+      return cx.notify();
     }
-    if (!this.state?.more || this.olderBusy) return;
+    const s = this.state, at = `${s?.path}:${s?.start}`;
+    if (!s?.more || this.olderBusy || this.readStuck === at) return;
+    if (this.readWait?.at === at && Date.now() < this.readWait.until) return; // a failed read's wait (below)
     this.olderBusy = true;
+    this.olderKey = key;
+    cx.notify(); // the head's « lecture… »
     cx.spawn(async (cx) => {
       try {
-        // The state as it is when the read lands, not as it was when it left (A3): a live tick or
-        // another agent may have replaced it meanwhile; prepend() refuses a read that no longer
-        // continues it (another file, a start the trim moved).
-        const out = await this.index(this.state.path, ["--to", String(this.state.start)]);
-        const next = prepend(this.state, out);
-        if (next !== this.state) {
-          this.state = next;
-          this.rebuild(this.builtLive, false); // the same turns drawn, now after the read ones
-          const at = this.first(); // where the turn that was first drawn is now
-          this.win = win.older(this.win);
-          this.reveal = childOf(at, this.first());
-          this.cur = at;
-          this.light(at);
-          if (this.end() < this.turns.length) this.follow = false;
-        }
+        const out = await this.index(s.path, ["--to", String(s.start)]);
+        this.readWait = null;
+        this.landRead(out);
       } catch (e) {
-        notify({ title: tr("empty.failed.title"), body: String(e?.message ?? e).slice(0, 300), level: "error" });
+        // An error or a timeout (the machine busy): read again after 5 s, then after 30 s, then never
+        // from that start (readStuck), the error said once.
+        const n = this.readWait?.at === at ? this.readWait.n + 1 : 1;
+        if (n > READ_WAITS.length) {
+          this.readWait = null;
+          this.readStuck = at;
+          notify({ title: tr("empty.failed.title"), body: String(e?.message ?? e).slice(0, 300), level: "error" });
+        } else {
+          const ms = READ_WAITS[n - 1];
+          this.readWait = { at, n, until: Date.now() + ms };
+          cx.timer.after(ms + 50, (cx) => this.nearTop(cx)); // the view still near the head: again
+        }
       } finally {
-        this.olderBusy = false;
+        if (!this.pendingRead) this.olderBusy = false;
         cx.notify();
       }
     });
   }
 
-  /** « Tours suivants »: SHOW more below, the top ones out past CAP; the last turn drawn stays in view. */
-  newer() {
-    const was = this.end() - 1;
-    this.win = win.newer(this.win, this.turns.length);
-    this.reveal = childOf(was, this.first());
-    this.cur = was;
-    this.light(was);
+  /**
+   * The read upward lands. Its turns come in above as boxes (turn-band.js), their heights posed: the view's
+   * top moves down by what came above a turn that stays (placing: the same render, nothing of it is
+   * painted yet), so the reader sees the same lines. The view's top unknown (the pointer off the rows):
+   * the read waits (pendingRead) until an event measures it (viewAt()); by a key, the cursor's turn is
+   * revealed instead. Applied to the state as it is then, not as it was when it left (A3): a live tick or
+   * another agent may have replaced it meanwhile; prepend() refuses a read that no longer continues it.
+   */
+  landRead(out) {
+    if (!this.follow && !this.olderKey && this.top == null) {
+      this.pendingRead = out;
+      return;
+    }
+    this.pendingRead = null;
+    const next = prepend(this.state, out);
+    if (next === this.state) {
+      this.readStuck = `${this.state?.path}:${this.state?.start}`;
+      return;
+    }
+    // A turn that stays (the band's last: the first may be a partial one the read completes).
+    const keep = this.turns[Math.max(0, this.end() - 1)]?.id, curId = this.turns[this.cur]?.id;
+    const before = this.geom().tops.get(keep);
+    this.state = next;
+    this.rebuild(this.builtLive, false); // the same turns drawn, now after the read ones
+    const after = this.geom().tops.get(keep);
+    if (curId != null) this.cur = this.turns.findIndex((t) => t.id === curId);
+    if (this.follow) this.reveal = "bottom"; // a short session read upward under a followed bottom
+    else if (this.top != null && before != null && after != null) {
+      this.top += after - before;
+      this.placing = true;
+    } else if (this.olderKey && this.cur >= 0) {
+      this.reveal = childOf(this.cur, 0);
+      this.light(this.cur);
+    }
+  }
+
+  /** Within a view of the head with more to read: the read upward (older()). */
+  nearTop(cx) {
+    if (this.top != null && this.top + this.shift < Math.max(this.vh, 1)) this.older(cx);
   }
 
   /** No wheel measures a scroll the Chat makes itself: the timeline lights the message of the turn it brings (A7). */
@@ -730,10 +791,12 @@ export default class Chat extends View {
     const move = (to) => {
       this.cur = to;
       this.follow = to === n - 1;
-      this.win = win.reach(this.win, n, to); // the cursor draws the turn it reaches, CAP at most
-      this.reveal = childOf(to, this.first());
+      this.win = this.around(to); // the cursor's turn drawn, and a view on each side of it (turn-band.js)
+      this.reveal = childOf(to, 0);
+      this.top = null; // the reveal moves the view where no event says
       this.jump = null; // a jump still waiting for its rows: this move wins
       this.light(to); // the timeline lights the cursor's message
+      if (to === 0) this.older(cx, true); // gg, k at the first loaded turn: the read upward, by a key
     };
     switch (a) {
       case "down":
@@ -1554,21 +1617,21 @@ export default class Chat extends View {
   }
 
   /**
-   * To the k-th message: its turn drawn (as the cursor does), the cursor on it, then its top at the
-   * view's top once its rows are measured (body(): the anchor). A note goes to its turn's top.
+   * To the k-th message: its turn drawn and the turns under it (body(): turn-band.js jumpBand), the cursor
+   * on it, then its top at the view's top once its rows are measured (body(): the anchor). A note goes
+   * to its turn's top.
    */
   jumpTo(k) {
     const m = this.marks[k];
     if (!m) return;
-    // Where the view leaves from, for the glide: the bottom while following, else the top last known;
-    // unknown when the window moves its top (its rows above aren't the same), then the way it goes.
-    const a = this.tlIndex(), g = this.geom(), was = this.first();
+    // Where the view leaves from, for the glide: the bottom while following, else the top last known
+    // (the rows above it keep their heights: the turns not drawn are boxes as tall); unknown, the way it goes.
+    const a = this.tlIndex(), g = this.geom();
     const at = this.follow ? (g.known ? Math.max(0, g.end + 8 - this.vh) : null) : this.top;
     const dir = k > a ? 1 : k < a || this.tlAbove ? -1 : 0;
     this.cur = m.i;
     this.follow = false;
-    this.win = win.at(this.win, this.turns.length, m.i); // not drawn: it and SHOW - 1 after it (#59)
-    this.glideFrom = { from: this.first() === was ? at : null, dir };
+    this.glideFrom = { from: at, dir };
     this.jump = m.turn;
     this.reveal = null;
     this.tlId = m.id;
@@ -1630,6 +1693,7 @@ export default class Chat extends View {
    *   more (« ce qu'on vient de cliquer ne bouge pas »; the « bas » button brings it back).
    */
   measured(id, size, cx, pin = null, state = null) {
+    if (this.clipped?.has(id)) return; // drawn clipped at its pose: its own height comes from inside (innerSized())
     const h = size.height / this.zoom();
     if (state) this.byState?.set(`${id}|${state}`, h);
     const was = this.hts.get(id);
@@ -1651,6 +1715,39 @@ export default class Chat extends View {
         this.settle(cx);
       }
     } else if (this.jump != null) cx.notify();
+    else if (!this.follow && !this.keepRow && this.top != null) this.keepAbove(id, was, h, cx);
+  }
+
+  /**
+   * #59: a row wholly above the view changed height as painted (its content: a live result, a fold the
+   * budget drew otherwise): gpui keeps the offset, so what the reader sees moved by that much. It is
+   * already painted, so the next wheel event measures a top that includes it: the move is kept apart
+   * (shift), added to whatever top the next event measures, at the next render (placeTop()). `was`: its
+   * height as last drawn (undefined: never measured).
+   */
+  keepAbove(id, was, h, cx) {
+    const before = was ?? this.poseOf(id);
+    // The rows above not measured yet count as they were painted (boxes at their pose): each row's
+    // change is added on its own, in whatever order gpui reports them.
+    const y = this.topOf(id, true);
+    if (before == null || y == null || y + before > this.top + 0.5) return;
+    this.shift += h - before;
+    cx.notify();
+  }
+
+  /**
+   * #59: a turn entering the band above the view is drawn clipped at the height it was painted at
+   * (drawBand(): clipNow), so nothing moves; its own height is measured inside it, here. The next render
+   * draws it whole and moves the view's top by the difference in that same render (placeTop()): nothing
+   * painted ever jumps.
+   */
+  innerSized(id, size, cx, state = null) {
+    if (!this.clipped.has(id)) return;
+    const h = size.height / this.zoom();
+    if (state) this.byState?.set(`${id}|${state}`, h);
+    if (this.released.get(id) === h) return;
+    this.released.set(id, h);
+    cx.notify();
   }
 
   /** The bottom once more after a motion (MS.open, and a frame or so), if the view still follows it. */
@@ -1667,21 +1764,139 @@ export default class Chat extends View {
 
   /** The scroll area's last row before its end mark, as body() draws them (geom()'s order). */
   lastRow() {
-    if (this.end() < this.turns.length) return "kc-later";
     if (this.builtLive) return "kc-working";
-    const t = this.turns[this.end() - 1];
+    const t = this.turns.at(-1);
     return t ? `kc-turn-${t.id}` : "kc-head";
   }
 
-  /** The scroll area's rows, top to bottom (as body() draws them): { tops: turn id -> top, at: row id -> top, end, known }. */
+  /**
+   * The scroll area's rows, top to bottom, as body() draws them: the head, every loaded turn (#59: the
+   * band's whole, the others boxes), « travaille… ». [id, height]: as painted. A turn drawn whole as last
+   * measured (undefined: not yet; `guessing`: as a box), one drawn clipped at its clip, a box as tall as it
+   * is drawn (boxH()).
+   */
+  rowsNow(guessing = false) {
+    const from = this.first(), to = this.end();
+    const out = [["kc-head", this.hts.get("kc-head")]];
+    this.turns.forEach((t, i) => {
+      const id = `kc-turn-${t.id}`;
+      out.push([id, this.clipped?.get(id) ?? (i >= from && i < to && !guessing ? this.hts.get(id) : this.boxH(t))]);
+    });
+    if (this.builtLive) out.push(["kc-working", this.hts.get("kc-working")]);
+    return out;
+  }
+
+  /** The scroll area's rows, top to bottom (rowsNow()): { tops: turn id -> top, at: row id -> top, end, known }. */
   geom() {
-    const turns = this.turns.slice(this.first(), this.end());
-    const tail = this.end() < this.turns.length ? ["kc-later"] : this.builtLive ? ["kc-working"] : [];
-    const ids = ["kc-head", ...turns.map((t) => `kc-turn-${t.id}`), ...tail];
+    const rows = this.rowsNow();
     // The end mark: 1 px, never measured.
-    const o = offsets([...ids.map((id) => this.hts.get(id)), 1], TOP_INSET);
-    const at = new Map(ids.map((id, k) => [id, o.tops[k]]));
-    return { at, tops: new Map(turns.map((t) => [t.id, at.get(`kc-turn-${t.id}`)])), end: o.end, known: o.known };
+    const o = offsets([...rows.map(([, h]) => h), 1], TOP_INSET);
+    const at = new Map(rows.map(([id], k) => [id, o.tops[k]]));
+    return { at, tops: new Map(this.turns.map((t) => [t.id, at.get(`kc-turn-${t.id}`)])), end: o.end, known: o.known };
+  }
+
+  /** A row's top when every row above it has a height (`guessing`: rowsNow()), else null. */
+  topOf(id, guessing = false) {
+    let y = TOP_INSET;
+    for (const [r, h] of this.rowsNow(guessing)) {
+      if (r === id) return y;
+      if (!(h >= 0)) return null;
+      y += h;
+    }
+    return null;
+  }
+
+  /**
+   * A turn's height before it is measured (turn-band.js estimate, its prose at the column's width), kept per
+   * turn built; an opened fold adds its rows (A16 foldCost, 28 px a row): under-guessed, the bottom's band
+   * would draw several such turns where one fills the view.
+   */
+  guess(t) {
+    const cols = Math.max(30, Math.floor((Math.min(this.areaW || COLUMN, COLUMN) - 2 * COLUMN_PAD) / 7.5));
+    const open = Boolean(t.fold) && this.open.has(`f:${t.id}`);
+    const g = this.guesses.get(t);
+    if (g?.cols === cols && g.open === open) return g.h;
+    const h = estimate(t, { cols }) + (open ? 28 * this.foldCost(t) : 0);
+    this.guesses.set(t, { cols, open, h });
+    return h;
+  }
+
+  /**
+   * #59: a turn's height as a box: as last measured, else as the last render posed it (body(): `posed`),
+   * else its guess. A posed height moves only through measured(): a guess that changes (the width, the
+   * turn built again, a fold toggled) would move what is under it, uncompensated.
+   */
+  boxH(t) {
+    const id = `kc-turn-${t.id}`;
+    return this.hts.get(id) ?? this.posed.get(id) ?? this.guess(t);
+  }
+
+  /** A turn row's height before its first measure, by its row id (keepAbove()): its pose, else its guess. */
+  poseOf(id) {
+    const t = this.turns.find((x) => `kc-turn-${x.id}` === id);
+    return t ? this.posed.get(id) ?? this.guess(t) : null;
+  }
+
+  /** The turns' heights for turn-band.js: as boxes are drawn (boxH()). */
+  heights() {
+    return this.turns.map((t) => this.boxH(t));
+  }
+
+  /** The cursor's turn `i` and a view on each side of it (move()). */
+  around(i) {
+    return aroundBand({ head: this.hts.get("kc-head") ?? HEAD_H, heights: this.heights(), inset: TOP_INSET, i, vh: this.vh > 0 ? this.vh : VH0 });
+  }
+
+  /**
+   * The turns body() draws whole (#59, turn-band.js): following, the bottom's; a jump waiting, from its turn
+   * down (nothing above it changes in that render: its top is exact); the view's top known, around it;
+   * else as they were (a key revealed the cursor's turn: around it, move()).
+   */
+  pickBand() {
+    const heights = this.heights(), vh = this.vh > 0 ? this.vh : VH0;
+    if (this.follow) return bottomBand({ heights, vh });
+    const j = this.jump != null ? this.turns.findIndex((t) => t.id === this.jump) : -1;
+    if (j >= 0) return jumpBand({ heights, i: j, vh });
+    if (this.top != null) return turnBand({ head: this.hts.get("kc-head") ?? HEAD_H, heights, inset: TOP_INSET, top: this.top + this.shift, vh });
+    return { from: this.first(), to: this.end() };
+  }
+
+  /**
+   * #59 bis: the view as the next render will put it, in the rows as painted: following, the bottom's;
+   * else from the top an event measured, moved by what is kept apart (shift). Null: unknown.
+   */
+  viewRange() {
+    const vh = this.vh > 0 ? this.vh : VH0;
+    if (this.follow) {
+      const end = this.geom().end + 8;
+      return { top: Math.max(0, end - vh), bottom: end };
+    }
+    if (this.top == null) return null;
+    const top = this.top + this.shift;
+    return { top, bottom: top + vh };
+  }
+
+  /** The view's top just measured (wheel(), seen()): a redraw when the band it wants isn't the one drawn; the read upward near the head. */
+  reband(cx) {
+    this.nearTop(cx);
+    if (this.follow || this.jump != null) return;
+    const b = this.pickBand();
+    if (b.from !== this.first() || b.to !== this.end()) cx.notify();
+  }
+
+  /**
+   * A pointer move reaches the row under it and the scroll area, as a wheel event does (pairWheel, a
+   * delta of 0): the view's top found again where nothing said it (the scrollbar dragged), so the band
+   * follows the view (reband()). Only while it is unknown: a move costs nothing otherwise.
+   */
+  seen(cx, row, ev) {
+    if (this.top != null || this.follow || !ev?.local_position || !ev.position) return;
+    const { keep, pair } = pairWheel(this.moveAt, { row, px: ev.position.x, py: ev.position.y, y: ev.local_position.y, dy: 0 });
+    this.moveAt = keep;
+    if (!pair || this.vh <= 0) return;
+    const y = this.topOf(pair.id), g = this.geom(), z = this.zoom();
+    if (y == null) return;
+    this.viewAt(cx, wheelTop({ top: y, inRow: pair.inRow / z, inView: pair.inView / z, dy: 0, max: g.end + 8 - this.vh }), 0, g);
   }
 
   /**
@@ -1699,18 +1914,36 @@ export default class Chat extends View {
     if (!g.known || !g.at.has(w.id)) return;
     const z = this.zoom();
     // The area's padding (TOP_INSET above, 8 under) is part of what scrolls.
-    const scrollTop = wheelTop({ top: g.at.get(w.id), inRow: w.inRow / z, inView: w.inView / z, dy: w.dy / z, max: g.end + 8 - this.vh });
+    this.viewAt(cx, wheelTop({ top: g.at.get(w.id), inRow: w.inRow / z, inView: w.inView / z, dy: w.dy / z, max: g.end + 8 - this.vh }), w.dy, g);
+  }
+
+  /**
+   * The view's top as an event measured it (wheel(), seen()): the bottom followed again when a wheel down
+   * reaches it, the band and the read upward (reband()), the message on screen; a redraw only when that changes.
+   */
+  viewAt(cx, scrollTop, dy, g = this.geom()) {
+    // The top as painted: what a row above grew (shift) stays apart, added at the next render (placeTop()).
     this.top = scrollTop;
-    const whole = this.end() >= this.turns.length; // the window's bottom is the conversation's
+    // A read upward that waited for the view's top (landRead()): applied now, compensated.
+    if (this.pendingRead) {
+      this.landRead(this.pendingRead);
+      this.olderBusy = false;
+      cx.notify();
+      g = this.geom();
+    }
+    const at = this.top + this.shift; // where the reader is, in the rows as now known
     // #59: going down to the conversation's bottom follows it again (the live tail's new turns show).
-    if (w.dy < 0 && !this.follow && atEnd({ scrollTop, vh: this.vh, end: g.end + 8, whole })) {
+    // Every loaded turn is a row (turn-band.js): the area's bottom is the conversation's.
+    if (dy < 0 && !this.follow && atEnd({ scrollTop: at, vh: this.vh, end: g.end + 8 })) {
       this.follow = true;
       this.cur = -1;
+      this.shift = 0;
       cx.notify();
     }
+    this.reband(cx);
     if (!this.marks.length) return;
     const cur = this.follow ? -1 : this.marks.findIndex((m) => m.id === this.tlId);
-    const r = activeAt({ marks: this.marks, tops: g.tops, first: this.first(), scrollTop, vh: this.vh, end: g.end + 8, follow: this.follow, whole, cur });
+    const r = activeAt({ marks: this.marks, tops: g.tops, scrollTop: at, vh: this.vh, end: g.end + 8, follow: this.follow, cur });
     const id = this.marks[r.k]?.id ?? null;
     if (id !== this.tlId || r.above !== this.tlAbove || this.tlLost) {
       this.tlId = id;
@@ -1837,9 +2070,23 @@ export default class Chat extends View {
     if (s && !this.m.reduced)
       inner = inner.id(`${id}~g${s.gen}`).relative().top(s.ready ? 0 : s.dy).transition("top", { duration: MS.panel, easing: "ease-out" });
     const pin = this.pinned; // this render brings the bottom: the first size it makes is covered (measured())
+    // #59 bis: a turn entering the band above the view's top, or whose fold this render draws otherwise
+    // there (A16), drawn at the height it was painted at, its bottom showing (the part a view whose top
+    // is in it shows), its own height measured inside it (innerSized()): nothing painted moves.
+    let clip = this.clipNow?.get(id);
+    if (clip == null && state != null && this.above?.has(id) && this.drawn?.get(id.slice(8)) !== state) {
+      clip = this.above.get(id);
+      this.clipNow.set(id, clip);
+    }
+    if (clip != null) {
+      if (!(s && !this.m.reduced)) inner = inner.id(`${id}~clip`); // on_size_change wants a stable id
+      inner = inner.on_size_change((size, cx) => this.innerSized(id, size, cx, state));
+    }
     return h_flex().id(id).w_full().flex_none().justify_center()
+      .when(clip != null, (el) => el.h(clip).overflow_hidden().items_end())
       .on_size_change((size, cx) => this.measured(id, size, cx, pin, state))
       .on_scroll_wheel((ev, cx) => this.wheel(cx, id, ev))
+      .on_mouse_move((ev, cx) => this.seen(cx, id, ev))
       // A16: a press in a turn makes it the reader's (the cursor): its folded work is served first.
       .when(id.startsWith("kc-turn-"), (el) => el.on_mouse_down("left", (ev, cx) => this.pressTurn(id, ev, cx)))
       .child(inner);
@@ -1894,15 +2141,13 @@ export default class Chat extends View {
   keepY(drawnNow) {
     const k = this.keepRow;
     if (!k || Date.now() - k.at > 1000) return (this.keepRow = null);
-    const turns = this.turns.slice(this.first(), this.end());
-    const tail = this.end() < this.turns.length ? ["kc-later"] : this.builtLive ? ["kc-working"] : [];
-    const rows = [["kc-head", null], ...turns.map((t) => [`kc-turn-${t.id}`, t.id]), ...tail.map((r) => [r, null])];
     let y = TOP_INSET, rowAt = null, guess = false;
-    for (const [id, tid] of rows) {
+    for (let [id, h] of this.rowsNow()) {
       if (id === k.id) rowAt = y;
-      let h = this.hts.get(id);
+      const tid = id.startsWith("kc-turn-") ? id.slice(8) : null;
       const now = tid != null ? drawnNow.get(tid) : undefined, was = tid != null ? this.drawn.get(tid) : undefined;
-      if (rowAt == null && now !== undefined && was !== undefined && now !== was) {
+      // A row drawn clipped (#59 bis: drawBand(), col()) keeps its painted height in this render.
+      if (rowAt == null && now !== undefined && was !== undefined && now !== was && !this.clipNow?.has(id)) {
         const p = this.byState.get(`${id}|${now}`);
         if (p != null) h = p;
         else guess = true;
@@ -1917,22 +2162,45 @@ export default class Chat extends View {
     return { top, h: anchorH({ y: top, end: y + 1, vh: this.vh }) };
   }
 
-  /** A16: the turn a render serves first: the last while following the bottom, else the cursor's. */
+  /**
+   * A16: the turn a render serves first: the last while following the bottom; the cursor's when the band
+   * draws it; else (#59 bis) the one at the view's middle, in the rows as painted: never the band's edge,
+   * which moves with every turn the band takes or leaves.
+   */
   focusTurn() {
-    return this.follow || this.cur < 0 ? this.turns.length - 1 : this.cur;
+    const n = this.turns.length;
+    if (this.follow) return n - 1;
+    if (this.cur >= this.first() && this.cur < this.end()) return this.cur;
+    const v = this.viewRange?.();
+    if (v) {
+      const mid = (v.top + v.bottom) / 2, g = this.geom();
+      for (let i = n - 1; i >= 0; i--) if ((g.tops.get(this.turns[i].id) ?? Infinity) <= mid) return i;
+    }
+    return this.cur >= 0 ? this.cur : n - 1;
   }
 
   /**
-   * A16: whether a fold the reader opened is drawn open in this render, always whole. The reader's turn
-   * (the first a render serves: body()) is outside the budget: drawn as opened, with all it shows. Another
-   * turn's is drawn when its whole cost (foldCost) fits in what the budget has left (then spent), else held
-   * closed. Nothing is cut inside a turn drawn: a step, an opened detail, « N étapes de plus » are drawn
-   * in full or not at all, with their fold.
+   * A16: whether a fold the reader opened is drawn open in this render, always whole. A turn in the view
+   * in this render and the last (#59 bis: inView, wasInView) keeps what the budget decided for it then
+   * (held: still held; opened: still opened, its cost spent even past the budget): a fold never moves
+   * under the reader's eyes, but the cursor's (a press, a key) opens. The reader's turn (the first a
+   * render serves: body(), focusTurn()) is outside the budget: drawn as opened, with all it shows.
+   * Another turn's is drawn when its whole cost (foldCost) fits in what the budget has left (then
+   * spent), else held closed. Nothing is cut inside a turn drawn: a step, an opened detail, « N étapes
+   * de plus » are drawn in full or not at all, with their fold.
    */
   holds(turn) {
     const b = this.budget;
-    if (b?.steps == null || b.fresh) return true;
+    if (b?.steps == null) return true;
     const cost = this.foldCost(turn);
+    // In the view in this render and the last (the reader saw it): as it was, unless it is the cursor's
+    // (a press, a key: A16, it opens).
+    if (this.inView?.has(turn.id) && this.wasInView?.has(turn.id) && this.turns[this.cur]?.id !== turn.id) {
+      if (this.held?.has(turn.id)) return false;
+      b.steps -= cost;
+      return true;
+    }
+    if (b.fresh) return true;
     if (b.steps < cost) return false;
     b.steps -= cost;
     return true;
@@ -2372,6 +2640,11 @@ export default class Chat extends View {
     const copy = this.iconBtn(t, `kc-cc-${key}`, copied ? I("check") : COPY, copied ? tr("copiedCode") : tr("copyCode"), (cx) => this.copy(cx, `c:${key}`, s.text, 1500), 24);
     // The render's budget (body()): colored lines while spans last, plain past them; no line past rows.
     const budget = this.budget ?? { spans: CODE_SPANS, rows: CODE_ROWS };
+    // #59 bis: a block of a turn the last render drew in the view or above it (steady, drawBand()) keeps
+    // the lines it had, the budget's order moving with the band: no height changes there. Unless the
+    // reader opened or closed it since (all).
+    const was = this.steady?.has(this.drawingTurn) ? this.codeRows?.get(key) : undefined;
+    const keep = was && was.all === all ? (was.full ? shown.length : was.n) : null;
     const runsAt = (i) => (Array.isArray(colors) && Array.isArray(colors[i]) && colors[i].length ? colors[i] : null);
     const span = ([text, color, style]) => {
       let el = div().flex_none();
@@ -2381,13 +2654,14 @@ export default class Chat extends View {
       return el.child(text || " ");
     };
     const drawn = [];
-    for (let i = 0; i < shown.length && budget.rows > 0; i++, budget.rows--) {
+    for (let i = 0; i < shown.length && (keep != null ? i < keep : budget.rows > 0); i++, budget.rows--) {
       const r = runsAt(i);
       if (r && r.length > 1 && budget.spans >= r.length) {
         budget.spans -= r.length;
         drawn.push(h_flex().h(20).whitespace_nowrap().children(r.map(span)));
       } else drawn.push(span(r && r.length === 1 && budget.spans > 0 ? r[0] : [shown[i], null, 0]).h(20).whitespace_nowrap());
     }
+    this.codeRowsNow?.set(key, { n: drawn.length, full: drawn.length === shown.length, all });
     const code = v_flex().flex_none().children(drawn);
     const nums = v_flex().w(24).mr(8).flex_none().items_end().text_size(10).text_color(ink(t, 0.35))
       .children(drawn.map((_, i) => div().h(20).flex().items_center().child(String(i + 1))));
@@ -2770,26 +3044,214 @@ export default class Chat extends View {
       .child(this.landing(v_flex().w_full().min_w(0).children(out), turn.id, `t-${turn.id}`)), `kc-turn-${turn.id}`, f ? (opened ? "o" : "c") : null);
   }
 
+  // The scroll area's first row: « Début de la session », the read upward while it reads (#59: on its
+  // own near the head, older()), else nothing. HEAD_H tall always: what comes above moves nothing else.
   head(t) {
-    if (this.first() > 0 || this.state?.more) {
-      return this.col(h_flex().justify_center().py(8).child(h_flex().id("kc-older-btn").h(26).px(12).gap(6).items_center().rounded_full()
-        .border(1).border_color(ink(t, 0.1)).cursor_pointer().hover((s) => s.bg(ink(t, 0.08))).text_size(12).text_color(ink(t, 0.6))
-        .on_click((_e, cx) => { this.older(cx); cx.notify(); })
-        .child(svg(this.olderBusy ? SPIN : I("chevron-up")).size(12).when(Boolean(this.olderBusy), (el) => el.spin(900)))
-        .child(this.olderBusy ? tr("olderLoading") : tr("older"))), "kc-head");
-    }
-    return this.col(h_flex().justify_center().py(8).child(this.label(t, tr("start"), 0.35)), "kc-head");
+    const busy = Boolean(this.olderBusy), start = !this.state?.more;
+    return this.col(h_flex().h(HEAD_H).justify_center().items_center().gap(6).text_size(12).text_color(ink(t, 0.45))
+      .when(busy, (el) => el.child(svg(SPIN).size(12).spin(900)).child(tr("olderLoading")))
+      .when(start && !busy, (el) => el.child(this.label(t, tr("start"), 0.35))), "kc-head");
   }
 
-  // « Tours suivants » (#59): the head's twin under a window that stops before the end, with how many
-  // turns wait below it (the live tail's new ones among them), and « en direct » when the agent's live
-  // turn is one of them (the bottom isn't followed then: the button or G bring it back).
-  later(t, k) {
-    return this.col(h_flex().justify_center().py(8).child(h_flex().id("kc-later-btn").h(26).px(12).gap(6).items_center().rounded_full()
-      .border(1).border_color(ink(t, 0.1)).cursor_pointer().hover((s) => s.bg(ink(t, 0.08))).text_size(12).text_color(ink(t, 0.6))
-      .on_click((_e, cx) => { this.newer(); cx.notify(); })
-      .child(svg(I("chevron-down")).size(12))
-      .child(tr(this.builtLive ? "laterLive" : "later", { n: k }))), "kc-later");
+  /**
+   * #59: a turn of the band. Back from its box (or drawn for the first time), its open details land at
+   * their height (motion.js rest): frame() forgot them while it was a box, and opening them from 0
+   * would move the view a frame at a time when it is above it.
+   */
+  whole(t, cx, turn, i, keyed) {
+    if (this.inBand.has(turn.id)) return this.turn(t, cx, turn, i, keyed);
+    const m = this.m;
+    this.m = { ...m, rest: true };
+    try {
+      return this.turn(t, cx, turn, i, keyed);
+    } finally {
+      this.m = m;
+    }
+  }
+
+  /**
+   * #59: a loaded turn outside the band, near it, as tall as it was last drawn (else its guess,
+   * turn-band.js): no content, its prompt's first line pale (a scrollbar dragged over it shows where it is).
+   */
+  box(t, turn) {
+    const id = `kc-turn-${turn.id}`, u = turn.user;
+    const text = u && !u.from ? (u.cmd ? u.cmd.name : lines(u.text)[0]) : "";
+    const h = this.boxH(turn);
+    this.posed.set(id, h);
+    return this.spacer(id, h).justify_center()
+      .child(h_flex().w_full().max_w(COLUMN).px(COLUMN_PAD).pt(4).pl(BUBBLE_ROW_PAD).justify_end().min_w(0)
+        .when(Boolean(text), (el) => el.child(div().max_w(BUBBLE_MAX).truncate().px(12).py(8).rounded(12).bg(ink(t, 0.03))
+          .text_size(14).line_height("20px").text_color(ink(t, 0.3)).child(text))));
+  }
+
+  /**
+   * #59: `h` px of turns not drawn, from the row `id` (the first one's): the wheel and the pointer's
+   * halves (wheel(), seen()) find the view's top over it, from that turn's top (geom()). An element id
+   * of its own: the turn drawn whole again is a new element, whose first size is reported (measured()).
+   */
+  spacer(id, h) {
+    return h_flex().id(`${id}~box`).w_full().flex_none().h(h).overflow_hidden()
+      .on_scroll_wheel((ev, cx) => this.wheel(cx, id, ev))
+      .on_mouse_move((ev, cx) => this.seen(cx, id, ev));
+  }
+
+  /**
+   * #59 bis: what a render draws of the turns, in the order the view's top needs it. The turns drawn
+   * clipped last time whose own height came in are drawn whole (release()), the band's turns
+   * (drawBand()), a press's keep (keepY(), A16), else the view's top moved by what changed above it
+   * (placeTop()), then the rows (rowList()). `jumped`: the timeline's jump ({ top, h }) when it placed the
+   * view. Answers { children (the head, the turns' rows), childAt, anchor ({ top, h } | null) }.
+   * scroll-flow.check.mjs replays a session's frames through it, as body() does.
+   */
+  lay(t, cx, keyed, jumped = null) {
+    const add = this.release();
+    const whole = this.drawBand(t, cx, keyed, add);
+    let anchor = jumped;
+    // A16: a press that moved the reader keeps its row where it was on screen, whatever the folds above
+    // it are drawn as now (keepY(): an anchor at the view's new top, as the jump's).
+    if (!anchor && this.reveal == null && this.keepRow) {
+      const k = this.keepY(this.drawnNow);
+      if (k) {
+        this.top = k.top;
+        anchor = k;
+      }
+    }
+    anchor = this.placeTop(anchor, add);
+    this.clipped = this.clipNow;
+    this.drawn = this.drawnNow;
+    this.drawnNow = null;
+    return { ...this.rowList(t, whole), anchor };
+  }
+
+  /**
+   * #59 bis: the turns drawn clipped whose own height came in (innerSized()) are drawn whole in this
+   * render. Answers what that adds above the view (each one wholly above it, in the rows as painted):
+   * placeTop() moves the view's top by it in this same render, so nothing painted jumps. The view's top
+   * unknown: they stay clipped until it is known.
+   */
+  release() {
+    if (!this.released.size) return 0;
+    const v = this.viewRange();
+    if (!v) return 0;
+    let add = 0;
+    for (const [id, h] of this.released) {
+      const was = this.clipped.get(id);
+      if (was == null) continue;
+      const y = this.topOf(id, true);
+      if (!this.follow && y != null && y < v.top - 0.5) add += h - was; // it starts above the view's top: what is under it stays
+      this.hts.set(id, h);
+    }
+    for (const id of this.released.keys()) this.clipped.delete(id);
+    this.released.clear();
+    return add;
+  }
+
+  /**
+   * #59: the band's turns drawn whole (whole()), in the order the budget serves them (A16, turn-window.js
+   * nearFirst): following the bottom, the last turn first, then up; else the reader's turn (focusTurn()).
+   * #59 bis, from the rows as painted and the view as this render puts it (`add`: release()): the turns
+   * meeting the view (inView: their folds don't move, holds()), and those entering the band wholly above
+   * it, drawn clipped at the height they were painted at (clipNow, col()). Answers turn index -> its row.
+   */
+  drawBand(t, cx, keyed, add = 0) {
+    const from = this.first(), to = this.end();
+    const v = this.viewRange();
+    this.wasInView = this.inView;
+    this.inView = new Set();
+    this.steady = new Set();
+    this.codeRowsNow = new Map();
+    this.clipNow = new Map();
+    this.above = new Map(); // band row id -> its height as painted, wholly above the view (col(): a fold drawn otherwise is clipped)
+    if (v) {
+      const top = v.top + add, bottom = v.bottom + add, band = new Set(this.turns.slice(from, to).map((x) => x.id));
+      let y = TOP_INSET;
+      for (const [id, h] of this.rowsNow(true)) {
+        const at = y;
+        y += h ?? 0;
+        if (!id.startsWith("kc-turn-")) continue;
+        const tid = id.slice(8);
+        if (at < bottom && at + h > top) this.inView.add(tid);
+        // Drawn last render, in the view or above it: its code blocks keep their lines (codeBlock()).
+        if (at < bottom && band.has(tid) && this.inBand.has(tid)) this.steady.add(tid);
+        // Starting above the view's top (wholly above it, or the row its top is in: clipped from the bottom).
+        if (!band.has(tid) || this.follow || at > top - 0.5) continue;
+        this.above.set(id, h);
+        // Entering the band, or drawn clipped and its own height not in yet (release() let the others go),
+        // three renders at most: one whose inside never reports is drawn whole (keepAbove() then).
+        const age = this.clipped.has(id) ? (this.clipAge.get(id) ?? 0) + 1 : 0;
+        if ((!this.inBand.has(tid) || this.clipped.has(id)) && age < 3) {
+          this.clipNow.set(id, h);
+          this.clipAge.set(id, age);
+        } else this.clipAge.delete(id);
+      }
+    }
+    this.budget = { spans: CODE_SPANS, rows: CODE_ROWS, steps: ROW_BUDGET, fresh: true };
+    this.drawnNow = new Map();
+    this.heldNow = new Set();
+    this.subsNow = new Set();
+    const whole = new Map(), inBand = new Set();
+    // The turns in the view first (#59 bis: what the reader looks at is never held for a turn off it),
+    // each side in nearFirst's order.
+    const seen = (i) => (this.inView.has(this.turns[i].id) ? 0 : 1);
+    for (const i of win.nearFirst(from, to, this.focusTurn()).sort((a, b) => seen(a) - seen(b))) {
+      inBand.add(this.turns[i].id);
+      this.drawingTurn = this.turns[i].id; // codeBlock(): whose blocks keep their lines (steady)
+      whole.set(i, this.whole(t, cx, this.turns[i], i, keyed));
+    }
+    this.drawingTurn = null;
+    this.inBand = inBand;
+    this.held = this.heldNow;
+    this.codeRows = this.codeRowsNow;
+    this.budget = null;
+    this.subsDrawn();
+    return whole;
+  }
+
+  /**
+   * #59: where the view's top goes in this render. An anchor already placed (the timeline's jump, a press's
+   * keep), following, a reveal: as they say, what was kept apart let go. Else, the top an event measured
+   * (as painted), moved by what grew above it as painted (shift, keepAbove()), what the clipped turns drawn
+   * whole add (`add`, release()) and what a read upward put above it (placing: already in this.top,
+   * landRead()): each counted once. Answers { top, h } (a view tall, never past the end) or null.
+   */
+  placeTop(anchor, add) {
+    const placing = this.placing;
+    this.placing = false;
+    if (anchor || this.follow || this.reveal != null) {
+      this.shift = 0;
+      return anchor;
+    }
+    if (this.top == null || (!this.shift && !add && !placing)) return null;
+    const top = this.top + this.shift + add;
+    this.shift = 0;
+    this.top = top;
+    const end = this.rowsNow(true).reduce((y, [, h]) => y + (h ?? 0), TOP_INSET + 1) + add;
+    return { top, h: anchorH({ y: top, end, vh: this.vh > 0 ? this.vh : VH0 }) };
+  }
+
+  /**
+   * The scroll area's rows (body()): the head, the band, a box per turn near it, one spacer a run past
+   * that (turn-band.js rowPlan), each box posed at the height it is drawn at (boxH()). `childAt`: turn
+   * index -> its child, for a reveal (move(): childOf(i, 0)).
+   */
+  rowList(t, whole) {
+    const from = this.first(), to = this.end();
+    const children = [this.head(t)], childAt = new Map();
+    for (const r of rowPlan(this.turns.length, from, to)) {
+      if (r.to == null) {
+        childAt.set(r.i, children.length);
+        children.push(whole.get(r.i) ?? this.box(t, this.turns[r.i]));
+        continue;
+      }
+      let h = 0;
+      for (let i = r.i; i < r.to; i++) {
+        const turn = this.turns[i], b = this.boxH(turn);
+        this.posed.set(`kc-turn-${turn.id}`, b);
+        h += b;
+      }
+      children.push(this.spacer(`kc-turn-${this.turns[r.i].id}`, h)); // its first turn's id: wheel() measures from that top
+    }
+    return { children, childAt };
   }
 
   // Under a live turn: the agent at work, then what was typed meanwhile and not taken yet, in pale
@@ -2831,8 +3293,9 @@ export default class Chat extends View {
     if (e?.code === "missing") return this.empty(t, tr("empty.missing.title"), tr("empty.missing.text", { path: e.path }), true);
     if (e?.code === "failed") return this.empty(t, tr("empty.failed.title"), tr("empty.failed.text", { why: e.why }), true);
     if (!this.turns.length) return this.empty(t, tr("empty.empty.title"), tr("empty.empty.text"), true);
-    // The window (#59): [from, to), CAP turns at most, « Tours suivants » under it when it stops
-    // before the end (the live turn and its « travaille… » row are then below too).
+    // #59: every loaded turn is a row; the band [from, to) is drawn whole (CAP at most, turn-band.js), the
+    // others are boxes as tall as they were drawn. Picked before the rows' geometry below (geom()).
+    this.win = this.pickBand();
     const from = this.first(), to = this.end();
     this.pinned = this.reveal === "bottom" ? {} : null; // the rows described below: their first sizes are this reveal's (col())
     // The timeline's jump (#85), once the rows above its turn are measured: an anchor at the turn's top,
@@ -2841,7 +3304,7 @@ export default class Chat extends View {
     // out before the rows: its glide (glide(), timeline.js) draws them where the view was, under a new
     // generation (col()), and its cue's first layout lets them slide; gpui scrolls in that same
     // image, before painting them (div.rs prepaint, scroll_to_active_item).
-    let anchor = null;
+    let jumped = null;
     if (this.jump != null) {
       const g = this.geom();
       const y = g.tops.get(this.jump);
@@ -2850,42 +3313,20 @@ export default class Chat extends View {
         const h = anchorH({ y, end: g.end, vh: this.vh });
         const go = glide({ y, h, vh: this.vh, max: g.end + 8 - this.vh, ...this.glideFrom });
         this.top = go.top;
-        anchor = div().absolute().left(0).top(y).w(1).h(h);
+        jumped = { top: y, h };
         if (go.dy && !this.m.reduced) this.slide = { gen: (this.slide?.gen ?? 0) + 1, dy: go.dy, ready: false };
         this.jump = null;
         this.reveal = null;
         this.glideFrom = null;
       }
     }
-    // What one render may draw (code, A16's folded work) goes to the reader's turn first, then outwards
-    // (turn-window.js nearFirst): following the bottom, the last turn first, then up.
-    this.budget = { spans: CODE_SPANS, rows: CODE_ROWS, steps: ROW_BUDGET, fresh: true };
-    this.drawnNow = new Map();
-    this.heldNow = new Set();
-    this.subsNow = new Set();
-    const turns = [];
-    for (const i of win.nearFirst(from, to, this.focusTurn())) turns[i - from] = this.turn(t, cx, this.turns[i], i, keyed);
-    this.budget = null;
-    this.subsDrawn();
-    // A16: a press that moved the reader keeps its row where it was on screen, whatever the folds above
-    // it are drawn as now (keepY(): an anchor at the view's new top, as the jump's).
-    if (!anchor && this.reveal == null && this.keepRow) {
-      const k = this.keepY(this.drawnNow);
-      if (k) {
-        this.top = k.top;
-        anchor = div().absolute().left(0).top(k.top).w(1).h(k.h);
-      }
-    }
-    this.drawn = this.drawnNow;
-    this.drawnNow = null;
-    const children = [this.head(t), ...turns];
-    if (to < this.turns.length) children.push(this.later(t, this.turns.length - to));
-    else if (this.builtLive) children.push(this.working(t));
+    const { children, childAt, anchor } = this.lay(t, cx, keyed, jumped);
+    if (this.builtLive) children.push(this.working(t));
     // The 1 px end mark: revealing it shows the bottom of a last turn taller than the view.
     children.push(div().flex_none().h(1));
     const last = children.length - 1;
     if (anchor) {
-      children.push(anchor);
+      children.push(div().absolute().left(0).top(anchor.top).w(1).h(anchor.h));
       this.scroll.scroll_to_item(children.length - 1);
     }
     // The glide's cue (enter()'s way): drawn under one id until its first layout is seen, then the
@@ -2898,15 +3339,17 @@ export default class Chat extends View {
         cx.notify();
       }));
     if (this.reveal != null) {
-      this.scroll.scroll_to_item(this.reveal === "bottom" ? last : Math.min(this.reveal, last));
+      this.scroll.scroll_to_item(this.reveal === "bottom" ? last : Math.min(childAt.get(this.reveal - 1) ?? this.reveal, last));
       this.reveal = null;
       this.top = null; // the smallest scroll, from where gpui is: unknown until a wheel or a jump
+      this.shift = 0;
     }
     const rail = this.rail(t);
     return div().relative().flex_1().min_h(0).flex().flex_col()
       .child(v_flex().id("kc-scroll").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).pt(TOP_INSET).pb(8)
         .on_size_change((size, cx) => this.areaSized(size, cx))
         .on_scroll_wheel((ev, cx) => this.areaWheel(ev, cx))
+        .on_mouse_move((ev, cx) => this.seen(cx, null, ev))
         .on_mouse_down("left", (ev, cx) => this.areaPress(ev, cx))
         .children(children))
       .when(Boolean(rail), (el) => el.child(rail))

@@ -195,6 +195,33 @@ scenario("another turn's fold", () => {
   }
 });
 
+// ── #59 bis: a code block above the view keeps its lines when the band (the budget's order) moves ──
+scenario("code above the view, the band moving", () => {
+  // Four turns answering a 100-line block each, all opened (CODE_ROWS 240: the third is cut, the fourth empty).
+  const text = "voici\n\n```js\n" + many(100, (i) => `l${i}`).join("\n") + "\n```";
+  const c = chat(["A", "B", "C", "D"].flatMap((id, k) => [u(id, k * 10), said(`${id}s`, k * 10 + 1, text)]));
+  for (const t of c.turns) c.open.add(`k:${t.id}s:0#1`);
+  Object.assign(c, {
+    vh: 500, areaW: 1000, top: 62 + 2200 + 100, shift: 0, posed: new Map(), guesses: new WeakMap(), inBand: new Set(), held: new Set(),
+    inView: new Set(), wasInView: new Set(), steady: new Set(), codeRows: new Map(), codeRowsNow: new Map(),
+    clipNow: new Map(), clipped: new Map(), clipAge: new Map(), released: new Map(), subsNow: null, drawn: new Map(),
+  });
+  for (const [id, h] of [["kc-head", 42], ...c.turns.map((t) => [`kc-turn-${t.id}`, 2200])]) c.hts.set(id, h);
+  // The view [2362, 2862): A wholly above it, B in it. drawBand() as body() runs it, the lines each block drew.
+  const lines = (from, to) => {
+    c.win = { from, to };
+    const whole = c.drawBand({}, cx(), false);
+    c.drawn = c.drawnNow;
+    return new Map([...whole].map(([i, el]) => [c.turns[i].id, flat(el).filter((n) => callsOf(n, "whitespace_nowrap").length).length]));
+  };
+  const first = lines(0, 4);
+  assert.deepEqual([...first.values()].sort((a, b) => b - a), [100, 100, 40, 0], "the rows budget cut the blocks served last");
+  const a = first.get("A");
+  const second = lines(0, 2); // the band without C and D: A would be served sooner, its block longer
+  assert.equal(second.get("A"), a, `A, above the view, keeps its ${a} lines (not ${second.get("A")}): what is under it doesn't move`);
+  assert.equal(second.get("B"), first.get("B"), "B, in the view, too");
+});
+
 if (fails.length) {
   console.error(`budget.check: ${fails.length} failed\n${fails.join("\n")}`);
   process.exit(1);
