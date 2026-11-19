@@ -11,6 +11,7 @@ pilote le déclenchement côté Claude). On n'en garde que la première phrase :
 reste est du matériel de matching, pas de la doc pour un humain.
 """
 
+import json
 import os
 import re
 import sys
@@ -126,6 +127,33 @@ def table(rows, headers) -> list[str]:
     return out + [""]
 
 
+INTERPRETERS = {"bun", "bash", "sh", "zsh", "node", "deno", "python3"}
+
+
+def collect_hooks() -> list[str]:
+    """Les hooks déclarés dans settings.json (pas les fichiers du dossier hooks/, où vivent aussi
+    leurs checks et listes, et d'où un hook peut manquer) : « Événement : script », le nom du script
+    seulement, jamais son chemin."""
+    try:
+        cfg = json.loads((CLAUDE / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out = []
+    for event, groups in (cfg.get("hooks") or {}).items():
+        for group in groups or []:
+            for hook in (group or {}).get("hooks") or []:
+                words = [w.strip("'\"") for w in str(hook.get("command", "")).split()]
+                if not words:
+                    continue
+                paths = [Path(w).name for w in words if "/" in w]
+                if words[0] in INTERPRETERS or "/" in words[0]:
+                    script = paths[0] if paths else words[0]
+                else:
+                    script = " ".join([words[0], *paths[-1:]])
+                out.append(f"{event} : {script}")
+    return out
+
+
 def main() -> int:
     if not CLAUDE.is_dir():
         print(f"{CLAUDE} introuvable", file=sys.stderr)
@@ -135,8 +163,7 @@ def main() -> int:
     agents = collect_md("agents")
     styles = sorted(p.stem for p in (CLAUDE / "output-styles").glob("*")) \
         if (CLAUDE / "output-styles").is_dir() else []
-    hooks = sorted(p.name for p in (CLAUDE / "hooks").glob("*")) \
-        if (CLAUDE / "hooks").is_dir() else []
+    hooks = collect_hooks()
 
     b = [
         "# Claude Code : inventaire de la config",
