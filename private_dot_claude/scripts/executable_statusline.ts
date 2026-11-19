@@ -268,20 +268,26 @@ if (process.env.HC_TERMINAL_ID) {
     lines_added: data.cost?.total_lines_added ?? null, lines_removed: data.cost?.total_lines_removed ?? null,
     updated_at: now,
   });
-  // Every session writes the account's windows from ITS last API response, so an idle one would put
-  // an older reading back (45 % -> 38 % -> 45 %). Within a window usage only rises: keep the later
-  // window, and in the same window the higher reading.
+  // Every session writes the account's windows from ITS last API response at each render, so an idle
+  // one replays the same reading again and again (45 % -> 38 % -> 45 %). A reading is fresh when it is
+  // this session's first, or differs from the one it wrote last (kept in its session cache): a new API
+  // response. In the same window (resets_at), a fresh reading replaces the shown one, even lower: a
+  // reset on claude.ai lowers the week and keeps its resets_at, so "usage only rises" doesn't hold. A
+  // replayed reading never replaces anything. A later window always wins, an earlier one never comes back.
+  // Checked by statusline-quota.test.sh.
   if (data.rate_limits) {
     const file = join(CACHE_DIR, "herdr-quota.json");
     const prev = readJson(file) ?? {};
+    const was = sessionCache?.quota;
     const merged: Record<string, any> = {};
     for (const [k, cur] of Object.entries<any>(data.rate_limits)) {
       const old = prev[k];
-      const keepOld = cur && old && (old.resets_at > cur.resets_at
-        || (old.resets_at === cur.resets_at && (old.used_percentage ?? 0) > (cur.used_percentage ?? 0)));
+      const fresh = !was || JSON.stringify(was[k] ?? null) !== JSON.stringify(cur ?? null);
+      const keepOld = cur && old && (old.resets_at > cur.resets_at || (old.resets_at === cur.resets_at && !fresh));
       merged[k] = keepOld ? old : cur;
     }
     writeJson(file, { ...merged, updated_at: now });
+    saveCache({ quota: data.rate_limits });
   }
 }
 
