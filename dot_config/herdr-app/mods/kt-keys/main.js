@@ -17,6 +17,8 @@ import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, ink, fade, sheet, leave, sharpen } from "./motion.js";
 import { makeT, setLang } from "./i18n.js";
 import strings from "./strings.js";
+// The keys' one word and their keycaps, shared with every mod that shows a key (shortcuts.js, KEYMAP.md).
+import { actionKey, kbd } from "./shortcuts.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -36,17 +38,6 @@ const ORDER = ["pane.go:left", "pane.go:right", "pane.go:down", "pane.go:up", "p
   "layout.select:workflow", "layout.select:gwm", "layout.select:notes", "layout.toggle:side", "layout.toggle:panel", "kt-head.panel:files",
   "kt-head.panel:diff", "kt-head.panel:history", "kt-head.panel:flow", "kt-head.panel:crosstalk", "mod.open:kt-keys", "mod.open:kt-mods",
   "app.settings", "send"];
-function actionKey(action) {
-  if (action.startsWith("send:")) return "send";
-  if (!action.startsWith("{")) return /^tab\.select:/.test(action) ? "tab.select" : action;
-  try {
-    const o = JSON.parse(action);
-    const arg = o.args?.child ?? o.args?.name ?? o.args?.id;
-    return arg ? `${o.command}:${arg}` : o.command;
-  } catch {
-    return action;
-  }
-}
 
 // The groups held here: [keys, what, where]. Keys: names separated by spaces, "/" between choices.
 // A cell naming a key of strings.js (r.*, sb.*, pg.*, pn.*, md.*) is translated (cell()); the rest are
@@ -305,14 +296,6 @@ export default class Keys extends View {
     cx.notify();
   }
 
-  kbds(t, keys) {
-    return h_flex().w(230).flex_none().gap(4).items_center().flex_wrap()
-      .children(keys.split(" ").filter(Boolean).map((k) => (k === "/"
-        ? div().text_size(11).text_color(t.dim).child("/")
-        : div().flex_none().h(20).px(7).flex().items_center().rounded(6).border(1).border_color(t.border).bg(t.background)
-          .font_family(MONO).text_size(11).text_color(t.foreground).child(k))));
-  }
-
   render() {
     const t = theme();
     const rows = (this.rowsShown = this.rows());
@@ -341,7 +324,9 @@ export default class Keys extends View {
         .when(on || i === this.inkFrom, (el) => el.child(fade(m, div().id(`kk-row-ink-${i}`).absolute().top(-1).left(-1).right(-1).bottom(-1).rounded(12)
           .border(1).border_color(alpha(t.accent, "66")).bg(alpha(t.accent, "24")), on)))
         .on_click((_e, cx) => { this.cur = i; cx.notify(); })
-        .child(this.kbds(t, r.keys))
+        // shortcuts.js' keycaps, wrapping in 230 px: Global's keys.json keys as everywhere, the table's vim keys
+        // as written (g and G differ).
+        .child(kbd(t, r.keys, { vim: r.g !== "global", h: 20 }).w(230).flex_wrap())
         .child(div().flex_1().min_w(0).text_size(12.5).text_color(on ? t.foreground : t.muted).child(r.what))
         .when(Boolean(r.where), (el) => el.child(div().flex_none().h(18).px(7).flex().items_center().rounded_full().border(1)
           .border_color(alpha(t.accent, "4d")).bg(alpha(t.accent, "1a")).font_family(MONO).text_size(9.5).text_color(t.accent).child(r.where.toUpperCase()))));

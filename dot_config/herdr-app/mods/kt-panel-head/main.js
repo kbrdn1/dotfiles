@@ -6,8 +6,16 @@
 
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { run, layout, theme, shared } from "herdr";
+import { run, layout, theme, shared, keys } from "herdr";
 import { motionState, frame, ink } from "./motion.js";
+// Copied byte for byte from mods/kt-keys/shortcuts.js: each segment's key (kt-head.panel:<id>, read from
+// keys()) in its tooltip, and close's (layout.toggle:panel); the segments have no room for keycaps.
+import { shortcut, tip } from "./shortcuts.js";
+// Copied byte for byte from mods/kt-keys/i18n.js (I18N.md).
+import { makeT } from "./i18n.js";
+import strings from "./strings.js";
+
+const tr = makeT(strings);
 
 const SURFACES = [
   ["files", "Files", "mods/kt-threads/folder-tree.svg"],
@@ -95,7 +103,7 @@ export default class PanelHead extends View {
               .text_color(on ? t.accent : t.muted)
               .cursor_pointer()
               .hover((s) => s.text_color(on ? t.accent : t.foreground))
-              .tooltip(label)
+              .tooltip(tip(label, shortcut(keys(), shared("layout"), `kt-head.panel:${id}`)))
               .on_click(() => run("layout.select", { stack: "panel-body", child: id }))
               .child(svg(icon).size(14))
               .when(on || wide, (el) => el.child(label.toUpperCase())),
@@ -113,6 +121,7 @@ export default class PanelHead extends View {
             .text_color(t.dim)
             .cursor_pointer()
             .hover((s) => s.bg(t.hover).text_color(t.foreground))
+            .tooltip(tip(tr("close"), shortcut(keys(), shared("layout"), "layout.toggle:panel")))
             .on_click(() => run("layout.toggle", { id: "panel" }))
             .child(svg("mods/kt-threads/x.svg").size(14)),
         ),

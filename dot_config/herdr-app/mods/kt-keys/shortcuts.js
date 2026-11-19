@@ -18,7 +18,8 @@
 // ("ctrl-b", then "i") a little apart, "/" between choices as plain text. Modifiers and named keys are
 // glyphs (⌃ ⌥ ⇧ ⌘ ↵ ⇥ ⎋ ␣ ⌫ ← → ↑ ↓), drawn in the layout's UI font (Inter): Monaspace Krypton, the mono
 // font, has only the arrows and ↩ (fc-list, 2026-11-19). The rest in mono, a letter as a capital, unless
-// `vim` (the help's vim keys, where g and G differ): then a key alone stays as written.
+// `vim` (the help's vim keys, where g and G differ): then a key alone stays as written. A tooltip takes text
+// only (gpui-kit): pretty() writes the same glyphs there (⌃B F), in the shell's font (Inter, which has them).
 
 import { div } from "gpui-kit";
 
@@ -64,11 +65,10 @@ export function capsOf(chord, { vim = false } = {}) {
   return [...MODS.filter((m) => mods.includes(m)).map((m) => ({ text: GLYPH[m], glyph: true })), last];
 }
 
-/** KEYMAP.md's notation, for text (tooltips): a cmd chord as the Mac writes it (⇧⌘W), the rest as keys.json
- *  does (ctrl-b i). */
+/** The keycaps as text, for what takes no element (a tooltip is a string): each chord's glyphs side by side,
+ *  the chords apart, as kbd() draws them ("ctrl-b f" is ⌃B F, "cmd-shift-w" ⇧⌘W). */
 export function pretty(keys) {
-  return String(keys ?? "").split(" ").filter(Boolean).map((chord) =>
-    /(^|-)cmd-/.test(chord) ? capsOf(chord).map((c) => c.text).join("") : chord).join(" ");
+  return String(keys ?? "").split(" ").filter(Boolean).map((chord) => capsOf(chord).map((c) => c.text).join("")).join(" ");
 }
 
 /** The keycaps of `keys` ("ctrl-b i", "cmd-t", "j / k"): an empty element when there are none. `h`: a cap's
@@ -83,5 +83,5 @@ export function kbd(t, keys, { vim = false, h = 16 } = {}) {
       : div().flex().flex_row().flex_none().items_center().gap(2).children(capsOf(chord, { vim }).map(cap)))));
 }
 
-/** A tooltip with its key after it: "Panneau latéral · ctrl-b p". */
+/** A tooltip with its key after it: "Panneau latéral · ⌃B P". */
 export const tip = (text, keys) => (keys ? `${text} · ${pretty(keys)}` : text);

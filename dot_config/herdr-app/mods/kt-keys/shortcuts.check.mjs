@@ -1,7 +1,7 @@
 // bun ~/.config/herdr-app/mods/kt-keys/shortcuts.check.mjs: shortcuts.js's actions in one word (actionKey),
 // which key it shows (the layout's section before global, a global key the layout binds again left out,
-// ctrl-b before the others, the first action that has one, "" when none), a chord's keys (capsOf), KEYMAP.md's
-// notation for text (pretty), the keycaps (kbd: glyphs in the UI font, the rest in mono, sequences apart, "/"
+// ctrl-b before the others, the first action that has one, "" when none), a chord's keys (capsOf), the same
+// glyphs as text (pretty), the keycaps (kbd: glyphs in the UI font, the rest in mono, sequences apart, "/"
 // as text) and the tooltip, with gpui-kit mocked. Not loaded by Herdr.
 import assert from "node:assert/strict";
 import { plugin } from "bun";
@@ -61,7 +61,7 @@ assert.equal(shortcut(binds, "kbrdn-threads", "tab.rename"), "ctrl-b shift-t", "
 assert.equal(shortcut(binds, "kbrdn-threads", "pane.split:right"), "ctrl-b v", "the layout's before global's cmd-d");
 // global's cmd-w is the layout's kt-head.close-tab here: tab.close has no key of its own.
 assert.equal(shortcut(binds, "kbrdn-threads", "tab.close"), "");
-// a global key nothing rebinds still shows, in KEYMAP's notation through hint / pretty.
+// a global key nothing rebinds still shows.
 assert.equal(shortcut(binds, "kbrdn-threads", "app.help"), "cmd-/");
 // several actions: the first that has a key; an array works the same.
 assert.equal(shortcut(binds, "kbrdn-threads", "tab.close", "kt-head.close-tab"), "ctrl-b shift-x");
@@ -105,9 +105,10 @@ assert.equal(texts("ctrl-d", { vim: true }), "⌃ D", "a chord's key is a capita
 assert.deepEqual(capsOf("cmd-t").map((c) => c.glyph), [true, false]);
 assert.deepEqual(capsOf("enter").map((c) => c.glyph), [true]);
 
-// pretty, for text: cmd chords as the Mac writes them, the rest as keys.json (KEYMAP.md's notation).
-assert.equal(pretty("ctrl-b i"), "ctrl-b i");
-assert.equal(pretty("ctrl-b shift-o"), "ctrl-b shift-o");
+// pretty, for text (a tooltip): the keycaps' glyphs, a chord's side by side, the chords apart; no raw ctrl-b.
+assert.equal(pretty("ctrl-b i"), "⌃B I");
+assert.equal(pretty("ctrl-b shift-o"), "⌃B ⇧O");
+assert.equal(pretty("ctrl-b ?"), "⌃B ?");
 assert.equal(pretty("cmd-t"), "⌘T");
 assert.equal(pretty("cmd-shift-w"), "⇧⌘W");
 assert.equal(pretty("cmd-alt-left"), "⌥⌘←");
@@ -116,8 +117,9 @@ assert.equal(pretty("cmd--"), "⌘-");
 assert.equal(pretty("cmd-+"), "⌘+");
 assert.equal(pretty("cmd-shift-/"), "⇧⌘/");
 assert.equal(pretty("cmd-shift-enter"), "⇧⌘↵");
-assert.equal(pretty("f2"), "f2");
-assert.equal(pretty("shift-f2"), "shift-f2");
+assert.equal(pretty("f2"), "F2");
+assert.equal(pretty("shift-f2"), "⇧F2");
+assert.equal(pretty("ctrl-tab"), "⌃⇥");
 assert.equal(pretty(""), "");
 assert.equal(pretty(undefined), "");
 
@@ -146,7 +148,7 @@ assert.equal(kbd(t, "").kids.length, 0, "no key: nothing drawn");
 assert.equal(kbd(t, undefined).kids.length, 0);
 
 // tip: the key after the words, or the words alone.
-assert.equal(tip("Panneau latéral", "ctrl-b p"), "Panneau latéral · ctrl-b p");
+assert.equal(tip("Panneau latéral", "ctrl-b p"), "Panneau latéral · ⌃B P");
 assert.equal(tip("Fermer", "cmd-w"), "Fermer · ⌘W");
 assert.equal(tip("Détails", ""), "Détails");
 
