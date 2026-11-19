@@ -15,7 +15,8 @@
 // Installer (issue #70): an inspected plugin opens kt-plugins' dialog on it (lot 3), an MCP server
 // kt-mcp's form filled with public values only (lot 4), a skill kt-skills' « Depuis GitHub » with the
 // inspected commit (lot 5); an aitmpl loop: « Copier le /loop », or « Adapter en me:loop » through
-// kt-automation's « Créer un loop » (lot 7, loops.js). kt-market itself runs nothing.
+// kt-automation's « Créer un loop » (lot 7, loops.js); a herdr.dev mod: a Claude thread in plan mode
+// with herdr.js' validated instruction, shown in full first (lot 6). kt-market itself runs nothing.
 // Keys (vim.js): the page opens typing in the filter (INSERT: ctrl-n/p ↓ ↑ move, enter opens the
 // detail, esc NORMAL). NORMAL: j/k gg/G ctrl-d/u (j past the last row: the next page; k before the
 // first: the previous page, then the filter), / the filter, tab / shift-tab the type, enter/o/l the
@@ -41,6 +42,7 @@ import { docOf, mdState, view, tabs, target } from "./markdown.js";
 import { makeT, relative, compact } from "./i18n.js";
 import { TYPES, SOURCES, levelOf, code, mcpForm, skillForm } from "./model.js";
 import { loopForm, loopPrompt } from "./loops.js";
+import { threadArgs } from "./herdr.js";
 import strings from "./strings.js";
 
 const tr = makeT(strings);
@@ -328,7 +330,23 @@ export default class Market extends View {
       const f = loopForm(this.loopItem(x, d), d, activeSpace()?.id ?? null);
       if (!f) return;
       openOverlay({ mod: "kt-automation", kind: "dialog", width: 1, height: 1, frame: "none", modal: true, props: f });
+    } else if (x.type === "herdr-mod" && d.plan.route === "herdr-thread") {
+      // A herdr.dev mod (lot 6): a Claude thread in plan mode, in ~/.config/herdr-app, with herdr.js'
+      // validated instruction (shown in full above the button). This Mac only: the shown space local.
+      const s = activeSpace();
+      const a = s && !s.machine ? this.herdrArgs(d, s.id) : null;
+      if (!a) return;
+      run("tab.new", a);
+      run("layout.select", { stack: "view", child: "thread" });
     }
+  }
+
+  // The herdr thread's tab.new (herdr.js), from the inspection: the repo, its commit, what was found,
+  // this Mac's mods it would take (a clash flag's names). null when a value fails its pattern.
+  herdrArgs(d, space) {
+    const clash = (d?.flags ?? []).find((f) => /^(mod|name)-clash:/.test(f));
+    const clashes = clash ? clash.slice(clash.indexOf(":") + 1).split(",").filter(Boolean) : [];
+    return threadArgs({ src: d?.src, head: d?.head, findings: d?.findings ?? [], clashes }, space, appHome());
   }
 
   // A loop row with its inspection's repo (owner, name, path): what loops.js validates and names.
@@ -352,7 +370,8 @@ export default class Market extends View {
     if (!p || (mine && mine.state !== "present")) return false;
     return (x.type === "plugin" && p.route === "kt-plugins") || (x.type === "mcp" && p.route === "kt-mcp" && Boolean(mcpForm(x.name, d.variants?.[0])))
       || (x.type === "skill" && p.route === "kt-skills" && Boolean(skillForm(p, d.head)))
-      || (x.type === "loop" && p.route === "loop-session" && Boolean(loopForm(this.loopItem(x, d), d, null)));
+      || (x.type === "loop" && p.route === "loop-session" && Boolean(loopForm(this.loopItem(x, d), d, null)))
+      || (x.type === "herdr-mod" && p.route === "herdr-thread" && !activeSpace()?.machine && Boolean(this.herdrArgs(d, "here")));
   }
 
   // a (NORMAL): Installer on the detail's item (else the cursor's); not inspected yet: inspect first,
@@ -721,8 +740,11 @@ export default class Market extends View {
     const have = Boolean(mine) && mine.state !== "present";
     const installable = this.installable(x, d);
     const loop = x.type === "loop";
-    const note = loop ? "loopNote" : x.type === "mcp" ? "installNoteMcp" : x.type === "skill" ? "installNoteSkill" : p?.addMarket ? "installCommunity" : "installNote";
-    const tip = loop ? "loopAdaptTip" : x.type === "mcp" ? "installTipMcp" : x.type === "skill" ? "installTipSkill" : "installTip";
+    const herdr = x.type === "herdr-mod";
+    // Lot 6: the thread's instruction, shown in full before its button (null: a value failed its pattern).
+    const herdrTask = herdr && p?.route === "herdr-thread" ? this.herdrArgs(d, "here")?.task ?? null : null;
+    const note = loop ? "loopNote" : herdr ? "herdrNote" : x.type === "mcp" ? "installNoteMcp" : x.type === "skill" ? "installNoteSkill" : p?.addMarket ? "installCommunity" : "installNote";
+    const tip = loop ? "loopAdaptTip" : herdr ? "herdrTip" : x.type === "mcp" ? "installTipMcp" : x.type === "skill" ? "installTipSkill" : "installTip";
     const lic = d.repoFacts?.license && d.repoFacts.license !== "NOASSERTION" ? d.repoFacts.license : null;
     const doc = d.readme?.text ? docOf(this.md, noImages(d.readme.text)) : null;
     this.docShown = Boolean(doc);
@@ -738,6 +760,15 @@ export default class Market extends View {
         .child(this.eyebrow(t, tr("plan.title")))
         .child(p?.route ? this.block(t, p.lines.length ? p.lines.join("\n") : tr("plan.noLines")) : this.block(t, tr(`why.${p?.why}`) || tr("why.no-route"), t.blocked))
         .when(Boolean(p?.writes?.length), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.writes", { list: p.writes.join(", ") }))))
+        // A herdr.dev mod (lot 6): the thread's instruction in full, then the warning, before the button.
+        .when(herdrTask != null, (el) => el.child(v_flex().pt(4).gap(6)
+          .child(this.eyebrow(t, tr("herdrTask"), t.dim))
+          .child(this.block(t, herdrTask))
+          .child(h_flex().gap(8).items_start().px(12).py(10).rounded(12).border(1).border_color(alpha(t.ansi3, "66"))
+            .child(svg(I("circle-alert")).size(13).flex_none().mt(2).text_color(t.ansi3))
+            .child(div().flex_1().min_w(0).text_size(12).line_height("18px").text_color(t.foreground).child(tr("herdrWarn"))))
+          .when(Boolean(activeSpace()?.machine), (e2) => e2.child(div().text_size(11.5).text_color(t.dim).child(tr("herdrLocalOnly"))))))
+        .when(herdr && p?.route === "herdr-thread" && herdrTask == null, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("herdrNoTask"))))
         // A loop (lot 7): « Copier le /loop » (the recipe's own command) beside « Adapter en me:loop ».
         .when(loop && Boolean(loopPrompt(d)), (el) => el.child(h_flex().pt(2).gap(10).items_center()
           .child(this.chip(t, "ktmk-loop-copy", tr("loopCopy"), false, (cx) => this.copyLoop(d, cx), tr("loopCopyTip")))))

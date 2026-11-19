@@ -463,7 +463,7 @@ export function plan(it, extra = {}) {
   if (it.type === "herdr-mod") {
     const names = extra.mods ?? [];
     // i18n: tech
-    return { route: it.route, why: null, lines: [`tab.new claude (AGENTS.md: ${it.repo.owner}/${it.repo.name}@${String(it.pin.value ?? "").slice(0, 12)})`],
+    return { route: it.route, why: null, lines: [`tab.new claude --permission-mode plan (AGENTS.md: ${it.repo.owner}/${it.repo.name}@${String(it.pin.value ?? "").slice(0, 12)})`],
       writes: names.map((n) => `~/.config/herdr-app/mods/${n}`) };
   }
   if (it.type === "loop") return { route: it.route, why: null, lines: extra.prompt ? [extra.prompt.split("\n")[0]] : [], writes: [] };
