@@ -121,6 +121,12 @@ const id = base.turns[k].id;
   assert.ok(transitions([land]).includes("top") && transitions([land]).includes("opacity"), "the rise and the fade are native transitions");
   const box = nodes.find((n) => n.kids.some((kid) => kid.__node === land));
   assert.ok(box && callsOf(box, "overflow_hidden").length, "its box clips: the rise goes over no neighbour");
+  // Cold review, point 3: clipped below, not on the sides. The box keeps room left and right, more than
+  // a row's own left offset (a sub-agent's head, ml(-6); a copy button, ml(-4)).
+  const [room] = callsOf(box, "mx").at(-1) ?? [0];
+  assert.ok(room <= -6 && callsOf(box, "px").at(-1)?.[0] === -room, "its box has room on its sides: a row drawn out to the left keeps its edge");
+  const holder = nodes.find((n) => n.kids.some((kid) => kid.__node === box));
+  assert.equal(holder?.kind, "v_flex", "held by a column flex, which stretches it: its margins widen it (a block would only shift it)");
   assert.ok(!transitions(nodes).includes("height"), "no height moves: the scroll's height stays, a followed bottom stays put");
   // The next render after its first layout: in place, and no longer fresh.
   c.m = frame(c.motion, false);
@@ -376,6 +382,57 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.deepEqual([r.res.why, r.enter], ["keys-typed", false], "the prompt doesn't read it: never Enter (typed, left there)");
   hcFake = async () => ({});
   agentsFake = () => [];
+}
+
+// ── Cold review, point 4: sub-agents launched together, one branch each ─────
+{
+  const c = chat();
+  const run = (k) => ({ role: "tool", id: `tu-${k}`, name: "Agent", kind: "agent", state: "ok", input: { description: `agent ${k}` }, result: { agent: { id: `a${k}`, name: `agent ${k}` } } });
+  // A fold made of one group of three runs (chat-model.js items() groups consecutive ones), then the answer.
+  const turn = { id: "tg", user: null, blocks: [], live: false, fold: { start: 0, end: 0 },
+    items: [{ type: "subagents", id: "sg", runs: [run(1), run(2), run(3)] }, { type: "block", id: "ans", block: { role: "prose", id: "ans", text: "fin" } }] };
+  c.turns = [turn];
+  c.win = { from: 0, to: 1 };
+  // The fold closed (the report's case: only the sub-agents hang under it), then opened.
+  for (const opened of [false, true]) {
+    if (opened) c.open.add("f:tg");
+    const nodes = flat(c.turn(T, cx(), turn, 0, false));
+    const bends = nodes.filter((n) => callsOf(n, "rounded_bl").some(([r]) => r === 8));
+    assert.equal(bends.length, 3, `three sub-agents, three branches, not one for the group (fold ${opened ? "open" : "closed"})`);
+    const below = nodes.filter((n) => callsOf(n, "border_l").length && callsOf(n, "bottom").length && !callsOf(n, "rounded_bl").length && callsOf(n, "top").some(([v]) => v === 10));
+    assert.equal(below.length, 2, "the trunk goes on under the first two, ends at the last (the fold's last item)");
+  }
+}
+
+// ── Cold review, point 5: back on an agent, no ledge of its own fades from before its data is read ──
+{
+  const c = completing(chat(), "");
+  Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, bridge: null, plan: null, tasksOpen: new Set(), agentsOpen: new Set() });
+  const on = (address) => ({ agent: { address, status: "idle", program: "claude" } });
+  const todos = { done: 1, total: 2, current: "B", items: [{ content: "A", status: "completed" }, { content: "B", status: "pending" }] };
+  const ledgeOf = (nodes, address) => nodes.find((n) => callsOf(n, "id").some(([v]) => v === `kc-tasks-${address}-ledge`));
+  // What readBridge() sets: the data read, and whose it is.
+  const read = (address, data) => Object.assign(c, { bridgeFor: address, bridge: data });
+  const show = (address) => flat(c.composerView(T, on(address), null, cx()));
+  read("tA", { todos });
+  assert.ok(ledgeOf(show("tA"), "tA"), "tA's tasks on their ledge");
+  // Over to tB (no tasks): its first render still has tA's data (not shown: bridgeOf()), then its own.
+  show("tB");
+  read("tB", {});
+  show("tB");
+  // Back on tA: its first render has tB's data, tA's own isn't read yet.
+  assert.equal(ledgeOf(show("tA"), "tA"), undefined, "back on tA, its old ledge isn't drawn (it would hold its height, unseen)");
+  assert.equal(c.going.size, 0, "and nothing goes out");
+  // Its own read, its tasks done meanwhile: still nothing comes, nothing fades from before tB.
+  read("tA", {});
+  assert.equal(ledgeOf(show("tA"), "tA"), undefined, "tA read, no tasks: no ledge from before tB fades out");
+  assert.equal(c.going.size, 0);
+  // Witness, the same agent all along (lot B): its tasks come, then go, and the ledge fades out where it stood.
+  read("tA", { todos });
+  assert.ok(ledgeOf(show("tA"), "tA"));
+  read("tA", {});
+  assert.ok(ledgeOf(show("tA"), "tA"), "on the same agent, the ledge whose tasks went fades out where it stood");
+  assert.ok(c.going.has("kc-tasks-led-tA"));
 }
 
 // ── Reduced motion: none of it ──────────────────────────────────────────────

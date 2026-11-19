@@ -160,6 +160,7 @@ const COLUMN = 832; // theme.rs:8, the reading column
 const COLUMN_PAD = 23; // theme.rs:12, its sides (the composer's 10 + 1 + 12: prose lines up with its text)
 const TOP_INSET = 20; // transcript.rs:208
 const SCROLLBAR_W = 16; // the band on the scroll area's right edge where a press is taken for the scrollbar's
+const ROOM = 8; // #92: the room a turn's clipping box keeps on its sides (landing()): more than a row's ml(-6)
 const BUBBLE_MAX = 576; // transcript.rs:217, PROMPT_BUBBLE_MAX
 const BUBBLE_ROW_PAD = 56; // transcript.rs:5590, the bubble's row: pl 56, justify_end
 const ERR = "#f87171"; // tools.rs:436-545, an error's words
@@ -560,7 +561,12 @@ export default class Chat extends View {
     const wid = `kc-in-${id}`;
     if (this.fresh.has(key) && this.m.shown.has(wid)) this.fresh.delete(key);
     if (!this.fresh.has(key)) this.m.shown.add(wid);
-    return div().w_full().min_w(0).overflow_hidden().child(enter(this.m, el, wid, { dy: DY.row }));
+    // The rise is clipped below, never on the sides: the clipping box has ROOM px of room left and right
+    // (a row drawn a little out to the left keeps its edge: a sub-agent's head, ml(-6); a copy button,
+    // ml(-4)). It is stretched by a column flex, as those rows are: its negative margins widen it.
+    // Not overflow_y_hidden: gpui's mask still cuts x at the element's bounds (style.rs overflow_mask).
+    // Cold review, point 3.
+    return v_flex().w_full().min_w(0).child(div().mx(-ROOM).px(ROOM).min_w(0).overflow_hidden().child(enter(this.m, el, wid, { dy: DY.row })));
   }
 
   /**
@@ -2032,8 +2038,12 @@ export default class Chat extends View {
 
   // transcript/tasks.rs:358-549: a sub-agent's row, py 4 px 6, radius 6, a 0.08 ground when hovered or
   // open: its mark in its color, its name at ink 0.75, model and state at 12 ink 0.4, a chevron.
-  subagents(t, item) {
-    return v_flex().min_w(0).children(item.runs.map((b) => {
+  // `branch` (#90, in a fold's tree): { last, rest }, each row on its own branch, the last row's ending the
+  // trunk when `last`; its head keeps its ml(-6) inside the branch's box.
+  subagents(t, item, branch = null) {
+    const n = item.runs.length;
+    const onBranch = (el, k) => (branch ? hang(t, v_flex().min_w(0).child(el), { h: 28, last: branch.last && k === n - 1, rest: branch.rest }) : el);
+    const row = (b) => {
       const a = b.result?.agent ?? {};
       const c = agentColor(t, a.color);
       const id = `r:${b.id}`;
@@ -2052,7 +2062,8 @@ export default class Chat extends View {
         ? v_flex().min_w(0).child(head).child(div().relative().pl(20).pb(8)
           .child(div().absolute().left(6).top(0).bottom(8).w(1).bg(ink(t, 0.14))).child(this.mono(t, b.result.text)))
         : head;
-    }));
+    };
+    return v_flex().min_w(0).children(item.runs.map((b, k) => onBranch(row(b), k)));
   }
 
   // tools.rs:84-136: a milestone (compaction, interruption, a background task): an icon of 14 at ink
@@ -2267,7 +2278,7 @@ export default class Chat extends View {
 
   item(t, cx, it, ctx) {
     if (it.type === "activity") return this.activity(t, it, ctx.live);
-    if (it.type === "subagents") return this.subagents(t, it);
+    if (it.type === "subagents") return this.subagents(t, it, ctx.branch);
     const b = it.block;
     if (b.role === "prose") return this.prose(t, cx, b, ctx.top);
     if (b.role === "notice") return this.notice(t, b);
@@ -2446,8 +2457,8 @@ export default class Chat extends View {
       if ((!inFold(n) || tree.kids.includes(n)) && it.type === "block" && it.block.role === "prose") top = 16;
     });
     // #92: the live turn's items fade in where they land as they come (landing()).
-    const draw = (it, n) => {
-      const el = this.item(t, cx, it, { live: turn.live, top: tops[n] });
+    const draw = (it, n, branch = null) => {
+      const el = this.item(t, cx, it, { live: turn.live, top: tops[n], branch });
       return el && turn.live ? this.landing(div().w_full().min_w(0).child(el), it.id, it.id) : el;
     };
     // #92: the fold's items open and close on their height, in order (motion.js rows()), right after the
@@ -2457,6 +2468,9 @@ export default class Chat extends View {
     const moved = this.foldAt?.id === turn.id && Date.now() - this.foldAt.at < 1000 && !(this.follow && i === this.end() - 1);
     const kids = f ? rows(moved ? this.m : still(this.m), cx, `kc-fk-${turn.id}`, tree.kids, (n) => String(turn.items[n]?.id ?? n), (n) => {
       const it = turn.items[n];
+      // Sub-agents launched together are one item (chat-model.js groups the runs): one branch each, the
+      // last one's ending the trunk when the group is the fold's last. Cold review, point 4.
+      if (it?.type === "subagents") return draw(it, n, { last: n === tree.last, rest }) ?? div();
       const el = it ? draw(it, n) : null;
       if (!el) return div();
       const prose = it.type === "block" && it.block.role === "prose";
@@ -2744,15 +2758,18 @@ export default class Chat extends View {
     // #92: a ledge whose data went (its tasks all done, its last sub-agent gone) fades out where it
     // stood, its last state kept, then goes (goOut()); its data coming back meanwhile cancels that.
     const keyA = a?.address ?? "";
+    // Another agent shown: the last one's ledges are forgotten. Back on an agent, its old ledge would
+    // otherwise fade out where it stood, its height held unseen (cold review, point 5).
+    if (this.lastLedge.key !== keyA) this.lastLedge = { key: keyA };
     const ledge = (kind, now, draw) => {
       const gone = `kc-${kind}-led-${keyA}`;
       if (now) {
         this.going.delete(gone);
-        this.lastLedge[kind] = { key: keyA, ...now };
+        this.lastLedge[kind] = now;
         return draw(now);
       }
       const l = this.lastLedge[kind];
-      if (!l || l.key !== keyA) return null;
+      if (!l) return null;
       this.goOut(cx, gone, () => { if (this.lastLedge[kind] === l) this.lastLedge[kind] = null; }, { inRender: true });
       return this.m.reduced ? null : draw(l);
     };
