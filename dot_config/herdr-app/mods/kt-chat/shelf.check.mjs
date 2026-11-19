@@ -50,6 +50,25 @@ assert.equal(w({ status: "working", shown: false }), false, "this face hidden");
 assert.equal(w({ status: "working", address: null }), false, "no agent (a fixed file)");
 assert.equal(w({ status: "working", address: "vps/t3" }), false, "another machine's agent: its file is there");
 
+assert.equal(w({ tasks: true }), true, "at rest, a tasks' ledge shown (a session's plan, kept by hand): read on");
+assert.equal(w({ tasks: true, shown: false }), false);
+
+// ── Whose tasks: the bridge's first, else the session's plan ────────────────
+const plan = { source: "lead", updatedAt: "2026-11-19T09:17:00+01:00", done: 1, total: 2, current: "B", items: [{ subject: "A", status: "completed" }, { subject: "B", activeForm: "Fait B", status: "in_progress" }] };
+const live = { done: 0, total: 1, items: [{ content: "C", status: "pending" }] };
+assert.deepEqual(S.tasksOf(live, plan), { todos: live, plan: false, at: null }, "the bridge has todos: they win, the plan is not read");
+assert.deepEqual(S.tasksOf(undefined, plan), { todos: plan, plan: true, at: Date.parse("2026-11-19T08:17:00Z") }, "no todos (no TaskCreate in this session): the plan, with its age");
+assert.deepEqual(S.tasksOf({ done: 0, total: 0, items: [] }, plan).plan, true, "an empty todos is none: the plan");
+assert.equal(S.tasksOf(undefined, { items: "nope" }), null, "a plan without its shape is ignored");
+assert.equal(S.tasksOf(undefined, "broken"), null);
+assert.equal(S.tasksOf(undefined, { items: [] }), null, "an empty plan: nothing");
+assert.equal(S.tasksOf(undefined, null), null);
+assert.equal(S.tasksOf(undefined, { ...plan, updatedAt: "jamais" }).at, null, "an unreadable date: no age");
+const fromPlan = S.tasksLedge(S.tasksOf(undefined, plan).todos);
+assert.equal(fromPlan.current, "Fait B", "a plan's item reads by its subject, its activeForm while it runs");
+assert.deepEqual(fromPlan.rows.map(S.say), ["A", "Fait B"]);
+assert.equal(S.tasksLedge(S.tasksOf(undefined, { ...plan, done: 2, items: plan.items.map((x) => ({ ...x, status: "completed" })) }).todos), null, "a plan all done: hidden too");
+
 // ── The tasks' ledge ────────────────────────────────────────────────────────
 const item = (content, status, activeForm) => ({ content, status, ...(activeForm ? { activeForm } : {}) });
 const three = { done: 1, total: 3, current: "Compter", items: [item("Dire bonjour", "completed"), item("Compter jusqu'à trois", "in_progress", "Compte jusqu'à trois"), item("Dire au revoir", "pending")] };

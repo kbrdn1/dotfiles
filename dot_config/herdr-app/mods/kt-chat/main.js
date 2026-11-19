@@ -68,7 +68,7 @@ import { motionState, frame, enter, collapse, MS } from "./motion.js";
 // #84, the composer's ledges: the agent's tasks and sub-agents from its herdr-bridge file (shelf.js),
 // drawn as the sidebar draws its sub-agents: kt-threads' branches (tree.js) and companions
 // (companion-logo.js, a byte-identical copy).
-import { tasksLedge, agentsLedge, shownAgents, agentAge, isAlive, startOf, endOf, FADE, say as sayTask, runOf, watching } from "./shelf.js";
+import { tasksLedge, tasksOf, agentsLedge, shownAgents, agentAge, isAlive, startOf, endOf, FADE, say as sayTask, runOf, watching } from "./shelf.js";
 import { twig, treeLine, hang, stem } from "./tree.js";
 import { companion, variantFor } from "./companion-logo.js";
 // The context as the composer's status line says it (kt-composer): kt-threads' ring and its threshold
@@ -80,7 +80,7 @@ import { TL, marks as markList, barStack, barLift, cardTop, offsets, pairWheel, 
 import * as win from "./turn-window.js";
 import { skeleton, readyFor } from "./skeleton.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
-import { makeT, duration, time, num } from "./i18n.js";
+import { makeT, duration, time, num, relative } from "./i18n.js";
 import strings from "./strings.js";
 import * as fs from "fs/promises";
 
@@ -229,6 +229,7 @@ export default class Chat extends View {
     // shows, the companions' memos (companion-logo.js).
     this.bridge = null;
     this.bridgeFor = null;
+    this.plan = null; // the session's plan as last read validly (data/kt-chat/plan/<terminal>.json), bridgeFor's too
     this.bridgeKey = null;
     this.bridgeReading = false;
     this.bridgeTicker = null;
@@ -1952,8 +1953,10 @@ export default class Chat extends View {
           .text_color(ringColor(t, Math.round(ctx), { kind: "ctx", window: this.line?.window ?? 1_000_000 })))));
     // #84: the agent's tasks on a ledge over the card, its sub-agents on one under it, both against
     // the card (shelf.js); nothing when there is nothing to follow. A dialog waiting goes above them.
+    // The tasks: the bridge's todos, else the session's plan (data/kt-chat/plan/<terminal>.json), dated.
     const bridge = this.bridgeOf(a?.address);
-    const tasks = tasksLedge(bridge?.todos);
+    const src = this.tasksFor(a?.address);
+    const tasks = tasksLedge(src?.todos);
     const subs = agentsLedge(bridge?.agents, Date.now(), a?.address ?? "");
     return h_flex().w_full().flex_none().justify_center()
       .child(v_flex().relative().w_full().max_w(COLUMN).px(10).pb(6).gap(8)
@@ -1963,7 +1966,7 @@ export default class Chat extends View {
         .when(this.band, (el) => el.child(runnerBand(this.runner)))
         .when(Boolean(blocked), (el) => el.child(blocked))
         .child(v_flex().w_full()
-          .when(Boolean(tasks), (el) => el.child(this.tasksShelf(t, tasks, a, cx)))
+          .when(Boolean(tasks), (el) => el.child(this.tasksShelf(t, tasks, a, cx, src?.plan ? src.at : null)))
           .child(card)
           .when(Boolean(subs), (el) => el.child(this.agentsShelf(t, subs, a, cx))))
         .child(under));
@@ -1976,6 +1979,16 @@ export default class Chat extends View {
     return address && this.bridgeFor === address ? this.bridge : null;
   }
 
+  /** The session's plan as last read, only when it is this agent's. */
+  planOf(address) {
+    return address && this.bridgeFor === address ? this.plan : null;
+  }
+
+  /** What the tasks' ledge shows for this agent (shelf.js tasksOf): the bridge's todos, else its session's plan. */
+  tasksFor(address) {
+    return tasksOf(this.bridgeOf(address)?.todos, this.planOf(address));
+  }
+
   /**
    * Reads the agent's herdr-bridge file, threads-io.js' read for one agent (the sidebar's source, so
    * both say the same): a torn read keeps the last one; a redraw only when what the ledges show
@@ -1986,17 +1999,28 @@ export default class Chat extends View {
     this.bridgeReading = true;
     cx.spawn(async (cx) => {
       let next = this.bridgeOf(address);
+      let plan = this.planOf(address);
       try {
         const s = await readTextFile(`${home()}/.claude/cache/herdr/${address}.json`);
         next = s ? JSON.parse(s) : null;
       } catch {
         // a torn read keeps the last one
       }
+      // The session's plan, kept by hand for a session with no TaskCreate (the tasks' ledge falls back on
+      // it): absent, none; caught mid-write (unreadable), the last valid one stays, no blink.
+      try {
+        const s = await readTextFile(`${appHome()}/data/kt-chat/plan/${address}.json`);
+        plan = s ? JSON.parse(s) : null;
+      } catch {
+        // a torn read keeps the last one
+      }
       this.bridgeReading = false;
       const now = Date.now();
-      const key = JSON.stringify([address, next?.todos ?? null, next?.agents ?? null, shownAgents(next?.agents, now).map((a) => agentAge(a, now))]);
+      const src = tasksOf(next?.todos, plan);
+      const key = JSON.stringify([address, src?.todos ?? null, next?.agents ?? null, shownAgents(next?.agents, now).map((a) => agentAge(a, now)), src?.at ? relative(src.at, { now }) : ""]);
       this.bridgeFor = address;
       this.bridge = next;
+      this.plan = plan;
       this.feedRunner(); // runner: its action, its status or its agent may have just changed
       if (key !== this.bridgeKey) {
         this.bridgeKey = key;
@@ -2030,7 +2054,8 @@ export default class Chat extends View {
   watchBridge(cx) {
     const tg = target();
     const address = !this.fixed && tg.agent && !tg.reason ? tg.agent.address : null;
-    const on = watching({ address, shown: this.isShown(), status: tg.agent?.status, agents: this.bridgeOf(address)?.agents, now: Date.now() });
+    const on = watching({ address, shown: this.isShown(), status: tg.agent?.status, agents: this.bridgeOf(address)?.agents, now: Date.now(),
+      tasks: Boolean(tasksLedge(this.tasksFor(address)?.todos)) });
     if (on && !this.bridgeTicker) {
       this.bridgeTicker = cx.timer.every(BRIDGE, (cx) => {
         this.watchBridge(cx);
@@ -2063,7 +2088,7 @@ export default class Chat extends View {
    * light. Folded by default: its header says the one in front and done / total. Unfolded: the
    * sidebar's lines (kt-threads todoList: ✓ done, ● running, ○ to do), six, then "+N".
    */
-  tasksShelf(t, led, a, cx) {
+  tasksShelf(t, led, a, cx, at = null) {
     const key = a?.address ?? "";
     const open = this.tasksOpen.has(key);
     const dark = Boolean(settings().dark);
@@ -2083,7 +2108,9 @@ export default class Chat extends View {
         .child(busy ? svg(SPIN).size(12).spin(900) : svg(I("list")).size(13)),
       div().flex_none().text_size(12.5).font_medium().text_color(ink(t, 0.8)).child(tr("shelf.tasks")),
       div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ink(t, 0.4)).child(led.current),
-      div().flex_none().font_family(MONO).text_size(11).text_color(ink(t, 0.45)).child(`${led.done} / ${led.total}`));
+      div().flex_none().font_family(MONO).text_size(11).text_color(ink(t, 0.45)).child(`${led.done} / ${led.total}`),
+      // A session's plan is kept by hand and can grow old: its age (the bridge, live, has none).
+      ...(at ? [div().flex_none().text_size(11).text_color(ink(t, 0.35)).child(tr("shelf.planAge", { ago: relative(at) }))] : []));
     const body = collapse(this.m, `kc-tasks-${key}`, open, rows, { cx });
     return enter(this.m, v_flex().mx(8).px(10).rounded_t(10).border_t(1).border_x(1).border_color(ink(t, dark ? 0.08 : 0.06)).bg(ink(t, 0.03))
       .child(head).when(Boolean(body), (el) => el.child(body)), `kc-tasks-${key}-ledge`, { dy: 0 });

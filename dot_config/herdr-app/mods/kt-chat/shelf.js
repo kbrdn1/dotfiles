@@ -53,12 +53,25 @@ export function agentsLedge(list, now, key) {
  * (`address`, a remote one's file is on its machine), and it works or shows sub-agents (their ages
  * move, an ended one goes after GONE). Else nothing runs.
  */
-export function watching({ address, shown, status, agents, now }) {
-  return Boolean(address) && !address.includes("/") && Boolean(shown) && (status === "working" || shownAgents(agents, now).length > 0);
+export function watching({ address, shown, status, agents, now, tasks = false }) {
+  return Boolean(address) && !address.includes("/") && Boolean(shown) && (status === "working" || shownAgents(agents, now).length > 0 || tasks);
 }
 
-/** A task's words: its activeForm while it runs (the sidebar's todoList). */
-export const say = (x) => (x.status === "in_progress" ? x.activeForm || x.content : x.content);
+/** A task's words: its activeForm while it runs (the sidebar's todoList); `subject` in a session's plan. */
+export const say = (x) => (x.status === "in_progress" ? x.activeForm || (x.content ?? x.subject) : (x.content ?? x.subject));
+
+/**
+ * Whose tasks the ledge shows: herdr-bridge's `todos` when it has some (items, or a total), else the
+ * session's plan (data/kt-chat/plan/<terminal>.json, the same shape, kept by hand for a session with no
+ * TaskCreate), when it has that shape (an object, its `items` an array), else none. { todos, plan, at }:
+ * `plan` true when from the plan, `at` its updatedAt (ms) or null; the bridge, live, has no age.
+ */
+export function tasksOf(todos, plan) {
+  const some = (x) => Boolean(x) && typeof x === "object" && ((Array.isArray(x.items) && x.items.length > 0) || Number(x.total) > 0);
+  if (some(todos)) return { todos, plan: false, at: null };
+  if (plan && typeof plan === "object" && Array.isArray(plan.items) && some(plan)) return { todos: plan, plan: true, at: Date.parse(plan.updatedAt) || null };
+  return null;
+}
 
 /**
  * The tasks' ledge from herdr-bridge's `todos` ({ done, total, current, items, the first 20 }): null
