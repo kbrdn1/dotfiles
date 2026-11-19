@@ -65,7 +65,9 @@ import { HALO, haloLayers } from "./halo.js";
 import { langSwitch, cycleButton, makeT, num as fnum, relative } from "./i18n.js";
 import strings from "./strings.js";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder } from "herdr";
+import { spaces, panes, run, theme, shared, setShared, openOverlay, exec, window as win, home, readTextFile, pickFolder, checking, layout, nextCommand, settings, appHome, writeTextFile, notify, watchFolder, keys } from "herdr";
+// kt-keys' shortcuts.js (a byte-identical copy): each nav line's key as keycaps, read from keys() (#72).
+import { shortcut, kbd } from "./shortcuts.js";
 import * as fs from "fs/promises";
 
 // The places' git and real paths go through machines.js' guard: a machine away refuses at once (#61).
@@ -1996,6 +1998,11 @@ export default class Threads extends View {
       .text_color(on || navCur(id) ? t.foreground : t.muted)
       .cursor_pointer()
       .when(!on && !navCur(id), (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground)));
+    // Each line's key (shortcuts.js, #72), from the line itself: its page's `layout.select:<id less "kt-">`, else
+    // the mod it opens (`mod.open:<id>`), so a new line shows its key once keys.json binds it. Search says its own.
+    const NAV_KEYS = { "kt-search": ["kt-head.picker:0", "mod.open:kt-picker"] };
+    const binds = keys();
+    const navKey = (id) => shortcut(binds, shared("layout"), NAV_KEYS[id] ?? [`layout.select:${id.replace(/^kt-/, "")}`, `mod.open:${id}`]);
     const tool = (id, icon, label, onClick, right, on = false, { trunk = false, branch = null } = {}) => {
       const body = (el) => el
         // The group's icon over its trunk: from under the icon down through the line's border.
@@ -2004,8 +2011,9 @@ export default class Threads extends View {
             .child(svg(I(icon)).size(15))
             .child(div().absolute().top(23).bottom(-1).left(NAV_X).border_l(1).border_color(navRest))
           : svg(I(icon)).size(15))
-        .child(div().flex_1().child(label))
-        .when(Boolean(right), (el) => el.child(right));
+        .child(div().flex_1().min_w(0).truncate().child(label))
+        .when(Boolean(right), (el) => el.child(right))
+        .child(kbd(t, navKey(id)));
       if (!branch) return body(box(id, on, h_flex().mx(8)).on_click(onClick));
       // A page of the group: its branch where the group's icon is (8 + its line's border and padding, 11),
       // then its box from the bend's end.
@@ -2094,7 +2102,7 @@ export default class Threads extends View {
           tool("kt-new", "square-pen", tr("newThread"), () => {
             show("thread");
             run("mod.open", { name: "kt-new" });
-          }, div().font_family(MONO).text_size(10.5).text_color(t.dim).child("⌘T")),
+          }),
         )
         .child(tool("kt-inbox", "layers", "Inbox", () => show("inbox"), inboxOn ? null : div().size(6).rounded(3).bg(t.accent), inboxOn))
         .when(this.hasKanban, (el) => el.child(tool("kt-kanban", "square-kanban", "Kanban", () => show("kanban"), null, navPage === "kanban"))) // i18n: tech

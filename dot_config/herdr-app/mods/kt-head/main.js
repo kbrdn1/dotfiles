@@ -10,7 +10,11 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, run, theme, shared, props, layout, settings, window as win, setShared, exec, home, agents, focused, openOverlay, nextCommand, checking, machines } from "herdr";
+import { spaces, panes, run, theme, shared, props, layout, settings, window as win, setShared, exec, home, agents, focused, openOverlay, nextCommand, checking, machines, keys } from "herdr";
+// Copied byte for byte from mods/kt-keys/shortcuts.js: the buttons' keys in their tooltips, read from keys() (#72).
+import { shortcut, tip } from "./shortcuts.js";
+// Copied byte for byte from mods/kt-keys/panel.js: the right panel opens and closes with its content moving (#73).
+import { togglePanel, showPanel } from "./panel.js";
 import { motionState, frame, enter, fade, sharpen } from "./motion.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
@@ -160,12 +164,16 @@ function splitRight() {
 const confirm = (title, detail, label, command) =>
   openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { title, detail, label, danger: true, command } });
 const face = (which) => view(which, { layout, run, setShared, panes, focused });
-function route(c) {
+// The key bound to an action (shortcuts.js), for a tooltip.
+const keyOf = (...actions) => shortcut(keys(), shared("layout"), ...actions);
+// `panel-toggle` (ctrl-b p) and `panel:<surface>` open and close the right panel through panel.js (#73).
+function route(c, cx) {
   const [name, arg] = [c.split(":")[0], c.slice(c.indexOf(":") + 1)];
   if (name === "view") face(c.includes(":") ? arg : "");
+  else if (name === "panel-toggle") togglePanel(cx);
   else if (name === "panel") {
-    run("layout.show", { id: "panel" });
     run("layout.select", { stack: "panel-body", child: arg });
+    showPanel(cx);
   } else if (name === "attention") {
     const all = agents();
     const a = all.find((x) => x.status === "blocked") ?? all.find((x) => x.status === "done");
@@ -196,7 +204,7 @@ export default class Head extends View {
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
-        if (props()?.part === "crumbs") route(c);
+        if (props()?.part === "crumbs") route(c, cx);
         cx.notify();
       }
     });
@@ -258,7 +266,7 @@ export default class Head extends View {
       )
       // #47: the home page, beside the name (ctrl-b shift-h too); lit while it shows.
       .when(Boolean(find(layout(), "hub")), (el) => el.child(button(m, t, "kt-h-hub", "house",
-        () => run("layout.select", { stack: "view", child: "hub" }), find(layout(), "view")?.active === "hub", false, tr("hub"))));
+        () => run("layout.select", { stack: "view", child: "hub" }), find(layout(), "view")?.active === "hub", false, tip(tr("hub"), keyOf("layout.select:hub")))));
   }
 
   // #47, the crumbs copy (always drawn): the home page at its three moments (autohub.js), the facts of the
@@ -314,7 +322,7 @@ export default class Head extends View {
       .on_click(() => face(which))
       .child(name));
     return h_flex().id("kt-h-faces").flex_none().h(24).px(1).gap(1).items_center().rounded_full().border(1).border_color(t.border)
-      .tooltip(tr("faces"))
+      .tooltip(tip(tr("faces"), keyOf("kt-head.view")))
       .child(seg("kt-h-face-main", "main", "Terminal")) // i18n: tech
       .child(seg("kt-h-face-chat", "chat", "Chat")); // i18n: tech
   }
@@ -337,7 +345,7 @@ export default class Head extends View {
       .items_center()
       .when(Boolean(p), (el) =>
         el
-          // A thread on another machine (#64): « main-vps › » first, its state's dot and ROOT (machines.js).
+          // A thread on another machine (#64): « vps-a › » first, its state's dot and ROOT (machines.js).
           .when(Boolean(p.machine), (el) => el.child(machineTag(t, p.machine, { id: "kh-machine", size: 11 })).child(sep()))
           .child(this.tile(t, pr))
           .child(div().flex_none().text_size(13).font_medium().text_color(page ? t.muted : t.foreground).child(pr.name))
@@ -355,6 +363,7 @@ export default class Head extends View {
             .child(own(h_flex().id("kt-h-back").flex_none().h(24).px(9).gap(6).items_center().rounded_full()
               .border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted)
               .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+              .tooltip(tip(tr("back"), keyOf("layout.select:thread")))
               .on_click(() => run("layout.select", { stack: "view", child: "thread" }))
               .child(div().flex_none().text_color(t.dim).child("←"))
               .child(div().max_w(180).truncate().child(label(c, lead)))))
@@ -384,10 +393,11 @@ export default class Head extends View {
         h_flex()
           .gap(2)
           .child(button(m, t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true, false, tr("details")))
-          .child(button(m, t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, tr("splitRight")))
+          .child(button(m, t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, tip(tr("splitRight"), keyOf("pane.split:right"))))
           .child(button(m, t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open, false, tr("drawer")))
-          // lucide panel-right-open while it's hidden, panel-right-close while it shows.
-          .child(((on) => button(m, t, "kt-h-panel", `mods/kt-head/panel-right-${on ? "close" : "open"}.svg`, () => run("layout.toggle", { id: "panel" }), on, false, tr("panel")))(shown(layout(), "panel"))),
+          // lucide panel-right-open while it's hidden, panel-right-close while it shows; panel.js moves it (#73).
+          .child(((on) => button(m, t, "kt-h-panel", `mods/kt-head/panel-right-${on ? "close" : "open"}.svg`, (_e, cx) => togglePanel(cx), on, false,
+            tip(tr("panel"), keyOf("kt-head.panel-toggle", "layout.toggle:panel"))))(shown(layout(), "panel"))),
       )
       .when(Boolean(w.buttons), (el) =>
         el.child(
