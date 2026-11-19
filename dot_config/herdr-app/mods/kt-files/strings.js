@@ -8,6 +8,8 @@ export default {
     search: "Chercher un fichier",
     noFiles: "Aucun fichier.",
     noFolder: "Aucun dossier.",
+    // #82: a file another mod asked for (open.js).
+    "open.notListed": "Ce fichier n'est pas dans ce dépôt.",
   },
   en: {
     copied: "Copied",
@@ -17,5 +19,7 @@ export default {
     search: "Search files",
     noFiles: "No files.",
     noFolder: "No folder.",
+    // #82: a file another mod asked for (open.js).
+    "open.notListed": "This file isn't in this repo.",
   },
 };

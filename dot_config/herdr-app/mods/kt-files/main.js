@@ -15,7 +15,9 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, ScrollHandle, Scrollbar } from "gpui-base";
-import { spaces, panes, exec as hostExec, readTextFile as hostRead, settings, theme, layout, home, appHome, checking, run, nextCommand, notify, openOverlay, shared } from "herdr";
+import { spaces, panes, exec as hostExec, readTextFile as hostRead, settings, theme, layout, home, appHome, checking, run, nextCommand, notify, openOverlay, shared, setShared } from "herdr";
+// #82: opened on a file at a line by another mod (shared "kt.files.open"), open.js deciding.
+import { openRequest, wantStep, lineRange } from "./open.js";
 import { ICON_MAP, catIcon } from "./icons.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
@@ -118,6 +120,9 @@ export default class Files extends View {
     this.flat = []; // what it walks, in order: Search files, then the rows shown { id, path, dir, parent }
     this.listScroll = ScrollHandle.new();
     this.map = null; // Catppuccin's map.json
+    this.want = null; // a file another mod asked for (openAsked): { path, line, to }, until listed or not
+    this.lines = null; // its lines, selected once its code view exists (show)
+    this.asked = null; // that request's `at`: each read once
     if (!checking()) {
       cx.spawn(async (cx) => {
         try { this.map = JSON.parse(await readTextFile(`${appHome()}/${ICON_MAP}`)); } catch { this.map = null; }
@@ -277,10 +282,51 @@ export default class Files extends View {
         // An answer for this place, even a failed one: no skeleton after it (readyFor). Not when the place
         // moved during the read (it returned without listing): the read again below lists the new one.
         if (location() === key) this.readFor = key;
+        // A file asked for (openAsked): the list it waited for is here.
+        if (this.want && location() === key) this.applyWant(cx, true);
         cx.notify();
         if (this.again) { this.again = false; this.refresh(cx); }
       }
     });
+  }
+
+  // shared "kt.files.open" (#82, the Chat's references: { path, line?, to?, at }, kt-inbox's
+  // "kt.inbox.open" pattern): that file opened as a click would, its folders unfolded, the cursor on
+  // its row brought into view, its lines selected in the code view. A path outside the repo is never
+  // opened (open.js). Not listed yet: kept until the list's read; read and not listed: said, dropped.
+  // Read once and cleared; older than 30 s, only cleared. Files stays read only.
+  openAsked(cx) {
+    const req = shared("kt.files.open");
+    if (!req || this.asked === req.at) return;
+    this.asked = req.at;
+    // Not during render: setShared redraws every mod.
+    cx.spawn(async (cx) => {
+      setShared("kt.files.open", null);
+      const want = openRequest(req, Date.now(), this.root);
+      if (!want) return;
+      this.want = want;
+      this.applyWant(cx, this.readFor === location());
+      cx.notify();
+    });
+  }
+
+  applyWant(cx, listed) {
+    const step = wantStep(this.paths, this.want.path, listed);
+    if (step.wait) return;
+    const want = this.want;
+    this.want = null;
+    if (step.drop) {
+      notify({ title: tr(`open.${step.drop}`), body: want.path, level: "warning", timeout: 5000 });
+      return;
+    }
+    const parts = want.path.split("/");
+    for (let i = 1; i < parts.length; i++) this.open.add(parts.slice(0, i).join("/"));
+    this.lines = want.line ? want : null;
+    if (this.file !== want.path) this.show(want.path, cx);
+    else if (this.code && this.lines) { this.code.set_selected_range(lineRange(this.code.value(), want.line, want.to)); this.lines = null; }
+    this.cur = `f:${want.path}`;
+    this.reveal = true;
+    cx.notify();
   }
 
   show(path, cx) {
@@ -301,6 +347,11 @@ export default class Files extends View {
         font_size: 12,
         syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 },
       });
+      // Lines another mod asked for (applyWant): selected once the view exists.
+      if (this.lines?.path === path) {
+        this.code.set_selected_range(lineRange(this.code.value(), this.lines.line, this.lines.to));
+        this.lines = null;
+      }
       cx.notify();
     });
   }
@@ -387,6 +438,7 @@ export default class Files extends View {
     const read = !checking() && (shouldRead({ vis, shown: this.shown, loc, lastLoc: this.loc, readAt: this.readAt, now: Date.now() }) || (vis && !this.root));
     if (vis) this.loc = loc;
     if (read) this.refresh(cx);
+    if (vis && !checking()) this.openAsked(cx);
     if (vis && !this.shown) this.showGen++;
     this.shown = vis;
     // DATA-SYNC.md: the M / U badges follow another mod's action on this repo, or an agent of this space
