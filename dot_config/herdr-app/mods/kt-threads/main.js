@@ -97,10 +97,10 @@ speak(makeT); // steps.js' step and phase names follow kt.lang too
 // The pages under the navigation's Agents group, in order, as the view stack names them: [icon, label].
 // One the layout's stack doesn't have yet (Workflow, kt-workflow) is left out rather than open a blank.
 // The names are the pages' own, in every language; automation's is words (strings.js' automation).
-const AGENT_PAGES = ["workflow", "skills", "mcp", "plugins", "automation"];
-// automation: refresh-cw until kt-automation gives its own icon.
+const AGENT_PAGES = ["workflow", "skills", "mcp", "plugins", "automation", "market"];
+// automation: refresh-cw until kt-automation gives its own icon. market: Marketplaces (kt-market, #70).
 const AGENT_PAGE = { workflow: ["workflow", "Workflow"], skills: ["sparkles", "Skills"], mcp: ["plug", "MCP"], plugins: ["puzzle", "Plugins"],
-  automation: ["refresh-cw", null] };
+  automation: ["refresh-cw", null], market: ["store", "Marketplaces"] };
 const pageName = (p) => AGENT_PAGE[p][1] ?? tr(p);
 
 // One branch of a tree (kbrdn.dev's Parcours), the sub-agents' and the navigation's Agents group's: the

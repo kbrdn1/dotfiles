@@ -35,7 +35,7 @@ const ORDER = ["pane.go:left", "pane.go:right", "pane.go:down", "pane.go:up", "p
   "kt-head.close-pane", "mod.open:kt-new", "tab.next", "tab.prev", "tab.select", "tab.rename", "kt-head.close-tab", "space.new",
   "space.next", "space.prev", "space.rename", "kt-head.picker:2", "kt-head.picker:0", "kt-head.worktree", "agent.next", "agent.prev",
   "kt-head.attention", "layout.select:thread", "layout.select:hub", "layout.select:inbox", "layout.select:kanban", "layout.select:skills", "layout.select:mcp", "layout.select:plugins",
-  "layout.select:workflow", "layout.select:gwm", "layout.select:notes", "layout.toggle:side", "kt-head.panel-toggle", "kt-head.panel:files",
+  "layout.select:market", "layout.select:workflow", "layout.select:gwm", "layout.select:notes", "layout.toggle:side", "kt-head.panel-toggle", "kt-head.panel:files",
   "kt-head.panel:diff", "kt-head.panel:history", "kt-head.panel:flow", "kt-head.panel:crosstalk", "mod.open:kt-keys", "mod.open:kt-mods",
   "app.settings", "send"];
 
@@ -64,7 +64,7 @@ const TABLE = {
     ["?", "sb.help"],
   ],
   pages: [
-    ["ctrl-b shift-h / i / shift-s / shift-a / a / m / u / shift-o / shift-i", "pg.pages"],
+    ["ctrl-b shift-h / i / shift-s / shift-a / a / m / u / shift-e / shift-o / shift-i", "pg.pages"],
     ["h / l", "pg.kanbanCol", "Kanban"],
     ["enter / o", "pg.kanbanGo", "Kanban"],
     ["c / b / s / t", "pg.kanbanOpts", "Kanban"],
@@ -89,10 +89,15 @@ const TABLE = {
     ["f", "pg.kanbanFilterBy", "Kanban"],
     ["e / u / dd / +", "pg.plugins", "Plugins"],
     ["h / L / [ / ]", "pg.market", "Plugins"],
-    ["p", "pg.mdRaw", "Skills, Plugins, Inbox, Workflow, Notes"], // i18n: tech
+    ["i / I", "pg.mkInspect", "Marketplaces"], // i18n: tech
+    ["a", "pg.mkInstall", "Marketplaces"], // i18n: tech
+    ["s", "pg.mkSort", "Marketplaces"], // i18n: tech
+    ["O", "pg.mkRepo", "Marketplaces"], // i18n: tech
+    ["y", "pg.mkCopy", "Marketplaces"], // i18n: tech
+    ["p", "pg.mdRaw", "Skills, Plugins, Inbox, Workflow, Notes, Marketplaces"], // i18n: tech
     ["ctrl-e / ctrl-y", "pg.mdScroll", "Skills, Plugins, Inbox, Notes"], // i18n: tech
     ["j / k, ctrl-d / ctrl-u, gg / G", "pg.notesRawScroll", "Notes · Brut"], // i18n: tech
-    ["esc", "pg.skillsEsc", "Skills, Plugins, MCP"], // i18n: tech
+    ["esc", "pg.skillsEsc", "Skills, Plugins, MCP, Marketplaces"], // i18n: tech
     ["[ / ]", "pg.relation", "Inbox"],
     ["j / k", "r.line"],
     ["gg / G", "r.ends"],

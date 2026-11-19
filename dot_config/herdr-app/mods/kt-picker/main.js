@@ -94,7 +94,7 @@ const groupName = (i) => tr(`group.${GROUPS[i]}`);
 // `layout.select:<id>`, or `mod.open:<id>` for an overlay (shortcuts.js).
 const PAGES = [
   ["inbox", "layers", "Inbox"], ["skills", "sparkles", "Skills"], ["mcp", "plug", "MCP"], ["gwm", "git-branch", "Worktrees"],
-  ["plugins", "puzzle", "Plugins"], ["workflow", "layout-list", "Workflow"],
+  ["plugins", "puzzle", "Plugins"], ["market", "store", "Marketplaces"], ["workflow", "layout-list", "Workflow"],
   ["automation", "refresh-cw", null], ["notes", "file-text", "Notes"],
   ["kt-usage", "clock", null, true], ["kt-mods", "settings", "Mods", true],
 ];

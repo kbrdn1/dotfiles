@@ -107,6 +107,7 @@
                 { "id": "mcp", "type": "block", "content": { "mod": "kt-mcp" } },
                 { "id": "plugins", "type": "block", "content": { "mod": "kt-plugins" } },
                 { "id": "automation", "type": "block", "content": { "mod": "kt-automation" } },
+                { "id": "market", "type": "block", "content": { "mod": "kt-market" } },
                 { "id": "gwm", "type": "block", "content": { "mod": "kt-gwm" } },
                 { "id": "notes", "type": "block", "content": { "mod": "kt-notes" } }
               ]
