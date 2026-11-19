@@ -98,13 +98,19 @@ const no = (reason) => ({ ok: false, reason });
 export const failure = (c, e, now = Date.now()) =>
   ({ at: now, received: String(c).slice(0, 200), error: String(e?.stack ?? e).slice(0, 2000) });
 
-/** One command of kt-threads' loop, run so that a throw or a rejection never ends the loop: `run(c)` awaited,
- *  and on a failure `failed(failure(c, e))` instead, itself unable to throw out. */
-export async function guard(c, run, failed, now = Date.now) {
-  try {
-    await run(c);
-  } catch (e) {
+/** One command of kt-threads' loop, run so that nothing in it can stop the loop: not a throw, not a
+ *  rejection, not an await that never returns (a folder picker left open behind the window). `run(c)` is
+ *  called, not awaited: its synchronous part runs now, in the loop's order, the rest on its own; a failure,
+ *  now or later, goes to `failed(failure(c, e))`, itself unable to throw out. */
+export function guard(c, run, failed, now = Date.now) {
+  const report = (e) => {
     try { failed(failure(c, e, now())); } catch { /* the loop goes on */ }
+  };
+  try {
+    const p = run(c);
+    if (p && typeof p.then === "function") p.then(undefined, report);
+  } catch (e) {
+    report(e);
   }
 }
 

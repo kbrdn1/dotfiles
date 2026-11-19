@@ -188,23 +188,35 @@ const many = { ...state0, applied: Array.from({ length: APPLIED_KEPT }, (_, i) =
 const kept = take(JSON.stringify(tvMove), many).writes["kt.registry.applied"];
 assert.deepEqual([kept.length, kept[0], kept.at(-1)], [APPLIED_KEPT, "old-1", "req-c"]);
 
-// guard: kt-threads' command loop, faked. A handler that throws, one that rejects after an await, and one whose
-// failure report throws too: each is said, and every command after it is still handled.
+// guard: kt-threads' command loop, faked. A handler that throws, one that rejects after an await, one that never
+// returns (a folder picker left open, the 2026-11-19 block), and one whose failure report throws too: each is
+// said or left pending, and every command after it is handled at once, in order.
 const handled = [], failures = [];
 const dispatch = async (c) => {
   if (c === "boom") throw new Error("boom");
   if (c === "late") { await null; throw new Error("late"); }
   if (c === "spawn") ({}).spawn(); // a TypeError, as a missing cx.spawn would be
+  if (c === "new-project") { await new Promise(() => {}); handled.push("never"); }
   handled.push(c);
 };
-for (const c of ["agents", "boom", "density", "late", "spawn", "every"]) await guard(c, dispatch, (f) => failures.push(f), () => 7);
-assert.deepEqual(handled, ["agents", "density", "every"], "the loop went on past each failure");
-assert.deepEqual(failures.map((f) => [f.at, f.received]), [[7, "boom"], [7, "late"], [7, "spawn"]]);
-assert.match(failures[0].error, /^Error: boom/);
-assert.match(failures[2].error, /TypeError/);
-await guard("boom", dispatch, () => { throw new Error("the report failed"); });
-await guard("after", dispatch, () => {});
+const tick = () => new Promise((r) => setTimeout(r, 0));
+// The loop as kt-threads runs it (awaiting each guard): it must reach its end, not wait on new-project.
+let timer;
+const loop = (async () => { for (const c of ["agents", "boom", "new-project", "density", "late", "spawn", "every"]) await guard(c, dispatch, (f) => failures.push(f), () => 7); })();
+const through = await Promise.race([loop.then(() => true), new Promise((r) => { timer = setTimeout(() => r(false), 1000); })]);
+clearTimeout(timer);
+assert.ok(through, "the loop went past a command that never returns");
+assert.deepEqual(handled, ["agents", "density", "every"], "each handled, past a failure and past a command that never returns");
+await tick(); // the rejections land
+assert.deepEqual(failures.map((f) => f.received).sort(), ["boom", "late", "spawn"]);
+assert.ok(failures.every((f) => f.at === 7));
+assert.match(failures.find((f) => f.received === "boom").error, /^Error: boom/);
+assert.match(failures.find((f) => f.received === "spawn").error, /TypeError/);
+guard("boom", dispatch, () => { throw new Error("the report failed"); });
+guard("after", dispatch, () => {});
+await tick();
 assert.equal(handled.at(-1), "after", "a report that throws doesn't end it either");
+assert.ok(!handled.includes("never"), "the pending one still pending, nothing waited on it");
 const long = failure("x".repeat(500), { stack: "s".repeat(5000) }, 1);
 assert.deepEqual([long.received.length, long.error.length], [200, 2000], "bounded");
 
