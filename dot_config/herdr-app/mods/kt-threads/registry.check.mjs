@@ -5,7 +5,7 @@
 // malformed input (relative folder, "..", a name out of ^[A-Za-z0-9._ -]{1,64}$, a logo outside brand/projects/,
 // not JSON) is refused with a reason, and nothing is changed. Not loaded by Herdr.
 import assert from "node:assert/strict";
-import { idOf, folderOf, parse, moveProject, addProject } from "./registry.js";
+import { idOf, folderOf, parse, fromBase64url, moveProject, addProject } from "./registry.js";
 
 const P = "/Users/someone/Projects";
 const entry = (name, order, extra = {}) => ({ id: idOf(`${P}/${name}`), name, folder: `${P}/${name}`, machine: null, color: "ansi3", order,
@@ -92,5 +92,24 @@ assert.equal(addProject(list, { folder: `${P}/interface`, name: "interface" }, f
 assert.equal(addProject(list, { folder: `${P}/interface`, name: "bad|name" }, true).ok, false, "bad name");
 assert.equal(addProject(list, { folder: "interface", name: "interface" }, true).ok, false, "relative folder");
 assert.deepEqual(addProject([], { folder: `${P}/first`, name: "first" }, true).list[0].logos, { light: null, dark: null }, "no logos given");
+
+// b64:<base64url>, the form `herdr-app do` passes intact: a valid one (built the way the command line does,
+// base64 then + / -> - _ and no =), UTF-8 included; a broken one; one of invalid JSON; plain JSON still read.
+const b64url = (s) => Buffer.from(s, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const payload = { from: `${P}/old-hub`, to: `${P}/new-hub`, name: "new-hub", logos: "brand/projects/new-hub.svg" };
+assert.deepEqual(parse(`b64:${b64url(JSON.stringify(payload))}`), { ok: true, value: payload }, "a valid b64");
+assert.deepEqual(parse(`b64:${b64url('{"name":"é ü 漢"}')}`), { ok: true, value: { name: "é ü 漢" } }, "UTF-8 decoded");
+assert.deepEqual(parse(`b64:${b64url(JSON.stringify(payload))}==`).ok, true, "padding tolerated");
+assert.equal(parse("b64:not base64!").ok, false, "a broken b64");
+assert.equal(parse("b64:A").ok, false, "a b64 of impossible length");
+assert.equal(parse(`b64:${Buffer.from([0x7b, 0xff, 0x7d]).toString("base64url")}`).reason, "not base64url", "a b64 of invalid UTF-8");
+assert.equal(parse(`b64:${b64url("{not json")}`).reason, "not JSON", "a b64 of invalid JSON");
+assert.equal(parse(`b64:${b64url("[1,2]")}`).ok, false, "a b64 of a JSON array");
+assert.deepEqual(parse(JSON.stringify(payload)), { ok: true, value: payload }, "plain JSON still read");
+// The bytes of invalid UTF-8 (a lone continuation byte): refused, not mangled.
+assert.equal(fromBase64url(Buffer.from([0x80]).toString("base64url")), null);
+assert.equal(fromBase64url(Buffer.from("ok", "utf8").toString("base64url")), "ok");
+// And the decoded payload goes through as it would: the move succeeds.
+assert.equal(moveProject(list, {}, parse(`b64:${b64url(JSON.stringify(payload))}`).value, true).ok, true);
 
 console.log("registry: ok");

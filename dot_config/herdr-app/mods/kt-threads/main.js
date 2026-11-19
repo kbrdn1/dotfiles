@@ -373,7 +373,7 @@ export default class Threads extends View {
             setShared("kt.threadFilter", { ...f, archived: !f.archived });
           }
           else if (/^theme-(light|dark|blur)$/.test(c)) this.setTheme(c.slice(6), cx);
-          else if (c.startsWith("project-move:") || c.startsWith("project-add:")) this.projectCommand(c, cx);
+          else if (c.startsWith("project-move") || c.startsWith("project-add")) this.projectCommand(c, cx);
           cx.notify();
         }
       });
@@ -382,23 +382,26 @@ export default class Threads extends View {
 
   // `project-move:<json>` / `project-add:<json>` (registry.js, from `herdr-app do`): the registry moved where
   // kt-projects can't (a folder renamed on disk: its color, order and chat background kept) or grown before
-  // any space opens on the project. The folder checked on the disk first; a refusal does nothing, said in
-  // the log, like the result.
+  // any space opens on the project. The folder checked on the disk first; a refusal does nothing. Each
+  // outcome, refusals too, goes to shared "kt.registry.last" ({ at, received (200 characters at most), ok,
+  // id | reason }), read with jq: a mod's console.log reaches no file.
   projectCommand(c, cx) {
+    const said = (out) => setShared("kt.registry.last", { at: Date.now(), received: c.slice(0, 200), ...out });
+    if (!c.includes(":")) return void said({ ok: false, reason: "no payload" }); // i18n: tech
     const [kind, text] = [c.slice(0, c.indexOf(":")), c.slice(c.indexOf(":") + 1)];
+    if (kind !== "project-move" && kind !== "project-add") return void said({ ok: false, reason: `unknown command ${kind}` }); // i18n: tech
     const input = registry.parse(text);
-    const say = (what) => console.log(`kt-threads ${kind}: ${what}`);
-    if (!input.ok) return void say(`refused, ${input.reason}`);
+    if (!input.ok) return void said({ ok: false, reason: input.reason });
     const folder = registry.folderOf(kind === "project-move" ? input.value.to : input.value.folder);
     cx.spawn(async (cx) => {
       const exists = folder ? await exec("test", ["-d", folder]).then((r) => r.code === 0).catch(() => false) : false;
       const r = kind === "project-move"
         ? registry.moveProject(shared("kt.projects") ?? [], { "kt.chat.backgrounds": shared("kt.chat.backgrounds") ?? {} }, input.value, exists)
         : registry.addProject(shared("kt.projects") ?? [], input.value, exists);
-      if (!r.ok) return void say(`refused, ${r.reason}`);
+      if (!r.ok) return void said({ ok: false, reason: r.reason });
       setShared("kt.projects", r.list);
       for (const [key, map] of Object.entries(r.maps ?? {})) setShared(key, map);
-      say(`done, ${r.id}${Object.keys(r.maps ?? {}).length ? ` (and ${Object.keys(r.maps).join(", ")})` : ""}`);
+      said({ ok: true, id: r.id, maps: Object.keys(r.maps ?? {}) });
       cx.notify();
     });
   }
