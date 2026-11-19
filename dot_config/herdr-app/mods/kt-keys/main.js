@@ -133,6 +133,7 @@ const TABLE = {
     ["tab / shift-tab", "pg.hubSource", "pg.hubPage"],
     ["v", "pg.hubView", "pg.hubPage"],
     ["enter / o", "pg.hubGo", "pg.hubPage"],
+    ["enter / o", "pg.hubProj", "pg.hubPage"],
     ["r", "pg.hubIndex", "pg.hubPage"],
     ["q / esc", "pg.hubBack", "pg.hubPage"],
     ["q", "r.back"],
