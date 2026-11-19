@@ -23,6 +23,9 @@
 // confirmed, so Herdr's own confirm never follows ours: tab.close / space.close with `confirmed:
 // true`, and a pane that is its thread's only one closes as its thread (`tab.close`). Gone while
 // open (closed elsewhere): an error state, and confirming only closes the dialog.
+// `typed: "<name>"` (#88, a delete by force): a field under the body, and the confirm button wakes only
+// once that exact name is typed in it. The keys type then: y, n and q are letters, Enter confirms
+// (once it matches), Esc cancels, Backspace erases.
 // `kt-confirm.thread:<id>` / `.pane:<id>` / `.space:<id>` describe one on an open copy, and
 // `kt-confirm.props:<json>` lays props over its own (a preview), and `kt-confirm.reopen[:WxH]` shows
 // them again opened with no size (or in a W × H box), for tests.
@@ -191,6 +194,7 @@ export default class Confirm extends View {
     this.handle.focus();
     this.forced = null; // a subject set by `thread:` / `pane:` / `space:` (tests)
     this.extra = null; // props laid over by `props:` (tests)
+    this.typed = ""; // what is typed, with `typed`
     this.motion = motionState(); // ANIMATIONS.md: the veil fades and the card rises, in and out (motion.js sheet, leave)
     if (!checking()) cx.spawn(async (cx) => {
       for (;;) {
@@ -207,8 +211,16 @@ export default class Confirm extends View {
     });
   }
 
-  // One key name; false: not one of ours, and it goes on.
-  act(k, cx) {
+  // One key name (and the character it types); false: not one of ours, and it goes on.
+  act(k, cx, char = k === "space" ? " " : [...k].length === 1 ? k : null) {
+    if (this.view().typed) {
+      if (k === "enter") this.yes(cx);
+      else if (k === "escape") this.dismiss(cx);
+      else if (k === "backspace") this.typed = this.typed.slice(0, -1);
+      else if (char) { if (this.typed.length < 80) this.typed += char; }
+      else return false;
+      return true;
+    }
     if (k === "y" || k === "enter") this.yes(cx);
     else if (k === "n" || k === "q" || k === "escape") this.dismiss(cx);
     else return false;
@@ -234,14 +246,30 @@ export default class Confirm extends View {
 
   // The command first, then the dialog leaves; once only (a second y or Enter while it leaves).
   yes(cx) {
-    if (this.done) return;
+    if (this.done || this.locked(this.view())) return;
     const v = (this.done = this.view());
     // Opened bare (`mod.open`), or about something gone: nothing to run, it only closes.
     if (!v.missing && v.command?.name) run(v.command.name, v.command.args ?? {});
     this.dismiss(cx);
   }
 
+  // `typed` asked and not typed yet: the confirm button sleeps.
+  locked(v) {
+    return Boolean(v.typed) && !v.missing && this.typed !== v.typed;
+  }
+
   // ---------- the body's pieces ----------
+
+  // The name to type (`typed`): what to type, then the field, its border red once it matches.
+  typedField(t, name) {
+    const mono = (s, color) => div().min_w(0).truncate().font_family(MONO).text_size(13).text_color(color).child(s);
+    return v_flex().flex_none().gap(6)
+      .child(div().text_size(12.5).line_height("18px").text_color(t.muted).child(tr("typed.label", { name })))
+      .child(h_flex().h(34).px(12).gap(2).items_center().rounded(12).bg(t.background).border(1).border_color(this.typed === name ? t.ansi1 : t.input)
+        .when(Boolean(this.typed), (el) => el.child(mono(this.typed, t.foreground)))
+        .child(div().flex_none().w(2).h(18).rounded(1).bg(t.ansi1))
+        .when(!this.typed, (el) => el.child(mono(name, t.dim).pl(2))));
+  }
 
   text(t, lines, size = 13) {
     return v_flex().gap(2).max_w(400).text_size(size).line_height("20px").text_color(t.muted).children(lines.map((l) => div().child(l)));
@@ -313,6 +341,7 @@ export default class Confirm extends View {
     const tone = t[toneName] ?? t.accent;
     const confirmTone = v.danger ? t.ansi1 : t.solid;
     const off = Boolean(v.missing);
+    const asleep = off || this.locked(v);
     // kbrdn.dev pills: an outline Cancel, a solid Confirm.
     const button = (id, label, solid, onClick) =>
       h_flex()
@@ -327,8 +356,8 @@ export default class Confirm extends View {
         .text_color(solid ? (v.danger ? t.background : t.solid_foreground) : t.foreground)
         .font_family(MONO)
         .text_size(11)
-        .when(solid && off, (el) => el.opacity(0.45))
-        .when(!(solid && off), (el) => el.cursor_pointer().hover((s) => s.opacity(0.88)))
+        .when(solid && asleep, (el) => el.opacity(0.45))
+        .when(!(solid && asleep), (el) => el.cursor_pointer().hover((s) => s.opacity(0.88)))
         .on_click(onClick)
         .child(label.toUpperCase());
     const kbd = (k) => div().flex_none().h(18).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.muted).child(k);
@@ -350,6 +379,7 @@ export default class Confirm extends View {
       ...rest.map((b) => (b.kind === "list" ? this.list(t, b.heading, b.items) : this.text(t, b.lines))),
       ...(v.warning ? [this.warning(t, v.warning)] : []),
       ...(v.consequence ? [this.consequence(t, v.consequence, v.danger ? t.ansi1 : t.dim)] : []),
+      ...(v.typed && !off ? [this.typedField(t, v.typed)] : []),
     ];
     // The head, Crosstalk's: a 60 px band over the pixel dither (brand/dither-band.svg), tinted by
     // the project for a thread, a pane or a project, else by the tone (danger: ansi1, toned down);
@@ -358,7 +388,7 @@ export default class Confirm extends View {
     const tintName = v.tint ?? null;
     const band = tintName ? (String(tintName).startsWith("#") ? tintName : t[tintName] ?? tone) : tone;
     const strength = !tintName && v.tone === "danger" ? (dark ? "40" : "33") : dark ? "6b" : "4d";
-    const subtitle = (v.subtitle ?? [v.danger ? tr("sub.danger") : tr("sub.info"), tr("sub.yes"), tr("sub.no")]).filter(Boolean).join(" · ");
+    const subtitle = (v.subtitle ?? [v.danger ? tr("sub.danger") : tr("sub.info"), ...(v.typed ? [tr("sub.typed"), tr("sub.esc")] : [tr("sub.yes"), tr("sub.no")])]).filter(Boolean).join(" · ");
     const head = div()
       .id("confirm-head")
       .relative()
@@ -436,7 +466,7 @@ export default class Confirm extends View {
               .py(10)
               .gap(8)
               .items_center()
-              .child(h_flex().gap(5).items_center().text_size(11).text_color(t.dim).child(kbd("↵")).child(off ? tr("foot.close") : tr("foot.confirm")))
+              .child(h_flex().gap(5).items_center().text_size(11).text_color(t.dim).child(kbd("↵")).child(off ? tr("foot.close") : this.locked(v) ? tr("foot.typed") : tr("foot.confirm")))
               .child(div().flex_1())
               .child(button("no", tr("cancel"), false, (_e, cx) => this.dismiss(cx)))
               .child(button("yes", v.label ?? tr("confirm"), true, (_e, cx) => this.yes(cx))),
@@ -450,9 +480,10 @@ export default class Confirm extends View {
       .items_center()
       .justify_center())
       .track_focus(this.handle)
-      // Enter and Esc with any modifier, as before; y, n and q bare.
+      // Enter and Esc with any modifier, as before; y, n and q bare (with `typed`, what a key types).
       .on_key_down((e, cx) => {
-        if (!this.act(e.key === "enter" || e.key === "escape" ? e.key : keyOf(e).name, cx)) return;
+        const k = keyOf(e);
+        if (!this.act(e.key === "enter" || e.key === "escape" ? e.key : k.name, cx, k.char)) return;
         cx.stop_propagation();
       })
       .on_size_change((size, cx) => {

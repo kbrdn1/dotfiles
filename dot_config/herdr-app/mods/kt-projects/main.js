@@ -12,11 +12,17 @@
 // its filter (INSERT); dd or x forgets it (kt-confirm, as « Retirer »); q or esc closes; ? the
 // keys (kt-keys, Modales). In a field: Enter renames, Esc leaves it (as before: the rename is
 // dropped, the browse list closes). `kt-projects.key:<keys>` feeds keys ("j j", "o"), for tests.
+// #88 (projects.js): a archives a project (its color, logos, order and data kept; an open one's space
+// is closed first, as for « Retirer »); the archived ones are listed last, under « Archivés (n) »,
+// folded until clicked or reached by the keys. On an archived one, a or Enter restores it at its
+// place. D deletes one by force (any project): kt-confirm with its name to type, then the entry and
+// what Herdr keeps for it go (projects.js deletePlan); kt-projects alone runs it.
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, theme, props, closeOverlay, shared, setShared, exec, openOverlay, nextCommand, appHome, checking, settings, readTextFile, home } from "herdr";
-import { Vim, keysOf, step } from "./vim.js";
+import { Vim, keysOf, keyOf, step } from "./vim.js";
+import { isArchived, shown, archivedOf, archive, restore, deletePlan } from "./projects.js";
 import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
 import { skeleton } from "./skeleton.js";
 import { makeT } from "./i18n.js";
@@ -43,6 +49,8 @@ const tilde = (p) => (p && p.startsWith(home()) ? `~${p.slice(home().length)}` :
 
 // The home folder is never a project (kt-threads purges it from the registry): not listed here.
 const registry = () => (shared("kt.projects") ?? []).filter((e) => e.machine || e.folder !== home()).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+// The list's order: the projects shown, then the archived ones (#88).
+const listed = () => { const reg = registry(); return [...shown(reg), ...archivedOf(reg)]; };
 // Saves the list in its order (order = position).
 const save = (list) => setShared("kt.projects", list.map((e, i) => ({ ...e, order: i })));
 // `from` takes `to`'s place (after it going down, before it going up), as spaces' drag does.
@@ -64,6 +72,12 @@ const ext = (path) => path.split(".").pop().toLowerCase();
 // appearance now: its own, else the other mode's.
 const logosOf = (e) => e?.logos ?? { light: e?.logo ?? null, dark: e?.logo ?? null };
 const logoOf = (e) => { const l = logosOf(e); return settings().dark ? (l.dark ?? l.light) : (l.light ?? l.dark); };
+// The close asked before forgetting, archiving or deleting a project: why, what closes, its button.
+const CLOSE_WORDS = {
+  remove: { open: (n) => tr("open.detail", { n }), close: (n) => tr("close.detail", { n }), label: () => tr("close.label") },
+  archive: { open: (n) => tr("archive.open", { n }), close: (n) => tr("archive.close", { n }), label: () => tr("archive.closeLabel") },
+  delete: { open: (n) => tr("delete.open", { n }), close: (n) => tr("delete.close", { n }), label: () => tr("delete.closeLabel") },
+};
 // [mode, its name's key in strings.js, its background].
 const MODES = [["light", "mode.light", "#f5f5f5"], ["dark", "mode.dark", "#0f0f0f"]];
 
@@ -81,7 +95,8 @@ function lightness(svgText) {
 export default class Projects extends View {
   init(_props, cx) {
     this.real = {}; // where(space) -> registry id, null when unresolved
-    this.sel = registry()[0]?.id ?? null;
+    this.sel = listed()[0]?.id ?? null;
+    this.openArchived = false; // « Archivés (n) » unfolded
     this.typing = null; // "name" | "filter": where the keys go
     this.draft = "";
     this.filter = "";
@@ -150,7 +165,7 @@ export default class Projects extends View {
   }
 
   current() {
-    const reg = registry();
+    const reg = listed();
     return reg.find((e) => e.id === this.sel) ?? reg[0] ?? null;
   }
 
@@ -159,10 +174,19 @@ export default class Projects extends View {
     this.typing = null;
     this.browse = false;
     this.filter = "";
+    // An archived one reached (keys, archiving it): its section unfolds.
+    if (isArchived(registry().find((x) => x.id === id))) this.openArchived = true;
+  }
+
+  // « Archivés (n) » folded or unfolded by a click; folded, the cursor leaves it for the last project shown.
+  foldArchived() {
+    this.openArchived = !this.openArchived;
+    const last = shown(registry()).at(-1);
+    if (!this.openArchived && isArchived(this.current()) && last) this.select(last.id);
   }
 
   step(by) {
-    const reg = registry();
+    const reg = listed();
     if (!reg.length) return;
     const i = Math.max(0, reg.findIndex((e) => e.id === this.current()?.id));
     this.select(reg[(((i + by) % reg.length) + reg.length) % reg.length].id);
@@ -182,6 +206,12 @@ export default class Projects extends View {
   // One key, from the keyboard or `key:` (a name).
   press(ev, cx) {
     this.sync();
+    // D (#88): delete by force; vim.js has no action for it.
+    if (!this.typing && keyOf(ev).name === "D") {
+      const e = this.current();
+      if (e) this.start(e, "delete");
+      return true;
+    }
     return this.act(this.vim.handle(ev), cx);
   }
 
@@ -204,12 +234,14 @@ export default class Projects extends View {
     } else if (a === "escape" || a === "quit") this.dismiss(cx);
     else if (a === "down" || a === "up") this.step((a === "down" ? 1 : -1) * this.vim.count);
     else if (["top", "bottom", "half-down", "half-up"].includes(a)) {
-      const reg = registry();
+      const reg = listed();
       const j = step(a, reg.findIndex((x) => x.id === e?.id), reg.length, this.vim.count, 10);
       if (j >= 0) { this.select(reg[j].id); this.reveal = true; }
-    } else if (a === "open" && e) { this.typing = "name"; this.draft = e.name; }
+    } else if ((a === "archive" || a === "open") && isArchived(e)) this.unarchive(e);
+    else if (a === "archive" && e) this.start(e, "archive");
+    else if (a === "open" && e) { this.typing = "name"; this.draft = e.name; }
     else if (a === "filter" && e && !e.machine) { this.browse = true; this.typing = "filter"; }
-    else if (a === "delete" && e) this.forget(e);
+    else if (a === "delete" && e) this.start(e, "remove");
     else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "modals" } });
     else return false;
     return true;
@@ -359,18 +391,46 @@ export default class Projects extends View {
     this.update(e.id, { logos: { ...logosOf(now), [mode]: null }, logosFrom: { ...(now.logosFrom ?? {}), [mode]: null }, logo: undefined, logoFrom: undefined });
   }
 
-  // kt-confirm, answering `kt-projects.confirmed`.
-  ask(step, e, title, detail, label) {
-    this.pending = { step, id: e.id };
-    openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { title, detail, label, danger: true, command: { name: "kt-projects.confirmed" } } });
+  // kt-confirm (danger), answering `kt-projects.confirmed`; `then`: what follows a close.
+  ask(step, e, then, p) {
+    this.pending = { step, id: e.id, then };
+    openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { ...p, danger: true, command: { name: "kt-projects.confirmed" } } });
   }
 
-  // Forgetting a project: a closed one goes at once (after the confirm); an open one first asks to
-  // close its space, then says plainly that its terminals close.
-  forget(e) {
+  // Forget (« Retirer »), archive or delete by force: an open project's space is closed first (it
+  // would come back on its own), after asking, then saying plainly that its terminals close. A closed
+  // one: forgetting asks once, archiving is at once (restoring undoes it), deleting asks for its name.
+  start(e, then) {
     const n = this.spacesOf(e).length;
-    if (!n) return this.ask("remove", e, tr("remove.title", { name: e.name }), tr("remove.detail"), tr("remove.label"));
-    this.ask("close-ask", e, tr("open.title", { name: e.name }), tr("open.detail", { n }), tr("open.label", { n }));
+    if (n) return this.ask("close-ask", e, then, { title: tr("open.title", { name: e.name }), detail: CLOSE_WORDS[then].open(n), label: tr("open.label", { n }) });
+    if (then === "remove") this.ask("remove", e, then, { title: tr("remove.title", { name: e.name }), detail: tr("remove.detail"), label: tr("remove.label") });
+    else if (then === "archive") this.archiveNow(e);
+    else this.askDelete(e);
+  }
+
+  archiveNow(e) {
+    const list = archive(registry(), e.id, Date.now());
+    if (!list) return;
+    save(list);
+    this.select(e.id); // it stays picked, in « Archivés »
+    this.reveal = true;
+  }
+
+  unarchive(e) {
+    const list = restore(registry(), e.id);
+    if (list) { save(list); this.reveal = true; }
+  }
+
+  // The name to type (kt-confirm `typed`), what goes, what stays, and that the Accueil's part can't come back.
+  askDelete(e) {
+    this.ask("delete", e, "delete", {
+      title: tr("delete.title", { name: e.name }),
+      detail: tr("delete.detail"),
+      warning: e.machine ? null : tr("delete.warning"),
+      consequence: tr("delete.consequence"),
+      label: tr("delete.label"),
+      typed: e.name,
+    });
   }
 
   confirmed() {
@@ -382,12 +442,24 @@ export default class Projects extends View {
     if (p.step === "close-ask" && open.length) {
       const tabs = new Set(open.flatMap((s) => s.tabs.map((tb) => tb.id)));
       const n = panes().filter((x) => x.terminal && tabs.has(x.tab)).length;
-      return this.ask("close", e, tr("close.title", { n: open.length, name: e.name }), tr("close.detail", { n }), tr("close.label"));
+      const w = CLOSE_WORDS[p.then];
+      return this.ask("close", e, p.then, { title: tr("close.title", { n: open.length, name: e.name }), detail: w.close(n), label: w.label() });
     }
-    if (p.step === "close") for (const s of open) run("space.close", { id: s.id, confirmed: true });
+    if (p.step === "close-ask") return this.start(e, p.then); // closed meanwhile: what follows a close
+    if (p.step === "close") {
+      for (const s of open) run("space.close", { id: s.id, confirmed: true });
+      if (p.then === "archive") return this.archiveNow(e);
+      if (p.then === "delete") return this.askDelete(e);
+    }
     if (p.step === "remove" || p.step === "close") {
       save(registry().filter((x) => x.id !== e.id));
-      if (this.sel === e.id) this.sel = registry()[0]?.id ?? null;
+      if (this.sel === e.id) this.sel = listed()[0]?.id ?? null;
+    }
+    if (p.step === "delete") {
+      const w = deletePlan({ projects: registry(), maps: { "kt.chat.backgrounds": shared("kt.chat.backgrounds") ?? {} }, pick: shared("kt.kanban.slicePick"), forget: shared("kt.hub.forget") }, e.id, Date.now());
+      if (!w) return;
+      for (const [key, value] of Object.entries(w)) key === "kt.projects" ? save(value) : setShared(key, value);
+      if (this.sel === e.id) this.sel = listed()[0]?.id ?? null;
     }
   }
 
@@ -396,7 +468,8 @@ export default class Projects extends View {
     const t = theme();
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const S = skeleton(t, m);
-    const reg = registry();
+    const all = registry();
+    const reg = shown(all), arch = archivedOf(all); // the list: these, then « Archivés (n) » and those
     const e = this.current();
     if (e) {
       this.findLogos(e, cx);
@@ -405,10 +478,11 @@ export default class Projects extends View {
     }
     const focused = this.handle.is_focused();
     this.sync();
-    // The picked project brought into view once after a key moved it (the list's children are its rows).
+    // The picked project brought into view once after a key moved it (the list's children are its rows,
+    // the archived section's head, then its rows).
     if (this.reveal) {
-      const i = reg.findIndex((x) => x.id === e?.id);
-      if (i >= 0) this.listScroll.scroll_to_item(i);
+      const i = reg.findIndex((x) => x.id === e?.id), j = arch.findIndex((x) => x.id === e?.id);
+      if (i >= 0 || j >= 0) this.listScroll.scroll_to_item(i >= 0 ? i : reg.length + 1 + j);
       this.reveal = false;
     }
     const mode = div().flex_none().h(16).px(6).flex().items_center().rounded(5).border(1)
@@ -459,13 +533,16 @@ export default class Projects extends View {
           .child(tail));
     };
 
-    // A project row; drag it onto another to reorder (a 2 px accent bar shows where it lands).
+    // A project row; drag it onto another to reorder (a 2 px accent bar shows where it lands). The
+    // archived ones (#88) neither move nor take one: dimmed, said archived, a click picks them.
     const from = this.pressed === null ? -1 : reg.findIndex((x) => x.id === this.pressed);
     // The picked row is the keys' cursor too: on the list (NORMAL, the dialog keyed) a 1 px accent ring.
     const row = (x, i) => {
       const on = e?.id === x.id;
       const cursor = on && focused && !this.typing;
       const open = Boolean(this.spaceOf(x));
+      const still = isArchived(x);
+      const drops = !still && from >= 0;
       return h_flex()
         .id(`kp-row-${i}`)
         .relative()
@@ -480,7 +557,7 @@ export default class Projects extends View {
         .when(on, (el) => el.bg(t.accent + "24"))
         .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
         .when(this.pressed === x.id && this.over !== x.id, (el) => el.opacity(0.5))
-        .when(this.pressed !== null && this.over === x.id && this.pressed !== x.id, (el) => el.child(
+        .when(drops && this.over === x.id && this.pressed !== x.id, (el) => el.child(
           div().absolute().left(6).right(6).h(2).rounded(1).bg(t.accent).when(from < i, (b) => b.bottom(-2)).when(from > i, (b) => b.top(-2))))
         .cursor_pointer()
         .on_mouse_down("left", () => { this.pressed = x.id; this.over = x.id; })
@@ -491,15 +568,23 @@ export default class Projects extends View {
           const src = this.pressed;
           this.pressed = null;
           this.over = null;
-          if (src !== null && src !== x.id) reorder(src, x.id);
+          if (src !== null && src !== x.id) { if (drops) reorder(src, x.id); }
           else if (src === x.id) this.select(x.id); // a plain click
           cx.notify();
         })
-        .child(div().when(!open, (el) => el.opacity(0.5)).child(tile(x, 24)))
-        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(open ? t.foreground : t.muted).child(x.name))
+        .child(div().when(!open || still, (el) => el.opacity(still ? 0.35 : 0.5)).child(tile(x, 24)))
+        .child(div().flex_1().min_w(0).truncate().text_size(13).text_color(open ? t.foreground : still ? t.dim : t.muted).child(x.name))
         .when(Boolean(x.machine), (el) => el.child(div().flex_none().px(6).rounded_full().bg(t.raised).font_family(MONO).text_size(10).text_color(t.dim).child(x.machine)))
-        .child(div().flex_none().font_family(MONO).text_size(10).text_color(open ? t.done : t.dim).child(open ? tr("open") : tr("closed")));
+        .child(div().flex_none().font_family(MONO).text_size(10).text_color(open ? t.done : t.dim).child(open ? tr("open") : still ? tr("archivedTag") : tr("closed")));
     };
+    // « Archivés (n) »: folded until clicked, or until the keys reach one of them.
+    const archHead = () => h_flex().id("kp-archived").h(30).mt(6).px(8).gap(8).flex_none().items_center().rounded(10)
+      .cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => { this.foldArchived(); cx.notify(); })
+      .child(svg(I(this.openArchived ? "chevron-down" : "chevron-right")).size(12).flex_none().text_color(t.dim))
+      .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(tr("archivedHead").toUpperCase()))
+      .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child(String(arch.length)))
+      .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(alpha(t.border, "99")));
 
     const editor = () => {
       const open = this.spaceOf(e);
@@ -655,8 +740,13 @@ export default class Projects extends View {
         .when(!browsing, (el) => el.child(div().flex_1()))
         .child(dashed())
         .child(h_flex().flex_none().gap(10).items_center()
-          .child(div().flex_1().min_w(0).text_size(13).line_height("20px").text_color(t.muted).child(open ? tr("footOpen") : tr("footClosed")))
-          .child(pill("kp-forget", open ? tr("forgetOpen") : tr("forget"), () => this.forget(e), { danger: true })));
+          .child(div().flex_1().min_w(0).text_size(13).line_height("20px").text_color(t.muted).child(isArchived(e) ? tr("footArchived") : open ? tr("footOpen") : tr("footClosed")))
+          .when(isArchived(e), (el) => el
+            .child(pill("kp-restore", tr("restore"), () => this.unarchive(e), { on: true }))
+            .child(pill("kp-delete", tr("deleteButton"), () => this.start(e, "delete"), { danger: true })))
+          .when(!isArchived(e), (el) => el
+            .child(pill("kp-archive", open ? tr("archiveOpen") : tr("archiveButton"), () => this.start(e, "archive")))
+            .child(pill("kp-forget", open ? tr("forgetOpen") : tr("forget"), () => this.start(e, "remove"), { danger: true }))));
     };
     // No project yet: what the dialog is for, and how one gets here.
     const nothing = () => v_flex().flex_1().min_w(0).h_full().p(24).items_center().justify_center().child(
@@ -678,7 +768,8 @@ export default class Projects extends View {
     const dark = settings().dark;
     const band = (e && (paint(t, e.color) ?? paint(t, (shared("space.colors") ?? {})[this.spaceOf(e)?.id]))) ?? t.accent;
     const openN = reg.filter((x) => this.spaceOf(x)).length;
-    const subtitle = [tr("sub.projects", { n: reg.length }), tr("sub.open", { n: openN }), reg.length > openN ? tr("sub.closed", { n: reg.length - openN }) : null].filter(Boolean).join(" · ");
+    const subtitle = [tr("sub.projects", { n: reg.length }), tr("sub.open", { n: openN }), reg.length > openN ? tr("sub.closed", { n: reg.length - openN }) : null,
+      arch.length ? tr("sub.archived", { n: arch.length }) : null].filter(Boolean).join(" · ");
     const head = div()
       .id("kp-head")
       .relative()
@@ -728,8 +819,9 @@ export default class Projects extends View {
             h_flex().flex_1().min_h(0).items_start()
               .child(
                 v_flex().id("kp-list").w(280).h_full().flex_none().p(8).gap(2).overflow_y_scrollbar().track_scroll(this.listScroll).border_r(1).border_dashed().border_color(t.border)
-                  .when(!reg.length, (el) => el.child(div().p(8).child(say("circle-dashed", tr("emptyRegistry")))))
-                  .children(reg.map(row)),
+                  .when(!all.length, (el) => el.child(div().p(8).child(say("circle-dashed", tr("emptyRegistry")))))
+                  .children(reg.map(row))
+                  .when(arch.length > 0, (el) => el.child(archHead()).when(this.openArchived, (el) => el.children(arch.map((x, j) => row(x, reg.length + 1 + j))))),
               )
               .when(Boolean(e), (el) => el.child(v_flex().flex_1().min_w(0).h_full().child(editor())))
               .when(!e, (el) => el.child(nothing())),
@@ -740,7 +832,9 @@ export default class Projects extends View {
               .when(focused, (el) => el.child(mode))
               .child(hint("↑↓", tr("hint.project")))
               .child(hint(tr("hint.drag"), tr("hint.reorder")))
-              .child(hint("↵", tr("hint.rename")))
+              .child(hint("↵", isArchived(e) ? tr("hint.restore") : tr("hint.rename")))
+              .when(!isArchived(e), (el) => el.child(hint("a", tr("hint.archive"))))
+              .child(hint("D", tr("hint.delete")))
               .child(hint("esc", this.typing ? tr("hint.cancel") : tr("hint.close"))),
           ),
       );
