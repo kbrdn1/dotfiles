@@ -54,9 +54,14 @@ export function squareInk(level, n = 4, cell = CELL) {
   return INK.get(k);
 }
 
-/** The square's side in cells for a year `width` px wide: 5 (15 px) when the whole year fits, else 4 (12 px,
- * the latest weeks when even that doesn't). */
-export const calN = (levels, offset, width, cell = CELL) => (Math.ceil((offset + levels.length) / 7) * 6 * cell - cell <= width ? 5 : 4);
+/** The square's side in cells for a year `width` px wide: the largest from 7 (21 px) down to 5 (15 px) at
+ * which the whole year fits, else 4 (12 px, the latest weeks when even that doesn't). #89: Activité spans
+ * the page at every width now; at 1 530 px a 15 px year left ~550 px of nothing around it. */
+export const calN = (levels, offset, width, cell = CELL) => {
+  const weeks = Math.ceil((offset + levels.length) / 7);
+  for (let n = 7; n > 4; n--) if (weeks * (n + 1) * cell - cell <= width) return n;
+  return 4;
+};
 
 /** The calendar's grid, `levels` (0..4, null outside) from a day of weekday `offset` (Monday 0), squares of
  * `n` cells: its columns (the latest weeks when narrower than the year), the squares in range [x, y, level]. */
@@ -170,6 +175,55 @@ export function donutSvg(values, size, colors, { scale = 1, cell = CELL } = {}) 
   const rects = runs(g.cols, g.rows, g.ink, cell);
   const px = g.cols * cell;
   return { w: px, h: px, inner: g.inner, svg: svgOf(px, px, values.map((_, i) => ({ rects: rects.filter((r) => r[4] === i).map((r) => r.slice(0, 4)), color: colors[i] })), scale) };
+}
+
+/** #89, Temps agent's chart: a column a day (`days`: [[{ k, v }]] from the bottom; a day to come, []), `max`
+ * at the top, a bar of `wide` cells centred in its band. A segment: its top row solid, its body inked at 0.72
+ * or 0.42 by its place in the stack (two projects may share a registry color), its bottom row left empty
+ * above another. Rectangles keyed by segment. */
+// Bar by bar, a segment's rows run by run (runs() over the whole plot, empty columns included, took ~40 ms
+// for a month at 1 530 px in Herdr); the same run in the next row grows the rectangle, as runs() does.
+export function stackGeometry(days, max, width, height, cell = CELL) {
+  const cols = Math.floor(width / cell), rows = Math.floor(height / cell), band = cols / Math.max(1, days.length);
+  const wide = Math.max(2, Math.min(Math.floor(band * 0.62), 10));
+  const rects = [];
+  days.forEach((segs, i) => {
+    const start = Math.max(0, Math.round(band * (i + 0.5) - wide / 2)), end = Math.min(cols, start + wide);
+    let y = rows, j = 0;
+    for (const x of segs) {
+      if (!(x.v > 0)) continue;
+      const a = Math.max(0, y - Math.max(1, Math.round((x.v / max) * rows))), b = y, tone = j % 2 ? 0.42 : 0.72;
+      let above = new Map();
+      for (let row = a; row < b; row++) {
+        const here = new Map();
+        const push = (s, e) => {
+          const id = `${s}:${e}`, r = above.get(id);
+          if (r) r[3] += cell;
+          else rects.push([s * cell, row * cell, (e - s) * cell, cell, x.k]);
+          here.set(id, r ?? rects.at(-1));
+        };
+        if (row === a) push(start, end);
+        else if (!(j > 0 && b - a >= 2 && row === b - 1)) {
+          let run = -1;
+          for (let c = start; c <= end; c++) {
+            const on = c < end && inked(c, row, tone);
+            if (on && run < 0) run = c;
+            else if (!on && run >= 0) { push(run, c); run = -1; }
+          }
+        }
+        above = here;
+      }
+      y = a;
+      j++;
+    }
+  });
+  return { rects, cols, rows, band, wide, w: cols * cell, h: rows * cell };
+}
+
+/** The chart as an SVG, a layer per segment key in `colors` ({ key: color }, in stack order). */
+export function stackSvg(days, max, width, height, colors, { scale = 1, cell = CELL } = {}) {
+  const g = stackGeometry(days, max, width, height, cell);
+  return { w: g.w, h: g.h, svg: svgOf(g.w, g.h, Object.entries(colors).map(([k, color]) => ({ rects: g.rects.filter((r) => r[4] === k).map((r) => r.slice(0, 4)), color })), scale) };
 }
 
 /** A project's weeks (#76), drawn in paths: a bar per week, 3 cells wide with a cell between, on a one-row

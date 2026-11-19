@@ -80,11 +80,24 @@ export function ranked(days, w, field) {
     .sort((a, b) => b.n - a.n || (a.name < b.name ? -1 : 1));
 }
 
+// The registry (kt.projects) of this computer, by folder.
+const registryMap = (registry) => new Map((registry ?? []).filter((r) => r && !r.machine && r.folder).map((r) => [r.folder.replace(/\/+$/, ""), r]));
+
+/** #89: every project of the summary by its key: its kind, its name (the registry's, else its own), its
+ * registry entry (color, logos, archived). */
+export function projectIndex(projects, registry) {
+  const reg = registryMap(registry);
+  return new Map(Object.entries(projects ?? {}).map(([key, p]) => {
+    const e = reg.get(key) ?? null;
+    return [key, { key, kind: p.kind, name: e?.name ?? p.name, entry: e }];
+  }));
+}
+
 /** The projects with activity in the last `n` weeks, this week's most active first: their week
  * (sessions, agent seconds, prompts, PRs), their sessions week by week (the sparkline), their last
  * activity, and their registry entry (kt.projects: color, logos) when the folder is one. */
 export function projectRows(projects, registry, w, n = 8) {
-  const reg = new Map((registry ?? []).filter((r) => r && !r.machine && r.folder).map((r) => [r.folder.replace(/\/+$/, ""), r]));
+  const reg = registryMap(registry);
   const rows = [];
   for (const [key, p] of Object.entries(projects ?? {})) {
     const at = (d) => p.days?.[d] ?? [0, 0, 0, 0];
@@ -101,6 +114,74 @@ export function projectRows(projects, registry, w, n = 8) {
     rows.push({ key, kind: p.kind, name: e?.name ?? p.name, slug: p.slug ?? null, entry: e, s: wk[0], a: wk[1], p: wk[2], pr: wk[3], spark, last: p.last ?? 0 });
   }
   return rows.sort((x, y) => y.s - x.s || y.a - x.a || y.last - x.last);
+}
+
+// ---------- #89: Temps agent (after Apple's Screen Time) ----------
+
+/** A week (Monday to Sunday) or a month (`kind`), `shift` periods before the one of `today`: its days,
+ * and those passed (today included). */
+export function period(kind, shift, today) {
+  let from = dayShift(mondayOf(today), -7 * shift), n = 7;
+  if (kind === "month") {
+    const t = noon(today);
+    const first = new Date(t.getFullYear(), t.getMonth() - shift, 1, 12);
+    from = localDay(first.getTime());
+    n = new Date(first.getFullYear(), first.getMonth() + 1, 0, 12).getDate();
+  }
+  const keys = Array.from({ length: n }, (_, i) => dayShift(from, i));
+  return { kind, shift, keys, passed: keys.filter((k) => k <= today) };
+}
+
+/** A period's agent time, in seconds: its total and daily average over the days it counts (`use`), each
+ * project's ([{ key, t }], most first). Before the junction a day holds only the sessions still on the disk
+ * (Claude Code deleted the others): a period with days from the junction counts those (`cut` when it
+ * starts before); one entirely before it counts its days as they are (`partial`). */
+export function spent(summary, P) {
+  const j = summary?.junction ?? "";
+  const known = P.passed.filter((k) => k >= j), use = known.length ? known : P.passed;
+  const total = use.reduce((s, k) => s + Math.round((summary?.days?.[k]?.a ?? 0) / 1000), 0);
+  const by = Object.entries(summary?.projects ?? {}).map(([key, p]) => ({ key, t: use.reduce((s, k) => s + (p.days?.[k]?.[1] ?? 0), 0) }))
+    .filter((x) => x.t > 0).sort((a, b) => b.t - a.t || (a.key < b.key ? -1 : 1));
+  return { total, avg: use.length ? total / use.length : 0, by, use, known: known.length, cut: known.length > 0 && P.keys[0] < j, partial: !known.length && P.passed.length > 0 };
+}
+
+/** The daily average's change against the period before, in percent; null when that one counts fewer than
+ * 3 days from the junction, or either is empty. */
+export const spentDelta = (cur, before) => (before.known >= 3 && before.avg > 0 && cur.avg > 0 ? Math.round(((cur.avg - before.avg) / before.avg) * 100) : null);
+
+/** The chart's days: for each day of the period, its agent time (s) by the `top` projects' keys (k "p0"..),
+ * then the rest ("o"); a day to come, []. */
+export function stacks(summary, P, today, top) {
+  return P.keys.map((d) => {
+    if (d > today) return [];
+    const segs = top.map((key, i) => ({ k: `p${i}`, v: summary?.projects?.[key]?.days?.[d]?.[1] ?? 0 }));
+    const all = Math.round((summary?.days?.[d]?.a ?? 0) / 1000);
+    return [...segs, { k: "o", v: Math.max(0, all - segs.reduce((s, x) => s + x.v, 0)) }];
+  });
+}
+
+/** A day field's counts over `keys` ("l": launches, "mo": messages by model): [[name, n]], most first. */
+export function periodCounts(days, keys, field) {
+  const r = {};
+  for (const k of keys) for (const [n, c] of Object.entries(days?.[k]?.[field] ?? {})) r[n] = (r[n] ?? 0) + c;
+  return Object.entries(r).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+}
+
+/** The plan's limits as the bottom bar's peek reads them (kt-threads' usagePeek): the 7 day window from the
+ * newer reading of the statusLine's herdr-quota.json (`text`, its updated_at) and kt-usage's summary (shared
+ * "kt.usage.summary": its week.at, else its at), the 5 h one from the statusLine (only when Claude Code
+ * reports one). Each window: its part used (%), when it resets (ms), when it was read (ms), `stale` when its
+ * reset has passed since (kt-usage's rule: no number then). null when neither source has a window. */
+export function planLimits(text, summary, nowMs) {
+  let q = null;
+  try { q = JSON.parse(text ?? ""); } catch {}
+  const qAt = (Number(q?.updated_at) || 0) * 1000;
+  const win = (used, resets, at) => (Number.isFinite(used) ? { used: Math.round(used), resets: (Number(resets) || 0) * 1000, at, stale: (Number(resets) || 0) * 1000 <= nowMs } : null);
+  const w = summary?.claude?.week, sAt = (Number(w?.at ?? summary?.at) || 0) * 1000;
+  const fromSum = Number.isFinite(w?.used) && sAt >= qAt;
+  const seven = fromSum ? win(w.used, w.resets, sAt) : win(q?.seven_day?.used_percentage, q?.seven_day?.resets_at, qAt);
+  const five = win(q?.five_hour?.used_percentage, q?.five_hour?.resets_at, qAt);
+  return seven || five ? { five, seven } : null;
 }
 
 /** A year of the heatmap: sessions per day from January 1st, null before the first day known and after

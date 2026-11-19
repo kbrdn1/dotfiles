@@ -86,4 +86,45 @@ const mixed = [{ address: "t1", status: "working" }, { address: "vps/t2", status
 assert.deepEqual(M.byMachine(mixed, ["vps", "far"]).map((g) => [g.name, g.total, g.working, g.blocked, g.go?.address ?? null]),
   [[null, 1, 1, 0, "t1"], ["vps", 2, 1, 1, "vps/t2"], ["far", 0, 0, 0, null], ["box", 1, 0, 0, null]]);
 
+// #89, Temps agent: a week (Monday to Sunday) or a month, some periods back; the days passed.
+const P = M.period("week", 0, "2026-11-19");
+assert.deepEqual([P.keys[0], P.keys.at(-1), P.keys.length, P.passed.length], ["2026-11-16", "2026-11-22", 7, 4]);
+assert.deepEqual(M.period("week", 2, "2026-11-19").keys[0], "2026-11-02");
+const Pm = M.period("month", 0, "2026-11-19");
+assert.deepEqual([Pm.keys[0], Pm.keys.at(-1), Pm.passed.length], ["2026-11-01", "2026-11-30", 19]);
+assert.deepEqual([M.period("month", 1, "2026-11-19").keys.length, M.period("month", 11, "2026-11-19").keys[0]], [31, "2025-12-01"], "October; back across the year");
+assert.equal(M.period("month", 9, "2026-11-19").keys.length, 28, "February 2026");
+// Agent time (s): the total and the average over the days passed; each project's; the chart's days.
+const tsum = {
+  junction: "2026-11-10",
+  days: { "2026-11-16": b({ a: 7200e3 }), "2026-11-17": b({ a: 3600e3 }), "2026-11-09": b({ a: 1800e3 }), "2026-11-11": b({ a: 3600e3 }), "2026-11-12": b({ a: 3600e3 }), "2026-11-13": b({ a: 3600e3 }) },
+  projects: { "/p/a": { days: { "2026-11-16": [1, 5400], "2026-11-17": [1, 600] } }, "/p/b": { days: { "2026-11-16": [1, 1800], "2026-11-09": [1, 1800] } } },
+};
+const cur = M.spent(tsum, P);
+assert.deepEqual([cur.total, cur.avg, cur.known, cur.cut, cur.partial], [10800, 2700, 4, false, false], "4 days passed, Thursday's included");
+assert.deepEqual(cur.by, [{ key: "/p/a", t: 6000 }, { key: "/p/b", t: 1800 }]);
+// Cut by the junction (the 10th): the week of the 9th counts from the 10th on; its 9th is left out.
+const before = M.spent(tsum, M.period("week", 1, "2026-11-19"));
+assert.deepEqual([before.total, before.known, before.cut, before.use.length], [10800, 6, true, 6]);
+assert.equal(M.spentDelta(cur, before), 50, "2 700 s a day against 1 800");
+assert.equal(M.spentDelta(cur, { ...before, known: 2 }), null, "fewer than 3 days known: no change");
+// Entirely before the junction: its days as they are.
+const old = M.spent(tsum, M.period("week", 2, "2026-11-19"));
+assert.deepEqual([old.total, old.known, old.partial], [0, 0, true]);
+const st = M.stacks(tsum, P, "2026-11-19", ["/p/a", "/p/b"]);
+assert.deepEqual(st[0], [{ k: "p0", v: 5400 }, { k: "p1", v: 1800 }, { k: "o", v: 0 }]);
+assert.deepEqual(st[1], [{ k: "p0", v: 600 }, { k: "p1", v: 0 }, { k: "o", v: 3000 }], "the rest: the day's time less the 5 first's");
+assert.deepEqual(st[4], [], "a day to come");
+assert.deepEqual(M.periodCounts(days, P.passed, "l"), [["compact", 3], ["me:loop:claude-review-pr", 2], ["chezmoi", 1], ["me:merge", 1]]);
+// The registry by key; the plan's limits.
+assert.deepEqual(M.projectIndex(projects, [{ folder: "/p/a/", name: "Projet A", color: "ansi3" }]).get("/p/a"), { key: "/p/a", kind: "registry", name: "Projet A", entry: { folder: "/p/a/", name: "Projet A", color: "ansi3" } });
+// The plan's limits: the newer of the statusLine's reading and kt-usage's summary (week.at, else at), as usagePeek.
+const file = '{"seven_day":{"used_percentage":19.6,"resets_at":1000},"updated_at":200}';
+assert.deepEqual(M.planLimits(file, null, 0), { five: null, seven: { used: 20, resets: 1e6, at: 2e5, stale: false } });
+assert.deepEqual(M.planLimits(file, { at: 300, claude: { week: { used: 2, resets: 1000 } } }, 0).seven, { used: 2, resets: 1e6, at: 3e5, stale: false }, "the summary, newer");
+assert.equal(M.planLimits(file, { at: 300, claude: { week: { used: 2, resets: 1000, at: 100 } } }, 0).seven.used, 20, "its week.at, older, loses");
+assert.equal(M.planLimits(file, null, 2e6).seven.stale, true, "reset since it was read");
+assert.deepEqual(M.planLimits('{"five_hour":{"used_percentage":7,"resets_at":50},"updated_at":10}', null, 0).five, { used: 7, resets: 5e4, at: 1e4, stale: false });
+assert.equal(M.planLimits("{", {}, 0), null);
+
 console.log("model.check: ok");

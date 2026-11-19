@@ -94,6 +94,24 @@ assert.equal(sp.rects.filter((r) => r[4] === "track").length, 4);
 assert.deepEqual(sp.rects.filter((r) => r[4] === "now"), [[36, 0, 9, 18, "now"]]);
 assert.ok(sp.rects.some((r) => r[4] === "past") && !sp.rects.some((r) => r[4] === "past" && r[0] < 12), "the empty week: its track only");
 
+// #89: up to 7 cells when the year fits (53 × 24 - 3 = 1 269), 6 at 1 110.
+assert.deepEqual([T.calN(levels, 3, 1269), T.calN(levels, 3, 1268), T.calN(levels, 3, 1110)], [7, 6, 6]);
+assert.equal(T.calendarGrid(levels, 3, 1269, 7).width, 1269);
+
+// Temps agent's chart: a bar a day centred in its band, its segments from the bottom; a day to come empty.
+const days = [[{ k: "p0", v: 60 }, { k: "o", v: 30 }], [], [{ k: "p0", v: 0 }, { k: "p1", v: 90 }]];
+const sg = T.stackGeometry(days, 90, 90, 30);
+assert.deepEqual([sg.cols, sg.rows, sg.wide], [30, 10, 6]);
+const colsOf = (k) => [...new Set(sg.rects.filter((r) => r[4] === k).map((r) => r[0] / 3))];
+assert.ok(colsOf("p0").every((c) => c >= 2 && c < 8) && colsOf("p1").every((c) => c >= 22 && c < 28), "day 0's bar in its band, day 2's in its own");
+assert.ok(!sg.rects.some((r) => r[0] >= 30 && r[0] < 60), "nothing on the day to come");
+const rowsOf = (k) => sg.rects.filter((r) => r[4] === k).flatMap((r) => Array.from({ length: r[3] / 3 }, (_, i) => r[1] / 3 + i));
+assert.ok(Math.min(...rowsOf("p0")) === 3 && Math.max(...rowsOf("p0")) === 9, "60 of 90: the 7 bottom rows (from row 3), its top solid");
+assert.ok(Math.min(...rowsOf("o")) === 0 && Math.max(...rowsOf("o")) <= 1, "the rest above it, its bottom row left empty");
+assert.ok(Math.min(...rowsOf("p1")) === 0, "90 of 90: the whole column (p0's 0 makes no segment)");
+const ss = T.stackSvg(days, 90, 90, 30, { p0: "#ff0000", p1: "#00ff00", o: "#88888880" });
+assert.ok(ss.svg.indexOf('fill="#ff0000"') < ss.svg.indexOf('fill="#00ff00"') && ss.svg.includes('fill="#888888" fill-opacity="0.502"'), "a layer per key, in order, with its alpha");
+
 const t0 = performance.now();
 for (let i = 0; i < 20; i++) T.calendarSvg(levels, 3, 951, "#3366ff", "#ffffff12", { n: 5 });
 console.log(`trame.check: ok (a year: ${big.svg.length} B; ${((performance.now() - t0) / 20).toFixed(2)} ms per year in bun)`);

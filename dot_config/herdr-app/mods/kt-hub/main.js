@@ -1,13 +1,13 @@
 // kt-hub: the home page (#46), the "hub" child of kbrdn-threads' "view" stack. It draws what the indexer
 // (index.ts, #44) leaves in data/kt-hub/summary.json and computes nothing in render: model.js and recent.js
 // derive the week, the rankings, the projects, the year and the flows once per summary (and per day).
-// #76's layout (validated on its HTML mockup): a card per section, every series in trame (viz.js' dithered
-// cells: the year, the cards' trends and the rows of squares as SVG images written by the page, trame.js;
-// the bars and a project's weeks in paths), Now in the header. From WIDE px, Next and Recent on the right of
-// the top (This week + Activity) only, as tall as it, Recent dropping lines to fit; under it, side by side
-// under Activity. Then the launches beside the sub-agents (as tall as each other), the projects (6, the rest
-// folded), the tracked workflows (week by week, then a funnel per workflow). Widths: the main column's tier
-// (tiers.js), never the whole page's.
+// #76's cards (validated on its HTML mockup): a card per section, every series in trame (viz.js' dithered
+// cells: the year, the charts and the ring as SVG images written by the page, trame.js; the bars in paths),
+// Now in the header. #89's layout (Apple's Screen Time, validated on its mockup), every row as wide as the
+// page: Temps agent (Semaine / Mois and the periods before, the daily average and its change, the days
+// stacked by project under a dashed average, the most active, the plan's limits), Activity, then Next,
+// Sub-agents and Recent side by side as tall as each other (Recent dropping lines to fit), then the tracked
+// workflows (week by week, then a funnel per workflow). Widths: tiers.js, with their previous tier kept.
 // #48: the year of GitHub instead of the agents' (tab). #49: one project's view, the shown space's unless
 // kt.project is "*" (v switches to the global one): its worktrees (gwm), its week with its PRs (gh pr list)
 // and what review and CI caught (~/Reports' recaps, the flows), its year, its PRs (a click opens the Inbox
@@ -18,16 +18,17 @@
 // most (a bump in between waits for its turn); on r. A hidden copy doesn't render, so it doesn't hear
 // the bus: it catches up when it shows. One tick while shown (each second the page left; each 5 s a bump
 // waiting, the day and the minute changing); none while hidden.
-// Keys (vim.js): j / k gg / G the sections, [ / ] or h / l the year, tab the source (global view), v the
-// view, r index (and the project's PRs and worktrees), enter (Now: go to the agent; Projects: all or 6),
-// ? kt-keys, q / esc back to the thread when there is one.
+// Keys (vim.js): j / k gg / G the sections, [ / ] or h / l the year (on Temps agent: the period), tab the
+// source (on Temps agent: Semaine / Mois), n / N the most active's tab, v the view, r index (and the
+// project's PRs and worktrees), enter (Now: go to the agent; Temps agent: all the projects or 6), ? kt-keys,
+// q / esc back to the thread when there is one.
 // Mod commands: kt-hub.focus, key:<keys>, refresh, year:<yyyy>, source:<agents|github>, scope:<auto|global>.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import * as fs from "fs/promises";
 import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, setShared, settings, panes } from "herdr";
-import { week, ranked, projectRows, year, years, now, byMachine, delta, localDay, dayShift, daysBetween, familyOf } from "./model.js";
+import { week, ranked, year, years, now, byMachine, delta, localDay, dayShift, familyOf, projectIndex, period, spent, spentDelta, stacks, periodCounts, planLimits } from "./model.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the other machines and their state (#66).
 import { machineList, machineTag, stateOf, stateWord } from "./machines.js";
 import { ghArgs, parseYear, stale, githubYear } from "./github.js";
@@ -39,13 +40,13 @@ import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, stagger } from "./motion.js";
 import { skeleton } from "./skeleton.js";
-import { viz, quartileLevels, capped, progressGeometry, faint, isLight, reveal, swatch, SERIES } from "./viz.js";
+import { viz, quartileLevels, capped, progressGeometry, faint, reveal, swatch, SERIES, Scale } from "./viz.js";
 import { roll } from "./roll.js";
 import { refreshOn } from "./bus.js";
 // kt-keys' tiers.js and kt-flow's steps.js (byte-identical copies): the width tiers, the steps' phases.
 import { tierOf } from "./tiers.js";
 import { PHASES, workflowName, speak } from "./steps.js";
-import { calN, calendarGrid, calendarSvg, squaresSvg, trendSvg, funnelSvg, donutSvg, sparkGeometry, hash } from "./trame.js";
+import { calN, calendarGrid, calendarSvg, squaresSvg, funnelSvg, donutSvg, stackSvg, hash } from "./trame.js";
 
 const tr = makeT(strings);
 speak(makeT);
@@ -60,17 +61,18 @@ const archived = (e) => Number.isFinite(e?.archived);
 const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
 const paint = (path, c) => globalThis.window.paint_path(path, c).absolute().inset_0();
 const AGAIN_MS = 60e3; // the indexer at most once a minute, unless r
-const SECTIONS = ["now", "week", "act", "next", "recent", "rank", "proj", "flows"];
+const SECTIONS = ["now", "time", "act", "next", "subs", "recent", "flows"];
 const RECENT_MS = 14 * 864e5; // #50: Next and Recent look two weeks back
-const WIDE = 1300; // #50: Next and Recent on the right from this page width (+ HYST to come, under it to go)
-const HYST = 32;
-const SIDE_W = 400;
 const P_SECTIONS = ["phead", "pweek", "pact", "pprs", "plaunch"]; // #49: one project's view
 const STALE_MS = 3600e3; // a project's PRs (gh) and worktrees (gwm): asked again after an hour, or on r
-const CARDS = ["s", "p", "a", "sub", "pr", "streak"];
 const FAMILY = { workflow: "ansi4", loop: "ansi5", skill: "ansi2" };
 const PROJ_MAX = 6;
-const BUILD_MAX = 4; // bars and project weeks built cold in one render (built()); the chart counts for all
+// #89: the most active's tabs; the colors of the chart's projects without one in the registry, in turn;
+// the plan's limits as the statusLine writes them (the bottom bar's source).
+const MOST = ["proj", "launch", "model"];
+const FALL = ["accent", "ansi13", "ansi9", "ansi6", "ansi5"];
+const QUOTA = ".claude/cache/statusline/herdr-quota.json";
+const BUILD_MAX = 4; // bars built cold in one render (built()); the chart counts for all
 const MEMO = 120; // their geometries kept
 // A card's frame: its border (2), its padding (28 across; 12 + 14 down) and its head (24 + 12).
 const CARD_X = 30, CARD_Y = 64;
@@ -86,7 +88,8 @@ const wfColor = (w) => WF_COLOR[w] ?? WF_SERIES[parseInt(hash(String(w ?? "")), 
 // two switches (<use>, and the SVG's size for a Retina that would blur it).
 const TRAME = { use: true, scale: 1 };
 const TRAME_DIR = "data/kt-hub/trame";
-const TRAME_NAME = /^(cal|leg|days|tr|fn|dn)-[0-9a-z]+-[0-9a-z]+\.svg$/;
+// days and tr: #76's streak and trends, gone with « Cette semaine » (#89); kept for the sweep to take them.
+const TRAME_NAME = /^(cal|leg|days|tr|fn|dn|st)-[0-9a-z]+-[0-9a-z]+\.svg$/;
 const MAX_FILES = 120; // ponytail: a cap, not an LRU; past it, only the shown look's files stay
 const SETTLE_MS = 300; // a width that moved this recently writes no image (a drag would write one a pixel)
 // Next's and Recent's rows: a group's name, a line; the empty sentence.
@@ -155,18 +158,21 @@ export default class Hub extends View {
     this.shown = false;
     this.tick = null;
     this.minute = 0;
-    // #76: the layout's states (tiers with their previous one, the right column, the top's height for
-    // Recent), Projects all or 6, the bars' and weeks' paths (memo), the trames' files.
+    // #76: the layout's states (tiers with their previous one), the bars' paths (memo), the trames' files.
+    // #89: Temps agent's period (week | month, `shift` back), the most active's tab, all the projects or 6,
+    // the period's figures (timeOf, memo), the plan's limits (herdr-quota.json, as read).
     this.tiers = {};
-    this.wide = false;
-    this.topH = 0;
+    this.per = "week";
+    this.shift = 0;
+    this.most = "proj";
     this.projAll = false;
+    this.tm = null;
+    this.qText = undefined; // herdr-quota.json as read (planLimits weighs it against kt.usage.summary)
     this.bars = new Map();
-    this.sparks = new Map();
-    this.slots = new Map(); // a bar's or a project's weeks' last geometry, by its row (built())
+    this.slots = new Map(); // a bar's last geometry, by its row (built())
     this.builds = 0;
     this.later = false;
-    this.heavy = 0; // 0: none yet, 1: the bars, 2: and the weeks, 3: and the chart (bar())
+    this.heavy = 0; // 0: none yet, 1: the bars, 3: and the flows' chart (bar()); 2 was #76's weeks
     this.heavySoon = -1;
     this.tr = { have: new Set(), slot: new Map(), queue: new Map(), busy: false, listed: false, swept: null };
     this.tw = new Set(); // the trames the last render asked for
@@ -222,8 +228,10 @@ export default class Hub extends View {
     this.regKey = JSON.stringify(reg ?? null);
     // #76: the flows of the last two weeks, week by week (their commits' times) and by workflow.
     const flows = (s.flows ?? []).filter((f) => (f.seen ?? 0) >= Date.now() - RECENT_MS);
-    this.d = { today, w, launches: ranked(s.days, w, "l"), subs: ranked(s.days, w, "sub"), rows: projectRows(s.projects, reg, w), years: ys,
+    // #89: the projects by key (Temps agent's names, colors, logos), the first day the summary knows.
+    this.d = { today, w, subs: ranked(s.days, w, "sub"), projects: projectIndex(s.projects, reg), first: Object.keys(s.days ?? {}).sort()[0] ?? today, years: ys,
       fl: { weeks: flowWeeks(flows, Date.now()), funnels: funnels(flows) } };
+    this.tm = null;
   }
 
   // The year's levels (quartiles each side of the junction), once per summary and year; its weeks'
@@ -517,11 +525,26 @@ export default class Hub extends View {
         return;
       }
       if (++n % 5) return;
+      this.quotaLoad(cx);
       if (this.waiting && Date.now() - this.ranAt >= AGAIN_MS) this.index(cx, "bus");
       if (this.source === "github") this.ghLoad(cx, this.ghYear); // asks gh only when stale
       if (this.d && localDay(Date.now()) !== this.d.today) this.derive();
       const minute = Math.floor(Date.now() / 60e3);
       if (minute !== this.minute || this.keyed !== this.handle.is_focused()) { this.minute = minute; cx.notify(); }
+    });
+  }
+
+  // #89: the statusLine's herdr-quota.json, on show and every 5 s while shown; a file that changed redraws,
+  // one that didn't costs nothing (kt.usage.summary, the other source, redraws by itself: shared state).
+  quotaLoad(cx) {
+    if (checking() || this.qBusy) return;
+    this.qBusy = true;
+    cx.spawn(async (cx) => {
+      const text = await readTextFile(`${home()}/${QUOTA}`).catch(() => null);
+      this.qBusy = false;
+      if (text === this.qText) return;
+      this.qText = text;
+      cx.notify();
     });
   }
 
@@ -551,6 +574,18 @@ export default class Hub extends View {
       this.ghYear = ys[i + by];
       this.ghLoad(cx, this.ghYear);
     } else this.year = ys[i + by];
+  }
+
+  // #89: Semaine / Mois (this one again), a period back (by 1) or forward (-1): never past the first day the
+  // summary knows, nor after this one.
+  setPeriod(k) {
+    this.per = k;
+    this.shift = 0;
+  }
+
+  stepPeriod(by) {
+    if (!this.d || (by > 0 && !this.timeOf().back)) return;
+    this.shift = Math.max(0, this.shift + by);
   }
 
   // ---------- actions ----------
@@ -593,14 +628,20 @@ export default class Hub extends View {
     if (!a) return false;
     if (a === "pending" || a === "count") return true;
     const secs = this.pv ? P_SECTIONS : SECTIONS;
+    // #89, on Temps agent: h / l and [ / ] the period (back, forward), tab Semaine / Mois, n / N the tabs.
+    const onTime = this.cur === "time" && !this.pv;
     if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
       this.cur = secs[step(a, secs.indexOf(this.cur), secs.length, this.vim.count, 4)];
       this.reveal = true;
-    } else if (a === "panel-prev" || a === "left") this.stepYear(-1, cx);
+    } else if (onTime && (a === "panel-prev" || a === "left")) this.stepPeriod(1);
+    else if (onTime && (a === "panel-next" || a === "right")) this.stepPeriod(-1);
+    else if (onTime && (a === "tab-next" || a === "tab-prev")) this.setPeriod(this.per === "week" ? "month" : "week");
+    else if (onTime && (a === "next" || a === "prev")) this.most = MOST[(MOST.indexOf(this.most) + (a === "next" ? 1 : MOST.length - 1)) % MOST.length];
+    else if (a === "panel-prev" || a === "left") this.stepYear(-1, cx);
     else if (a === "panel-next" || a === "right") this.stepYear(1, cx);
     else if ((a === "tab-next" || a === "tab-prev") && !this.pv) this.setSource(this.source === "github" ? "agents" : "github", cx);
     else if (a === "open" && this.cur === "now") this.go(now(agents()).go);
-    else if (a === "open" && this.cur === "proj" && !this.pv) this.projAll = !this.projAll;
+    else if (a === "open" && onTime) this.projAll = !this.projAll;
     else if (a === "refresh") {
       this.index(cx, "r");
       if (this.pv) this.sideLoad(cx, this.pv, true);
@@ -649,10 +690,9 @@ export default class Hub extends View {
       .child(`${String(text).toUpperCase()}${more ? `  +${more}` : ""}`); // i18n: tech
   }
 
-  // A dithered bar (viz.js' progress, bare): paths memoized by width and ratio. The bars, the projects'
-  // weeks (this.heavy 1, 2) and the weeks' chart (3) come one, two and three renders after the one that
-  // brings the data: a render of the page takes ~20 ms, and all of them at once ~40 of the ~50 a render
-  // has (#76's measures).
+  // A dithered bar (viz.js' progress, bare): paths memoized by width and ratio. The bars (this.heavy 1) and
+  // the flows' chart (3) come one and three renders after the one that brings the data: a render of the page
+  // takes ~20 ms, and all of them at once ~40 of the ~50 a render has (#76's measures).
   // Paths built cold in this render, BUILD_MAX at most: past it a slot keeps its last geometry one more render
   // (a summary that changes them all at once, Monday's, cost ~40 ms in one render); `this.later` asks for it.
   // The memo: by what draws (a bar's head column, a week's bar heights), the oldest entries going past MEMO.
@@ -675,15 +715,6 @@ export default class Hub extends View {
     const g = this.heavy ? this.built(this.bars, `${w}|${head}`, slot, () => capped((c) => progressGeometry(ratio, w, c), 3, w * 9)) : null;
     if (!g) return div().w(w).h(9).flex_none().bg(faint(color, 0.14));
     return div().relative().w(w).h(9).flex_none().children([...g.paths].map(([k, p]) => paint(p, k === "tint" ? color : faint(color, 0.14))));
-  }
-
-  // A project's 8 weeks (trame.js' sparkGeometry).
-  spark(t, values, color, slot) {
-    const max = Math.max(1, ...values);
-    const g = this.heavy >= 2 ? this.built(this.sparks, values.map((v) => (v > 0 ? Math.max(1, Math.round((v / max) * 6)) : 0)).join(""), slot, () => capped((c) => sparkGeometry(values, 96, 18, c), 3)) : null;
-    if (!g) return div().w(96).h(18).flex_none();
-    const fill = { track: faint(color, 0.14), past: faint(color, 0.7), now: color };
-    return div().relative().w(g.w).h(g.h).flex_none().children([...g.paths].map(([k, p]) => paint(p, fill[k])));
   }
 
   // ---------- header and Now ----------
@@ -764,59 +795,253 @@ export default class Hub extends View {
         .child(tr("now.go")).child(svg(I("chevron-right")).size(12))));
   }
 
-  // ---------- this week ----------
+  // ---------- Temps agent (#89, after Apple's Screen Time) ----------
 
-  // A trend (trame.js, recadrée) as an image, `w` px wide, 56 high; revealed once it's there.
-  trendImg(t, slot, values, w) {
-    if (!values || values.length < 2) return div().h(56);
-    const W = Math.floor(w / 3) * 3, tint = t.accent, dim = isLight(t) ? 0.45 : 1;
-    const img = this.trame(slot, "tr", values.join(","), `${tint}|${dim}|${W}|${TRAME.scale}`, W, 56, () => trendSvg(values, W, tint, { dim, scale: TRAME.scale }).svg);
-    return img ? reveal(this.m, `hub-${slot}`, img.w, img.h, image(img.path).w(img.w).h(img.h)) : div().w(W).h(56);
+  // Agent time in hours past one (« 54 h 10 »: a day holds more than 24 h of agents running side by side).
+  hours(sec) {
+    const m = Math.round(sec / 60);
+    return m < 60 ? tr("time.m", { m }) : tr("time.h", { h: Math.floor(m / 60), m: String(m % 60).padStart(2, "0") });
   }
 
-  // The streak's last 14 days, in the year's squares and levels.
-  streakDays(t) {
-    const h = this.heatOf(Number(this.d.today.slice(0, 4)));
-    const i = h ? daysBetween(h.start, this.d.today) : -1;
-    const lv = i >= 0 ? h.levels.slice(Math.max(0, i - 13), i + 1).map((v) => v ?? 0) : [];
-    if (!lv.length) return div();
-    const ink = t.accent, track = faint(t.foreground, 0.07), w = lv.length * 15 - 3;
-    const img = this.trame("days", "days", lv.join(""), `${ink}|${track}|${TRAME.scale}`, w, 12, () => squaresSvg(lv, 3, ink, track, { scale: TRAME.scale }).svg);
-    return v_flex().h_full().justify_end().gap(6).tooltip(tr("streak.daysTip"))
-      .child(div().font_family(MONO).text_size(10).text_color(t.dim).child(tr("streak.last14")))
-      .child(img ? reveal(this.m, "hub-days", img.w, img.h, image(img.path).w(img.w).h(img.h)) : div().w(w).h(12));
+  // The period shown and its figures, once per summary, day, registry and period (model.js): the average
+  // and the one before, the chart's days by its 5 first projects (their registry color, else the next of
+  // FALL), its scale in hours, the launches and the models of its days; tips, written after a render.
+  timeOf() {
+    const key = `${this.per}|${this.shift}|${this.sum.at}|${this.d.today}|${this.regKey}`;
+    if (this.tm?.key === key) return this.tm;
+    const s = this.sum, today = this.d.today;
+    const P = period(this.per, this.shift, today), prev = period(this.per, this.shift + 1, today);
+    const cur = spent(s, P), before = spent(s, prev);
+    let spare = 0;
+    const keys = cur.by.slice(0, 5).map((x, i) => {
+      const pr = this.d.projects.get(x.key);
+      return { k: `p${i}`, key: x.key, t: x.t, name: pr?.kind === "other" ? tr("proj.other") : pr?.name ?? "?", color: pr?.entry?.color ?? FALL[spare++ % FALL.length] };
+    });
+    const days = stacks(s, P, today, keys.map((x) => x.key));
+    const scale = Scale.nice([...days.map((d) => d.reduce((a, x) => a + x.v, 0)), cur.avg].map((v) => v / 3600), true);
+    this.tm = { key, P, cur, before, keys, days, scale, pct: spentDelta(cur, before), back: prev.keys.at(-1) >= this.d.first,
+      launches: periodCounts(s.days, cur.use, "l"), models: periodCounts(s.days, cur.use, "mo"), tips: null };
+    return this.tm;
   }
 
-  statCard(t, k, cw) {
-    const { w } = this.d;
-    const s = this.sum;
-    const inner = cw - CARD_X;
-    const value = (x) => (k === "a" ? duration(x) : num(x));
-    let main, detail, d = null, series = null, tip;
-    if (k === "streak") {
-      main = tr("streak.days", { n: s.streak?.cur ?? 0 });
-      detail = tr("streak.best", { n: s.streak?.best ?? 0 });
-      tip = tr("tip.streak", { best: s.streak?.best ?? 0 });
-    } else {
-      main = value(w.now[k]);
-      d = delta(w.now[k], w.before[k]);
-      detail = d === 0 ? tr("week.same") : d == null && w.now[k] ? tr("week.new") : tr("week.vs");
-      if (d === 0) d = null;
-      series = w.trend.map((x) => (k === "a" ? Math.round(x[k] / 36e5) : x[k]));
-      tip = tr(`tip.${k}`, { mg: num(w.now.mg) });
+  // A day's tooltip each (dates are slow to write: in a task after the render that first shows the period).
+  dayTips(tm) {
+    return tm.P.keys.map((k, i) => {
+      if (k > this.d.today) return "";
+      const segs = tm.days[i], all = segs.reduce((s, x) => s + x.v, 0);
+      const parts = tm.keys.map((x, j) => (segs[j]?.v ? `${x.name} ${this.hours(segs[j].v)}` : null)).filter(Boolean);
+      const rest = segs.at(-1)?.v ?? 0;
+      if (rest >= 60) parts.push(`${tr("time.others")} ${this.hours(rest)}`);
+      return [tr("time.day", { d: tr("time.weekdays").split(" ")[(i + (tm.P.kind === "week" ? 0 : this.weekdayOf(tm.P.keys[0]))) % 7], date: date(`${k}T12:00:00`, { year: false }) }), all ? this.hours(all) : tr("time.nothing"), ...parts].join(" · ");
+    });
+  }
+
+  // Monday 0 … Sunday 6.
+  weekdayOf(day) {
+    const [y, m, d] = day.split("-").map(Number);
+    return (new Date(y, m - 1, d, 12).getDay() + 6) % 7;
+  }
+
+  periodLabel(P) {
+    if (P.kind === "week") {
+      if (P.shift < 2) return tr(P.shift ? "time.lastWeek" : "time.thisWeek");
+      return `${date(`${P.keys[0]}T12:00:00`, { year: false })} – ${date(`${P.keys.at(-1)}T12:00:00`, { year: false })}`;
     }
-    const pct = d == null ? null : `${d >= 0 ? "+" : "−"}${tr("pct", { n: Math.abs(d) })}`;
-    return v_flex().id(`hub-card-${k}`).w(cw).flex_none().p(14).gap(4).rounded(12).border(1).border_color(t.border).bg(t.raised).tooltip(tip)
-      .child(this.V.stat(tr(`card.${k}`), main, { delta: pct, detail, better: "higher", width: inner, id: `hub-st-${k}` }))
-      .child(div().mt(8).h(56).child(k === "streak" ? this.streakDays(t) : this.trendImg(t, `tr-${k}`, series, inner)));
+    if (P.shift === 0) return tr("time.thisMonth");
+    const [y, m] = P.keys[0].split("-").map(Number);
+    const name = tr("time.months").split(" ")[m - 1] ?? "";
+    return `${name.charAt(0).toUpperCase()}${name.slice(1)}${String(y) !== this.d.today.slice(0, 4) ? ` ${y}` : ""}`;
   }
 
-  weekCard(t, colW, i) {
-    const inner = colW - CARD_X;
-    const tier = this.tier("week", inner);
-    const cols = tier === "wide" ? 3 : tier === "medium" ? 2 : 1;
-    const cw = Math.floor((inner - 8 * (cols - 1)) / cols);
-    return this.card(t, "week", tr("week.title"), null, this.hint(t, tr("week.sub")), h_flex().flex_wrap().gap(8).children(CARDS.map((k) => this.statCard(t, k, cw))), i);
+  // The card: Semaine / Mois and the periods in its head; the average, the chart and its legend on the left;
+  // the most active and the plan's limits on the right (under them when narrow).
+  timeCard(t, fullW, i) {
+    const tm = this.timeOf();
+    const inner = fullW - CARD_X;
+    const two = this.tier("time", inner) !== "narrow";
+    const leftW = two ? Math.floor((inner - 24) * 0.59) : inner, rightW = two ? inner - 24 - leftW : inner;
+    const pill = (k, label) => {
+      const on = this.per === k;
+      return h_flex().id(`hub-tm-${k}`).h(20).px(9).items_center().rounded_full().border(1)
+        .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00")).bg(on ? alpha(t.accent, "24") : alpha(t.accent, "00"))
+        .font_family(MONO).text_size(10.5).text_color(on ? t.accent : t.muted)
+        .when(!on, (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { cx.stop_propagation(); this.setPeriod(k); cx.notify(); }))
+        .child(label);
+    };
+    const arrow = (id, icon, tip, by, on) => div().id(id).size(24).flex_none().rounded_full().flex().items_center().justify_center()
+      .text_color(on ? t.muted : t.dim).when(!on, (el) => el.opacity(0.4))
+      .when(on, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+        .on_click((_e, cx) => { cx.stop_propagation(); this.stepPeriod(by); cx.notify(); }))
+      .child(svg(I(icon)).size(13));
+    const week = this.per === "week";
+    const right = h_flex().flex_none().gap(4).items_center()
+      .child(h_flex().flex_none().p(2).gap(2).items_center().rounded_full().border(1).border_color(t.border).bg(t.background)
+        .child(pill("week", tr("time.week"))).child(pill("month", tr("time.month"))))
+      .child(div().w(6))
+      .child(arrow("hub-tm-prev", "chevron-left", tr(week ? "time.prevWeek" : "time.prevMonth"), 1, tm.back))
+      .child(div().w(112).flex_none().flex().justify_center().font_family(MONO).text_size(11.5).text_color(t.foreground).child(this.periodLabel(tm.P)))
+      .child(arrow("hub-tm-next", "chevron-right", tr(week ? "time.nextWeek" : "time.nextMonth"), -1, this.shift > 0));
+    const jd = date(`${this.sum.junction}T12:00:00`, { year: false });
+    const left = v_flex().w(leftW).flex_none().gap(12)
+      .child(this.timeAvg(t, tm, jd))
+      .child(this.timeChart(t, tm, leftW))
+      .child(this.timeLegend(t, tm))
+      .when(tm.P.keys[0] < (this.sum.junction ?? ""), (el) => el.child(div().text_size(11).line_height("16px").text_color(t.dim)
+        .child(`${tr("time.pre", { date: jd })}${tm.cur.cut ? ` ${tr("time.preAvg", { date: jd })}` : ""}`)));
+    const side = v_flex().w(rightW).flex_none().gap(8).child(this.mostPanel(t, tm)).child(div().flex_1()).child(this.limitsBlock(t));
+    return this.card(t, "time", tr("time.title"), null, right, (two ? div().flex().gap(24) : v_flex().gap(16)).child(left).child(side), i);
+  }
+
+  // The daily average (its suffix: « d'agent »), its change against the period before (on the days that
+  // period knows from the junction, said so), the total over the days it counts.
+  timeAvg(t, tm, jd) {
+    const fg = (a) => faint(t.foreground, a);
+    const { P, cur, before, pct } = tm;
+    const vs = tr(P.kind === "week" ? (P.shift ? "time.vsWeekBefore" : "time.vsWeek") : P.shift ? "time.vsMonthBefore" : "time.vsMonth");
+    const change = pct == null ? [cur.avg ? div().min_w(0).truncate().text_color(fg(0.55)).child(tr("time.noCompare", { date: jd })) : null]
+      : pct === 0 ? [div().text_color(fg(0.55)).child(tr("time.same"))]
+        : [h_flex().flex_none().gap(4).font_family(MONO).text_color(pct < 0 ? t.ansi1 : t.ansi2).child(pct < 0 ? "▼" : "▲").child(tr("pct", { n: Math.abs(pct) })),
+          div().min_w(0).truncate().text_color(fg(0.55)).child(`${vs}${before.cut ? ` (${tr("time.since", { date: jd })})` : ""}`)];
+    const days = cur.cut ? tr("time.daysSince", { days: tr("time.days", { n: cur.known }), date: jd })
+      : P.passed.length === P.keys.length ? tr("time.days", { n: P.keys.length }) : tr("time.passed", { n: P.passed.length });
+    return v_flex().id("hub-tm-avg").gap(2).tooltip(tr("tip.a"))
+      .child(div().text_size(12).text_color(fg(0.6)).child(tr("time.avg")))
+      .child(h_flex().gap(6).items_end()
+        .child(div().text_size(28).font_semibold().text_color(t.foreground).child(roll(this.m, "hub-tm-avg-v", this.hours(cur.avg), 36)))
+        .child(div().pb(5).text_size(12).text_color(t.muted).child(tr("time.unit"))))
+      .child(h_flex().h(16).gap(8).items_center().text_size(12).children(change.filter(Boolean)))
+      .child(div().text_size(11).text_color(t.dim).child(cur.total ? tr("time.total", { t: this.hours(cur.total), days }) : tr("time.none")));
+  }
+
+  // The chart (#89): the days stacked by project, one image (trame.js); over it, the hours on the right, the
+  // grid, the days under it (the week's names, the month's every 5th, today in bold), the dashed average and
+  // a tooltip a day.
+  timeChart(t, tm, w) {
+    const AX = 46, TOP = 14, BOT = 22, H = tm.P.kind === "week" ? 196 : 186;
+    const pw = Math.floor((w - AX) / 3) * 3, ph = Math.floor((H - TOP - BOT) / 3) * 3;
+    const max = tm.scale.max * 3600;
+    const colors = Object.fromEntries([...tm.keys.map((x) => [x.k, this.colorOf(t, x)]), ["o", t.dim]]);
+    const data = JSON.stringify([tm.days.map((d) => d.map((x) => Math.round(x.v / 60))), tm.scale.max]);
+    const img = this.trame(`st-${tm.P.kind}`, "st", data, `${Object.values(colors).join(",")}|${pw}|${ph}|${TRAME.scale}`, pw, ph,
+      () => stackSvg(tm.days, max, pw, ph, colors, { scale: TRAME.scale }).svg);
+    const axis = faint(t.foreground, 0.45), y = (v) => TOP + ph - (v / max) * ph, band = pw / tm.days.length;
+    const lbl = (s, x, top, ww, align, color = axis, bold = false) => div().absolute().left(Math.round(x)).top(Math.round(top - 7)).w(ww).h(14).flex().items_center()
+      .when(align === "center", (e) => e.justify_center()).when(align === "end", (e) => e.justify_end())
+      .whitespace_nowrap().font_family(MONO).text_size(10).text_color(color).when(bold, (e) => e.font_semibold()).child(s);
+    const today = tm.P.keys.indexOf(this.d.today);
+    const wd = tr("time.weekdays").split(" ");
+    const xs = tm.P.keys.map((k, i) => {
+      const n = Number(k.slice(8));
+      if (tm.P.kind === "week") return `${wd[i]} ${n}`;
+      return i === 0 || n % 5 === 0 || i === today ? String(n) : "";
+    });
+    const kids = [
+      ...tm.scale.ticks().flatMap((v) => [div().absolute().left(0).top(Math.round(y(v * 3600))).w(pw).h(1).bg(faint(t.foreground, v ? 0.07 : 0.16)),
+        lbl(`${num(v)} h`, pw + 8, y(v * 3600), AX - 8, "start")]),
+      ...xs.map((s, i) => (s ? lbl(s, band * (i + 0.5) - 40, TOP + ph + 12, 80, "center", i === today ? t.foreground : axis, i === today) : null)).filter(Boolean),
+      div().absolute().left(0).top(TOP).child(img ? reveal(this.m, `hub-st-${tm.P.kind}`, img.w, img.h, image(img.path).w(img.w).h(img.h)) : div().w(pw).h(ph)),
+      ...(tm.cur.avg > 0 && tm.cur.avg <= max ? [div().absolute().left(0).top(Math.round(y(tm.cur.avg))).w(pw).h(0).border_t(1).border_dashed().border_color(t.done),
+        lbl(tr("time.avgLine"), pw - 40, y(tm.cur.avg) - 9, 40, "end", t.done)] : []),
+      ...(tm.tips ?? []).map((tip, i) => (tip ? div().id(`hub-tm-d${i}`).absolute().left(Math.round(band * i)).top(TOP).w(Math.max(1, Math.round(band))).h(ph).tooltip(tip) : null)).filter(Boolean),
+    ];
+    return div().relative().w(w).h(H).flex_none().children(kids);
+  }
+
+  // The 5 projects in their colors and the rest, each with its time on the period.
+  timeLegend(t, tm) {
+    const other = tm.cur.total - tm.keys.reduce((s, x) => s + x.t, 0);
+    const item = (id, color, name, sec) => h_flex().id(id).flex_none().gap(6).items_center().font_family(MONO).text_size(11).text_color(faint(t.foreground, 0.7))
+      .child(swatch(color)).child(name).child(div().text_color(t.dim).child(this.hours(sec)));
+    return h_flex().flex_wrap().gap(10).children([...tm.keys.map((x) => item(`hub-tm-l${x.k}`, this.colorOf(t, x), x.name, x.t)),
+      ...(other >= 60 ? [item("hub-tm-lo", t.dim, tr("time.others"), other)] : [])]);
+  }
+
+  // Les plus actifs (#89), on the period's days: the projects by agent time (the chart's colors; archived
+  // dimmed and said), the workflows and skills by launches (their family's color), the models by messages.
+  // 6 rows, then « Voir les N projets » (enter) or how many more.
+  mostPanel(t, tm) {
+    const colorOfKey = new Map(tm.keys.map((x) => [x.key, x]));
+    let list;
+    if (this.most === "proj") {
+      list = tm.cur.by.map((x) => {
+        const pr = this.d.projects.get(x.key);
+        const name = pr?.kind === "other" ? tr("proj.other") : pr?.name ?? "?";
+        const c = colorOfKey.get(x.key) ?? (pr?.entry?.color ? pr.entry : null);
+        const arch = archived(pr?.entry);
+        return { id: hash(x.key), lead: this.tile(t, { kind: pr?.kind, entry: pr?.entry, name }), name, v: x.t, text: this.hours(x.t), color: c ? this.colorOf(t, c) : t.dim,
+          dim: arch, pills: [!pr?.entry && (pr?.kind === "repo" || pr?.kind === "gh") ? this.pill(t, tr("proj.unlisted")) : null, arch ? this.pill(t, tr("proj.archived")) : null].filter(Boolean),
+          tip: tr("most.tipProj", { name, t: this.hours(x.t) }) };
+      });
+    } else if (this.most === "launch") {
+      list = tm.launches.map(([n, c]) => {
+        const f = familyOf(n), color = t[FAMILY[f]] ?? t.dim;
+        return { id: hash(n), lead: div().size(6).flex_none().rounded_full().bg(color), name: f === "command" ? `/${n}` : n, mono: true, v: c, text: `× ${num(c)}`, color,
+          tip: tr("most.tipLaunch", { name: n, fam: tr(`fam.${f}`), n: c }) };
+      });
+    } else {
+      list = tm.models.map(([n, c], k) => {
+        const color = t[SERIES[k % 6]] ?? t.accent;
+        return { id: hash(n), lead: div().size(6).flex_none().rounded_full().bg(color), name: n, mono: true, v: c, text: num(c), color, tip: tr("most.tipModel", { name: n, n: c }) };
+      });
+    }
+    const all = this.most === "proj" && this.projAll, shown = all ? list : list.slice(0, PROJ_MAX), max = Math.max(1, ...list.map((x) => x.v));
+    const row = (x) => h_flex().id(`hub-mu-${this.most}-${x.id}`).h(28).px(4).gap(10).items_center().rounded(8).hover((s) => s.bg(t.hover)).tooltip(x.tip)
+      .when(Boolean(x.dim), (el) => el.opacity(0.55))
+      .child(x.lead)
+      .child(h_flex().flex_1().min_w(0).gap(8).items_center()
+        .child(div().min_w(0).truncate().text_size(x.mono ? 11.5 : 12.5).when(Boolean(x.mono), (e) => e.font_family(MONO)).text_color(t.foreground).child(x.name))
+        .children(x.pills ?? []))
+      .child(this.bar(t, 96, x.v / max, x.color, `mu:${this.most}:${x.id}`))
+      .child(div().w(64).flex_none().flex().justify_end().font_family(MONO).text_size(11).text_color(t.foreground).child(x.text));
+    const more = list.length <= PROJ_MAX ? null
+      : this.most === "proj" ? h_flex().id("hub-tm-more").h(28).gap(6).items_center().justify_center().rounded(8).cursor_pointer()
+        .font_family(MONO).text_size(11).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.projAll = !this.projAll; cx.notify(); })
+        .child(this.projAll ? tr("proj.less") : tr("proj.more", { n: list.length })).child(svg(I(this.projAll ? "chevron-up" : "chevron-down")).size(12))
+        : div().px(4).text_size(11).text_color(t.dim).child(tr("most.others", { n: list.length - PROJ_MAX }));
+    const tab = (k) => {
+      const on = this.most === k;
+      return h_flex().id(`hub-mu-tab-${k}`).h(20).px(9).items_center().rounded_full().border(1)
+        .border_color(on ? alpha(t.accent, "66") : alpha(t.accent, "00")).bg(on ? alpha(t.accent, "24") : alpha(t.accent, "00"))
+        .font_family(MONO).text_size(10.5).text_color(on ? t.accent : t.muted)
+        .when(!on, (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { cx.stop_propagation(); this.most = k; cx.notify(); }))
+        .child(tr(`most.${k}`));
+    };
+    return v_flex().gap(6)
+      .child(h_flex().gap(8).items_center().min_w(0)
+        .child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(tr("most.title").toUpperCase()))
+        .child(div().min_w(0).truncate().text_size(11).text_color(t.dim).child(tr(`most.unit.${this.most}`))))
+      .child(h_flex().child(h_flex().flex_none().p(2).gap(2).items_center().rounded_full().border(1).border_color(t.border).bg(t.background).children(MOST.map(tab))))
+      .child(list.length ? v_flex().gap(2).children(shown.map(row)).when(Boolean(more), (el) => el.child(more))
+        : this.empty(t, this.most === "proj" ? I("folder") : this.most === "launch" ? I("workflow") : I("bot"), tr("most.none")));
+  }
+
+  // The plan's limits (#89), as the bottom bar's peek shows them (kt-threads' usagePeek, model.js' planLimits):
+  // the 7 day window from the newer of the statusLine's reading and kt-usage's summary, the 5 h one from the
+  // statusLine; their part used (accent, blocked from 75 %, red from 90 %), when they reset, how old the
+  // reading is (its oldest source); a window reset since it was read, or that Claude Code doesn't report,
+  // said so.
+  limitsBlock(t) {
+    const q = planLimits(this.qText, shared("kt.usage.summary"), Date.now());
+    const tone = (u) => (u >= 90 ? t.ansi1 : u >= 75 ? t.blocked : t.accent);
+    const ats = [q?.five?.at, q?.seven?.at].filter((x) => x > 0);
+    const row = (id, label, win, none) => (win && !win.stale
+      ? h_flex().id(id).h(24).px(4).gap(10).items_center()
+        .tooltip(tr("limit.tip", { label, n: win.used, date: date(win.resets, { year: false }), time: time(win.resets) }))
+        .child(div().w(52).flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(label))
+        .child(this.bar(t, 96, win.used / 100, tone(win.used), `lim:${id}`))
+        .child(div().w(36).flex_none().flex().justify_end().font_family(MONO).text_size(11).text_color(t.foreground).child(tr("pct", { n: win.used })))
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.muted).child(tr("limit.resets", { in: duration(Math.max(0, win.resets - Date.now())) })))
+      : h_flex().id(id).h(24).px(4).gap(10).items_center()
+        .child(div().w(52).flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(label))
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(win?.stale ? tr("limit.stale") : none)));
+    return v_flex().gap(4).pt(10).border_t(1).border_dashed().border_color(t.border)
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_none().font_family(MONO).text_size(10).text_color(t.dim).child(tr("limit.title").toUpperCase()))
+        .child(div().flex_1())
+        .when(ats.length > 0, (el) => el.child(this.hint(t, tr("limit.read", { ago: relative(Math.min(...ats)) })))))
+      .child(row("hub-lim-5h", tr("limit.h5"), q?.five, tr("limit.none5")))
+      .child(row("hub-lim-7d", tr("limit.d7"), q?.seven, q ? tr("limit.none7") : tr("limit.unread")));
   }
 
   // ---------- activity ----------
@@ -969,25 +1194,12 @@ export default class Hub extends View {
     return h_flex().items_start().gap(32).children(Array.from({ length: cols }, (_, j) => v_flex().flex_1().min_w(0).gap(2).children(shown.slice(j * per, (j + 1) * per).map(row))));
   }
 
-  // The week's launches (workflows, loops, skills; Claude Code's own commands on one line under them)
-  // beside its sub-agents (a donut), as tall as each other; under each other when narrow.
-  rankRow(t, fullW, i) {
-    const all = this.d.launches;
-    const work = all.filter((x) => x.family !== "command");
-    const cmds = all.filter((x) => x.family === "command");
-    const side = this.tier("rank", fullW - CARD_X) !== "narrow";
-    const SUBS_W = 380;
-    const cols = side && this.tier("rankCols", fullW - SUBS_W - 8 - CARD_X) === "wide" ? 2 : 1;
-    const legend = h_flex().flex_none().gap(10).items_center().children(["workflow", "loop", "skill"].map((f) => h_flex().gap(4).items_center()
-      .font_family(MONO).text_size(10.5).text_color(t.dim).child(div().size(6).rounded_full().bg(t[FAMILY[f]])).child(tr(`fam.${f}`))));
-    const launches = this.card(t, "rank", tr("launch.title"), work.reduce((s, x) => s + x.n, 0), legend, v_flex().flex_1().justify_center().gap(8)
-      .child(this.rankRows(t, work, (x) => t[FAMILY[x.family]] ?? t.accent, tr("launch.none"), cols))
-      .when(cmds.length > 0, (el) => el.child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.dim)
-        .child(tr("launch.commands", { list: cmds.slice(0, 6).map((x) => `/${x.name} ${x.n}`).join(" · ") })))), i);
+  // The week's sub-agents (a donut; #89: « Workflows et skills » is a tab of Les plus actifs now), between
+  // Next and Recent, the donut centred in what it's given.
+  subsCard(t, i) {
     const subs = this.d.subs;
-    const subsCard = this.card(t, "subs", tr("sub.title"), subs.reduce((s, x) => s + x.n, 0), null, v_flex().flex_1().justify_center()
+    return this.card(t, "subs", tr("sub.title"), subs.reduce((s, x) => s + x.n, 0), this.hint(t, tr("sub.week")), v_flex().flex_1().justify_center()
       .child(subs.length ? this.donut(t, subs.slice(0, 6)) : this.empty(t, I("bot"), tr("sub.none"))), i);
-    return side ? div().flex().gap(8).child(launches.flex_1()).child(subsCard.w(SUBS_W).flex_none()) : v_flex().gap(8).child(launches).child(subsCard);
   }
 
   // The sub-agents as viz.donut draws a ring (its ring an image, trame.js: ~400 rectangles in paths), its
@@ -1029,48 +1241,6 @@ export default class Hub extends View {
   // A pill after a project's name: not in the registry, archived (#88).
   pill(t, text) {
     return div().flex_none().h(16).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(9.5).text_color(t.dim).child(text);
-  }
-
-  projRow(t, r, seen) {
-    const name = r.kind === "other" ? tr("proj.other") : r.name;
-    const color = r.entry?.color ? (r.entry.color.startsWith("#") ? r.entry.color : t[r.entry.color] ?? t.accent) : t.accent;
-    const fig = (v, w, s) => div().w(w).flex_none().flex().justify_end().font_family(MONO).text_size(11).text_color(v ? t.foreground : t.dim).child(s);
-    const arch = archived(r.entry); // #88: still counted, dimmed and said
-    return h_flex().id(`hub-p-${r.key}`).h(34).px(4).gap(10).items_center().rounded(10).hover((s) => s.bg(t.hover)).when(arch, (el) => el.opacity(0.55))
-      .child(this.tile(t, r))
-      .child(h_flex().flex_1().min_w(0).gap(8).items_center()
-        .child(div().min_w(0).truncate().text_size(13).text_color(r.s ? t.foreground : t.muted).child(name))
-        .when(!r.entry && (r.kind === "repo" || r.kind === "gh"), (el) => el.child(this.pill(t, tr("proj.unlisted"))))
-        .when(arch, (el) => el.child(this.pill(t, tr("proj.archived")))))
-      .child(div().id(`hub-ps-${r.key}`).w(96).flex_none().tooltip(tr("proj.sparkTip", { list: r.spark.join(" · ") })).child(this.spark(t, r.spark, color, `sp:${r.key}`)))
-      .child(fig(r.s, 70, num(r.s)))
-      .child(fig(r.a, 80, r.a ? duration(r.a * 1000) : "—"))
-      .child(fig(r.pr, 46, num(r.pr)))
-      .when(seen, (el) => el.child(div().w(110).flex_none().flex().justify_end().text_size(11).text_color(t.dim)
-        .child(r.last ? tr("proj.last", { ago: relative(r.last) }) : "")));
-  }
-
-  // This week's most active first, 6 of them, the rest behind « Voir les N projets » (enter on the section).
-  projCard(t, fullW, i) {
-    const rows = this.d.rows;
-    if (!rows.length) return this.card(t, "proj", tr("proj.title"), 0, null, this.empty(t, I("folder"), tr("proj.none")), i);
-    const seen = this.tier("proj", fullW - CARD_X) !== "narrow";
-    const col = (w, s, right = true) => div().w(w).flex_none().flex().when(right, (e) => e.justify_end()).child(s);
-    const head = h_flex().h(22).px(4).gap(10).items_center().border_b(1).border_color(t.border).font_family(MONO).text_size(10).text_color(t.dim)
-      .child(div().w(20).flex_none())
-      .child(div().flex_1().min_w(0).child(tr("proj.col.name").toUpperCase()))
-      .child(col(96, tr("proj.col.weeks").toUpperCase(), false))
-      .child(col(70, tr("proj.col.s").toUpperCase()))
-      .child(col(80, tr("proj.col.a").toUpperCase()))
-      .child(col(46, tr("proj.col.pr").toUpperCase()))
-      .when(seen, (el) => el.child(col(110, tr("proj.col.last").toUpperCase())));
-    const shown = this.projAll ? rows : rows.slice(0, PROJ_MAX);
-    const more = rows.length > PROJ_MAX ? h_flex().id("hub-proj-more").h(28).gap(6).items_center().justify_center().rounded(8).cursor_pointer()
-      .font_family(MONO).text_size(11).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
-      .on_click((_e, cx) => { cx.stop_propagation(); this.projAll = !this.projAll; cx.notify(); })
-      .child(this.projAll ? tr("proj.less") : tr("proj.more", { n: rows.length })).child(svg(I(this.projAll ? "chevron-up" : "chevron-down")).size(12)) : null;
-    return this.card(t, "proj", tr("proj.title"), rows.length, this.hint(t, tr("proj.hint")),
-      v_flex().gap(2).child(head).children(shown.map((r) => this.projRow(t, r, seen))).when(Boolean(more), (el) => el.child(more)), i);
   }
 
   // ---------- tracked workflows (#76: week by week, then a funnel per workflow) ----------
@@ -1326,44 +1496,38 @@ export default class Hub extends View {
     const S = skeleton(t, this.m);
     const sec = (inner) => v_flex().px(14).pt(12).pb(14).gap(12).rounded(14).border(1).border_color(t.border).bg(t.background)
       .child(S.line(110, { h: 7, lh: 24 })).child(inner);
+    // #89: Temps agent (the chart, the most active), Activity, then Next, Sub-agents and Recent.
     return S.pulse(v_flex().id("hub-body-sk").gap(8)
-      .child(sec(h_flex().gap(8).children([0, 1, 2].map(() => S.block(null, 150).flex_1()))))
+      .child(sec(h_flex().gap(24).items_start().child(S.block(null, 260).flex_1()).child(div().w(380).flex_none().child(S.list(6, { h: 28, icon: 20, lines: [0.4] })))))
       .child(sec(S.block(null, 140)))
-      .child(sec(S.list(5, { h: 34, icon: 20, lines: [0.4] }))));
+      .child(h_flex().gap(8).children([0, 1, 2].map(() => sec(S.list(4, { h: 26, icon: 6, lines: [0.6] })).flex_1()))));
   }
 
-  // The global view (#76's layout): its rows (each a child of the scroll, for j / k), and each section's row.
+  // The global view (#89's layout, at every width): its rows (each a child of the scroll, for j / k), and
+  // each section's row. Next, Sub-agents and Recent side by side, as tall as Next or Sub-agents (Recent at
+  // least ~240 px when it has that much, dropping lines to fit); under each other when narrow. #76's right
+  // column from 1 300 px is gone: with Sub-agents in it, Recent kept one line at 1 530 (the mockup's measure).
   globalRows(t, W) {
-    this.wide = W >= (this.wide ? WIDE : WIDE + HYST);
-    const colW = this.wide ? W - SIDE_W - 8 : W;
-    const week = this.weekCard(t, colW, 1), act = this.actCard(t, colW, 2);
+    const time = this.timeCard(t, W, 1), act = this.actCard(t, W, 2);
     const ng = this.nextGroups(t), rg = this.recentGroups(t);
     const nSizes = ng.map(([, l]) => l.length), rSizes = rg.map(([, l]) => l.length);
-    const rest = [this.rankRow(t, W, 5), this.projCard(t, W, 6), this.flowsCard(t, W, 7)];
-    if (this.wide) {
-      // Next and Recent beside the top only, as tall as it (its height measured): Recent takes what Next leaves.
-      const nextH = CARD_Y + groupsH(nSizes);
-      const recentH = this.topH ? Math.max(this.topH - nextH - 8, CARD_Y + EMPTY_H) : null;
-      const rCounts = recentH ? fit(rSizes, recentH - CARD_Y) : rSizes;
-      const left = v_flex().id("hub-top-l").flex_1().min_w(0).gap(8)
-        .on_size_change((s, cx) => { const h = Math.round(s.height); if (h !== this.topH) { this.topH = h; cx.notify(); } })
-        .child(week).child(act);
-      const right = v_flex().w(SIDE_W).flex_none().gap(8).when(Boolean(this.topH), (el) => el.h(this.topH))
-        .child(this.linesCard(t, "next", tr("next.title"), ng, nSizes, H("list-todo"), tr("next.none"), 3))
-        .child(this.linesCard(t, "recent", tr("recent.title"), rg, rCounts, HISTORY, tr("recent.none"), 4).when(Boolean(recentH), (el) => el.h(recentH).overflow_hidden()));
-      this.rowOf = { now: 0, week: 0, act: 0, next: 0, recent: 0, rank: 1, proj: 2, flows: 3 };
-      return [h_flex().items_start().gap(8).child(left).child(right), ...rest];
-    }
-    // Under WIDE: Next and Recent side by side under Activity, as tall as Next (Recent at least ~240 px when
-    // it has that much); under each other when narrow.
+    const trio = this.tier("trio", W) !== "narrow";
+    // Sub-agents' height: the ring (132) beside its legend (16 a line, 8 between), under it when the card is
+    // too narrow for both (donut()'s wrap).
+    const n = Math.min(6, this.d.subs.length), legendH = n ? n * 16 + (n - 1) * 8 : 0;
+    const side = Math.floor((W - 16) / 3) - CARD_X >= 132 + 24 + 140;
+    const subsNat = CARD_Y + (n ? (side ? Math.max(132, legendH) : 132 + 24 + legendH) : EMPTY_H);
     const nextNat = CARD_Y + groupsH(nSizes), recentNat = CARD_Y + groupsH(rSizes);
-    const pair = this.tier("pair", W) !== "narrow";
-    const hh = Math.max(nextNat, Math.min(recentNat, 240));
-    const rCounts = pair ? fit(rSizes, hh - CARD_Y) : rSizes;
+    const hh = Math.max(nextNat, subsNat, Math.min(recentNat, 240));
+    const rCounts = trio ? fit(rSizes, hh - CARD_Y) : rSizes;
     const next = this.linesCard(t, "next", tr("next.title"), ng, nSizes, H("list-todo"), tr("next.none"), 3);
-    const recent = this.linesCard(t, "recent", tr("recent.title"), rg, rCounts, HISTORY, tr("recent.none"), 4);
-    this.rowOf = { now: 0, week: 0, act: 1, next: 2, recent: 2, rank: 3, proj: 4, flows: 5 };
-    return [week, act, pair ? h_flex().items_start().gap(8).child(next.flex_1().h(hh)).child(recent.flex_1().h(hh).overflow_hidden()) : v_flex().gap(8).child(next).child(recent), ...rest];
+    const subs = this.subsCard(t, 4);
+    const recent = this.linesCard(t, "recent", tr("recent.title"), rg, rCounts, HISTORY, tr("recent.none"), 5);
+    this.rowOf = { now: 0, time: 0, act: 1, next: 2, subs: 2, recent: 2, flows: 3 };
+    return [time, act,
+      trio ? h_flex().items_start().gap(8).child(next.flex_1().h(hh)).child(subs.flex_1().h(hh)).child(recent.flex_1().h(hh).overflow_hidden())
+        : v_flex().gap(8).child(next).child(subs).child(recent),
+      this.flowsCard(t, W, 6)];
   }
 
   body(t) {
@@ -1404,6 +1568,7 @@ export default class Hub extends View {
           cx.notify();
         });
         this.startTick(cx);
+        this.quotaLoad(cx);
         if (Date.now() - this.ranAt >= AGAIN_MS) this.index(cx, "page");
       }
     }
@@ -1438,6 +1603,12 @@ export default class Hub extends View {
       .child(this.header(t))
       .child(this.body(t));
     this.writeTips(cx);
+    // #89: the period's day tooltips, in a task after the render that first shows it (dates are slow).
+    if (this.tm && !this.tm.tips && !this.tipsBusy && !this.pv && !checking()) {
+      this.tipsBusy = true;
+      const tm = this.tm;
+      cx.spawn(async (cx) => { tm.tips = this.dayTips(tm); this.tipsBusy = false; cx.notify(); });
+    }
     this.flushTrames(cx);
     // Paths left for the next render (built()): one timer, re-armed only while some are left.
     if (this.later && !this.laterSoon && !checking()) {
