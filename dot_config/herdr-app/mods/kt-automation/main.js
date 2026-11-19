@@ -959,7 +959,7 @@ export default class Automation extends View {
     this.keyed = this.handle.is_focused();
     const t = theme();
     this.V = viz(t, this.m, { roll });
-    this.tier = tierOf(this.width - (props()?.overlay ? 8 : 0)); // the root's width, less a dialog's padding
+    this.tier = tierOf(this.width - (props()?.overlay ? 8 : 0), this.tier); // the root's width, less a dialog's padding; the last tier for its hysteresis
     // No frame of its own as a page: the layout's center column (chrome, radius 20, padding 4) holds it.
     // As a frameless dialog it draws that same frame.
     return v_flex().id("kta-root").size_full().gap(4).text_color(t.foreground)

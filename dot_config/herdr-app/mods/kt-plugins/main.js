@@ -850,17 +850,19 @@ export default class Plugins extends View {
     const x = this.items.find((i) => i.key === this.sel);
     const q = this.queried();
     const shown = q.filter((i) => this.matches(i));
-    // The width's tier (tiers.js): list and detail side by side, or one of them (narrow). A tier change
-    // fades the body in (as does, narrow, list <-> detail); the selection and the scrolls stay.
-    const s = split(this.width);
+    // The width's tier (tiers.js, the last tier for its hysteresis): list and detail side by side, or
+    // one of them (narrow). Side by side the widths are continuous: the body keeps its id and only a
+    // column that appears fades in (the list here, the detail by its own enter); the selection and the
+    // scrolls stay.
+    const s = (this.tiers = split(this.width, { ratio: 0.45, prev: this.tiers?.tier }));
     // The page fades in each time it shows (enter(), the show's count in the id; no rise: nothing
     // may slide past the block). The "⋯" menu is the root's last child: it paints over the list.
     return v_flex().id("ktp-root").relative().size_full().text_color(t.foreground)
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(enter(this.m, v_flex().size_full().gap(4), `ktp-page-${this.showGen}`, { dy: 0 })
         .child(this.header(t, q, shown.length))
-        .child(enter(this.m, h_flex().flex_1().min_h(0).gap(4), `ktp-tier-${s.tier}${s.solo ? (x ? "-d" : "-l") : ""}`, { dy: 0 })
-          .when(!(s.solo && x), (el) => el.child(this.list(t, shown, cx)))
+        .child(h_flex().id("ktp-body").flex_1().min_h(0).gap(4)
+          .when(!(s.solo && x), (el) => el.child(enter(this.m, this.list(t, shown, cx), "ktp-col-list", { dy: 0 })))
           .when(Boolean(x), (el) => el.child(this.detail(t, x, s.detail, cx, s.solo)))))
       .when(this.menu, (el) => el.child(this.more(t)));
   }

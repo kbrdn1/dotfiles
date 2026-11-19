@@ -933,10 +933,11 @@ export default class Notes extends View {
       }));
     }
     const none = !shown.length ? tr("noMatch") : null;
-    // The width's tier (tiers.js): the list 340 px wide, narrower (medium), or alone with the note
-    // (narrow: the zone shown, the list or the note; esc and the note's chevron go back to the list).
-    const { tier, list: listW, solo } = this.tiers;
-    const listCard = (solo ? this.box(t).flex_1().min_w(0) : this.box(t).w(tier === "wide" ? 340 : listW).flex_none())
+    // The width's tier (tiers.js): the list 340 px wide, narrower once the note is at its floor, or
+    // alone with the note (narrow: the zone shown, the list or the note; esc and the note's chevron go
+    // back to the list).
+    const { list: listW, solo } = this.tiers;
+    const listCard = (solo ? this.box(t).flex_1().min_w(0) : this.box(t).w(listW).flex_none())
       .child(S.swap(`kn-list-${repo.id}`, Boolean(d), () => v_flex().id("kn-list").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(6).gap(2)
         .when(Boolean(none), (el) => el.child(div().px(10).py(12).text_size(12.5).text_color(t.dim).child(none)))
         .children(list)
@@ -946,13 +947,14 @@ export default class Notes extends View {
     // Built only when shown (narrow, the list alone doesn't build the note).
     const noteCard = () => this.box(t).flex_1().min_w(0)
       .child(doc ? enter(this.m, v_flex().size_full(), `kn-doc-${doc.id}`, { dy: 0 }).child(this.note(t, doc, keyed, cx)) : div());
-    // h_flex centres its children: the two cards stretch to the page's height instead. A tier change
-    // (narrow: list <-> note too) fades them in; the selection and the scrolls (their handles) stay.
+    // h_flex centres its children: the two cards stretch to the page's height instead. Side by side the
+    // widths are continuous: the body keeps its id and only a card that appears (narrow: list <-> note)
+    // fades in; the selection and the scrolls (their handles) stay.
     const one = solo ? (doc && this.zone === "note" ? "note" : "list") : null;
     return v_flex().size_full().gap(4).child(head)
-      .child(enter(this.m, h_flex().flex_1().min_h(0).items_stretch().gap(4), `kn-tier-${tier}${one ? `-${one}` : ""}`, { dy: 0 })
-        .when(one !== "note", (el) => el.child(listCard))
-        .when(one !== "list", (el) => el.child(noteCard())));
+      .child(h_flex().id("kn-body").flex_1().min_h(0).items_stretch().gap(4)
+        .when(one !== "note", (el) => el.child(enter(this.m, listCard, "kn-col-list", { dy: 0 })))
+        .when(one !== "list", (el) => el.child(enter(this.m, noteCard(), "kn-col-note", { dy: 0 }))));
   }
 
   everyView(t, sc, cx) {
@@ -1034,7 +1036,7 @@ export default class Notes extends View {
       });
       this.shown = true;
     }
-    this.tiers = split(this.width); // tiers.js
+    this.tiers = split(this.width, { listMax: 340, prev: this.tiers.tier }); // tiers.js, the last tier for its hysteresis
     const root = v_flex().id("kn-root").size_full().text_color(t.foreground).track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } });
     if (sc.kind === "repo") return root.child(this.repoView(t, sc, cx));

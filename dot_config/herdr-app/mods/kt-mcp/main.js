@@ -949,18 +949,19 @@ export default class Mcp extends View {
     const q = this.queried();
     const shown = this.listed(q);
     const x = this.items.find((i) => i.key === this.open);
-    // The width's tier (tiers.js, the root's width less a dialog's padding): list and detail side by
-    // side, or one of them (narrow). A tier change fades the body in (as does, narrow, list <-> detail);
-    // the selection and the scrolls (their handles) stay.
-    const s = split(this.width - (props()?.overlay ? 8 : 0), 0.42);
+    // The width's tier (tiers.js, the root's width less a dialog's padding, the last tier for its
+    // hysteresis): list and detail side by side, or one of them (narrow). Side by side the widths are
+    // continuous: the body keeps its id and only a column that appears fades in (the list here, the
+    // detail by its own enter); the selection and the scrolls (their handles) stay.
+    const s = (this.tiers = split(this.width - (props()?.overlay ? 8 : 0), { ratio: 0.42, prev: this.tiers?.tier }));
     // No frame of its own as a page: the work card around it (center: radius 20, padding 4) paints it.
     // As a frameless dialog (frame "none"), the same card drawn here.
     return v_flex().id("ktm-root").size_full().gap(4).text_color(t.foreground)
       .when(Boolean(props()?.overlay), (el) => el.p(4).rounded(20).border(1).border_color(t.border).bg(t.chrome))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t, q, shown.length))
-      .child(enter(this.m, h_flex().flex_1().min_h(0).gap(4), `ktm-tier-${s.tier}${s.solo ? (x ? "-d" : "-l") : ""}`, { dy: 0 })
-        .when(!(s.solo && x), (el) => el.child(this.list(t, shown, cx)))
+      .child(h_flex().id("ktm-body").flex_1().min_h(0).gap(4)
+        .when(!(s.solo && x), (el) => el.child(enter(this.m, this.list(t, shown, cx), "ktm-col-list", { dy: 0 })))
         .when(Boolean(x), (el) => el.child(this.detail(t, x, s.detail, s.solo))))
       // The head's ⋯, last so that it draws over the list.
       .when(this.more, (el) => el.relative().child(moreMenu(t, "ktm-more", props()?.overlay ? 60 : 56, this.moreItems(), () => { this.more = false; })));

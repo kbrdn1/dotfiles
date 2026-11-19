@@ -1267,9 +1267,10 @@ export default class Inbox extends View {
         .children(rows),
       () => v_flex().py(4).child(S.list(6, { h: 66, icon: 0, lines: [0.35, 0.85], px: 16, gap_y: 2 })), { grow: true }))
       .when(Boolean(bar), (el) => el.child(bar));
-    // The column (tiers.js): 400 px wide, narrower (medium), or the page's width (narrow, alone).
-    const { tier, list: w, solo } = this.tiers;
-    return (solo ? v_flex().flex_1().min_w(0) : v_flex().w(tier === "wide" ? 400 : w).flex_none()).h_full().min_h(0).gap(4).child(controls).child(list);
+    // The column (tiers.js): 400 px wide, narrower once the detail is at its floor, or the page's width
+    // (narrow, alone).
+    const { list: w, solo } = this.tiers;
+    return (solo ? v_flex().flex_1().min_w(0) : v_flex().w(w).flex_none()).h_full().min_h(0).gap(4).child(controls).child(list);
   }
 
   // ---------- right ----------
@@ -1477,7 +1478,8 @@ export default class Inbox extends View {
     if (!x) {
       const busy = Boolean(this.inflight[this.listKey()]);
       // Nothing listed yet while GitHub answers: the detail's shape (skeleton.js); else « pick one ».
-      return panel.child(this.card(t).flex_1().child(busy && !this.items.length ? this.bodySkeleton(t, "kti-pick-sk") : this.empty(t, tr("pick"))));
+      // It fades in when it appears (narrow to two columns), as the detail does.
+      return enter(this.m, panel.child(this.card(t).flex_1().child(busy && !this.items.length ? this.bodySkeleton(t, "kti-pick-sk") : this.empty(t, tr("pick")))), "kti-pick", { dy: 0 });
     }
     const d = this.details[x.key];
     // The detail fades in each time another item opens (its id carries the item).
@@ -1528,20 +1530,22 @@ export default class Inbox extends View {
     if (this.zone === "code" && (this.vim.insert || this.tab !== "code" || this.sel?.kind !== "pr")) this.zone = "list";
     const t = theme();
     this.V = viz(t, this.m, { roll });
-    // The width's tier (tiers.js): list and detail side by side, or one of them (narrow: the list, or
-    // the detail once an item is opened; the Code zone is the detail's).
-    this.tiers = split(this.width);
+    // The width's tier (tiers.js, the last tier for its hysteresis, the list at most 400): list and
+    // detail side by side, or one of them (narrow: the list, or the detail once an item is opened; the
+    // Code zone is the detail's).
+    this.tiers = split(this.width, { listMax: 400, prev: this.tiers.tier });
     if (this.tiers.solo && this.zone === "code") this.solo = "detail";
     const one = this.tiers.solo ? (this.sel && this.solo === "detail" ? "detail" : "list") : null;
     // No frame of its own: the work card around it paints the background. Each arrival fades the
-    // page in (no rise: the stack doesn't clip), and so does a tier change (narrow: list <-> detail);
-    // the selection and the scrolls (their handles) stay.
+    // page in (no rise: the stack doesn't clip). Side by side the widths are continuous: a tier change
+    // fades nothing, only a column that appears (narrow: list <-> detail) fades in; the selection and
+    // the scrolls (their handles) stay.
     return div().id("kti-root").size_full()
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(enter(this.m, h_flex().size_full().gap(4).text_color(t.foreground)
-        .when(one !== "detail", (el) => el.child(this.left(t, cx)))
-        .when(one !== "list", (el) => el.child(this.right(t, cx))), `kti-page-${this.arrivals}-${this.tiers.tier}${one ? `-${one}` : ""}`, { dy: 0 }));
+        .when(one !== "detail", (el) => el.child(enter(this.m, this.left(t, cx), "kti-col-list", { dy: 0 })))
+        .when(one !== "list", (el) => el.child(this.right(t, cx))), `kti-page-${this.arrivals}`, { dy: 0 }));
   }
 }

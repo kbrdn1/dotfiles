@@ -789,7 +789,7 @@ export default class Workflow extends View {
     this.shown = vis;
     this.keyed = this.handle.is_focused();
     const t = theme();
-    this.tier = tierOf(this.width); // tiers.js: the root's width
+    this.tier = tierOf(this.width, this.tier); // tiers.js: the root's width, the last tier for its hysteresis
     // No frame of its own: the layout's center column (chrome, radius 20, padding 4) holds it.
     return v_flex().id("ktw-root").size_full().gap(4).text_color(t.foreground)
       .track_focus(this.handle)
