@@ -64,8 +64,8 @@ import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markd
 import { attachmentsOf, photoSize } from "./att-model.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
-import { motionState, frame, enter } from "./motion.js";
-import { TL, marks as markList, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, stepMark, ownerOf } from "./timeline.js";
+import { motionState, frame, enter, MS } from "./motion.js";
+import { TL, marks as markList, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 // #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
 import * as win from "./turn-window.js";
 import { skeleton, readyFor } from "./skeleton.js";
@@ -110,6 +110,7 @@ const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const COLUMN = 832; // theme.rs:8, the reading column
 const COLUMN_PAD = 23; // theme.rs:12, its sides (the composer's 10 + 1 + 12: prose lines up with its text)
 const TOP_INSET = 20; // transcript.rs:208
+const SCROLLBAR_W = 16; // the band on the scroll area's right edge where a press is taken for the scrollbar's
 const BUBBLE_MAX = 576; // transcript.rs:217, PROMPT_BUBBLE_MAX
 const BUBBLE_ROW_PAD = 56; // transcript.rs:5590, the bubble's row: pl 56, justify_end
 const ERR = "#f87171"; // tools.rs:436-545, an error's words
@@ -182,6 +183,11 @@ export default class Chat extends View {
     this.tlOpening = false;
     this.jump = null;
     this.wheelAt = null;
+    // The jump's glide (glide(), timeline.js): the view's top as last known (design px; null unknown:
+    // after a reveal or a press on the scrollbar), where a jump leaves from, the slide drawn ({ gen, dy, ready }).
+    this.top = null;
+    this.glideFrom = null;
+    this.slide = null;
     this.width = 640;
     this.size = null; // { w, h } of this card, in design px (the background's)
     this.hover = null; // the row under the pointer, for what Monocode shows on hover
@@ -850,9 +856,15 @@ export default class Chat extends View {
   jumpTo(k) {
     const m = this.marks[k];
     if (!m) return;
+    // Where the view leaves from, for the glide: the bottom while following, else the top last known;
+    // unknown when the window moves its top (its rows above aren't the same), then the way it goes.
+    const a = this.tlIndex(), g = this.geom(), was = this.first();
+    const at = this.follow ? (g.known ? Math.max(0, g.end + 8 - this.vh) : null) : this.top;
+    const dir = k > a ? 1 : k < a || this.tlAbove ? -1 : 0;
     this.cur = m.i;
     this.follow = false;
     this.win = win.at(this.win, this.turns.length, m.i); // not drawn: it and SHOW - 1 after it (#59)
+    this.glideFrom = { from: this.first() === was ? at : null, dir };
     this.jump = m.turn;
     this.reveal = null;
     this.tlId = m.id;
@@ -932,6 +944,7 @@ export default class Chat extends View {
     const z = this.zoom();
     // The area's padding (TOP_INSET above, 8 under) is part of what scrolls.
     const scrollTop = wheelTop({ top: g.at.get(w.id), inRow: w.inRow / z, inView: w.inView / z, dy: w.dy / z, max: g.end + 8 - this.vh });
+    this.top = scrollTop;
     const whole = this.end() >= this.turns.length; // the window's bottom is the conversation's
     // #59: going down to the conversation's bottom follows it again (the live tail's new turns show).
     if (w.dy < 0 && !this.follow && atEnd({ scrollTop, vh: this.vh, end: g.end + 8, whole })) {
@@ -1006,10 +1019,18 @@ export default class Chat extends View {
    * (#85) learns its height, and the pointer's place in it under a wheel event (wheel()).
    */
   col(el, id) {
+    let inner = v_flex().w_full().max_w(COLUMN).px(COLUMN_PAD).min_w(0).child(el);
+    // A jump's glide (body()): the row's content moves, not the row, whose bounds (the scroll's size,
+    // the heights, the wheel's maths) stay put. Drawn dy off under a new id (a first render never
+    // animates), then at 0: the native slide. The new id drops what gpui keeps under it (a code
+    // block's horizontal scroll).
+    const s = this.slide;
+    if (s && !this.m.reduced)
+      inner = inner.id(`${id}~g${s.gen}`).relative().top(s.ready ? 0 : s.dy).transition("top", { duration: MS.panel, easing: "ease-out" });
     return h_flex().id(id).w_full().flex_none().justify_center()
       .on_size_change((size, cx) => this.measured(id, size, cx))
       .on_scroll_wheel((ev, cx) => this.wheel(cx, id, ev))
-      .child(v_flex().w_full().max_w(COLUMN).px(COLUMN_PAD).min_w(0).child(el));
+      .child(inner);
   }
 
   setHover(cx, id, on) {
@@ -1648,6 +1669,28 @@ export default class Chat extends View {
     // The window (#59): [from, to), CAP turns at most, « Tours suivants » under it when it stops
     // before the end (the live turn and its « travaille… » row are then below too).
     const from = this.first(), to = this.end();
+    // The timeline's jump (#85), once the rows above its turn are measured: an anchor at the turn's top,
+    // a view tall (never past the end), after the end mark (the turns' child indices stay): the
+    // smallest scroll that reveals it puts its top at the view's top, from above as from below. Worked
+    // out before the rows: its glide (glide(), timeline.js) draws them where the view was, under a new
+    // generation (col()), and its cue's first layout lets them slide; gpui scrolls in that same
+    // image, before painting them (div.rs prepaint, scroll_to_active_item).
+    let anchor = null;
+    if (this.jump != null) {
+      const g = this.geom();
+      const y = g.tops.get(this.jump);
+      if (!this.turns.some((x) => x.id === this.jump)) this.jump = null;
+      else if (g.known && y != null && this.vh > 0) {
+        const h = anchorH({ y, end: g.end, vh: this.vh });
+        const go = glide({ y, h, vh: this.vh, max: g.end + 8 - this.vh, ...this.glideFrom });
+        this.top = go.top;
+        anchor = div().absolute().left(0).top(y).w(1).h(h);
+        if (go.dy && !this.m.reduced) this.slide = { gen: (this.slide?.gen ?? 0) + 1, dy: go.dy, ready: false };
+        this.jump = null;
+        this.reveal = null;
+        this.glideFrom = null;
+      }
+    }
     // The code budget goes to the latest turns first: they are described last to first.
     this.budget = { spans: CODE_SPANS, rows: CODE_ROWS };
     const turns = [];
@@ -1659,23 +1702,23 @@ export default class Chat extends View {
     // The 1 px end mark: revealing it shows the bottom of a last turn taller than the view.
     children.push(div().flex_none().h(1));
     const last = children.length - 1;
-    // The timeline's jump (#85), once the rows above its turn are measured: an anchor at the turn's top,
-    // a view tall (never past the end), after the end mark (the turns' child indices stay): the
-    // smallest scroll that reveals it puts its top at the view's top, from above as from below.
-    if (this.jump != null) {
-      const g = this.geom();
-      const y = g.tops.get(this.jump);
-      if (!this.turns.some((x) => x.id === this.jump)) this.jump = null;
-      else if (g.known && y != null && this.vh > 0) {
-        children.push(div().absolute().left(0).top(y).w(1).h(anchorH({ y, end: g.end, vh: this.vh })));
-        this.scroll.scroll_to_item(children.length - 1);
-        this.jump = null;
-        this.reveal = null;
-      }
+    if (anchor) {
+      children.push(anchor);
+      this.scroll.scroll_to_item(children.length - 1);
     }
+    // The glide's cue (enter()'s way): drawn under one id until its first layout is seen, then the
+    // rows go to 0 (col()). 1 px at the top, after the anchor: neither the scroll's size nor its target.
+    const s = this.slide;
+    if (s && !s.ready && !this.m.reduced)
+      children.push(div().id(`kc-jump-${s.gen}`).absolute().top(0).left(0).size(1).on_size_change((_size, cx) => {
+        if (this.slide !== s || s.ready) return;
+        s.ready = true;
+        cx.notify();
+      }));
     if (this.reveal != null) {
       this.scroll.scroll_to_item(this.reveal === "bottom" ? last : Math.min(this.reveal, last));
       this.reveal = null;
+      this.top = null; // the smallest scroll, from where gpui is: unknown until a wheel or a jump
     }
     const rail = this.rail(t);
     return div().relative().flex_1().min_h(0).flex().flex_col()
@@ -1687,7 +1730,14 @@ export default class Chat extends View {
         // Scrolling up leaves the bottom: new turns no longer pull the view down (G or the button bring it back).
         .on_scroll_wheel((ev, cx) => {
           if (ev.delta.y > 0 && this.follow) { this.follow = false; cx.notify(); }
+          // gpui scrolls whether or not the event pairs: unknown until it does (wheel() sets it back).
+          this.top = null;
           this.wheel(cx, null, ev);
+        })
+        // A press on the scrollbar (the area's right edge) moves the view where no event says: the
+        // glide's start is unknown again (a press on the text leaves it).
+        .on_mouse_down("left", (ev) => {
+          if (ev.local_position && ev.bounds && ev.local_position.x > ev.bounds.width - SCROLLBAR_W * this.zoom()) this.top = null;
         })
         .children(children))
       .when(Boolean(rail), (el) => el.child(rail))

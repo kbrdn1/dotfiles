@@ -3,7 +3,7 @@
 // without a scroll offset, which message is on screen, the jump's anchor and the [ ] step. Fixtures
 // are made up (no real session).
 import assert from "node:assert/strict";
-import { TL, label, marks, barWindow, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, stepMark, ownerOf } from "./timeline.js";
+import { TL, label, marks, barWindow, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 
 // ── Which messages (classify's verdict, as chat-index.ts leaves it) ─────────
 assert.equal(label("\n  fix   the\tbug \nmore"), "fix the bug", "the first non-empty line, spaces collapsed");
@@ -112,6 +112,24 @@ assert.equal(anchorH({ y: 360, end: 1461, vh: 500 }), 500);
 // ...never past the end: the last turn's anchor stops there (the view then rests at the bottom).
 assert.equal(anchorH({ y: 1260, end: 1461, vh: 500 }), 201);
 assert.equal(anchorH({ y: 1461, end: 1461, vh: 500 }), 1);
+
+// The glide: where the view lands, and how far off its content starts (end 1461 + 8 under, view 500: max 969).
+const gl = (o) => glide({ vh: 500, max: 969, h: 500, ...o });
+assert.deepEqual(gl({ y: 360, from: 100 }), { top: 360, dy: 260 }, "down a little: the first image is the view it left, 260 lower");
+assert.deepEqual(gl({ y: 360, from: 800 }), { top: 360, dy: -440 }, "up: drawn higher, it slides down");
+assert.deepEqual(gl({ y: 1260, h: 201, from: 0 }), { top: 961, dy: 500 }, "far: one view at most, the smallest scroll's landing near the end");
+assert.deepEqual(gl({ y: 360, from: 360 }), { top: 360, dy: 0 }, "already there: nothing");
+assert.deepEqual(gl({ y: 360, from: 360.4 }), { top: 360, dy: 0 }, "under a pixel: nothing");
+assert.deepEqual(gl({ y: 360, dir: 1 }), { top: 360, dy: 360 }, "from unknown, from above: a view, but never above the content's top");
+assert.deepEqual(gl({ y: 360, dir: -1 }), { top: 360, dy: -500 }, "from unknown, from below: a view");
+assert.deepEqual(gl({ y: 1260, h: 201, dir: -1 }), { top: 969, dy: 0 }, "from below at the bottom: nothing under it to come from");
+assert.deepEqual(gl({ y: 360, dir: 0 }), { top: 360, dy: 0 }, "no way to tell: no glide");
+assert.deepEqual(gl({ y: 60, dir: 1 }), { top: 60, dy: 60 }, "a far jump down: the window starts at its turn, only the head above (#59): almost a snap");
+assert.deepEqual(glide({ y: 100, h: 200, vh: 500, max: -192, from: 0 }), { top: 0, dy: 0 }, "a conversation shorter than the view: no scroll, nothing");
+for (const o of [{ y: 900, from: 0 }, { y: 0, from: 969 }, { y: 500, dir: 1 }, { y: 500, dir: -1 }]) {
+  const { top, dy } = gl(o);
+  assert.ok(top - dy >= 0 && top - dy <= 969 && Math.abs(dy) <= 500, `never past the content, a view at most: ${JSON.stringify(o)}`);
+}
 
 // ── [ ] ────────────────────────────────────────────────────────────────────
 assert.equal(stepMark(4, 1, false, 1), 2);

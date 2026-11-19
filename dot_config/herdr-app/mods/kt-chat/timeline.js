@@ -152,6 +152,23 @@ export const atEnd = ({ scrollTop, vh, end, whole = true }) => whole && end - (s
 export const anchorH = ({ y, end, vh }) => Math.max(1, Math.min(vh, end - y));
 
 /**
+ * The jump's glide (Kylian's ask after #86): the jump stays the anchor's, and the content slides
+ * instead, natively, from where it was. `top`: where the anchor [y, y + h) leaves the view's top, the
+ * smallest scroll from `from` (the view's top before; null when unknown, then `dir` says from where:
+ * 1 from above, -1 from below). `dy`: how much lower the content is drawn at first (dy < 0: higher), so
+ * that image still shows the view it left; one view at most (Monocode jumps, this only eases it), and
+ * never showing past the content (top - dy in [0, max]). 0: nothing to glide.
+ */
+export function glide({ y, h, vh, max, from = null, dir = 0 }) {
+  const hi = Math.max(0, max);
+  const near = from == null ? (dir < 0 ? y : y + h - vh) : y < from ? y : y + h > from + vh ? y + h - vh : from;
+  const top = Math.max(0, Math.min(hi, near));
+  const raw = from == null ? dir * vh : top - from;
+  const dy = Math.max(top - hi, Math.min(top, Math.max(-vh, Math.min(vh, raw))));
+  return { top, dy: Math.abs(dy) < 1 ? 0 : dy };
+}
+
+/**
  * [ ] by `count`: the message before or after `at`. Going back from a message whose turn starts above
  * the view, the first step is that message's own top (vim's `{`). -1 without messages.
  */
