@@ -10,12 +10,13 @@
 
 Welcome to my dotfiles repository! This repository is managed using [chezmoi](https://www.chezmoi.io/), a tool designed to manage your dotfiles across multiple machines.
 
-<img width="1512" alt="Preview" src="https://github.com/kbrdn1/dotfiles/blob/main/preview.png">
+<img width="1512" alt="Preview: Herdr 2 with the kbrdn mods" src="preview.png">
 
 ## Table of Contents 📚
 
 - [CLI Tools 🛠️](#cli-tools-)
 - [AI & Dev Workflow 🤖](#ai--dev-workflow-)
+- [Herdr 2 & the kbrdn mods 🐑](#herdr-2--the-kbrdn-mods-)
 - [Claude Code Configuration 🧠](#claude-code-configuration-) → [`CLAUDE-CODE.md`](CLAUDE-CODE.md)
 - [GUI Tools 🖥️](#gui-tools-)
 - [Applications 📦](#applications-)
@@ -30,6 +31,7 @@ Welcome to my dotfiles repository! This repository is managed using [chezmoi](ht
   - [Tmux Aliases 📟](#tmux-aliases)
   - [Custom Functions ⚙️](#custom-functions)
 - [Shortcuts & Keybindings ⌨️](#shortcuts--keybindings-) → [`KEYBINDINGS.md`](KEYBINDINGS.md)
+- [Branches & Releases 🌿](#branches--releases-)
 - [Installation 📥](#installation-)
 - [Acknowledgments 🙏](#acknowledgments-)
 - [License 📄](#license-)
@@ -63,7 +65,7 @@ ASDF + Homebrew setup (see [MIGRATION_NIX.md](MIGRATION_NIX.md)).
   - [Yazi](https://github.com/sxyazi/yazi): Terminal file manager
   - [fzf](https://github.com/junegunn/fzf): Fuzzy finder
   - [zoxide](https://github.com/ajeetdsouza/zoxide): Smarter `cd`
-  - [herdr](https://herdr.dev): Terminal multiplexer — workspaces, panes and AI-agent panes. The daily driver.
+  - [Herdr](https://herdr.dev): Workspaces, panes and AI-agent threads. **Herdr 2** (`~/.config/herdr-app`, the native app) is the daily driver, customised with the [kbrdn mods](#herdr-2--the-kbrdn-mods-); herdr 1, the TUI, is still configured in `~/.config/herdr`.
   - [Tmux](https://github.com/tmux/tmux): Multiplexer it replaced. Still installed and configured (via home-manager) for existing sessions, but no longer the default.
   - [sesh](https://github.com/joshmedeski/sesh): Smart tmux session manager
   - [htop](https://htop.dev/) / [bottom](https://github.com/ClementTsang/bottom) / [duf](https://github.com/muesli/duf): System & disk monitors
@@ -115,6 +117,34 @@ here with their real install command.
 Version pinning is deliberate only for **gwm**, built from a local checkout. The
 rest track upstream.
 
+### Herdr 2 & the kbrdn mods 🐑
+
+Herdr 2 runs around forty mods of mine, in
+[`dot_config/herdr-app/mods/`](dot_config/herdr-app/mods) (`kt-*`, `kbrdn-*`), loaded
+by the `kbrdn-threads` layout. They are plain JavaScript modules on Herdr's GPUI kit,
+with no build step. Each mod ships its own checks (`*.check.mjs`, run with Bun), and the
+modules several mods share are byte-identical copies, listed in `kt-mods/model.js` and
+held to that by `model.check.mjs`.
+
+| Page or panel | Mod | What it shows |
+|---|---|---|
+| Accueil (home) | `kt-hub` | The agents' activity, the GitHub year, a per-project view, what runs now, what is next, the agents per machine |
+| Inbox | `kt-inbox` | Pull requests and reviews waiting, their checks drawn as dithered graphs |
+| Kanban | `kt-kanban` | Agent threads as cards: columns, swimlanes, filters, saved views, actions on a card |
+| Chat | `kt-chat` | A thread's transcript, live, with a composer that writes to the agent (`ctrl-b space` toggles Terminal and Chat) |
+| Workflow | `kt-workflow` | The git workflow of `WORKFLOW.md`, and a session dedicated to configuring it |
+| Skills, MCP, Plugins | `kt-skills`, `kt-mcp`, `kt-plugins` | What is installed, with a Preview / Raw markdown view |
+| Automatisations | `kt-automation` | The `me:loop:*` loops and the Herdr automations |
+| Marketplaces | `kt-market` | Search, inspect and install skills, MCP servers and plugins; nothing runs before the install form's confirmation |
+| Worktrees | `kt-gwm` | gwm worktrees, their health, bulk actions |
+| Notes | `kt-notes` | Notes, in three tabs |
+| Machines | `kt-machines` | The other machines (`hc machine ls`), their state and their logins |
+| Flow, Changes, History, Files, Crosstalk, Details | `kt-flow`, `kt-diff`, `kt-history`, `kt-files`, `kt-crosstalk`, `kt-details` | The right-hand panel of the selected thread |
+
+The interface is bilingual (fr / en). Every shortcut lives in
+`~/.config/herdr-app/keys.json` and is listed in [`KEYBINDINGS.md`](KEYBINDINGS.md);
+`?` opens the in-app help.
+
 ### Claude Code Configuration 🧠
 
 The largest part of this repo. It lives in
@@ -133,10 +163,11 @@ because it holds `.credentials.json` and must stay `0700`.
 | `WORKFLOW.md` | The same, in diagrams — tool-choice cascade, one flowchart per git workflow, where each kind of knowledge lives. |
 | `FLAGS.md`, `PRINCIPLES.md` | Behavioural flags and engineering principles (SuperClaude base). |
 | `skills/me/` | My own procedures: git flows, self-paced loops, project bootstrap, document generation. |
-| `skills/` (others) | Standalone skills, plus 101 symlinks to third-party installs under `~/.agents/skills` — **those are not versioned here**, the symlink records where they come from. |
-| `commands/` | Thin entry points (`/me:…`) that delegate to a skill. |
-| `agents/`, `hooks/`, `output-styles/` | Sub-agents, hooks, and output styles. |
-| `scripts/` | `statusline.ts` (the live status line, run through the Open Island wrapper) and its tests. |
+| `skills/` (others) | Standalone skills, plus about a hundred symlinks to third-party installs under `~/.agents/skills`: **those are not versioned here**, the symlink records where they come from. |
+| `commands/` | Thin entry points (`/me:…`). Each one reads its skill's `SKILL.md`: Claude Code does not load a skill nested under `skills/me/` on its own, so the command is its way in. |
+| `hooks/` | `no-shell-write.ts`, a PreToolUse hook that refuses file writes made by the shell (redirections, `sed -i`, `tee`, heredocs, inline python or perl): files are written with Edit and Write. |
+| `agents/`, `output-styles/` | Sub-agents and output styles. |
+| `scripts/` | `statusline.ts` (the live status line, run through the Open Island wrapper) and its tests; `worktree-gwm.sh`, the WorktreeCreate / WorktreeRemove hooks that make Claude Code's own worktrees with gwm. |
 
 #### The idea behind it
 
@@ -185,7 +216,7 @@ Essential graphical tools:
 Key applications:
 
 - **Development**
-  - [Ghostty](https://ghostty.org/) + [herdr](https://herdr.dev): Primary dev environment — GPU-accelerated terminal + workspace/agent manager
+  - [Herdr 2](https://herdr.dev) + [Ghostty](https://ghostty.org/): Primary dev environment: agent threads, worktrees, review and chat in one window, with the [kbrdn mods](#herdr-2--the-kbrdn-mods-)
   - [Claude](https://claude.ai/download): Desktop companion to the Claude Code CLI
   - [Codex](https://openai.com/codex/): Desktop companion to the Codex CLI
   - [Zed](https://zed.dev/) (+ Zed Preview): Secondary IDE
@@ -305,8 +336,8 @@ Premium applications via SetApp:
 
 ## Shortcuts & Keybindings ⌨️
 
-Every keybinding lives in **[`KEYBINDINGS.md`](KEYBINDINGS.md)** — herdr, AeroSpace,
-Neovim, Zed, tmux and Ghostty, in one place.
+Every keybinding lives in **[`KEYBINDINGS.md`](KEYBINDINGS.md)**: Herdr 2, herdr 1,
+AeroSpace, Neovim, Zed, tmux and Ghostty, in one place.
 
 That file is **generated** from the live configs on the machine:
 
@@ -320,12 +351,26 @@ update them, so the document cannot go stale silently. Sources it reads:
 
 | Section | Read from |
 |---|---|
-| herdr | `~/.config/herdr/config.toml` |
+| Herdr 2 | `~/.config/herdr-app/keys.json`, labels from `mods/kt-keys/strings.js` |
+| herdr 1 (TUI) | `~/.config/herdr/config.toml` |
 | AeroSpace | `~/.config/aerospace/aerospace.toml` |
 | Neovim | `~/.config/nvim/lua/config/keymaps.lua` + `lua/plugins/*.lua` |
 | Zed | `~/.config/zed/keymap.json` |
 | tmux | `~/.tmux.conf` (generated by home-manager) |
 | Ghostty | `~/.config/ghostty/config` |
+
+## Branches & Releases 🌿
+
+| Branch | Role |
+|---|---|
+| `main` | Releases only. Protected: changes reach it through a pull request from `dev`. The installer uses it. |
+| `dev` | The default branch, where work comes together. Small changes are committed here directly, with `Closes #N`. |
+| `feature/*`, `fix/*`, `docs/*`, `chore/*` | Larger changes, worked in a gwm worktree and merged into `dev` by pull request. |
+
+Releases are dated, `vYYYY.MM.DD` (a second one on the same day gets `.1`). A release
+merges `dev` into `main` with a merge commit, tags that commit, and publishes the notes
+of `changelogs/<version>.md`; [`CHANGELOG.md`](CHANGELOG.md) keeps `[Unreleased]` and
+the index of past releases. The details are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Installation 📥
 
@@ -356,9 +401,10 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 
 4. **Clone and Apply Dotfiles**
 ```bash
-chezmoi init https://github.com/kbrdn1/dotfiles.git
+chezmoi init --branch main https://github.com/kbrdn1/dotfiles.git
 chezmoi apply
 ```
+`--branch main` installs the latest release; `dev` is the work in progress.
 
 5. **Install Nix & Home Manager** (CLI tools, shell, aliases — see [MIGRATION_NIX.md](MIGRATION_NIX.md))
 ```bash

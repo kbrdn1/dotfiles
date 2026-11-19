@@ -84,7 +84,8 @@ chmod +x ~/.config/sketchybar/* ~/.config/sketchybar/plugins/**/* ~/.config/sket
 
 # Initialize chezmoi
 echo "🏠 Initializing chezmoi..."
-chezmoi init https://github.com/kbrdn1/dotfiles.git
+# main = the latest release; dev, the default branch, is the work in progress.
+chezmoi init --branch main https://github.com/kbrdn1/dotfiles.git
 chezmoi apply
 
 echo "✨ Installation complete!"
