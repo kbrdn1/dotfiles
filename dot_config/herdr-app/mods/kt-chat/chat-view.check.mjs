@@ -2,7 +2,7 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans } from "./chat-view.js";
+import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText } from "./chat-view.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
 const claude = (address, tab) => ({ address, tab, program: { key: "claude", name: "Claude Code" }, app: "claude-code" });
@@ -99,6 +99,17 @@ assert.equal(workedFor(400), "1s");
 assert.equal(workedFor(42000), "42s");
 assert.equal(workedFor(180000), "3m");
 assert.equal(workedFor(192400), "3m 12s");
+// A long message folded to four wrapped lines (Monocode's « Show more »).
+assert.deepEqual(clampText("court"), { text: "court", cut: false });
+assert.deepEqual(clampText("a\nb\nc\nd"), { text: "a\nb\nc\nd", cut: false }, "four lines: whole");
+assert.deepEqual(clampText("a\nb\nc\nd\ne"), { text: "a\nb\nc\nd…", cut: true });
+const longLine = "x".repeat(400); // a path, a JSON line: no space, it wraps all the same
+const cl = clampText(longLine, { cols: 76 });
+assert.equal(cl.cut, true);
+assert.ok(cl.text.length <= 4 * 76 && cl.text.endsWith("…"), "cut within four lines of 76");
+assert.deepEqual(clampText("un\n" + "y".repeat(160) + "\nfin", { cols: 76 }), { text: "un\n" + "y".repeat(160) + "…", cut: true }, "a long line counts its wrapped lines (3)");
+assert.deepEqual(clampText("trois\n\n\n"), { text: "trois", cut: false }, "trailing blank lines don't count");
+
 assert.equal(ink({ foreground: "#ebebeb" }, 0.1), "#ebebeb1a");
 assert.equal(ink({ foreground: "#2e2e2eff" }, 1), "#2e2e2eff");
 assert.equal(ink({ foreground: "#ebebeb" }, 0.78), "#ebebebc7");

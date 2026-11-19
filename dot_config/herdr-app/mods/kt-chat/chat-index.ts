@@ -12,7 +12,7 @@
 //   `start` is where the emitted part
 //   begins (a line start), `more` says there is something before it (`--to start` reads it).
 // A --from past the end of the file (a file rewritten) starts again from 0.
-import { toolKind, toolTitle } from "./chat-model.js";
+import { toolKind, toolTitle, classify } from "./chat-model.js";
 
 const HEAVY = /^\{"type":"(api-request|file-history|session-owner|bridge-session|atis-latch|tools-used|frame-link|last-prompt)/;
 const ATTACHMENT = /"attachment":\{"type":"([a-z_]+)"/;
@@ -45,13 +45,11 @@ function textOf(content: any): { text: string; images: number } {
 }
 
 /** <tag ...>inner</tag> around a whole message (peer, teammate, agent): its sender and inner text. */
-function unwrap(text: string): { text: string; from?: Entry } {
-  const m = text.match(/^(?:[^<\n]{0,80}:\s*)?<(cross-session-message|teammate-message|agent-message)\b([^>]*)>\n?([\s\S]*?)\n?<\/\1>\s*$/);
-  if (!m) return { text };
-  const attrs: Record<string, string> = {};
-  for (const a of m[2].matchAll(/([\w-]+)="([^"]*)"/g)) attrs[a[1]] = a[2];
-  const kind = m[1] === "teammate-message" ? "teammate" : "peer";
-  return { text: m[3], from: { kind, name: attrs["from-name"] ?? attrs.teammate_id ?? attrs.from ?? "", color: attrs.color ?? null } };
+/** classify()'s answer as an entry's `from` (no text: it stays the entry's own). */
+function fromOf(c: any): Entry {
+  if (c.kind === "task") return { kind: "task", status: c.status ?? null };
+  if (c.kind === "system") return { kind: "system" };
+  return { kind: c.kind, name: c.name ?? "", color: c.color ?? null, summary: c.summary ?? null, count: c.count ?? 1 };
 }
 
 /**
@@ -223,14 +221,11 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
       const bash = /^\s*<bash-input>/.test(text) ? tag(text, "bash-input") : undefined;
       if (cmd) e.cmd = { name: cmd, args: cap(tag(text, "command-args") ?? "", 2000) };
       else if (bash) e.cmd = { name: "!", args: cap(bash, 2000) };
-      else if (o.origin?.kind === "task-notification" || /^\s*<task-notification>/.test(text)) {
-        e.from = { kind: "task", status: tag(text, "status") ?? null };
-        e.text = cap(tag(text, "summary") ?? "", 2000);
-      } else {
-        const u = unwrap(strip(text));
-        if (u.from) e.from = u.from;
-        else if (o.origin?.kind === "peer") e.from = { kind: "peer", name: o.origin.name ?? "", color: null };
-        e.text = cap(u.text, 20000);
+      else {
+        // Who speaks (chat-model.js classify): only « human » is Kylian's; the rest is shown folded.
+        const c = classify(strip(text), o.origin);
+        if (c.kind !== "human") e.from = fromOf(c);
+        e.text = cap(c.text, 20000);
       }
       return out.concat(e);
     }
@@ -257,8 +252,9 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
         return [{ k: "notice", o: off, uuid: o.uuid, at, kind: "task", status: tag(text, "status") ?? null, text: cap(tag(text, "summary") ?? "", 2000) }];
       }
       if (a.isMeta || !text.trim()) return [];
-      const u = unwrap(strip(text));
-      return [{ k: "user", o: off, uuid: o.uuid, at, turn: false, text: cap(u.text, 20000), ...(u.from ? { from: u.from } : {}) }];
+      const c = classify(strip(text), a.origin);
+      if (c.kind === "system") return [];
+      return [{ k: "user", o: off, uuid: o.uuid, at, turn: false, text: cap(c.text, 20000), ...(c.kind !== "human" ? { from: fromOf(c) } : {}) }];
     }
   }
   return [];

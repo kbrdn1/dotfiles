@@ -109,6 +109,29 @@ export function workedFor(ms) {
   return r ? `${m}m ${r}s` : `${m}m`;
 }
 
+/**
+ * A long message folded to its first `lines` wrapped lines (Monocode: a prompt past four lines is
+ * clamped under « Show more », transcript.rs:5275-5282, 5359). The wrap is estimated: `cols`
+ * characters a line, a line of no space cut there too. { text, cut }: the folded text (ending « … »
+ * when cut) and whether anything was left out.
+ */
+export function clampText(text, { lines = 4, cols = 76 } = {}) {
+  const src = String(text ?? "").replace(/\s+$/, "");
+  const out = [];
+  let used = 0;
+  for (const line of src.split("\n")) {
+    const need = Math.max(1, Math.ceil(line.length / cols));
+    if (used + need > lines) {
+      const room = (lines - used) * cols;
+      if (room > 0) out.push(line.slice(0, Math.max(0, room - 1)));
+      return { text: out.join("\n").replace(/\s+$/, "") + "…", cut: true };
+    }
+    out.push(line);
+    used += need;
+  }
+  return { text: src, cut: false };
+}
+
 /** Monocode's `content(a)` token: the theme's ink (foreground) at alpha `a`, as #rrggbbaa. */
 export const ink = (t, a) => `${String(t.foreground).slice(0, 7)}${Math.round(Math.min(1, Math.max(0, a)) * 255).toString(16).padStart(2, "0")}`;
 

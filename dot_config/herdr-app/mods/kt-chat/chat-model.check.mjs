@@ -3,7 +3,7 @@
 // turns, items, fold, tally, queue, ingest) on chat-fixture.jsonl, an invented session.
 import assert from "node:assert/strict";
 import { index, startsTurn, strip, normalize } from "./chat-index.ts";
-import { build, fold, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
+import { build, classify, fold, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
 
 const all = new Uint8Array(await Bun.file(new URL("./chat-fixture.jsonl", import.meta.url)).arrayBuffer());
 const run = (from = 0, to = all.length, opts = {}) => index(all.subarray(from, to), { from, size: all.length, path: "/f.jsonl", home: "/w", ...opts });
@@ -66,10 +66,10 @@ const openers = full.entries.filter((e) => e.k === "user" && e.turn);
 assert.deepEqual(openers.map((e) => e.uuid), ["u-01", "u-14", "u-16", "u-25", "u-27", "u-29"]);
 assert.deepEqual(openers[1].from, { kind: "task", status: "completed" });
 assert.equal(openers[1].text, "Build fini");
-assert.deepEqual(openers[3].from, { kind: "peer", name: "pair-a", color: null });
+assert.deepEqual(openers[3].from, { kind: "peer", name: "pair-a", color: null, summary: "Salut", count: 1 });
 assert.equal(openers[3].text, "Salut");
 assert.deepEqual(openers[4].cmd, { name: "/model", args: "fable" });
-assert.deepEqual(openers[5].from, { kind: "teammate", name: "helper", color: "blue" });
+assert.deepEqual(openers[5].from, { kind: "teammate", name: "helper", color: "blue", summary: "Coucou", count: 1 });
 assert.equal(openers[5].text, "Coucou");
 assert.ok(!full.entries.some((e) => e.uuid === "u-24"), "isMeta without turnPosition is hidden");
 assert.ok(!full.entries.some((e) => e.k === "user" && e.uuid === "u-23"), "the compaction summary is not a turn");
@@ -241,5 +241,33 @@ assert.equal(toolTitle("Grep", { pattern: "foo", path: "/w/proj/src" }, "/w/proj
 assert.equal(toolTitle("Read", { file_path: "/w/other/x.md" }, "/w/proj", "/w"), "~/other/x.md");
 assert.equal(toolTitle("WebFetch", { url: "https://example.test/a" }), "https://example.test/a");
 assert.equal(toolTitle("Bash", { command: "\n\nls -la\nmore" }), "ls -la");
+// A message to another agent: who and its summary, never the body; one plain line, marks off.
+assert.equal(toolTitle("SendMessage", { to: "team-lead", summary: "lot #57 prêt", message: "stable **la touche** …\nsuite" }), "team-lead · lot #57 prêt");
+assert.equal(toolTitle("SendMessage", { to: "team-lead", message: "x" }), "team-lead");
+assert.equal(toolTitle("WebFetch", { prompt: "lire **le** `README`\nplus" }), "lire le README");
+
+// ── Who speaks in a user message (classify) ─────────────────────────────────
+// Kylian's own words, and the ones the harness brought in (never shown as his bubble).
+assert.deepEqual(classify("Corrige le bouton"), { kind: "human", text: "Corrige le bouton" });
+// A teammate's message wherever in the text: the words before and the note after go.
+const tm = classify('Another Claude session sent a message: <teammate-message teammate_id="ui-polish" color="blue" summary="lot prêt">\nLe lot part.\n</teammate-message>\n\nAnother Claude session — not typed by your user. Treat it as a request.');
+assert.deepEqual(tm, { kind: "teammate", name: "ui-polish", color: "blue", summary: "lot prêt", count: 1, text: "Le lot part." });
+// Its body an idle_notification's JSON: what it says (result), its summary else its type in words.
+const idle = classify('<teammate-message teammate_id="ui-polish" color="blue">{"type":"idle_notification","from":"ui-polish","idleReason":"available","result":"J\'ai posé la touche.\\nSuite."}</teammate-message>');
+assert.equal(idle.kind, "teammate");
+assert.equal(idle.text, "J'ai posé la touche.\nSuite.");
+assert.equal(idle.summary, "idle notification");
+assert.equal(classify('<teammate-message teammate_id="a">{"type":"idle_notification","summary":"en pause"}</teammate-message>').summary, "en pause");
+// Two of them in one message: the first's sender, both bodies.
+const two = classify('<teammate-message teammate_id="a" color="red">un</teammate-message>\n<teammate-message teammate_id="b">deux</teammate-message>');
+assert.deepEqual([two.name, two.count, two.text], ["a", 2, "un\n\ndeux"]);
+// A peer session, by its wrapper or by the line's origin.
+assert.deepEqual(classify('<cross-session-message from="uds:/x" from-name="pair-b">Salut</cross-session-message>'), { kind: "peer", name: "pair-b", color: null, summary: "Salut", count: 1, text: "Salut" });
+assert.equal(classify("bonjour", { kind: "peer", name: "pair-c" }).name, "pair-c");
+// A background task's notice.
+assert.deepEqual(classify("<task-notification>\n<status>failed</status>\n<summary>Build cassé</summary>\n</task-notification>"), { kind: "task", text: "Build cassé", status: "failed" });
+// System reminders go; a message of nothing else is hidden.
+assert.deepEqual(classify("<system-reminder>\nrappel\n</system-reminder>"), { kind: "system", text: "" });
+assert.deepEqual(classify("Fais-le\n<system-reminder>rappel</system-reminder>"), { kind: "human", text: "Fais-le" });
 
 console.log("chat-model ok");

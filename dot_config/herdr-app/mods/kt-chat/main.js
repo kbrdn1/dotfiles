@@ -35,7 +35,7 @@ import { view } from "./view.js";
 import { ingest, prepend, build, tally, foldedSteps, trim, pendingQueue } from "./chat-model.js";
 import {
   pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep,
-  projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, orphans,
+  projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, orphans, clampText,
 } from "./chat-view.js";
 import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markdown.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
@@ -615,15 +615,15 @@ export default class Chat extends View {
     });
   }
 
-  /** The background's layers (chat-view.js bgLayers) under everything, inside the card's corners. */
+  /** The background's layers (chat-view.js bgLayers) under everything, to the block's rounded edges. */
   background(t, cx, pr) {
     const s = pr ? this.bgOf(pr.key) : null;
     if (!s || !this.size || (s.scope === "empty" && this.turns.length)) return null;
     const img = this.bgImage(cx, s, s.color === "project" ? pr.tint : null);
     if (!img) return null;
-    const w = Math.floor(this.size.w) - 2, h = Math.floor(this.size.h) - 2;
+    const w = Math.floor(this.size.w), h = Math.floor(this.size.h); // no border: the whole block
     if (w <= 30 || h <= 30) return null;
-    const layers = bgLayers({ w, h, iw: img.w, ih: img.h, windows: bandWindows(w, h, 15, ALL), opacity: s.opacity, empty: !this.turns.length });
+    const layers = bgLayers({ w, h, iw: img.w, ih: img.h, windows: bandWindows(w, h, 16, ALL), opacity: s.opacity, empty: !this.turns.length });
     const src = appPath(img.path);
     return div().absolute().top(0).left(0).w(w).h(h).children(layers.map((l) =>
       div().absolute().left(l.x).top(l.y).w(l.w).h(l.h).overflow_hidden()
@@ -910,12 +910,39 @@ export default class Chat extends View {
   }
 
   // transcript.rs:4796-4869, an interjection: py 16, a 1 px rule at 0.12 on each side of its label
-  // (12 px, 0.55), its body at 12.5/20, 0.7.
-  interjection(t, label, body) {
+  // (12 px, 0.55), its body at 12.5/20, 0.7, folded past four lines or 300 characters (:4798) with
+  // « Afficher plus ». `dot`: the sender's color. `id`: the fold's key (o:<id>).
+  interjection(t, label, body, { id = null, dot = null } = {}) {
     const rule = () => div().flex_1().h(1).bg(ink(t, 0.12));
+    const open = id && this.open.has(`o:${id}`);
+    const folded = body ? clampText(body, { lines: 4, cols: 110 }) : null;
+    const long = Boolean(folded?.cut) || (body?.length ?? 0) > 300;
+    const shown = !body ? null : open || !long ? body : folded.cut ? folded.text : `${body.slice(0, 299)}…`;
     return v_flex().py(16).gap(8).min_w(0)
-      .child(h_flex().gap(10).items_center().child(rule()).child(div().flex_none().max_w(480).truncate().text_size(12).text_color(ink(t, 0.55)).child(label)).child(rule()))
-      .when(Boolean(body), (el) => el.child(div().text_size(12.5).line_height("20px").text_color(ink(t, 0.7)).child(body)));
+      .child(h_flex().gap(10).items_center().min_w(0).child(rule())
+        .child(h_flex().flex_none().max_w(560).min_w(0).gap(6).items_center()
+          .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded_full().bg(dot)))
+          .child(div().min_w(0).truncate().text_size(12).text_color(ink(t, 0.55)).child(label)))
+        .child(rule()))
+      .when(Boolean(shown), (el) => el.child(div().min_w(0).overflow_hidden().text_size(12.5).line_height("20px").text_color(ink(t, 0.7))
+        .children(lines(shown).map((l) => div().min_w(0).child(l || " ")))))
+      .when(long && Boolean(id), (el) => el.child(this.more(t, `kc-im-${id}`, open, () => this.toggle(`o:${id}`))));
+  }
+
+  // transcript.rs:5411-5434, « Show more » / « Show less »: 12/16 at 0.6, a 0.08 ground when hovered,
+  // radius 4, px 4, py 2, mt 4.
+  more(t, id, open, onClick) {
+    return h_flex().child(div().id(id).mt(4).px(4).py(2).rounded(4).text_size(12).line_height("16px").text_color(ink(t, 0.6))
+      .cursor_pointer().hover((s) => s.bg(ink(t, 0.08)).text_color(ink(t, 1)))
+      .on_click((_e, cx) => { cx.stop_propagation(); onClick(); cx.notify(); })
+      .child(open ? tr("showLess") : tr("showMore")));
+  }
+
+  /** Another agent's message, folded (classify(): never Kylian's bubble): who, about what, its text. */
+  injected(t, id, from, text) {
+    const name = from.name || tr("anAgent");
+    const label = [tr(from.kind === "peer" ? "fromPeer" : "fromAgent", { name }), from.count > 1 ? tr("andMore", { n: from.count - 1 }) : null, from.summary].filter(Boolean).join(" · ");
+    return this.interjection(t, label, text, { id, dot: agentColor(t, from.color) });
   }
 
   /**
@@ -979,7 +1006,7 @@ export default class Chat extends View {
   prose(t, cx, b, top) {
     const doc = docOf(this.md, b.text, { meta: false });
     const md = (k, text) => TextView.markdown(`kc-md-${b.id}#${k}`, text).selectable(true).on_link_click((url) => this.link(url));
-    return v_flex().w_full().min_w(0).pt(top).gap(16).text_size(14).line_height("24px").text_color(ink(t, 0.78))
+    return v_flex().w_full().min_w(0).overflow_hidden().pt(top).gap(16).text_size(14).line_height("24px").text_color(ink(t, 0.78))
       .children(doc.segs.map((s, k) => (s.kind === "code" ? this.codeBlock(t, cx, `${b.id}#${k}`, s)
         : s.kind === "alert" ? div().ml(4).pl(16).border_l(4).border_color(ink(t, 0.2)).child(md(k, s.text))
           : md(k, s.text))));
@@ -1038,46 +1065,49 @@ export default class Chat extends View {
     const b = it.block;
     if (b.role === "prose") return this.prose(t, cx, b, ctx.top);
     if (b.role === "notice") return this.notice(t, b);
-    if (b.role === "note") return this.interjection(t, tr("sentDuring"), b.text);
+    if (b.role === "note") {
+      if (b.from?.kind === "system") return null;
+      return b.from ? this.injected(t, b.id, b.from, b.text) : this.interjection(t, tr("sentDuring"), b.text, { id: b.id });
+    }
     return null;
   }
 
   // transcript.rs:5290-5313 + :1325-1431, the user's bubble: on the right (its row pl 56), 576 at most,
-  // px 12 py 8, radius 12 (a pill on one short line), ink 0.1, no border, 14/20 at ink 1; images and
-  // files above it (mb 8); hovered, copy and the time under it.
+  // px 12 py 8, radius 12 (a pill on one short line), ink 0.1, no border, 14/20 at ink 1; folded past
+  // four lines under « Afficher plus » (:5275-5282); images and files above it (mb 8); hovered, copy and
+  // the time under it. The bubble never takes the width its words would like: a path or a JSON line
+  // with no space wraps (or is cut) inside its 576, it never pushes the bubble out of the column.
+  // Another agent's message, a task's notice, a system reminder: never Kylian's bubble (classify()).
   opener(t, turn) {
     const u = turn.user;
     if (!u) return null;
+    if (u.from?.kind === "system") return null;
     if (u.from?.kind === "task") {
       const failed = u.from.status && u.from.status !== "completed";
       return this.interjection(t, [failed ? tr("notice.taskFailed") : tr("notice.task"), u.text].filter(Boolean).join(" · "), null);
     }
-    if (u.from) {
-      // Another agent speaking (a peer session, a teammate): on the left, its color as a stripe.
-      const c = agentColor(t, u.from.color);
-      return v_flex().pt(4).items_start().gap(4)
-        .child(this.label(t, [u.from.name, u.at ? time(u.at) : null].filter(Boolean).join(" · ")))
-        .child(div().relative().max_w(BUBBLE_MAX).py(8).pr(12).pl(15).rounded(12).overflow_hidden()
-          .bg(ink(t, 0.06)).text_size(14).line_height("20px").text_color(ink(t, 1))
-          .child(div().absolute().top(8).bottom(8).left(5).w(3).rounded_full().bg(c))
-          .child(TextView.markdown(`kc-from-${turn.id}`, u.text || " ").selectable(true)));
-    }
+    if (u.from) return this.injected(t, turn.id, u.from, u.text);
     const text = u.cmd ? [u.cmd.name, u.cmd.args].filter(Boolean).join(" ") : u.text ?? "";
     const pill = !text.includes("\n") && text.length <= 60;
+    const id = `u:${turn.id}`;
+    const open = this.open.has(`o:${turn.id}`);
+    const folded = clampText(text, { lines: 4, cols: 76 });
+    const shown = open || !folded.cut ? text : folded.text;
     const chips = [];
     if (u.images) chips.push(this.chip(t, OWN("image"), tr("images", { n: u.images })));
     for (const f of turn.files) chips.push(this.chip(t, I("file-text"), f));
-    const id = `u:${turn.id}`;
     const hov = this.hover === id;
     const copied = this.copied === id;
-    return h_flex().id(`kc-u-${turn.id}`).pt(4).pl(BUBBLE_ROW_PAD).w_full().justify_end()
+    return h_flex().id(`kc-u-${turn.id}`).pt(4).pl(BUBBLE_ROW_PAD).w_full().min_w(0).justify_end()
       .on_hover((h, cx) => this.setHover(cx, id, h))
       .child(v_flex().items_end().max_w(BUBBLE_MAX).min_w(0)
-        .when(chips.length > 0, (el) => el.child(h_flex().mb(8).gap(6).flex_wrap().justify_end().children(chips)))
-        .when(Boolean(text.trim()), (el) => el.child(div().px(12).py(8).rounded(pill ? 18 : 12).bg(ink(t, 0.1))
+        .when(chips.length > 0, (el) => el.child(h_flex().mb(8).gap(6).flex_wrap().justify_end().max_w(BUBBLE_MAX).children(chips)))
+        .when(Boolean(text.trim()), (el) => el.child(div().id(`kc-ub-${turn.id}`).max_w(BUBBLE_MAX).min_w(0).overflow_hidden()
+          .px(12).py(8).rounded(pill ? 18 : 12).bg(ink(t, 0.1))
           .text_size(14).line_height("20px").text_color(ink(t, 1))
           .when(Boolean(u.cmd), (el) => el.font_family(CODE).text_size(13))
-          .child(u.cmd ? text : TextView.markdown(`kc-ut-${turn.id}`, text).selectable(true))))
+          .child(u.cmd ? text : TextView.markdown(`kc-ut-${turn.id}${open ? "-all" : ""}`, shown).selectable(true))))
+        .when(folded.cut, (el) => el.child(this.more(t, `kc-um-${turn.id}`, open, () => this.toggle(`o:${turn.id}`))))
         // Monocode shows these on hover; their place stays (no jump).
         .child(h_flex().h(26).pt(4).gap(6).items_center().opacity(hov || copied ? 1 : 0)
           .child(this.iconBtn(t, `kc-uc-${turn.id}`, copied ? I("check") : COPY, tr("copyMessage"), (cx) => this.copy(cx, id, text, 2000)))
@@ -1108,8 +1138,9 @@ export default class Chat extends View {
     if (!turn.live && answerOf(turn)) out.push(this.actions(t, turn));
     const here = keyed && i === (this.cur < 0 ? this.turns.length - 1 : this.cur);
     return this.col(v_flex().relative().w_full().min_w(0).pb(8)
-      // The keyboard's turn: a 2 px accent mark in the column's margin.
-      .when(here, (el) => el.child(div().absolute().left(-14).top(8).bottom(8).w(2).rounded_full().bg(t.accent)))
+      // The keyboard's turn: a short 2 × 16 accent tick in the column's margin, at its top (a mark as
+      // tall as the turn ran through a long turn like a rule).
+      .when(here, (el) => el.child(div().absolute().left(-14).top(8).w(2).h(16).rounded_full().bg(t.accent)))
       .children(out), `kc-turn-${turn.id}`);
   }
 
@@ -1342,8 +1373,10 @@ export default class Chat extends View {
     const pr = this.project(t, cx, tg);
     const bg = this.background(t, cx, pr);
     // shell/project_settings.rs:304-317: the image first, the conversation over it; nothing paints a
-    // ground (conversation.rs:3833-3852, transcript.rs:5880-5918), the card's border is the frame's.
-    return div().id("kt-chat").relative().size_full().rounded(16).border(1).border_color(keyed || this.typing ? t.accent : t.border)
+    // ground (conversation.rs:3833-3852, transcript.rs:5880-5918).
+    // No frame (Kylian, 2026-11-19: the background goes to the edges, as in Monocode); the corners
+    // stay those of the thread's block (radius 16, the column's 20 less its padding of 4).
+    return div().id("kt-chat").relative().size_full().rounded(16)
       .overflow_hidden().text_color(ink(t, 1))
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .on_drop((ev, cx) => { const p = (ev?.paths ?? []).find((x) => IMAGE.test(x)); if (p && pr) { this.importBg(cx, pr, p); cx.notify(); } })

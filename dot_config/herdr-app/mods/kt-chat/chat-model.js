@@ -63,8 +63,9 @@ export function rel(path, cwd, home) {
   return path;
 }
 
+// One plain line: the first that says something, its markdown marks (**, `) off, spaces folded.
 const firstLine = (s, max = 160) => {
-  const line = String(s ?? "").split("\n").find((l) => l.trim()) ?? "";
+  const line = (String(s ?? "").split("\n").find((l) => l.trim()) ?? "").replace(/\*\*|`/g, "").replace(/\s+/g, " ").trim();
   return line.length > max ? line.slice(0, max - 1) + "…" : line;
 };
 
@@ -72,6 +73,8 @@ const firstLine = (s, max = 160) => {
 export function toolTitle(name, input, cwd, home) {
   const i = input ?? {};
   const path = i.file_path ?? i.notebook_path ?? i.path;
+  // A message to another agent: who, and what about (its summary), never its body.
+  if (name === "SendMessage" && i.to) return firstLine([i.to, i.summary].filter(Boolean).join(" · "));
   switch (toolKind(name)) {
     case "read":
     case "edit":
@@ -100,6 +103,64 @@ export function toolTitle(name, input, cwd, home) {
 export function toolState(block, live) {
   if (block.result) return block.result.ok ? "ok" : "error";
   return live ? "running" : "stopped";
+}
+
+// ── Who speaks in a user message ────────────────────────────────────────────
+
+const attrsOf = (s) => {
+  const out = {};
+  for (const a of String(s ?? "").matchAll(/([\w-]+)="([^"]*)"/g)) out[a[1]] = a[2];
+  return out;
+};
+const firstText = (s, max = 160) => {
+  const l = String(s ?? "").split("\n").map((x) => x.trim()).find(Boolean) ?? "";
+  return l.length > max ? l.slice(0, max - 1) + "…" : l;
+};
+
+/**
+ * What a user message is, from its text (after hc's wrappers, chat-index.ts strip()) and its line's
+ * origin. Kylian typed only « human »; the rest came in by the harness and is shown folded, never
+ * as his bubble:
+ * - « teammate » (`<teammate-message teammate_id color summary?>`, an idle_notification's JSON body
+ *   read for its summary or result) and « peer » (`<cross-session-message from-name>`), wherever in
+ *   the text (the harness puts words before and a note after): { name, color, summary, body };
+ * - « task » (`<task-notification>`): its summary and status;
+ * - `<system-reminder>` blocks go; a message of nothing else is « system », hidden.
+ * Answers { kind, text, name?, color?, summary?, status?, count? }; `text` is what is left to show.
+ */
+export function classify(raw, origin = null) {
+  const text = String(raw ?? "");
+  if (origin?.kind === "task-notification" || /<task-notification>/.test(text)) {
+    const tag = (n) => text.match(new RegExp(`<${n}>([\\s\\S]*?)</${n}>`))?.[1]?.trim() ?? null;
+    return { kind: "task", text: tag("summary") ?? "", status: tag("status") }; // i18n: tech
+  }
+  const wraps = [...text.matchAll(/<(teammate-message|cross-session-message|agent-message)\b([^>]*)>([\s\S]*?)<\/\1>/g)];
+  if (wraps.length) {
+    const a = attrsOf(wraps[0][2]);
+    const bodies = wraps.map((w) => {
+      const b = w[3].trim();
+      if (!b.startsWith("{")) return { body: b, summary: attrsOf(w[2]).summary ?? null };
+      try {
+        const j = JSON.parse(b);
+        const said = j.summary ?? j.result ?? j.message ?? j.text ?? null;
+        return { body: typeof said === "string" ? said : b, summary: j.summary ?? (j.type ? j.type.replace(/_/g, " ") : null) };
+      } catch {
+        return { body: b, summary: attrsOf(w[2]).summary ?? null };
+      }
+    });
+    return {
+      kind: wraps[0][1] === "teammate-message" ? "teammate" : "peer",
+      name: a["from-name"] ?? a.teammate_id ?? a.from ?? "",
+      color: a.color ?? null,
+      summary: bodies[0].summary ?? firstText(bodies[0].body),
+      count: wraps.length,
+      text: bodies.map((b) => b.body).join("\n\n"),
+    };
+  }
+  if (origin?.kind === "peer") return { kind: "peer", name: origin.name ?? "", color: null, summary: firstText(text), count: 1, text };
+  const rest = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
+  if (!rest && /<system-reminder>/.test(text)) return { kind: "system", text: "" };
+  return { kind: "human", text: rest };
 }
 
 // ── State: what the indexer has given so far ────────────────────────────────
