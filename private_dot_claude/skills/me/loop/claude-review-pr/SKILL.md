@@ -38,19 +38,21 @@ DIFF=$(git rev-parse --path-format=absolute --git-path claude-review.diff)
 R_STD=$(git rev-parse --path-format=absolute --git-path claude-review-standards.md)
 R_SPEC=$(git rev-parse --path-format=absolute --git-path claude-review-spec.md)
 git diff "origin/$BASE...HEAD" > "$DIFF"
-rm -f "$R_STD" "$R_SPEC"                                 # sinon la passe N lirait les rapports N-1
+: > "$R_STD"; : > "$R_SPEC"                              # sinon la passe N lirait les rapports N-1
 # ⚠️ Ne PAS toucher à loop-guardrails.md, qui vit dans le même dossier et doit persister.
 echo "BASE=origin/$BASE"; echo "DIFF=$DIFF"
 echo "R_STD=$R_STD"; echo "R_SPEC=$R_SPEC"; echo "diff: $(wc -l < "$DIFF") lignes"
 ```
 
-`rm -f "$R_STD" "$R_SPEC"` n'est pas cosmétique : sans lui, un agent qui échoue laisse le rapport de la passe précédente en place et le parser rend un verdict périmé.
+Vider les deux rapports (`: >`) n'est pas cosmétique : sans ça, un agent qui échoue laisse le rapport de la passe précédente en place et le parser rend un verdict périmé. Un rapport vide se lit en (C) comme « axe NON exécuté », exactement comme un rapport absent.
+
+> ⛔ **Jamais `rm` sur ces chemins.** La garde intégrée de Claude Code retient tout `rm` dont la cible est une variable remplie par `git rev-parse` (elle pourrait valoir la racine du dépôt), et seule une personne peut l'approuver : la boucle cale dès (A) (vu le 2026-11-19 sur claude-flow #66). Une redirection vers le git dir passe, elle : le hook `no-shell-write` la permet.
 
 **L'intention, pour l'axe spec** — à récupérer dans la même passe (A) :
 
 ```bash
 N=$(printf '%s' "$PR_JSON" | jq -r .number)
-INTENT=$(git rev-parse --path-format=absolute --git-path claude-review-intent.md); rm -f "$INTENT"
+INTENT=$(git rev-parse --path-format=absolute --git-path claude-review-intent.md); : > "$INTENT"   # vidé, jamais rm (cf. ⛔ plus haut)
 # l'issue liée : "Closes #N" dans le corps de la PR, sinon le n° de branche (feat/#123-slug)
 ISSUE=$(gh pr view "$N" --json body -q .body 2>/dev/null | grep -oiE '(closes|fixes|resolves) #[0-9]+' | grep -oE '[0-9]+' | head -1)
 [ -z "$ISSUE" ] && ISSUE=$(git branch --show-current | grep -oE '#[0-9]+' | tr -d '#')
@@ -218,7 +220,7 @@ PY
 
 **(D) tient en une ligne, et c'est la dernière du bloc (C)** : `collect.py --pass "$R_STD" <spec>` copie la passe telle quelle dans `review/` (`pass-N-standards.md`, `pass-N-spec.md`, `pass-N.sha`), puis régénère le rapport (`facts.json`). Un axe spec non lancé s'écrit `SPEC_SKIPPED=1`, jamais le RESUME à zéro (il s'afficherait « propre »). Rejouer (C) sur les mêmes rapports n'ajoute pas de passe. Ne recopie pas (C) sans cette ligne : c'était une étape à part, et les sessions la sautaient ou n'en gardaient que les copies (rapport figé sur la passe 1, ou « passe 6/8 » dans Flow pour 4 passes au rapport). Le dossier du rapport reste donné par `collect.py --dir`. Check : `~/.claude/skills/me/report/collect-pass.check.sh`.
 
-Décisions (Step 2), une ligne par finding tranché dans `$RD/review/decisions.tsv` (`RD=$(~/.claude/skills/me/report/collect.py --dir)`), séparateur tabulation : `p<N>-<axe>-<rang>	fixed	<sha du commit>` après la correction, `p<N>-<axe>-<rang>	discarded	<raison en une phrase>` pour un écartement (`rang` = position de la puce dans le rapport de l'axe, à partir de 1, en comptant **toutes** les puces dans l'ordre du fichier, P3 compris : un rang compté sur les seuls bloquants attache la décision au mauvais finding). Un écartement sans raison s'affiche en rouge dans le rapport.
+Décisions (Step 2), une ligne par finding tranché dans `$RD/review/decisions.tsv` (`RD=$(~/.claude/skills/me/report/collect.py --dir)`), écrite avec **Write** (création) ou **Edit** (ajout), jamais par `printf >>` : le hook `no-shell-write` refuse une écriture shell hors du git dir et du dossier temporaire. Séparateur tabulation : `p<N>-<axe>-<rang>	fixed	<sha du commit>` après la correction, `p<N>-<axe>-<rang>	discarded	<raison en une phrase>` pour un écartement (`rang` = position de la puce dans le rapport de l'axe, à partir de 1, en comptant **toutes** les puces dans l'ordre du fichier, P3 compris : un rang compté sur les seuls bloquants attache la décision au mauvais finding). Un écartement sans raison s'affiche en rouge dans le rapport.
 
 ## Cycle
 
