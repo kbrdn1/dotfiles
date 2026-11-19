@@ -56,7 +56,7 @@ put(`${D}/shared.json`, JSON.stringify({ "kt.projects": [
 ] }));
 const PROJ = `${D}/projects`;
 const cfg = {
-  home: HOME, projects: PROJ, history: `${D}/history.jsonl`, store: `${D}/store`, reports: `${D}/reports`, shared: `${D}/shared.json`, out: `${D}/out`,
+  home: HOME, projects: PROJ, history: `${D}/history.jsonl`, store: `${D}/store`, reports: `${D}/reports`, vaults: [`${D}/vault/pro`], shared: `${D}/shared.json`, out: `${D}/out`,
   scratch: /^\/nowhere\//,
   // chezmoi, faked: ~/.config is managed and lives in the dots repo; git is real.
   resolve: (cwd) => (cwd.startsWith(`${HOME}/.config`) ? X.gitRoot(`${D}/dots`) : X.gitRoot(cwd)),
@@ -76,6 +76,9 @@ const A = "sess-a", PA = `${D}/reg/proj/src`;
 const fileA = `${PROJ}/-reg-proj/${A}.jsonl`;
 put(fileA, lines(
   JSON.stringify({ type: "session-owner", sessionId: A }),
+  // #50: its titles (the one given wins over Claude Code's).
+  JSON.stringify({ type: "ai-title", aiTitle: "titre automatique", sessionId: A }),
+  JSON.stringify({ type: "custom-title", customTitle: "mon titre", sessionId: A }),
   prompt(A, PA, "2026-11-18T09:00:00Z"),
   JSON.stringify({ parentUuid: null, isSidechain: false, attachment: { type: "x" }, type: "attachment", timestamp: at("2026-11-18T09:00:01Z"), sessionId: A, cwd: PA }),
   // One message, three blocks: one message, 10 tokens; its Skill and Agent calls each count.
@@ -145,7 +148,14 @@ put(`${D}/reports/o-r/feat-1/facts.json`, JSON.stringify({ kind: "report", gener
   ci: { total: 3, ok: 2, fail: 1, pending: 0, runs: [] },
   review: { passes: [{ pass: 1, p0: 0, p1: 1, p2: 1, p3: 2 }, { pass: 2, p0: 0, p1: 0, p2: 0, p3: 1 }],
     findings: [{ prio: "P1", status: "fixed" }, { prio: "P2", status: "fixed" }, { prio: "P3", status: null }] } } }));
-put(`${D}/reports/o-r/plans/p/facts.json`, JSON.stringify({ kind: "plan", facts: { issues: [] } }));
+put(`${D}/reports/o-r/plans/p/facts.json`, JSON.stringify({ kind: "plan", facts: { plan: "p", repo: "o/r", issues: [
+  { n: 1, title: "faite", state: "CLOSED", status: "done", deps: [] }, { n: 2, title: "libre", state: "OPEN", status: "todo", deps: [1], url: "u2" }] } }));
+// #50: the vault's notes, one of these days, one old, one in a hidden folder.
+put(`${D}/vault/pro/decisions/a.md`, `---\ntype: "note"\ntitle: "Une décision"\nrepo: "o/r"\n---\n\nle texte`);
+put(`${D}/vault/pro/b sans titre.md`, "pas de frontmatter");
+put(`${D}/vault/pro/vieille.md`, "---\ntitle: vieille\n---\n");
+utimesSync(`${D}/vault/pro/vieille.md`, new Date("2026-10-01T12:00:00Z"), new Date("2026-10-01T12:00:00Z"));
+put(`${D}/vault/pro/.git/c.md`, "---\ntitle: cachée\n---\n");
 put(`${D}/reports/o-r/broken/facts.json`, "{");
 put(`${cfg.store}/me_claude-flow-x.json`, JSON.stringify({
   "flow:o/r#1": { workflow: "me:issue-worktree-pr", repo: "o/r", issue: 1, pr: 3, steps: { issue: { status: "done" }, merge: { status: "pending" } } },
@@ -240,6 +250,33 @@ assert.deepEqual(s.reports[0], { repo: "o/r", branch: "feat/#1-x", issue: "1", a
   ci: { ok: 2, fail: 1, pending: 0, total: 3 }, review: { passes: 2, found: 2, fixed: 2, open: 0 }, lines: [40, 3] });
 assert.deepEqual(s.flows.map((f) => [f.key, f.steps.issue, f.doneAt.issue]), [["flow:o/r#1", "done", 0]]);
 assert.equal(X.recap({ kind: "plan", facts: { repo: "o/r" } }), null);
+
+// #50: the sessions of the last two weeks (the given title, the project where each was last), the plans,
+// the vault's notes of these days (frontmatter title, else the file's name; old and hidden ones out).
+const sa = s.sessions.find((x) => x.sid === A);
+assert.deepEqual([sa.title, sa.project], ["mon titre", "proj"]);
+assert.equal(s.sessions.find((x) => x.sid === B).title, null);
+assert.ok(s.sessions.every((x) => !x.sid.startsWith("agent-")), "no sub-agent");
+assert.ok(s.sessions[0].last >= s.sessions.at(-1).last, "the latest first");
+assert.deepEqual(s.plans, [{ plan: "p", repo: "o/r", issues: [
+  { n: 1, title: "faite", state: "CLOSED", url: null, deps: [], status: "done", pr: null },
+  { n: 2, title: "libre", state: "OPEN", url: "u2", deps: [1], status: "todo", pr: null }] }]);
+assert.deepEqual(s.notes.map((n) => [n.title, n.vault, n.type]).sort(), [["Une décision", "pro", "note"], ["b sans titre", "pro", null]]);
+assert.deepEqual(X.frontmatter('---\ntitle: "a: b"\ndate: 2026-11-18\n---\nx'), { title: "a: b", date: "2026-11-18" });
+// An archive from before titles were kept: its sessions get theirs once (and their project), no count moves.
+{
+  const old = arch();
+  for (const st of Object.values(old.files)) { delete st.title; delete st.ctitle; delete st.proj; }
+  old.titled = false;
+  writeFileSync(`${cfg.out}/archive.json`, JSON.stringify(old));
+  const counts = JSON.stringify({ d: old.days, p: Object.fromEntries(Object.entries(old.projects).map(([k, p]) => [k, p.days])) });
+  X.run(cfg);
+  const back = arch();
+  assert.equal(back.titled, true);
+  assert.equal(back.files[fileA].ctitle, "mon titre");
+  assert.equal(back.files[fileA].proj, `${D}/reg/proj`);
+  assert.equal(JSON.stringify({ d: back.days, p: Object.fromEntries(Object.entries(back.projects).map(([k, p]) => [k, p.days])) }), counts);
+}
 assert.deepEqual(s.streak, { cur: 2, best: 2 });
 assert.equal(s.days["2026-11-18"].ids, undefined, "no session ids in the summary");
 assert.equal(readdirSync(cfg.out).filter((f) => f.includes(".tmp")).length, 0, "atomic writes leave no tmp");

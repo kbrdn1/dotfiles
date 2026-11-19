@@ -22,6 +22,7 @@ export const V = 1;
 export const GAP = 5 * 60e3; // active time: gaps under 5 min between two records of one transcript
 export const OPEN_DAYS = 7; // a day keeps its session ids this long after it ends, then freezes
 export const KEEP_DAYS = 84; // summary.json: 12 weeks of days, for the week cards and their trends
+export const RECENT_MS = 14 * 864e5; // #50: the sessions and notes summary.json lists (Recent)
 const CHUNK = 8 << 20;
 const SAVE_MS = 5000;
 const LOCK_MS = 10 * 60e3;
@@ -221,7 +222,9 @@ function note(ctx: Ctx, key: string, kind: Project["kind"], name: string, slug?:
 
 // ---------------------------------------------------------------- reading
 
-type FileState = { s: number; t: number; off: number; key?: string; ts?: number; cwd?: string; origin?: string; cmd?: string | null; pr?: string | null };
+// key: the last message's dedup key; title / ctitle: its ai-title / custom-title; proj: its project (#50).
+type FileState = { s: number; t: number; off: number; key?: string; ts?: number; cwd?: string; origin?: string; cmd?: string | null; pr?: string | null;
+  title?: string; ctitle?: string; proj?: string };
 
 export function listTranscripts(root: string) {
   const out: { path: string; sub: boolean }[] = [];
@@ -279,7 +282,16 @@ export function indexFile(path: string, sub: boolean, st: FileState, size: numbe
   };
   st.off = readLines(path, st.off, size, (line) => {
     if (line.startsWith('{"type":"')) {
-      if (!line.startsWith('{"type":"pr-link"')) return; // metadata: api requests, modes, owners, titles...
+      // #50: a session's title (Claude Code's, or the one it was given), for Recent.
+      if (!sub && (line.startsWith('{"type":"ai-title"') || line.startsWith('{"type":"custom-title"'))) {
+        try {
+          const o = JSON.parse(line);
+          if (o.aiTitle) st.title = String(o.aiTitle).slice(0, 120);
+          if (o.customTitle) st.ctitle = String(o.customTitle).slice(0, 120);
+        } catch {}
+        return;
+      }
+      if (!line.startsWith('{"type":"pr-link"')) return; // metadata: api requests, modes, owners...
       let o: any;
       try { o = JSON.parse(line); } catch { return; }
       const ts = Date.parse(o.timestamp);
@@ -347,8 +359,11 @@ export function indexFile(path: string, sub: boolean, st: FileState, size: numbe
     }
   });
   // The file's buckets into the archive, attributed once per folder.
+  let latest = -1;
   for (const [cwd, { last, days }] of buf) {
-    const proj = ctx.projects[attribute(cwd, st.pr ?? null, ctx)];
+    const k = attribute(cwd, st.pr ?? null, ctx);
+    if (last > latest) { latest = last; st.proj = k; } // the session's project: where it was last
+    const proj = ctx.projects[k];
     proj.last = Math.max(proj.last, last);
     for (const [day, b] of Object.entries(days)) {
       merge(at(A.days, day), b);
@@ -416,6 +431,7 @@ export type Archive = {
   first: string | null; // the first day any source knows
   junction: string | null; // the transcripts are complete from this day on; history.jsonl fills before it
   historyDone: boolean;
+  titled?: boolean; // #50: the sessions read before titles were kept have had theirs looked for, once
   files: Record<string, FileState>;
   cwds: Record<string, Resolved>;
   days: Record<string, Bucket>;
@@ -423,9 +439,31 @@ export type Archive = {
   prs: Record<string, { d: string; r: string | null; n: number | null }>;
   flows: Record<string, any>;
   reports?: Record<string, { t: number; r: ReturnType<typeof recap> }>; // ~/Reports' branch facts (not archived: they stay)
+  plans?: Record<string, { t: number; p: ReturnType<typeof planOf> }>; // #50: ~/Reports' plans (not archived either)
+  notes?: { path: string; title: string; vault: string; at: number; type: string | null }[]; // #50: the vault's notes of these days
   pass?: { at: number; ms: number; files: number; read: number };
 };
-const empty = (): Archive => ({ v: V, first: null, junction: null, historyDone: false, files: {}, cwds: {}, days: {}, projects: {}, prs: {}, flows: {} });
+const empty = (): Archive => ({ v: V, first: null, junction: null, historyDone: false, titled: true, files: {}, cwds: {}, days: {}, projects: {}, prs: {}, flows: {} });
+
+/** #50, once, on an archive from before: the main transcripts already read get their title (the lines
+ * before their offset, title lines only) and their project (their last folder). Counts untouched. */
+export function backfillTitles(A: Archive, ctx: Ctx) {
+  for (const [path, st] of Object.entries(A.files)) {
+    if (path.includes("/subagents/") || !existsSync(path)) continue;
+    try {
+      readLines(path, 0, st.off, (line) => {
+        if (!line.startsWith('{"type":"ai-title"') && !line.startsWith('{"type":"custom-title"')) return;
+        try {
+          const o = JSON.parse(line);
+          if (o.aiTitle) st.title = String(o.aiTitle).slice(0, 120);
+          if (o.customTitle) st.ctitle = String(o.customTitle).slice(0, 120);
+        } catch {}
+      });
+    } catch {}
+    if (st.cwd && !st.proj) st.proj = attribute(st.cwd, st.pr ?? null, ctx);
+  }
+  A.titled = true;
+}
 
 export function loadArchive(file: string): Archive {
   if (!existsSync(file)) return empty();
@@ -521,7 +559,13 @@ export function summarize(A: Archive, now: number) {
   const flows = Object.entries(A.flows ?? {}).map(([key, f]) => ({ key, workflow: f.workflow ?? null, repo: f.repo ?? null, issue: f.issue ?? null, pr: f.pr ?? null,
     steps: Object.fromEntries(Object.entries<any>(f.steps ?? {}).map(([s, v]) => [s, v?.status ?? null])), doneAt: f.doneAt ?? {},
     review: f.review?.iteration ?? 0, ci: f.ci?.iteration ?? 0, first: f.first, seen: f.seen }));
-  return { v: V, at: now, today, first: A.first, junction: A.junction, pass: A.pass ?? null, streak: { cur, best }, days, years, projects: out, reports, flows };
+  // #50: the sessions of the last two weeks (their title, last activity, project), the plans, the notes.
+  const sessions = Object.entries(A.files ?? {}).filter(([f, st]) => !f.includes("/subagents/") && (st.ts ?? 0) >= now - RECENT_MS)
+    .map(([f, st]) => ({ sid: basename(f, ".jsonl"), title: st.ctitle ?? st.title ?? null, last: st.ts!, project: (st.proj && A.projects[st.proj]?.name) || null }))
+    .sort((a, b) => b.last - a.last).slice(0, 20);
+  const plans = Object.values(A.plans ?? {}).map((x) => x.p).filter(Boolean);
+  return { v: V, at: now, today, first: A.first, junction: A.junction, pass: A.pass ?? null, streak: { cur, best }, days, years, projects: out, reports, flows,
+    sessions, plans, notes: (A.notes ?? []).slice(0, 20) };
 }
 
 /** A branch report's facts.json (me:report) as the hub tells it: its PR, its CI now, its review (passes,
@@ -544,6 +588,74 @@ export function recap(o: any) {
 
 /** ~/Reports/<repo>/<branch>/facts.json: read again when their mtime moved (they stay on disk: no archive,
  * a deleted one goes). */
+/** A plan's facts.json (me:report --plan) as Next reads it: its issues, their state, dependencies, status. */
+export function planOf(o: any) {
+  const f = o?.facts;
+  if (!f || !Array.isArray(f.issues)) return null;
+  return { plan: f.plan ?? null, repo: f.repo ?? null, issues: f.issues.map((i: any) => ({ n: i.n, title: i.title ?? "", state: i.state ?? null, url: i.url ?? null,
+    deps: Array.isArray(i.deps) ? i.deps : [], status: i.status ?? null, pr: i.pr ?? null })) };
+}
+
+/** ~/Reports/<repo>/plans/<plan>/facts.json, read again when their mtime moved. */
+export function readPlans(dir: string, A: Archive) {
+  const seen = new Set<string>();
+  A.plans ??= {};
+  let repos: string[] = [];
+  try { repos = readdirSync(dir); } catch { return; }
+  for (const r of repos) {
+    let plans: string[] = [];
+    try { plans = readdirSync(join(dir, r, "plans")); } catch { continue; }
+    for (const p of plans) {
+      const file = join(dir, r, "plans", p, "facts.json");
+      let t: number;
+      try { t = statSync(file).mtimeMs; } catch { continue; }
+      seen.add(file);
+      if (A.plans[file]?.t === t) continue;
+      let o: any = null;
+      try { o = JSON.parse(readFileSync(file, "utf8")); } catch {}
+      A.plans[file] = { t, p: planOf(o) };
+    }
+  }
+  for (const f of Object.keys(A.plans)) if (!seen.has(f)) delete A.plans[f];
+}
+
+/** A note's frontmatter fields (`key: "value"` or `key: value` between the first two `---`). */
+export function frontmatter(text: string) {
+  const m = /^---\n([\s\S]*?)\n---/.exec(String(text ?? ""));
+  const out: Record<string, string> = {};
+  for (const line of (m?.[1] ?? "").split("\n")) {
+    const kv = /^([\w-]+):\s*(.*)$/.exec(line);
+    if (kv && kv[2]) out[kv[1]] = kv[2].replace(/^"(.*)"$/, "$1");
+  }
+  return out;
+}
+
+/** #50: the vault's notes written since `since` (~/Vault/pro and perso: decisions, retex...), the latest
+ * first: their title (frontmatter, else the file's name), vault, time. Hidden folders and .git skipped. */
+export function readNotes(vaults: string[], since: number, max = 20) {
+  const out: { path: string; title: string; vault: string; at: number; type: string | null }[] = [];
+  const walk = (dir: string, vault: string, depth: number) => {
+    if (depth > 6) return;
+    let names: any[] = [];
+    try { names = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of names) {
+      if (e.name.startsWith(".") || e.name === "node_modules") continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p, vault, depth + 1);
+      else if (e.name.endsWith(".md")) {
+        let t = 0;
+        try { t = statSync(p).mtimeMs; } catch { continue; }
+        if (t < since) continue;
+        let fm: Record<string, string> = {};
+        try { fm = frontmatter(readFileSync(p, "utf8").slice(0, 4096)); } catch {}
+        out.push({ path: p, title: fm.title || basename(p, ".md"), vault, at: t, type: fm.type ?? null });
+      }
+    }
+  };
+  for (const v of vaults) walk(v, basename(v), 0);
+  return out.sort((a, b) => b.at - a.at).slice(0, max);
+}
+
 export function readReports(dir: string, A: Archive) {
   const seen = new Set<string>();
   A.reports ??= {};
@@ -569,7 +681,7 @@ export function readReports(dir: string, A: Archive) {
 
 // ---------------------------------------------------------------- the pass
 
-export type Cfg = { home: string; projects: string; history: string; store: string; reports?: string; shared: string; out: string; now?: () => number; resolve?: (cwd: string) => Resolved; scratch?: RegExp };
+export type Cfg = { home: string; projects: string; history: string; store: string; reports?: string; vaults?: string[]; shared: string; out: string; now?: () => number; resolve?: (cwd: string) => Resolved; scratch?: RegExp };
 
 export function defaults(home: string): Cfg {
   return {
@@ -578,6 +690,7 @@ export function defaults(home: string): Cfg {
     history: join(home, ".claude/history.jsonl"),
     store: join(home, ".claude/plugins/store"),
     reports: join(home, "Reports"),
+    vaults: [join(home, "Vault/pro"), join(home, "Vault/perso")],
     shared: join(home, ".config/herdr-app/shared.json"),
     out: join(home, ".config/herdr-app/data/kt-hub"),
   };
@@ -624,6 +737,7 @@ export function run(cfg: Cfg) {
     });
     const ctx: Ctx = { home: cfg.home, reg: registryOf(shared), scratch: cfg.scratch, cwds: A.cwds, resolve, projects: A.projects };
     seed(ctx, A.historyDone ? null : cfg.history);
+    if (!A.titled) backfillTitles(A, ctx);
     const save = () => writeAtomic(archiveFile, JSON.stringify(A));
     let files = 0, read = 0, saved = clock(), oldest = Infinity;
     const present = new Set<string>();
@@ -655,6 +769,8 @@ export function run(cfg: Cfg) {
     }
     archiveFlows(cfg.store, A, t0);
     if (cfg.reports) readReports(cfg.reports, A);
+    if (cfg.reports) readPlans(cfg.reports, A);
+    A.notes = cfg.vaults ? readNotes(cfg.vaults, t0 - RECENT_MS) : [];
     freeze(A, localDay(t0));
     A.pass = { at: clock(), ms: clock() - t0, files, read };
     save();

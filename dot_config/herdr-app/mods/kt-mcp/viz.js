@@ -1045,11 +1045,18 @@ export function viz(t, m = null, { roll } = {}) {
       c.paths = rectPath(c.rects);
       // The 1st of each month in range (and the range's first day), at its week's column; the first
       // one goes when the next is under 3 weeks away (a few days of the month before, unlabelled).
+      // A Date per month, not per day: a year of Dates cost ~10 ms in Herdr's runtime (#50).
       const starts = [];
-      for (let i = 0; i < levels.length; i++) {
-        const day = new Date(y, mo - 1, d + i, 12);
-        const col = Math.floor((offset + i) / 7) - c.skip;
-        if (col >= 0 && (day.getDate() === 1 || !starts.length)) starts.push([col, day.getMonth()]);
+      const t0 = new Date(y, mo - 1, d, 12).getTime();
+      const first = Math.max(0, c.skip * 7 - offset); // the first day of the first column shown
+      const put = (i, month) => { const col = Math.floor((offset + i) / 7) - c.skip; if (col >= 0) starts.push([col, month]); };
+      const f = new Date(y, mo - 1, d + first, 12);
+      put(first, f.getMonth());
+      for (let k = 1; ; k++) {
+        const m1 = new Date(f.getFullYear(), f.getMonth() + k, 1, 12);
+        const i = Math.round((m1.getTime() - t0) / 864e5);
+        if (i >= levels.length) break;
+        put(i, m1.getMonth());
       }
       if (starts.length > 1 && starts[1][0] - starts[0][0] < 3) starts.shift();
       c.months = starts;

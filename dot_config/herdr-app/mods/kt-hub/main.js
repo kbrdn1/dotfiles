@@ -7,7 +7,9 @@
 // projects (this week's most active first). #48: the year of GitHub instead of the agents' (tab). #49: one
 // project's view, the shown space's unless kt.project is "*" (v switches to the global one): its worktrees
 // (gwm), its week with its PRs (gh pr list) and what review and CI caught (~/Reports' recaps, the flows),
-// its year, its PRs (a click opens the Inbox on one), its launches.
+// its year, its PRs (a click opens the Inbox on one), its launches. #50: the tracked workflows (claude-flow's
+// flows, each its path from the issue to the note), Next (who waits, the flows' next step, the plans'
+// unblocked issues) and Recent (merges, vault notes, removed worktrees, sessions), on the right when wide.
 // The indexer runs (exec, bun by its path: exec's PATH has no ~/.nix-profile): on the first show and on
 // coming back after 60 s, the old summary staying shown; on the bus's "agents" while shown, 60 s apart at
 // most (a bump in between waits for its turn); on r. A hidden copy doesn't render, so it doesn't hear
@@ -23,6 +25,7 @@ import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, 
 import { week, ranked, projectRows, year, years, now, delta, localDay, dayShift, familyOf } from "./model.js";
 import { ghArgs, parseYear, stale, githubYear } from "./github.js";
 import { keyOf as folderKey, projectWeek, projectYear, projectYears, weekPrs, weekChecks, prListArgs } from "./project.js";
+import { PATH, path as flowPath, byWorkflow, nextFlows, nextPlanIssues, recentMerges, parseHistory } from "./recent.js";
 import { makeT, num, date, time, relative, duration } from "./i18n.js";
 import strings from "./strings.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
@@ -40,7 +43,9 @@ const SPIN = "mods/workspace-chrome/spinner.svg";
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
 const AGAIN_MS = 60e3; // the indexer at most once a minute, unless r
-const SECTIONS = ["now", "week", "act", "rank", "proj"];
+const SECTIONS = ["now", "week", "act", "rank", "proj", "flows", "next", "recent"];
+const RECENT_MS = 14 * 864e5; // #50: Next and Recent look two weeks back
+const WIDE = 1300; // #50: Next and Recent in a column on the right from this width, under the rest below it
 const P_SECTIONS = ["phead", "pweek", "pact", "pprs", "plaunch"]; // #49: one project's view
 const STALE_MS = 3600e3; // a project's PRs (gh) and worktrees (gwm): asked again after an hour, or on r
 const CARDS = ["s", "p", "a", "sub", "pr", "streak"];
@@ -87,6 +92,7 @@ export default class Hub extends View {
     this.side = new Map(); // project key -> { at, busy, prs, prErr, wts }
     this.pYear = new Map(); // project key -> its year shown
     this.pHeat = new Map(); // `${key}|${year}` -> its year and levels, per summary
+    this.hist = null; // #50: `gwm history --all`, { at, list }, read while shown (5 min)
     this.cur = "now";
     this.reveal = false;
     this.width = 1000;
@@ -151,15 +157,29 @@ export default class Hub extends View {
     return this.heat.get(y);
   }
 
-  weekTip(h, a, b) {
+  // A week's tooltip (`word`: its sentence), written after the render that first asks for it (#50: 53
+  // weeks of dates cost ~8 ms, too much for a first render already building the calendar): "" until then.
+  weekTip(h, a, b, word = "act.week") {
     const key = `${a}|${tr("act.less")}`; // the language in the key: a switch writes them again
-    let s = h.tips.get(key);
-    if (s == null) {
-      const n = h.values.slice(a, b + 1).reduce((x, v) => x + (v ?? 0), 0);
-      s = tr("act.week", { from: date(`${dayShift(h.start, a)}T12:00:00`), to: date(`${dayShift(h.start, b)}T12:00:00`), n: num(n) });
-      h.tips.set(key, s);
-    }
-    return s;
+    const s = h.tips.get(key);
+    if (s != null) return s;
+    (this.tipQueue ??= []).push([h, a, b, word, key]);
+    return "";
+  }
+
+  // The tooltips asked for in a render, written in a task right after it, then one redraw.
+  writeTips(cx) {
+    const q = this.tipQueue;
+    this.tipQueue = null;
+    if (!q?.length || checking()) return;
+    cx.spawn(async (cx) => {
+      for (const [h, a, b, word, key] of q) {
+        if (h.tips.has(key)) continue;
+        const n = h.values.slice(a, b + 1).reduce((x, v) => x + (v ?? 0), 0);
+        h.tips.set(key, tr(word, { from: date(`${dayShift(h.start, a)}T12:00:00`), to: date(`${dayShift(h.start, b)}T12:00:00`), n: num(n) }));
+      }
+      cx.notify();
+    });
   }
 
   // ---------- GitHub (#48) ----------
@@ -291,6 +311,24 @@ export default class Hub extends View {
       this.pHeat.set(k, { ...h, levels: quartileLevels(h.values, h.split), tips: new Map() });
     }
     return this.pHeat.get(k);
+  }
+
+  // #50: the worktrees gwm removed lately (its journal), every 5 min at most while the page shows.
+  histLoad(cx) {
+    if (checking() || this.histBusy || (this.hist && Date.now() - this.hist.at < 300e3)) return;
+    this.histBusy = true;
+    cx.spawn(async (cx) => {
+      const r = await exec("gwm", ["history", "--all", "--limit", "8"], { cwd: home(), timeout: 15e3 }).catch(() => null);
+      this.hist = { at: Date.now(), list: r?.code === 0 ? parseHistory(r.stdout) : this.hist?.list ?? [] };
+      this.histBusy = false;
+      cx.notify();
+    });
+  }
+
+  openIssue(repo, n) {
+    if (!repo || !n) return;
+    setShared("kt.inbox.open", { repo, kind: "issue", number: Number(n), at: Date.now() });
+    run("layout.select", { stack: "view", child: "inbox" });
   }
 
   openPr(slug, n) {
@@ -603,16 +641,7 @@ export default class Hub extends View {
       const S = skeleton(t, this.m);
       return v_flex().gap(6).children([err ?? (e && !this.ghBusy.has(y) ? this.muted(t, tr("act.ghNone")) : S.pulse(S.block(null, 120).id("hub-gh-sk")))]);
     }
-    const tip = (a, b) => {
-      const key = `${a}|${tr("act.less")}`;
-      let s = e.tips.get(key);
-      if (s == null) {
-        const n = v.values.slice(a, b + 1).reduce((x, k) => x + (k ?? 0), 0);
-        s = tr("act.ghWeek", { from: date(`${dayShift(v.start, a)}T12:00:00`), to: date(`${dayShift(v.start, b)}T12:00:00`), n: num(n) });
-        e.tips.set(key, s);
-      }
-      return s;
-    };
+    const tip = (a, b) => this.weekTip({ values: v.values, start: v.start, tips: e.tips }, a, b, "act.ghWeek");
     const cal = this.V.calendar(v.levels, { start: v.start, months: tr("act.months").split(" "), weekdays: tr("act.weekdays").split(" "),
       legend: [tr("act.less"), tr("act.more")], tip, color: "ansi2", id: `hub-gh-${y}` });
     return v_flex().gap(6)
@@ -701,6 +730,88 @@ export default class Hub extends View {
     const rows = this.d.rows.slice(0, 14);
     return this.section(t, "proj", tr("proj.title"), null,
       rows.length ? v_flex().gap(2).children(rows.map((r) => this.projRow(t, r))) : this.muted(t, tr("proj.none")));
+  }
+
+  // ---------- flows, Next, Recent (#50) ----------
+
+  // A line that opens something (the Inbox, an agent, a file): its dot, its text, its time on the right.
+  line(t, id, color, text, right, onClick, tip) {
+    return h_flex().id(id).h(26).px(4).gap(8).items_center().rounded(8).cursor_pointer().hover((s) => s.bg(t.hover))
+      .when(Boolean(tip), (el) => el.tooltip(tip)).on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); })
+      .child(div().size(6).flex_none().rounded_full().bg(color))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(text))
+      .when(right != null, (el) => el.child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(right)));
+  }
+
+  sub(t, text) {
+    return div().pt(4).font_family(MONO).text_size(10).text_color(t.dim).child(String(text).toUpperCase());
+  }
+
+  // The flows of claude-flow (archived by the indexer): by workflow, how many merged and noted and where the
+  // open ones stand; then the latest, each its path from the issue to the note (viz.steps).
+  flowsSection(t) {
+    const since = Date.now() - RECENT_MS;
+    const groups = byWorkflow(this.sum.flows, since);
+    if (!groups.length) return this.section(t, "flows", tr("flows.title"), null, this.muted(t, tr("flows.none")));
+    const words = Object.fromEntries(PATH.map((s) => [s, tr(`step.${s}`)]));
+    const latest = (this.sum.flows ?? []).filter((f) => (f.seen ?? 0) >= since).sort((a, b) => b.seen - a.seen).slice(0, 6);
+    const W = Math.max(240, Math.min(520, Math.floor((this.width >= WIDE ? this.width - 420 : this.width) * 0.45)));
+    return this.section(t, "flows", tr("flows.title"), null, v_flex().gap(6)
+      .children(groups.map((g) => h_flex().gap(8).items_center().font_family(MONO).text_size(11)
+        .child(div().flex_none().text_color(t.foreground).child(g.workflow ?? "—"))
+        .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child([tr("flows.count", { n: g.total, merged: g.merged, noted: g.noted }),
+          ...Object.entries(g.open).map(([s, n]) => tr("flows.at", { step: words[s] ?? s, n }))].join(" · ")))))
+      .child(this.sub(t, tr("flows.latest")))
+      .children(latest.map((f) => h_flex().id(`hub-fl-${f.key}`).gap(12).items_center().py(2)
+        .child(div().id(`hub-fl-${f.key}-n`).w(170).flex_none().truncate().font_family(MONO).text_size(11).text_color(t.foreground).cursor_pointer()
+          .hover((s) => s.text_color(t.accent)).tooltip(tr("flows.open"))
+          .on_click((_e, cx) => { cx.stop_propagation(); this.openIssue(f.repo, f.issue); })
+          .child(`${String(f.repo ?? "").split("/").pop()}#${f.issue ?? "?"}`)) // i18n: tech
+        // The paths come a render later (stepsOk): six steps' geometry on the render that brings the
+        // page's data took it near the ~50 ms a render has. Until then, the step reached, in words.
+        .child(div().flex_1().min_w(0).child(this.stepsOk
+          ? this.V.steps(flowPath(f).map((s) => ({ label: words[s.id], state: s.state })), { width: W, id: `hub-fl-${f.key}-steps` })
+          : div().h(30).font_family(MONO).text_size(10.5).text_color(t.dim).child(words[flowPath(f).filter((s) => s.state === "done").at(-1)?.id] ?? ""))))));
+  }
+
+  // Next: who waits for you (live), the open flows' next step, the plans' unblocked issues.
+  nextSection(t) {
+    const since = Date.now() - RECENT_MS;
+    const blocked = agents().filter((a) => a.status === "blocked");
+    const flows = nextFlows(this.sum.flows, since).slice(0, 6);
+    const issues = nextPlanIssues(this.sum.plans).slice(0, 6);
+    const kids = [];
+    if (blocked.length) kids.push(this.sub(t, tr("next.blocked")), ...blocked.slice(0, 6).map((a) =>
+      this.line(t, `hub-nx-a-${a.address}`, t.blocked, a.tab_name || a.space_name || a.address, null, () => this.go(a), tr("now.goTip", { name: a.tab_name || a.address }))));
+    if (flows.length) kids.push(this.sub(t, tr("next.flows")), ...flows.map((f) =>
+      this.line(t, `hub-nx-f-${f.key}`, t.ansi4, `${String(f.repo ?? "").split("/").pop()}#${f.issue ?? "?"}`, f.next ? tr(`step.${f.next}`) : "", () => this.openIssue(f.repo, f.issue), tr("flows.open"))));
+    if (issues.length) kids.push(this.sub(t, tr("next.plans")), ...issues.map((i) =>
+      this.line(t, `hub-nx-i-${i.repo}-${i.n}`, t.ansi3, `#${i.n} ${i.title}`, i.plan, () => this.openIssue(i.repo, i.n), tr("flows.open"))));
+    return this.section(t, "next", tr("next.title"), null, kids.length ? v_flex().gap(2).children(kids) : this.muted(t, tr("next.none")));
+  }
+
+  // Recent: the merges, the vault's notes, the worktrees gwm removed, the sessions of these days.
+  recentSection(t) {
+    const since = Date.now() - RECENT_MS;
+    const merges = recentMerges(this.sum.flows, this.sum.reports, since).slice(0, 6);
+    const notes = (this.sum.notes ?? []).slice(0, 6);
+    const removed = (this.hist?.list ?? []).slice(0, 5);
+    const sessions = (this.sum.sessions ?? []).slice(0, 6);
+    const kids = [];
+    if (merges.length) kids.push(this.sub(t, tr("recent.merges")), ...merges.map((x) =>
+      this.line(t, `hub-rc-m-${x.repo}-${x.pr}`, t.ansi5, x.title ? `#${x.pr} ${x.title}` : `${x.repo}#${x.pr}`, relative(x.at, { bare: true }), () => this.openPr(x.repo, x.pr), tr("proj.prTip"))));
+    if (notes.length) kids.push(this.sub(t, tr("recent.notes")), ...notes.map((n) =>
+      this.line(t, `hub-rc-n-${n.path}`, t.ansi6, n.title, relative(n.at, { bare: true }), () => exec("open", [n.path]).catch(() => {}), tr("recent.noteTip", { where: n.vault }))));
+    if (removed.length) kids.push(this.sub(t, tr("recent.worktrees")), ...removed.map((w, i) =>
+      h_flex().id(`hub-rc-w-${i}`).h(22).px(4).gap(8).items_center().child(div().size(6).flex_none().rounded_full().bg(t.dim))
+        .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11).text_color(t.muted).child(w.name))
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(w.age))));
+    if (sessions.length) kids.push(this.sub(t, tr("recent.sessions")), ...sessions.map((s) =>
+      h_flex().id(`hub-rc-s-${s.sid}`).h(22).px(4).gap(8).items_center().child(div().size(6).flex_none().rounded_full().bg(t.idle ?? t.dim))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(s.title || tr("recent.untitled")))
+        .child(div().flex_none().max_w(120).truncate().font_family(MONO).text_size(10.5).text_color(t.dim).child(s.project ?? ""))
+        .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.dim).child(relative(s.last, { bare: true })))));
+    return this.section(t, "recent", tr("recent.title"), null, kids.length ? v_flex().gap(2).children(kids) : this.muted(t, tr("recent.none")));
   }
 
   // ---------- one project (#49) ----------
@@ -825,15 +936,22 @@ export default class Hub extends View {
       return v_flex().flex_1().min_h(0).child(this.readError ? div().p(16).text_size(13).text_color(t.ansi1).child(tr("index.unreadable", { error: this.readError })) : this.skeletonBody(t));
     }
     const pr = this.pv;
+    // #50: Next and Recent, on the right from WIDE px (their own scroll), else after the flows.
+    const wide = !pr && this.width >= WIDE;
+    const side = pr ? [] : [this.nextSection(t), this.recentSection(t)];
     const kids = pr ? this.projectBody(t, pr)
-      : [this.nowSection(t), this.weekSection(t), this.actSection(t), this.rankSection(t), this.projSection(t)];
+      : [this.nowSection(t), this.weekSection(t), this.actSection(t), this.rankSection(t), this.projSection(t), this.flowsSection(t), ...(wide ? [] : side)];
     if (this.reveal) {
-      this.scroll.scroll_to_item(Math.max(0, (pr ? P_SECTIONS : SECTIONS).indexOf(this.cur)));
+      const i = (pr ? P_SECTIONS : SECTIONS).indexOf(this.cur);
+      if (i >= 0 && i < kids.length) this.scroll.scroll_to_item(i);
       this.reveal = false;
     }
+    const main = v_flex().id("hub-body").flex_1().min_h(0).min_w(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).pb(16).gap(4).children(kids);
     // The view's key in the id: global and each project fade in when they come.
-    return enter(this.m, v_flex().flex_1().min_h(0), `hub-in-${pr?.key ?? "global"}`, { dy: 0 })
-      .child(v_flex().id("hub-body").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).pb(16).gap(4).children(kids));
+    return enter(this.m, h_flex().flex_1().min_h(0).items_start(), `hub-in-${pr?.key ?? "global"}`, { dy: 0 })
+      .child(main.h_full())
+      .when(wide, (el) => el.child(v_flex().id("hub-side").w(400).flex_none().h_full().overflow_y_scrollbar().p(4).pb(16).gap(4)
+        .border_l(1).border_color(t.border).children(side)));
   }
 
   render(cx) {
@@ -865,12 +983,20 @@ export default class Hub extends View {
     this.cand = this.sum && this.d ? this.candidate(cx) : null;
     this.pv = this.scope === "global" ? null : this.cand;
     if (this.pv && vis) this.sideLoad(cx, this.pv);
+    if (!this.pv && vis && this.sum) this.histLoad(cx);
     if (!(this.pv ? P_SECTIONS : SECTIONS).includes(this.cur)) this.cur = (this.pv ? P_SECTIONS : SECTIONS)[0];
-    return v_flex().id("hub-root").size_full().gap(4).text_color(t.foreground)
+    const page = v_flex().id("hub-root").size_full().gap(4).text_color(t.foreground)
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(this.header(t))
       .child(this.card(t).flex_1().min_h(0).overflow_hidden().child(this.body(t)));
+    this.writeTips(cx);
+    // The flows' paths, once, a moment after the first render with data (one timer, then never again).
+    if (this.d && !this.stepsOk && !this.stepsSoon && !checking()) {
+      this.stepsSoon = true;
+      cx.timer.after(80, (cx) => { this.stepsOk = true; cx.notify(); });
+    }
+    return page;
   }
 }

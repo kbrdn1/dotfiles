@@ -500,6 +500,11 @@ const calOpts = (o = {}) => ({ start: "2026-01-01", months: MONTHS, weekdays: ["
 const cal = V.viz(t, frame(motionState(), false)).calendar(lv, calOpts({ width: 800 }));
 const calTexts = texts(cal);
 assert.deepEqual(calTexts.filter((x) => MONTHS.includes(x)), MONTHS, "each month once, in order");
+// Narrow, the latest weeks: the months shown are the last ones, once each, in order (a Date per month).
+const calNarrow = V.viz(t, null).calendar(lv, calOpts({ width: 300 }));
+const shownMonths = texts(calNarrow).filter((x) => MONTHS.includes(x));
+assert.ok(shownMonths.length >= 4 && shownMonths.length < 12, `narrow: ${shownMonths.length} months`);
+assert.deepEqual(shownMonths, MONTHS.slice(12 - shownMonths.length), "the last months, in order");
 assert.deepEqual(calTexts.filter((x) => ["Lun", "Mer", "Ven", "Moins", "Plus"].includes(x)), ["Lun", "Mer", "Ven", "Moins", "Plus"]);
 const calPaints = []; (function walk(n) { if (n?.kind === "paint") calPaints.push(n); n?.kids?.forEach(walk); })(cal);
 assert.equal(calPaints.length, 5, "one path per level");
