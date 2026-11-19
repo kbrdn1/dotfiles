@@ -1,11 +1,11 @@
 # Raccourcis clavier
 
-> ⚠️ **Fichier généré.** Ne pas l'éditer à la main — relancer
+> ⚠️ **Fichier généré.** Ne pas l'éditer à la main : relancer
 > `python3 scripts/gen-keybindings.py`, qui relit les configs de la machine.
 > Le README n'en garde qu'un pointeur : les tableaux recopiés à la main
 > dérivaient à chaque changement de config.
 
-## Herdr 2 — l'application et les mods kbrdn
+## Herdr 2 : l'application et les mods kbrdn
 
 Le quotidien : Herdr 2 (`~/.config/herdr-app`) et la layout `kbrdn-threads`. Prefix = `ctrl-b`.
 Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le même `keys.json`.
@@ -33,10 +33,10 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `cmd-p` |  | `mod.open:picker` |
 | `cmd-shift-p` |  | `app.palette` |
 | `cmd-,` | Réglages | `app.settings` |
-| `cmd-d` | Scinder à droite | `pane.split:right` |
-| `cmd-shift-d` | Scinder en bas | `pane.split:down` |
+| `cmd-d` |  | `pane.split:right` |
+| `cmd-shift-d` |  | `pane.split:down` |
 | `cmd-shift-w` |  | `pane.close` |
-| `cmd-shift-enter` | Zoomer le pane | `pane.zoom` |
+| `cmd-shift-enter` |  | `pane.zoom` |
 | `cmd-alt-left` | Aller à gauche : pane, sidebar | `pane.go:left` |
 | `cmd-alt-right` | Aller à droite : pane, panneau | `pane.go:right` |
 | `cmd-alt-up` | Aller en haut | `pane.go:up` |
@@ -45,8 +45,8 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `cmd-alt-shift-right` |  | `pane.swap:right` |
 | `cmd-alt-shift-up` |  | `pane.swap:up` |
 | `cmd-alt-shift-down` |  | `pane.swap:down` |
-| `f2` | Renommer le thread | `tab.rename` |
-| `shift-f2` | Renommer le projet | `space.rename` |
+| `f2` |  | `tab.rename` |
+| `shift-f2` |  | `space.rename` |
 | `cmd-/` |  | `app.help` |
 | `cmd-shift-/` |  | `app.help` |
 | `cmd-b` |  | `layout.toggle:sidebar` |
@@ -99,10 +99,13 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `ctrl-b j` | Aller en bas | `pane.go:down` |
 | `ctrl-b k` | Aller en haut | `pane.go:up` |
 | `ctrl-b l` | Aller à droite : pane, panneau | `pane.go:right` |
-| `ctrl-b v` | Scinder à droite | `pane.split:right` |
-| `ctrl-b s` | Scinder en bas | `pane.split:down` |
+| `ctrl-b v` | Scinder à droite (le thread revient d'abord à l'écran) | `kt-head.split:right` |
+| `ctrl-b s` | Scinder en bas (le thread revient d'abord à l'écran) | `kt-head.split:down` |
 | `ctrl-b x` | Fermer le pane (confirmé) | `kt-head.close-pane` |
-| `ctrl-b z` | Zoomer le pane | `pane.zoom` |
+| `ctrl-b z` | Zoomer le pane | `kt-head.zoom` |
+| `cmd-d` | Scinder à droite (le thread revient d'abord à l'écran) | `kt-head.split:right` |
+| `cmd-shift-d` | Scinder en bas (le thread revient d'abord à l'écran) | `kt-head.split:down` |
+| `cmd-shift-enter` | Zoomer le pane | `kt-head.zoom` |
 | `ctrl-b c` | Nouveau thread | `mod.open:kt-new` |
 | `ctrl-b n` | Thread suivant | `tab.next` |
 | `ctrl-b b` | Thread précédent | `tab.prev` |
@@ -115,12 +118,12 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `ctrl-b 7` |  | `tab.select:7` |
 | `ctrl-b 8` |  | `tab.select:8` |
 | `ctrl-b 9` |  | `tab.select:9` |
-| `ctrl-b shift-t` | Renommer le thread | `tab.rename` |
+| `ctrl-b shift-t` | Renommer le thread | `kt-head.rename:tab` |
 | `ctrl-b shift-x` | Fermer le thread (confirmé) | `kt-head.close-tab` |
 | `ctrl-b shift-c` | Nouveau projet | `space.new` |
 | `ctrl-b shift-n` | Projet suivant | `space.next` |
 | `ctrl-b shift-b` | Projet précédent | `space.prev` |
-| `ctrl-b shift-w` | Renommer le projet | `space.rename` |
+| `ctrl-b shift-w` | Renommer le projet | `kt-head.rename:space` |
 | `ctrl-b w` | Search sur les projets | `kt-head.picker:2` |
 | `ctrl-b g` | Search, tout | `kt-head.picker:0` |
 | `ctrl-b shift-g` | Nouveau thread dans un worktree | `kt-head.worktree` |
@@ -132,12 +135,15 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `ctrl-b shift-k` | Agent précédent | `agent.prev` |
 | `ctrl-b o` | L'agent qui attend (sinon le premier terminé) | `kt-head.attention` |
 | `ctrl-b ?` | Cette aide | `mod.open:kt-keys` |
+| `cmd-/` | Cette aide | `mod.open:kt-keys` |
+| `cmd-shift-/` | Cette aide | `mod.open:kt-keys` |
 | `ctrl-b ;` | Réglages | `app.settings` |
 | `ctrl-b shift-v` | Montrer / masquer la sidebar (son contenu glisse) | `kt-head.side-toggle` |
 | `ctrl-b p` | Montrer / masquer le panneau (son contenu glisse) | `kt-head.panel-toggle` |
 | `ctrl-b i` | Page Inbox | `layout.select:inbox` |
 | `ctrl-b shift-a` | Page Workflow | `layout.select:workflow` |
 | `ctrl-b shift-m` | Console des mods | `mod.open:kt-mods` |
+| `ctrl-b shift-l` | Machines : les autres machines, leurs connexions, en ajouter une | `mod.open:kt-machines` |
 | `ctrl-b a` | Page Skills | `layout.select:skills` |
 | `ctrl-b m` | Page MCP | `layout.select:mcp` |
 | `ctrl-b u` | Page Plugins | `layout.select:plugins` |
@@ -155,6 +161,9 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `cmd-p` |  | `mod.open:kt-picker` |
 | `cmd-w` | Fermer le thread (confirmé) | `kt-head.close-tab` |
 | `cmd-shift-w` | Fermer le pane (confirmé) | `kt-head.close-pane` |
+| `cmd-b` | Montrer / masquer la sidebar (son contenu glisse) | `kt-head.side-toggle` |
+| `f2` | Renommer le thread | `kt-head.rename:tab` |
+| `shift-f2` | Renommer le projet | `kt-head.rename:space` |
 
 ### Recherche (kt-picker)
 
@@ -165,7 +174,7 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `cmd-3` |  | `kt-picker.filter:3` |
 | `cmd-4` |  | `kt-picker.filter:4` |
 
-## herdr 1 — le multiplexeur en TUI
+## herdr 1 : le multiplexeur en TUI
 
 La version terminal, avant Herdr 2. Prefix = `ctrl+b`.
 
@@ -253,7 +262,7 @@ La version terminal, avant Herdr 2. Prefix = `ctrl+b`.
 | `prefix+o` | open notification target |  |
 | `prefix+shift+v` | toggle sidebar |  |
 
-## AeroSpace — gestionnaire de fenêtres
+## AeroSpace : gestionnaire de fenêtres
 
 ### mode `main`
 
@@ -421,7 +430,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 355 bindings, groupés par contexte tels que Zed les évalue.
 
-<details><summary><code>(global)</code> — 6 bindings</summary>
+<details><summary><code>(global)</code> : 6 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -434,7 +443,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Workspace</code> — 15 bindings</summary>
+<details><summary><code>Workspace</code> : 15 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -456,7 +465,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>(ProjectPanel && not_editing)</code> — 37 bindings</summary>
+<details><summary><code>(ProjectPanel && not_editing)</code> : 37 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -500,7 +509,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Terminal</code> — 14 bindings</summary>
+<details><summary><code>Terminal</code> : 14 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -521,7 +530,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Terminal && !menu</code> — 62 bindings</summary>
+<details><summary><code>Terminal && !menu</code> : 62 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -590,7 +599,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Editor</code> — 18 bindings</summary>
+<details><summary><code>Editor</code> : 18 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -615,7 +624,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Editor && VimControl && !VimWaiting && !menu</code> — 172 bindings</summary>
+<details><summary><code>Editor && VimControl && !VimWaiting && !menu</code> : 172 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -794,7 +803,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>Editor && VimControl && vim_mode == visual</code> — 2 bindings</summary>
+<details><summary><code>Editor && VimControl && vim_mode == visual</code> : 2 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -803,7 +812,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>(GitPanel && ChangesList)</code> — 23 bindings</summary>
+<details><summary><code>(GitPanel && ChangesList)</code> : 23 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -833,7 +842,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>GitPanel</code> — 3 bindings</summary>
+<details><summary><code>GitPanel</code> : 3 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -843,7 +852,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-<details><summary><code>CommitEditor > Editor</code> — 3 bindings</summary>
+<details><summary><code>CommitEditor > Editor</code> : 3 bindings</summary>
 
 | Touche | Action |
 |---|---|
@@ -853,7 +862,7 @@ Base LazyVim ; seuls les ajouts et surcharges de cette config sont listés (lead
 
 </details>
 
-## tmux — multiplexeur historique
+## tmux : multiplexeur historique
 
 Remplacé par herdr au quotidien, gardé pour les sessions existantes. Prefix = `C-a`. Config générée par home-manager (`nix-config/home.nix`), pas par chezmoi.
 
