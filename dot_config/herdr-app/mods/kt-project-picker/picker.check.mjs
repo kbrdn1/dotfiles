@@ -42,6 +42,9 @@ plugin({
         closeOverlay: (id) => log.close.push(id),
         props: () => globalThis.__props,
         home: () => ROOT,
+        appHome: () => `${ROOT}/.config/herdr-app`, // projtile.js imports it (no cx in this check: nothing written)
+        writeTextFile: async () => null,
+        notify: () => {}, // main.js imports it since e4b978d
         pickFolder: async () => "/new/proj",
         checking: () => false,
         exec: async () => ({ code: 1, stdout: "", stderr: "" }), // i18n.js imports it

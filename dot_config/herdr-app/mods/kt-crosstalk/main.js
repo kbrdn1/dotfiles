@@ -35,6 +35,7 @@ import { randomUUID } from "crypto";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, ink, rows as motionRows } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 // Copied byte for byte from mods/kt-keys/panel.js: in and out with the right panel (#73).
 import { panelIn } from "./panel.js";
 import { skeleton, readyFor } from "./skeleton.js";
@@ -137,6 +138,7 @@ function logoOf(e) {
 
 export default class Crosstalk extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     this.src = null; // the terminal whose publication is shown
     this.pub = null; // that publication, normalized (xt.js), or { error }
     this.raw = null;
@@ -656,12 +658,13 @@ export default class Crosstalk extends View {
     }));
   }
 
-  // A project's mark (its logo, else its initial on its color) with the session's state as a dot.
+  // A project's mark (its logo, else its initial on the logos' dithered background of its color,
+  // projtile.js) with the session's state as a dot.
   markOf(t, e, label, size, dot, p = null) {
     const logo = logoOf(e);
     const base = logo ? image(logo).size(size).rounded(Math.round(size / 4))
-      : h_flex().size(size).rounded(Math.round(size / 4)).bg(this.tint(t, e, p)).items_center().justify_center()
-        .text_size(Math.round(size * 0.48)).font_semibold().text_color(t.chrome).child([...(label || "?")][0].toUpperCase());
+      : projTile(this.tiles, { color: this.tint(t, e, p), size,
+        letter: div().text_size(Math.round(size * 0.48)).font_semibold().text_color(LETTER).child([...(label || "?")][0].toUpperCase()) });
     return div().relative().flex_none().size(size).child(base)
       .when(Boolean(dot), (el) => el.child(div().absolute().right(-2).bottom(-2).size(9).rounded_full().border(2).border_color(t.background).bg(dot)));
   }
@@ -1019,6 +1022,7 @@ export default class Crosstalk extends View {
 
   // panel.js: the whole view glides in and out with the right panel (#73).
   render(cx) {
+    tilesFrame(this.tiles, cx);
     return panelIn(this.motion, this.draw(cx));
   }
 

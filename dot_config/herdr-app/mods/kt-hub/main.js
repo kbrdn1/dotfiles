@@ -39,6 +39,7 @@ import strings from "./strings.js";
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, stagger } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 import { skeleton } from "./skeleton.js";
 import { viz, quartileLevels, capped, progressGeometry, faint, reveal, swatch, SERIES, Scale } from "./viz.js";
 import { roll } from "./roll.js";
@@ -123,6 +124,7 @@ function fit(sizes, avail) {
 
 export default class Hub extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     this.handle = cx.focus_handle();
     this.vim = new Vim({ field: false });
     this.motion = motionState();
@@ -1235,7 +1237,11 @@ export default class Hub extends View {
     const c = r.entry?.color;
     const fill = c ? (c.startsWith("#") ? c : t[c] ?? t.dim) : t.dim;
     const name = r.kind === "other" ? "?" : r.name;
-    return box.bg(alpha(fill, r.entry ? "ff" : "66")).child(div().font_family(MONO).font_bold().text_size(11).text_color(t.chrome).child(([...name][0] ?? "?").toUpperCase()));
+    // Without a logo: the initial on the logos' dithered background of its color (projtile.js); not
+    // in the registry, the whole tile at 40 %.
+    return projTile(this.tiles, { color: fill, size: 20,
+      letter: div().font_family(MONO).font_bold().text_size(11).text_color(LETTER).child(([...name][0] ?? "?").toUpperCase()) })
+      .when(!r.entry, (el) => el.opacity(0.4));
   }
 
   // A pill after a project's name: not in the registry, archived (#88).
@@ -1550,6 +1556,7 @@ export default class Hub extends View {
   }
 
   render(cx) {
+    tilesFrame(this.tiles, cx);
     this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const vis = visible();
     if (!checking()) {

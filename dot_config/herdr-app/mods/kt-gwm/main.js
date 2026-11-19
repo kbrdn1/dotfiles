@@ -58,6 +58,7 @@ import { openRequest, matchStop } from "./open.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 // Copied byte for byte from mods/kt-keys/panel.js: the panel view in and out with the right panel (#73).
 import { panelIn } from "./panel.js";
 import { skeleton, still } from "./skeleton.js";
@@ -200,6 +201,7 @@ function threadCwd() {
 
 export default class Worktrees extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     this.panel = props()?.view === "panel";
     this.handle = cx.focus_handle();
     this.vim = new Vim({ field: !this.panel });
@@ -1268,8 +1270,8 @@ export default class Worktrees extends View {
     return (c && (String(c).startsWith("#") ? c : t[c])) || t.ansi2;
   }
 
-  // Its mark, `size` px: the logo 1:1 in a rounded tile; without one, its initial on its color; home
-  // (~) the house. 20 px on a repo's head, 16 on a card, 32 in a band.
+  // Its mark, `size` px: the logo 1:1 in a rounded tile; without one, its initial on the logos' dithered
+  // background of its color (projtile.js); home (~) the house. 20 px on a repo's head, 16 on a card, 32 in a band.
   mark(t, repo, size) {
     const r = Math.max(3, Math.round(size / 4));
     if (trim(repo.main ?? repo.folder) === trim(home()))
@@ -1277,8 +1279,8 @@ export default class Worktrees extends View {
     const e = this.projectOf(repo);
     const logo = logoOf(e);
     if (logo) return div().size(size).flex_none().rounded(r).overflow_hidden().child(image(logo).size(size));
-    return div().size(size).flex_none().rounded(r).bg(this.projectColor(t, repo)).flex().items_center().justify_center()
-      .child(div().text_size(Math.round(size * 0.55)).font_semibold().text_color(t.chrome).child([...(e?.name ?? repo.name ?? "?")][0].toUpperCase()));
+    return projTile(this.tiles, { color: this.projectColor(t, repo), size,
+      letter: div().text_size(Math.round(size * 0.55)).font_semibold().text_color(LETTER).child([...(e?.name ?? repo.name ?? "?")][0].toUpperCase()) });
   }
 
   // The head's ⋯: the rest of the page's actions.
@@ -1629,6 +1631,7 @@ export default class Worktrees extends View {
 
   // panel.js: the panel view glides in and out with the right panel (#73); the Worktrees page doesn't move.
   render(cx) {
+    tilesFrame(this.tiles, cx);
     const view = this.draw(cx);
     return this.panel ? panelIn(this.motion, view) : view;
   }

@@ -18,6 +18,7 @@ import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { spaces, run, theme, shared, setShared, openOverlay, closeOverlay, props, home, checking, nextCommand, settings, notify } from "herdr";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, sheet, leave, leaving, rows } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine header's state (#64).
@@ -60,6 +61,7 @@ function spaceColor(t, p) {
 
 export default class ProjectPicker extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     const p = props() ?? {};
     this.real = p.real ?? {}; // where(space) -> [machine, its folder's real path], null: unresolved
     this.homeReal = p.homeReal ?? null; // home()'s real path
@@ -220,14 +222,14 @@ export default class ProjectPicker extends View {
       div().id(`pp-dot-${id}-${st}`).size(6).rounded(3).flex_none().bg(t[st]));
   }
 
-  // A project's mark at 16 px: its logo, else its color square with its name's first letter (as
-  // kt-threads' project bar draws it).
+  // A project's mark at 16 px: its logo, else its name's first letter on the logos' dithered
+  // background of its color (projtile.js).
   mark(t, e, color, name) {
     const logo = logoOf(e);
     return logo
       ? image(logo).size(16).flex_none().rounded(3)
-      : div().size(16).rounded(3).flex_none().bg(color).flex().items_center().justify_center()
-        .text_size(10).font_semibold().text_color(t.chrome).child([...String(name ?? "")][0]?.toUpperCase() ?? "?"); // i18n: tech
+      : projTile(this.tiles, { color, size: 16,
+        letter: div().text_size(10).font_semibold().text_color(LETTER).child([...String(name ?? "")][0]?.toUpperCase() ?? "?") }); // i18n: tech
   }
 
   // A 32 px line, radius 12 in the 16 card (4 px in). `on`: the shown project, on the kbrdn.dev ink.
@@ -355,6 +357,7 @@ export default class ProjectPicker extends View {
   }
 
   render(cx) {
+    tilesFrame(this.tiles, cx);
     const t = theme();
     const keyed = (this.keyed = this.handle.is_focused());
     const typing = this.vim.insert;

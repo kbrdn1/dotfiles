@@ -23,6 +23,7 @@ import { search } from "./fuzzy.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, sheet, leave, leaving } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 import { ditherBand, TOP } from "./dither.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
@@ -103,6 +104,7 @@ const H = { eyebrow: 28, thread: 48, project: 36, closed: 36, fold: 30, page: 36
 
 export default class Search extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     this.query = "";
     this.group = 0;
     this.selKey = null;
@@ -480,14 +482,15 @@ export default class Search extends View {
       );
   }
 
-  // A project's mark: Home's house, its logo, else its initial on its color.
+  // A project's mark: Home's house, its logo, else its initial on the logos' dithered background of
+  // its color (projtile.js).
   mark(t, r) {
     if (r.home) return h_flex().size(20).flex_none().items_center().justify_center().child(svg(I("house")).size(15).text_color(t.muted));
     const logo = logoOf(r.e);
     if (logo) return image(logo).size(20).flex_none().rounded(5);
     const c = (r.s && (shared("space.colors") ?? {})[r.s.id]) ?? r.e?.color;
-    return h_flex().size(20).flex_none().rounded(6).bg(paint(t, c) ?? t.dim).items_center().justify_center()
-      .text_size(11).font_semibold().text_color(t.chrome).child([...(r.name ?? "?")][0]?.toUpperCase() ?? "?");
+    return projTile(this.tiles, { color: paint(t, c) ?? t.dim, size: 20,
+      letter: div().text_size(11).font_semibold().text_color(LETTER).child([...(r.name ?? "?")][0]?.toUpperCase() ?? "?") });
   }
 
   projectRow(t, r, on) {
@@ -512,6 +515,7 @@ export default class Search extends View {
   }
 
   render(cx) {
+    tilesFrame(this.tiles, cx);
     const t = theme();
     const reg = registry();
     // The popup has the keyboard: in its field or on its own handle (is_focused counts no child).

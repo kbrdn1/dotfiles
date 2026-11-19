@@ -47,6 +47,7 @@ import { v_flex, h_flex, ScrollHandle, TextView, Editor, EditorState } from "gpu
 import { exec, theme, spaces, panes, run, layout, openOverlay, notify, nextCommand, props, shared, setShared, home, watchFolder, checking, settings, readTextFile, writeTextFile } from "herdr";import { filterRow, filterState, nextKey } from "./filters.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter, pulse, rows as motionRows } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 import { skeleton, still } from "./skeleton.js";
 import { split } from "./tiers.js";
 import { mdState, mdBudget, docOf, preview as mdPreview, rawList, rawScroll } from "./markdown.js";
@@ -105,6 +106,7 @@ const registry = () => [...(shared("kt.projects") ?? [])].sort((a, b) => (a.orde
 
 export default class Notes extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     this.handle = cx.focus_handle();
     this.vim = new Vim({ field: true });
     this.scroll = ScrollHandle.new();
@@ -292,13 +294,14 @@ export default class Notes extends View {
     return (c && (String(c).startsWith("#") ? c : t[c])) || t.ansi3;
   }
 
-  // kt-gwm's mark(): the logo 1:1 in a rounded tile, else the initial on the project's color.
+  // kt-gwm's mark(): the logo 1:1 in a rounded tile, else the initial on the logos' dithered background
+  // of the project's color (projtile.js).
   mark(t, e, name, size) {
     const r = Math.max(3, Math.round(size / 4));
     const logo = logoOf(e);
     if (logo) return div().size(size).flex_none().rounded(r).overflow_hidden().child(image(logo).size(size));
-    return div().size(size).flex_none().rounded(r).bg(this.colorOf(t, e)).flex().items_center().justify_center()
-      .child(div().text_size(Math.round(size * 0.55)).font_semibold().text_color(t.chrome).child([...(e?.name ?? name ?? "?")][0].toUpperCase()));
+    return projTile(this.tiles, { color: this.colorOf(t, e), size,
+      letter: div().text_size(Math.round(size * 0.55)).font_semibold().text_color(LETTER).child([...(e?.name ?? name ?? "?")][0].toUpperCase()) });
   }
 
   // ---------- rows ----------
@@ -1034,6 +1037,7 @@ export default class Notes extends View {
   }
 
   render(cx) {
+    tilesFrame(this.tiles, cx);
     const t = theme();
     this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const live = !checking();

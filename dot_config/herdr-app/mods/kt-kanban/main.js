@@ -82,6 +82,7 @@ import { viz } from "./viz.js";
 import { costLevel, ctxLevel, levelColor } from "./levels.js";
 import { Vim, keysOf, keyOf } from "./vim.js";
 import { motionState, frame, enter, sharpen, rows, collapse, sheet, leave, leaving, MS } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 import { skeleton } from "./skeleton.js";
 import { roll, rollText } from "./roll.js";
 // kt-threads' ring.js (a byte-identical copy, with ring.strings.js; levels.js its colours): a card's session.
@@ -165,6 +166,7 @@ function visible() {
 
 export default class Kanban extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     this.handle = cx.focus_handle();
     this.vim = new Vim({ field: true });
     this.motion = motionState();
@@ -1123,13 +1125,14 @@ export default class Kanban extends View {
       .child(icon("kk-view-more", this.viewMenu ? I("x") : K("ellipsis"), tr("view.more"), () => { this.viewMenu = !this.viewMenu; }));
   }
 
-  // The project's mark at `size`: Home's house, its registry logo, else its initial on its color.
+  // The project's mark at `size`: Home's house, its registry logo, else its initial on the logos'
+  // dithered background of its color (projtile.js).
   mark(t, p, size) {
-    if (!p) return div().size(size).flex_none().rounded(3).bg(t.dim);
+    if (!p) return projTile(this.tiles, { color: t.dim, size, letter: div() }); // unknown: dithered too
     if (p.home) return svg(I("house")).size(size).flex_none().text_color(t.muted);
     if (p.logo) return image(p.logo).size(size).flex_none().rounded(3);
-    return div().size(size).flex_none().rounded(3).bg(paint(t, p.color) ?? t.dim).flex().items_center().justify_center()
-      .child(div().text_size(Math.round(size * 0.62)).font_semibold().text_color(t.chrome).child([...p.name][0]?.toUpperCase() ?? "?"));
+    return projTile(this.tiles, { color: paint(t, p.color) ?? t.dim, size,
+      letter: div().text_size(Math.round(size * 0.62)).font_semibold().text_color(LETTER).child([...p.name][0]?.toUpperCase() ?? "?") });
   }
 
   // A column's name: the status' (strings.js), else the phase's (kt-flow's), « Autres », « Sans flow ».
@@ -1860,6 +1863,7 @@ export default class Kanban extends View {
   }
 
   render(cx) {
+    tilesFrame(this.tiles, cx);
     const vis = visible();
     this.findRepos(cx);
     const t = theme();

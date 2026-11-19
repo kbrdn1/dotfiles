@@ -16,6 +16,7 @@ import { shortcut, tip } from "./shortcuts.js";
 // Copied byte for byte from mods/kt-keys/panel.js: the right panel opens and closes with its content moving (#73).
 import { togglePanel, showPanel, toggleColumn, columnIn } from "./panel.js";
 import { motionState, frame, enter, fade, sharpen } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 // Copied byte for byte from mods/kt-threads/halo.js: the halo the brand part draws, kt-threads below.
@@ -226,6 +227,7 @@ export default class Head extends View {
     this.repos = {}; // folder -> repo name | null
     this.tried = {}; // #61: folder -> when another machine couldn't answer for it
     this.motion = motionState(); // ANIMATIONS.md: the toggles' ink and the agent's state fade in
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     if (checking()) return;
     cx.spawn(async (cx) => {
       for (;;) {
@@ -313,12 +315,14 @@ export default class Head extends View {
     if (go && find(layout(), "view")?.active !== "hub") cx.spawn(async () => run("layout.select", { stack: "view", child: "hub" }));
   }
 
-  // Project tile: Home's house, else the registry logo, else the initial on the project's color.
+  // Project tile: Home's house, else the registry logo, else the initial on the logos' dithered
+  // background of the project's color (projtile.js).
   tile(t, pr) {
     const box = div().size(20).flex_none().rounded(6).flex().items_center().justify_center().overflow_hidden();
     if (pr.home) return box.bg(t.raised).border(1).border_color(t.border).child(svg(I("house")).size(12).text_color(t.muted));
     if (pr.logo) return box.child(image(pr.logo).size(18));
-    return box.bg(pr.color).child(div().font_family(MONO).font_bold().text_size(11).text_color("#ffffff").child((pr.name[0] ?? "?").toUpperCase()));
+    return projTile(this.tiles, { color: pr.color, size: 20,
+      letter: div().font_family(MONO).font_bold().text_size(11).text_color(LETTER).child((pr.name[0] ?? "?").toUpperCase()) });
   }
 
   // The agent's state, written: a spinner while it works, one pulse when it needs you.
@@ -438,6 +442,7 @@ export default class Head extends View {
   }
 
   render(cx) {
+    tilesFrame(this.tiles, cx);
     const w = win() ?? {};
     const t = theme();
     if (props()?.part !== "brand") this.autoHub(cx);

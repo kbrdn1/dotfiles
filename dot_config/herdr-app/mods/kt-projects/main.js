@@ -24,6 +24,7 @@ import { spaces, panes, run, theme, props, closeOverlay, shared, setShared, exec
 import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { isArchived, shown, archivedOf, archive, restore, deletePlan } from "./projects.js";
 import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
+import { tileState, tilesFrame, projTile, LETTER } from "./projtile.js";
 import { skeleton } from "./skeleton.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
@@ -94,6 +95,7 @@ function lightness(svgText) {
 
 export default class Projects extends View {
   init(_props, cx) {
+    this.tiles = tileState(); // projtile.js: a project without a logo on the logos' dithered background
     this.real = {}; // where(space) -> registry id, null when unresolved
     this.sel = listed()[0]?.id ?? null;
     this.openArchived = false; // « Archivés (n) » unfolded
@@ -482,6 +484,7 @@ export default class Projects extends View {
   }
 
   render(cx) {
+    tilesFrame(this.tiles, cx);
     this.resolve(cx);
     const t = theme();
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
@@ -522,11 +525,14 @@ export default class Projects extends View {
     const say = (icon, text, color = t.dim) => h_flex().min_w(0).gap(8).items_start()
       .child(svg(I(icon)).size(12).flex_none().mt(4).text_color(color))
       .child(div().min_w(0).text_size(13).line_height("20px").text_color(t.muted).child(text));
+    // Without a logo: the initial on the logos' dithered background of its color (projtile.js).
     const tile = (x, size) => {
       const color = paint(t, x.color) ?? paint(t, (shared("space.colors") ?? {})[this.spaceOf(x)?.id]) ?? t.dim;
       const logo = logoOf(x);
-      return div().size(size).flex_none().rounded(size > 24 ? 8 : 6).bg(logo ? t.raised : color).flex().items_center().justify_center()
-        .child(logo ? image(logo).size(size - 8) : div().text_size(size > 24 ? 14 : 11).font_semibold().text_color(t.chrome).child([...x.name][0]?.toUpperCase() ?? "?"));
+      if (!logo) return projTile(this.tiles, { color, size,
+        letter: div().text_size(size > 24 ? 14 : 11).font_semibold().text_color(LETTER).child([...x.name][0]?.toUpperCase() ?? "?") });
+      return div().size(size).flex_none().rounded(size > 24 ? 8 : 6).bg(t.raised).flex().items_center().justify_center()
+        .child(image(logo).size(size - 8));
     };
     // kbrdn.dev pill buttons; `danger` in red.
     const pill = (id, label, onClick, { danger = false, on = false } = {}) =>
