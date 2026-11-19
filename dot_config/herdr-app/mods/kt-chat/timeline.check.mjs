@@ -3,7 +3,12 @@
 // without a scroll offset, which message is on screen, the jump's anchor and the [ ] step. Fixtures
 // are made up (no real session).
 import assert from "node:assert/strict";
-import { TL, label, marks, barWindow, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+import { TL, label, marks, barWindow, barStack, barLift, cardTop, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+
+// ── The hover card stays in the transcript's box (never over the composer under it) ─────────
+assert.equal(cardTop(100, 200, 600), 40, "room around: centred on its bar (mid - 60)");
+assert.equal(cardTop(190, 200, 260) + (260 - 200) / 2 + 120, 260, "near the bottom of a short box: its bottom on the box's");
+assert.equal(cardTop(4, 200, 260) + (260 - 200) / 2, 0, "near the top: its top on the box's");
 
 // ── Which messages (classify's verdict, as chat-index.ts leaves it) ─────────
 assert.equal(label("\n  fix   the\tbug \nmore"), "fix the bug", "the first non-empty line, spaces collapsed");

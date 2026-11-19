@@ -565,6 +565,10 @@ def main():
     for copy in [os.path.join(ROOT, "companion-logo.js")] + [os.path.join(mods, m, "companion-logo.js") for m in sorted(os.listdir(mods))]:
         if copy != LOGO and os.path.isfile(copy):
             shutil.copyfile(LOGO, copy)
+    # companion.js's mod copies (kt-chat's runner, kt-mods' SHARED) follow brand's, where DATA was written
+    for copy in [os.path.join(mods, m, "companion.js") for m in sorted(os.listdir(mods))]:
+        if os.path.isfile(copy):
+            shutil.copyfile(os.path.join(ROOT, "companion.js"), copy)
     review(images, index)
     review_variants()
     print(f"{len(images)} images x {len(SCALES)} scales x {len(OUTLINE)} themes -> {OUT}")

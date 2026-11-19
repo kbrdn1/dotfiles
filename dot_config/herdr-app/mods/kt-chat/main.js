@@ -75,7 +75,7 @@ import { companion, variantFor } from "./companion-logo.js";
 // colors (ring.js, levels.js), the percent rolling (roll.js); byte-identical copies.
 import { ring, ringColor } from "./ring.js";
 import { roll } from "./roll.js";
-import { TL, marks as markList, barStack, barLift, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+import { TL, marks as markList, barStack, barLift, cardTop, offsets, pairWheel, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 // #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
 import * as win from "./turn-window.js";
 import { skeleton, readyFor } from "./skeleton.js";
@@ -94,9 +94,10 @@ const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before th
 // The live tail: a delta read this often, only while the Chat shows and its agent works.
 const TICK = 750;
 const BRIDGE = 2000; // #84: the bridge file read again while the agent works or shows sub-agents
-// runner: vim-nav's runner.js (a copy of brand/companions/runner.js) brings runnerShown(status, program)
-// and its Runner view; until then no runner: its band (composerView) stays out and kc-bottom where it is.
-const runnerShown = () => false;
+// runner: the runner above the composer (runner.js, runner-plan.js; companion.js for its fallback):
+// runnerShown(status, program) says when its band shows (composerView, in the flow), Runner is the nested
+// view drawn there, runnerProps what feedRunner() hands it, keepBottom when the band moves a followed view.
+import { Runner, runnerBand, runnerShown, runnerProps, keepBottom } from "./runner.js";
 const STEPS = 6; // steps a phase shows before « N étapes de plus »
 const MORE = 30; // steps each « N étapes de plus » adds
 const LINES = 60; // lines a detail box shows
@@ -234,6 +235,7 @@ export default class Chat extends View {
     this.scroll = ScrollHandle.new();
     this.md = mdState();
     this.motion = motionState();
+    this.runner = cx.new(Runner); // runner: a nested view, its renders are its own
     this.handle = cx.focus_handle();
     this.vim = new Vim();
     // ctrl-b space (kt-head's view.js) asks for the keyboard through this shared stamp (a time). One
@@ -1020,9 +1022,10 @@ export default class Chat extends View {
     if (this.tlOpen && hov >= 0) {
       const m = list[hov];
       const text = clampText(m.text || (m.images ? tr("images", { n: m.images }) : tr("tl.empty")), { lines: 2, cols: TL.CARD_COLS }).text;
-      // Centred on its bar, whatever its height (one line or two): a band around it that centres it.
+      // Centred on its bar, whatever its height (one line or two): a band around it that centres it,
+      // kept inside the transcript's box (cardTop): past its bottom it would cover the composer.
       const mid = (hov - start) * row + row / 2;
-      card = h_flex().absolute().right(TL.BAR_LIFT + TL.CARD_GAP).top(mid - 60).h(120).items_center()
+      card = h_flex().absolute().right(TL.BAR_LIFT + TL.CARD_GAP).top(cardTop(mid, (end - start) * row, this.vh)).h(120).items_center()
         .child(enter(this.m, div().w(TL.CARD_W).p(TL.CARD_PAD).rounded(12).border(1).border_color(ink(t, 0.1)).bg(t.popover).shadow_lg()
           .child(div().max_h(TL.CARD_LINE * 2).overflow_hidden().text_size(14).line_height(`${TL.CARD_LINE}px`).text_color(ink(t, 1)).child(text)), "kc-tl-card", { dy: 0 }));
     }
@@ -1751,7 +1754,9 @@ export default class Chat extends View {
       .child(v_flex().id("kc-scroll").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).pt(TOP_INSET).pb(8)
         .on_size_change((size, cx) => {
           const h = size.height / this.zoom();
-          if (Math.abs(h - this.vh) > 0.5) { this.vh = h; cx.notify(); }
+          // A view following the bottom stays there when its box changes (a ledge opening, the window):
+          // gpui keeps the offset from the top, so the last lines would slip under the composer.
+          if (Math.abs(h - this.vh) > 0.5) { this.vh = h; if (this.follow) this.reveal = "bottom"; cx.notify(); }
         })
         // Scrolling up leaves the bottom: new turns no longer pull the view down (G or the button bring it back).
         .on_scroll_wheel((ev, cx) => {
@@ -1768,8 +1773,8 @@ export default class Chat extends View {
         .children(children))
       .when(Boolean(rail), (el) => el.child(rail))
       // transcript.rs:5986-6062, « jump to bottom »: 30 round, border 0.1, ground 0.04, chevron 16 at 0.7.
-      // Over the runner's band when it shows (#84, vim-nav's runner: 56 px over the composer).
-      .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(8 + (runnerShown(tg.agent?.status, tg.agent?.program) ? 56 : 0)).left(0).right(0).justify_center()
+      // Inside the transcript's box: the runner's band is under it, in the composer's flow.
+      .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(8).left(0).right(0).justify_center()
         .child(h_flex().id("kc-bottom").size(30).rounded_full().items_center().justify_center().border(1).border_color(ink(t, 0.1))
           .bg(ink(t, 0.04)).cursor_pointer().tooltip(tr("bottom")).text_color(ink(t, 0.7)).hover((s) => s.text_color(ink(t, 1)))
           .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.jump = null; this.win = win.bottom(this.turns.length); this.reveal = "bottom"; cx.notify(); })
@@ -1857,15 +1862,16 @@ export default class Chat extends View {
     const subs = agentsLedge(bridge?.agents, Date.now(), a?.address ?? "");
     return h_flex().w_full().flex_none().justify_center()
       .child(v_flex().relative().w_full().max_w(COLUMN).px(10).pb(6).gap(8)
+        // runner: its band in the flow, first, on the card's left edge: the transcript ends above it and
+        // nothing is drawn over it or under it (Kylian, 2026-11-19: the live turn went over Clawd when it
+        // bit into the transcript). this.band: render() worked it out, to keep a followed view at the bottom.
+        .when(this.band, (el) => el.child(runnerBand(this.runner)))
         .when(Boolean(blocked), (el) => el.child(blocked))
         .child(v_flex().w_full()
           .when(Boolean(tasks), (el) => el.child(this.tasksShelf(t, tasks, a, cx)))
           .child(card)
           .when(Boolean(subs), (el) => el.child(this.agentsShelf(t, subs, a, cx))))
-        .child(under)
-        // runner: vim-nav's runner, 96 × 56 over the card's left edge, on whatever is on top (the tasks,
-        // a dialog, the card), biting into the transcript: no id, no handler, nothing caught there.
-        .when(runnerShown(a?.status, a?.program), (el) => el.child(div().absolute().top(-56).left(10).w(96).h(56))));
+        .child(under));
   }
 
   // ---------- the composer's ledges (#84, shelf.js) ----------
@@ -1896,11 +1902,29 @@ export default class Chat extends View {
       const key = JSON.stringify([address, next?.todos ?? null, next?.agents ?? null, shownAgents(next?.agents, now).map((a) => agentAge(a, now))]);
       this.bridgeFor = address;
       this.bridge = next;
+      this.feedRunner(); // runner: its action, its status or its agent may have just changed
       if (key !== this.bridgeKey) {
         this.bridgeKey = key;
         cx.notify();
       }
     });
+  }
+
+  /** runner: what the runner should hold for this target (runnerProps), the bridge only when it is its agent's. */
+  runnerNow(tg) {
+    const a = tg.agent ?? null;
+    return runnerProps(a, a && this.bridgeFor === a.address ? this.bridge : null);
+  }
+
+  /**
+   * runner: hands the runner its agent when that changed, from a task (readBridge's, or one live() starts):
+   * set_props notifies it, so never during render.
+   */
+  feedRunner() {
+    const { props, key } = this.runnerNow(target());
+    if (key === this.runnerKey) return;
+    this.runnerKey = key;
+    this.runner.set_props(props);
   }
 
   /**
@@ -2070,8 +2094,9 @@ export default class Chat extends View {
     }
     // #84: the agent's herdr-bridge file (its tasks, its sub-agents), read when this face shows or its
     // agent or status changes, then by watchBridge()'s timer while there is something to follow.
-    // runner: here kt-chat learns a status or agent change, but during render: set_props (it notifies)
-    // goes in a cx.spawn started from here, as readBridge's read does, never called directly.
+    // runner: a status or agent change goes to the runner from a task started here (set_props notifies,
+    // never during render); readBridge's task hands it the action as it comes.
+    if (this.runnerNow(tg).key !== this.runnerKey) cx.spawn(async () => this.feedRunner());
     const address = !this.fixed && tg.agent && !tg.reason ? tg.agent.address : null;
     if (address && shown && (!this.wasShown || status !== this.lastStatus || this.bridgeFor !== address)) this.readBridge(cx, address);
     this.watchBridge(cx);
@@ -2168,6 +2193,11 @@ export default class Chat extends View {
     const keyed = this.handle.is_focused();
     if (paneTerminal() && !checking()) this.paneSync(cx, keyed);
     const writes = !this.fixed && Boolean(tg.agent) && !tg.reason;
+    // runner: its band (composerView) entering or leaving moves the transcript's bottom edge by 64 px: a
+    // view following the bottom is brought back to it in this same frame (body() reveals it), not one late.
+    const band = writes && runnerShown(tg.agent?.status, tg.agent?.program);
+    if (keepBottom(this.follow, this.band, band)) this.reveal = "bottom";
+    this.band = band;
     const pr = this.project(t, cx, tg);
     const bg = this.background(t, cx, pr);
     // shell/project_settings.rs:304-317: the image first, the conversation over it; nothing paints a

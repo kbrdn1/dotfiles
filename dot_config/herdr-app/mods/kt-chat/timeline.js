@@ -74,6 +74,14 @@ export function barLift(index, hover) {
   return d > TL.RIPPLE ? 0 : (TL.RIPPLE + 1 - d) / (TL.RIPPLE + 1);
 }
 
+/** The hover card's top in the stack (its band of `band` px centred on bar `mid`), kept inside the
+ *  transcript's box: the stack is centred in vh, and a card past its bottom would be drawn over the
+ *  composer (the runner's band, a dialog). */
+export function cardTop(mid, stack, vh, band = 120) {
+  const off = (vh - stack) / 2; // the stack's top in the box
+  return Math.max(-off, Math.min(mid - band / 2, vh - off - band));
+}
+
 /**
  * Where the scroll area's children are, from their heights (undefined: not measured yet), the first
  * at `inset` (the area's top padding). { tops, end, known }: each one's top, the bottom of the last,
