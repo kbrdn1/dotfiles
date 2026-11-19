@@ -43,6 +43,8 @@ import { filterOf, filtering, openFirst, moveInGroup } from "./thread-filter.js"
 import * as model from "./threads-model.js";
 import { age, duration, until, label, startOf, endOf, isAlive, FADE, PROJECT_COLORS, assignColors, sortRegistry, where } from "./threads-model.js";
 import * as io from "./threads-io.js";
+// The registry moved or grown by `kt-threads.project-move` / `project-add` (herdr-app do): a renamed folder, a project with no space yet.
+import * as registry from "./registry.js";
 import { pollMachines, guard, reachable, stateOf, stateWord, stateColor, machineList } from "./machines.js";
 import { Vim, keysOf, step } from "./vim.js";
 // Copied byte for byte from mods/kbrdn-toast/decide.js (a mod can't import from another folder): edit
@@ -371,10 +373,34 @@ export default class Threads extends View {
             setShared("kt.threadFilter", { ...f, archived: !f.archived });
           }
           else if (/^theme-(light|dark|blur)$/.test(c)) this.setTheme(c.slice(6), cx);
+          else if (c.startsWith("project-move:") || c.startsWith("project-add:")) this.projectCommand(c, cx);
           cx.notify();
         }
       });
     }
+  }
+
+  // `project-move:<json>` / `project-add:<json>` (registry.js, from `herdr-app do`): the registry moved where
+  // kt-projects can't (a folder renamed on disk: its color, order and chat background kept) or grown before
+  // any space opens on the project. The folder checked on the disk first; a refusal does nothing, said in
+  // the log, like the result.
+  projectCommand(c, cx) {
+    const [kind, text] = [c.slice(0, c.indexOf(":")), c.slice(c.indexOf(":") + 1)];
+    const input = registry.parse(text);
+    const say = (what) => console.log(`kt-threads ${kind}: ${what}`);
+    if (!input.ok) return void say(`refused, ${input.reason}`);
+    const folder = registry.folderOf(kind === "project-move" ? input.value.to : input.value.folder);
+    cx.spawn(async (cx) => {
+      const exists = folder ? await exec("test", ["-d", folder]).then((r) => r.code === 0).catch(() => false) : false;
+      const r = kind === "project-move"
+        ? registry.moveProject(shared("kt.projects") ?? [], { "kt.chat.backgrounds": shared("kt.chat.backgrounds") ?? {} }, input.value, exists)
+        : registry.addProject(shared("kt.projects") ?? [], input.value, exists);
+      if (!r.ok) return void say(`refused, ${r.reason}`);
+      setShared("kt.projects", r.list);
+      for (const [key, map] of Object.entries(r.maps ?? {})) setShared(key, map);
+      say(`done, ${r.id}${Object.keys(r.maps ?? {}).length ? ` (and ${Object.keys(r.maps).join(", ")})` : ""}`);
+      cx.notify();
+    });
   }
 
   // Keeps the registry in step with the spaces: an open space whose project isn't in it adds it
