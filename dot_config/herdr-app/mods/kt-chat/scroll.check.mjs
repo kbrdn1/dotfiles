@@ -57,6 +57,7 @@ function chat(entries = turn("B", 100, "lu d'abord"), { path = "/p", start = 100
     vh: 0, areaW: 0, pinned: null, top: 120, reveal: null, wheelAt: null, jump: null, tlId: null, tlAbove: false, tlLost: false, bgBtn: false,
     budget: null, shownSteps: new Map(), open: new Set(), settling: false,
     drawn: new Map(), byState: new Map(), heldNow: new Set(), keepRow: null, pressAt: null, pressMoved: false,
+    moveAt: null, placing: false, inBand: new Set(), guesses: new WeakMap(), posed: new Map(),
   });
   c.state = ingest(null, out(path, start, end, true, entries));
   c.rebuild(true);
@@ -293,20 +294,176 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
   assert.equal(c.follow, false, "a sideways swipe that scrolls up leaves the bottom");
 }
 
-// ── A7: older / newer light the message of the turn they bring; a wheel finds the view again ──
+// ── #59: every loaded turn is a row; the band drawn whole, the others boxes as tall as they were drawn ──
 {
   const c = chat(three(), { start: 0, end: 30 });
-  c.win = { from: 1, to: 3 };
-  c.follow = false;
-  c.tlId = "C";
-  c.tlLost = true;
-  c.older(ctx()); // loaded turns above: the window grows up to them, the view brought to B (first drawn before)
-  assert.equal(c.tlId, "B", "« Tours précédents » lights the turn the view is brought to, not the one lit before");
-  assert.equal(c.tlLost, false);
-  c.win = { from: 0, to: 2 };
-  c.newer();
-  assert.equal(c.tlId, "B", "« Tours suivants » lights the last turn that was drawn, where the view stays");
+  c.win = { from: 1, to: 3 }; // A is a box
+  c.hts.set("kc-head", 42);
+  const g = c.guess(c.turns[0]);
+  assert.ok(g > 0, "a turn never drawn: its guess (turn-band.js estimate)");
+  assert.deepEqual(c.rowsNow().map(([id, h]) => [id, h]), [["kc-head", 42], ["kc-turn-A", g], ["kc-turn-B", undefined], ["kc-turn-C", undefined], ["kc-working", undefined]]);
+  assert.equal(c.geom().known, false, "drawn whole and not measured yet: not known");
+  for (const [id, h] of [["kc-turn-B", 300], ["kc-turn-C", 300], ["kc-working", 50]]) c.hts.set(id, h);
+  const geo = c.geom();
+  assert.equal(geo.known, true, "a box's height is the one it is drawn at: known");
+  assert.equal(geo.tops.get("B"), 20 + 42 + g);
+  assert.equal(c.lastRow(), "kc-working", "« Tours suivants » is gone: the last row is the conversation's");
+  c.hts.set("kc-turn-A", 500);
+  assert.equal(c.rowsNow()[1][1], 500, "measured once, its box keeps that height");
 }
+// ── #59: which band a render draws (pickBand) ──
+{
+  const c = chat([...Array(12)].flatMap((_, k) => turn(`T${k}`, k * 10, `tour ${k}`)), { start: 0, end: 120 });
+  c.vh = 500;
+  c.hts.set("kc-head", 42);
+  for (const t of c.turns) c.hts.set(`kc-turn-${t.id}`, 200);
+  assert.deepEqual(c.pickBand(), { from: 7, to: 12 }, "following: the bottom's (the view and one more above)");
+  c.follow = false;
+  c.top = 0;
+  assert.deepEqual(c.pickBand(), { from: 0, to: 5 }, "the view's top known: around it");
+  c.jump = "T8";
+  assert.deepEqual(c.pickBand(), { from: 8, to: 12 }, "a jump waiting: from its turn down, nothing above it changes");
+  c.jump = null;
+  c.top = null;
+  c.win = { from: 3, to: 6 };
+  assert.deepEqual(c.pickBand(), { from: 3, to: 6 }, "unknown (a key revealed the cursor's turn): as it was");
+}
+// ── #59: a row wholly above the view changes height: the view's top moves with it (keepAbove) ──
+{
+  const c = chat(three(), { start: 0, end: 30 }), cx = ctx();
+  for (const [id, h] of [["kc-head", 42], ["kc-turn-B", 300], ["kc-turn-C", 300], ["kc-working", 50]]) c.hts.set(id, h);
+  c.vh = 500;
+  c.follow = false;
+  c.win = { from: 0, to: 3 };
+  const g = c.guess(c.turns[0]);
+  c.top = 62 + g + 100; // A wholly above the view, B 100 px above it
+  const top = c.top;
+  c.measured("kc-turn-A", { width: 800, height: g + 80 }, cx); // A back from its box: its guess was 80 short
+  assert.equal(c.top, top + 80, "what the reader sees stays: the view's top moves by what A grew");
+  assert.equal(c.placing, true, "the next render anchors it (body())");
+  assert.equal(cx.notified, 1);
+  c.placing = false;
+  c.measured("kc-turn-B", { width: 800, height: 340 }, cx);
+  assert.equal(c.top, top + 80, "a row the view's top is in: nothing moves (its growth is under the top)");
+  c.measured("kc-turn-C", { width: 800, height: 900 }, cx);
+  assert.equal(c.top, top + 80, "below: nothing");
+  assert.equal(c.placing, false);
+  c.follow = true;
+  c.measured("kc-turn-A", { width: 800, height: g + 20 }, cx);
+  assert.equal(c.top, top + 80, "following: the bottom is brought instead (A2)");
+}
+{
+  // Two turns above the view drawn whole for the first time (a jump's band growing upward), boxes at
+  // their pose the image before: B reports before A, the view's top still moves by both.
+  const c = chat(three(), { start: 0, end: 30 }), cx = ctx();
+  for (const [id, h] of [["kc-head", 42], ["kc-turn-C", 300], ["kc-working", 50]]) c.hts.set(id, h);
+  c.posed.set("kc-turn-A", 150);
+  c.posed.set("kc-turn-B", 170);
+  c.vh = 500;
+  c.follow = false;
+  c.win = { from: 0, to: 3 };
+  c.top = 62 + 150 + 170 + 40; // A and B wholly above, 40 px into C
+  c.measured("kc-turn-B", { width: 800, height: 230 }, cx);
+  c.measured("kc-turn-A", { width: 800, height: 400 }, cx);
+  assert.equal(c.top, 62 + 400 + 230 + 40, "C stays 40 px into the view, whatever the order the sizes come in");
+}
+{
+  // A box's height is the one it was drawn at until it is measured: a guess that changes (the width)
+  // doesn't move what is under it.
+  const long = [{ k: "user", o: 0, uuid: "A", at: 0, turn: true, text: "long" },
+    { k: "assistant", o: 1, uuid: "Aa", mid: "Am", at: 1, model: "m", blocks: [{ t: "text", text: "mot ".repeat(200) }] }];
+  const c = chat([...long, ...turn("B", 10, "deux"), ...turn("C", 20, "trois")], { start: 0, end: 30 });
+  c.win = { from: 2, to: 3 };
+  c.areaW = 900;
+  const g = c.guess(c.turns[0]);
+  c.posed.set("kc-turn-A", g);
+  c.areaW = 400; // narrower: its prose would wrap more
+  assert.notEqual(c.guess(c.turns[0]), g, "the guess moved");
+  assert.equal(c.rowsNow()[1][1], g, "the box didn't");
+  assert.equal(c.heights()[0], g, "nor the band's view of it");
+}
+{
+  // Following, a box drawn whole for the first time reports its first size: not a growth (A2 stays).
+  const c = chat(three(), { start: 0, end: 30 }), cx = ctx();
+  c.win = { from: 2, to: 3 };
+  c.measured("kc-turn-A", { width: 800, height: 5000 }, cx);
+  assert.equal(c.follow, true, "its guess was never its measure");
+  assert.equal(c.reveal, null);
+}
+// ── #59: the read upward keeps what the reader sees (older(): a read in front, placing) ──
+{
+  const c = chat(turn("B", 100, "lu d'abord"));
+  c.follow = false;
+  c.top = 120;
+  c.hts.set("kc-head", 42);
+  c.hts.set("kc-turn-B", 300);
+  c.index = async () => out("/p", 0, 100, false, [...turn("Z", 0, "bien plus ancien"), ...turn("A", 10, "plus ancien")]);
+  const cx = ctx();
+  await c.older(cx);
+  await Promise.resolve();
+  assert.deepEqual(c.turns.map((t) => t.id), ["Z", "A", "B"]);
+  const above = c.guess(c.turns[0]) + c.guess(c.turns[1]);
+  assert.equal(c.top, 120 + above, "the view's top moves by the boxes that came above B");
+  assert.equal(c.placing, true, "anchored in the next render, the same lines on screen");
+  assert.equal(c.reveal, null);
+}
+{
+  const c = chat(three(), { start: 30, end: 60 });
+  c.follow = false;
+  c.top = null; // a key brought the view: unknown
+  c.cur = 0;
+  c.index = async () => out("/p", 0, 30, false, turn("Z", 0, "plus ancien"));
+  await c.older(ctx());
+  await Promise.resolve();
+  assert.equal(c.turns[c.cur].id, "A", "the cursor stays on its turn");
+  assert.equal(c.reveal, 2, "the view's top unknown: the cursor's turn revealed (child 2)");
+  assert.equal(c.placing, false);
+}
+{
+  // A wheel within a view of the head with more to read: the read upward, on its own.
+  const c = chat(three(), { start: 30, end: 60 }), cx = ctx();
+  for (const [id, h] of [["kc-head", 42], ["kc-turn-A", 300], ["kc-turn-B", 300], ["kc-turn-C", 300], ["kc-working", 50]]) c.hts.set(id, h);
+  c.vh = 500;
+  c.follow = false;
+  let asked = 0;
+  c.index = () => { asked++; return new Promise(() => {}); };
+  const ev = (y) => ({ delta: { x: 0, y: 10 }, position: { x: 5, y: 400 }, local_position: { x: 5, y } });
+  c.wheel(cx, "kc-turn-C", ev(40));
+  c.areaWheel(ev(300), cx); // C's top 662: the view's top 662 + 40 - 300 - 10 = 392 < 500
+  assert.equal(c.top, 392);
+  assert.equal(asked, 1, "the read upward asked");
+  assert.equal(c.olderBusy, true);
+  c.wheel(cx, "kc-turn-C", ev(40));
+  c.areaWheel(ev(300), cx);
+  assert.equal(asked, 1, "once at a time");
+}
+// ── #59: the scrollbar dragged, the view's top is found again under the pointer (seen()) ──
+{
+  const c = chat(three(), { start: 0, end: 30 }), cx = ctx();
+  for (const [id, h] of [["kc-head", 42], ["kc-turn-A", 300], ["kc-turn-B", 300], ["kc-turn-C", 300], ["kc-working", 50]]) c.hts.set(id, h);
+  c.vh = 500;
+  c.follow = false;
+  c.top = null;
+  c.tlLost = true;
+  c.state.more = false;
+  const mv = (y) => ({ position: { x: 5, y: 400 }, local_position: { x: 5, y } });
+  c.seen(cx, "kc-turn-B", mv(40));
+  assert.equal(c.top, null, "one half: nothing yet");
+  c.seen(cx, null, { position: { x: 6, y: 400 }, local_position: { x: 6, y: 300 } });
+  assert.equal(c.top, null, "another pointer: not the same move");
+  c.seen(cx, "kc-turn-B", mv(40));
+  c.seen(cx, null, mv(300));
+  assert.equal(c.top, 362 + 40 - 300, "B's top 362, the pointer 40 into it and 300 down the view");
+  assert.equal(c.tlLost, false, "the timeline lights again");
+  assert.equal(c.tlId, "B");
+  const n = cx.notified;
+  c.seen(cx, "kc-turn-C", mv(10));
+  c.seen(cx, null, mv(10));
+  assert.equal(c.top, 102, "known: a move costs nothing");
+  assert.equal(cx.notified, n);
+}
+
+// ── A7: a wheel finds the view again ──
 {
   const c = chat(three(), { start: 0, end: 30 });
   for (const [id, h] of [["kc-head", 40], ["kc-turn-A", 300], ["kc-turn-B", 300], ["kc-turn-C", 300], ["kc-working", 50]]) c.hts.set(id, h);
