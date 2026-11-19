@@ -22,7 +22,12 @@ metadata:
 ## Setup specific to this machine
 
 - **Source dir**: `~/.local/share/chezmoi/`
-- **Remote**: `https://github.com/kbrdn1/dotfiles` — branch `main`
+- **Remote**: `https://github.com/kbrdn1/dotfiles`. Branches (since 2026-11-19, see the
+  repo's `CONTRIBUTING.md`): the source dir stays on **`dev`**, the default branch, where
+  small changes are committed and pushed (`git push origin dev`). **`main` is protected**
+  and only moves at a release (PR `dev` → `main`, tag `vYYYY.MM.DD`): a push to `main` is
+  refused. Larger changes go through a `feature/`, `fix/`, `docs/` branch in a gwm worktree
+  and a PR into `dev`.
 - **Binary**: installed via **nix** (`~/.nix-profile/bin/chezmoi`, nixpkgs). Upgrade
   the binary through nix, **never** `chezmoi upgrade`.
 - **Encryption**: `age`. Config in `~/.config/chezmoi/chezmoi.toml`:
@@ -134,8 +139,9 @@ For any managed config file:
 2. **Edit the source** (template if one exists, else the source file) — or edit
    the home file then copy it in: `cp ~/<file> ~/.local/share/chezmoi/<prefix_mapped_name>`
 3. **Verify**: `chezmoi diff` (or path-scoped)
-4. **Commit**: `cd ~/.local/share/chezmoi && git add -A && git commit -m "msg"`
-5. **Push**: `git push`
+4. **Commit**: `cd ~/.local/share/chezmoi && git add -- <the source paths> && git commit`
+   (explicit paths, never `git add -A`: other sessions work in the same source dir)
+5. **Push**: `git push origin dev`
 
 To go the other direction (deploy source → home): `chezmoi apply <path>`.
 
@@ -165,7 +171,7 @@ For each file to keep: `cp ~/<file> ~/.local/share/chezmoi/<prefix_mapped_name>`
 then `chezmoi diff` to confirm. Commit (don't push yet):
 
 ```bash
-cd ~/.local/share/chezmoi && git add -A && git commit -m "capture local config drift"
+cd ~/.local/share/chezmoi && git add -- <the captured paths> && git commit -m "capture local config drift"
 ```
 
 ### 2. Pull remote
