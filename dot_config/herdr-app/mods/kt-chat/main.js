@@ -19,6 +19,10 @@
 // Attachments (#80): a prompt's images as photos above its bubble, its files as chips in it (name,
 // kind, size); chat-att.ts (bun, by exec, argv) makes the thumbnails into data/kt-chat/att, a bounded
 // cache swept to its own names; a click opens kt-viewer on the message's attachments.
+// The background's effect (#87), per project in its panel: the dither (#57, the default), or
+// Monocode's ASCII, Halftone, Scanlines and Haze, each a texture chat-bg.ts makes once into
+// data/kt-chat; the Haze's follows the view (its rows by steps of 128, empty or not, the theme), the
+// last texture staying on screen while the next one is made.
 //
 // Keys (focusable): j k turns, gg G, ctrl-d ctrl-u, o / enter fold, y copy the turn's answer, r
 // reread, i write, [ ] Kylian's message before / after (the timeline, #85). `kt-chat.file:<path>`
@@ -44,7 +48,7 @@ import { view } from "./view.js";
 import { ingest, prepend, build, tally, foldedSteps, trim, pendingQueue } from "./chat-model.js";
 import {
   pickTarget, tallyText, childOf, chatShown, liveStep,
-  projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, orphans, clampText,
+  projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
   foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
 import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markdown.js";
@@ -168,8 +172,9 @@ export default class Chat extends View {
     this.hover = null; // the row under the pointer, for what Monocode shows on hover
     this.copied = null; // the copy button showing its check
     this.roots = {}; // folder -> its repo's main checkout (null: no repo), git asked once per folder
-    this.bgDone = new Map(); // `${src}|${cell}|${tint}` -> chat-bg.ts' { path, w, h }
+    this.bgDone = new Map(); // bgKey(src, fx) -> chat-bg.ts' { path, w, h }
     this.bgBusy = new Set();
+    this.bgLast = new Map(); // project key -> the texture shown last (kept on screen while the next is made, #87)
     // #80: an attachment's key -> chat-att.ts' answer ({ thumb, w, h, bytes } | { kind, bytes } |
     // { busy } | { error }), what is waiting for it, whether its task runs, thumbnails made since a sweep.
     this.att = new Map();
@@ -626,56 +631,93 @@ export default class Chat extends View {
     this.cleanDue = false;
     if (!all || typeof all !== "object") return;
     const dir = `${appHome()}/data/kt-chat`;
+    // A Haze's variants: only those shown now stay (#87), each project's last texture.
+    const inUse = new Set([...this.bgLast.values()].map((v) => v.path).filter(Boolean));
     cx.spawn(async () => {
       const names = await fs.readdir(dir).catch(() => []);
-      for (const n of orphans(names, all)) {
+      for (const n of orphans(names, all, inUse)) {
         await fs.unlink(`${dir}/${n}`).catch(() => {});
         for (const [k, v] of this.bgDone) if (v.path?.endsWith(`/${n}`) || v.src?.endsWith(`/${n}`)) this.bgDone.delete(k);
       }
     });
   }
 
-  /** chat-bg.ts on `src`: { src, path, w, h } or throws. */
-  async dither(src, cell, tint) {
-    const args = [`${appHome()}/mods/kt-chat/chat-bg.ts`, src, "--out", `${appHome()}/data/kt-chat`, "--cell", String(cell), ...(tint ? ["--tint", tint] : [])];
+  /**
+   * chat-bg.ts on `src` for `fx` ({ effect, cell, tint, empty, rows, ground }, fxOf): { src, path, w, h }
+   * or throws.
+   */
+  async texture(src, fx) {
+    const args = [`${appHome()}/mods/kt-chat/chat-bg.ts`, src, "--out", `${appHome()}/data/kt-chat`, "--effect", fx.effect, "--cell", String(fx.cell ?? 2),
+      ...(fx.tint ? ["--tint", fx.tint] : []), ...(fx.empty ? ["--empty"] : []), ...(fx.rows ? ["--rows", String(fx.rows)] : []), ...(fx.ground ? ["--ground", fx.ground] : [])];
     const r = await exec(`${home()}/.nix-profile/bin/bun`, args, { timeout: 120000 });
     const out = JSON.parse(r.stdout || "null");
     if (!out || out.error) throw new Error(out?.message ?? out?.error ?? (r.stderr || `exit ${r.code}`).trim());
     return out;
   }
 
-  /** The dithered texture for these settings: made once (then kept), null until it is. */
-  bgImage(cx, s, tint) {
-    const k = `${s.src}|${s.cell}|${tint ?? "photo"}`;
-    const done = this.bgDone.get(k);
-    if (done || checking() || this.bgBusy.has(k)) return done ?? null;
-    this.bgBusy.add(k);
-    cx.spawn(async (cx) => {
-      try {
-        this.bgDone.set(k, await this.dither(s.src, s.cell, tint));
-      } catch (e) {
-        this.bgNote = { err: String(e?.message ?? e).slice(0, 200) };
-      } finally {
-        this.bgBusy.delete(k);
-        cx.notify();
-      }
-    });
-    return null;
+  /**
+   * What a setting's texture is made of (#87): the dither's cell and tint; for the Haze, the view
+   * (empty or not, the image rows it shows by steps of 128, the theme's ground: Monocode's 23,23,23 in
+   * a dark theme, the light theme's own background there).
+   */
+  fxOf(t, s, pr) {
+    if (s.effect === "dither") return { effect: "dither", cell: s.cell, tint: s.color === "project" ? pr.tint : null };
+    if (s.effect !== "haze") return { effect: s.effect };
+    const rows = this.size && s.w && s.h ? hazeRows({ w: Math.floor(this.size.w), h: Math.floor(this.size.h), iw: s.w, ih: s.h }) : 0;
+    return { effect: "haze", empty: !this.turns.length, rows, ground: settings().dark ? HAZE_DARK : String(t.background).slice(0, 7) };
   }
 
-  /** A chosen image (the picker, a drop) for the project: kept, resized and dithered once. */
+  bgKey(src, fx) {
+    return [src, fx.effect, fx.cell ?? "", fx.tint ?? "", fx.empty ? 1 : 0, fx.rows ?? "", fx.ground ?? ""].join("|");
+  }
+
+  /**
+   * The texture for these settings: made once (then kept). While it is made (another effect, a Haze's
+   * new height or theme), the project's last one stays on screen (#87); null before any.
+   */
+  bgImage(cx, s, fx, project) {
+    const k = this.bgKey(s.src, fx);
+    const done = this.bgDone.get(k);
+    if (done) {
+      this.bgLast.set(project, done);
+      return done;
+    }
+    if (!checking() && !this.bgBusy.has(k)) {
+      this.bgBusy.add(k);
+      cx.spawn(async (cx) => {
+        try {
+          const out = await this.texture(s.src, fx);
+          this.bgDone.set(k, out);
+          // Shown from now: the sweep it asks for keeps this Haze variant and lets the one before go.
+          this.bgLast.set(project, out);
+          if (fx.effect === "haze") this.cleanDue = true;
+        } catch (e) {
+          this.bgNote = { err: String(e?.message ?? e).slice(0, 200) };
+        } finally {
+          this.bgBusy.delete(k);
+          cx.notify();
+        }
+      });
+    }
+    return this.bgLast.get(project) ?? null;
+  }
+
+  /**
+   * A chosen image (the picker, a drop) for the project: kept and resized once (its dither made on the
+   * way: another effect's texture follows at the next render, the sweep lets the dither go).
+   */
   importBg(cx, pr, path) {
     if (!pr || !path) return;
     const s = this.bgOf(pr.key);
     const cell = s?.cell ?? 2;
     const color = s?.color ?? "photo";
-    const tint = color === "project" ? pr.tint : null;
+    const fx = { effect: "dither", cell, tint: color === "project" ? pr.tint : null };
     this.bgNote = { busy: true };
     cx.spawn(async (cx) => {
       try {
-        const out = await this.dither(path, cell, tint);
-        this.bgDone.set(`${out.src}|${cell}|${tint ?? "photo"}`, out);
-        this.setBg(pr.key, { src: out.src, w: out.w, h: out.h, cell, color, opacity: s?.opacity ?? OPACITY.dflt, scope: s?.scope ?? "all" });
+        const out = await this.texture(path, fx);
+        this.bgDone.set(this.bgKey(out.src, fx), out);
+        this.setBg(pr.key, { src: out.src, w: out.w, h: out.h, effect: s?.effect ?? "dither", cell, color, opacity: s?.opacity ?? OPACITY.dflt, scope: s?.scope ?? "all" });
         this.bgNote = null;
       } catch (e) {
         this.bgNote = { err: String(e?.message ?? e).slice(0, 200) };
@@ -700,15 +742,16 @@ export default class Chat extends View {
   background(t, cx, pr) {
     const s = pr ? this.bgOf(pr.key) : null;
     if (!s || !this.size || (s.scope === "empty" && this.turns.length)) return null;
-    const img = this.bgImage(cx, s, s.color === "project" ? pr.tint : null);
+    const img = this.bgImage(cx, s, this.fxOf(t, s, pr), pr.key);
     if (!img) return null;
     const w = Math.floor(this.size.w), h = Math.floor(this.size.h); // no border: the whole block
     if (w <= 30 || h <= 30) return null;
-    const layers = bgLayers({ w, h, iw: img.w, ih: img.h, windows: bandWindows(w, h, 16, ALL), opacity: s.opacity, empty: !this.turns.length });
+    const haze = s.effect === "haze"; // its own fade, longer (chat-view.js fadeAt)
+    const layers = bgLayers({ w, h, iw: img.w, ih: img.h, windows: bandWindows(w, h, 16, ALL), opacity: s.opacity, empty: !this.turns.length, haze });
     const src = appPath(img.path);
     // The veil under the reading column (chat-view.js veilRects: why, and why not a lower opacity).
     const ground = `${String(t.background).slice(0, 7)}${hex2(VEIL)}`;
-    const veil = veilRects({ w, h, column: COLUMN, r: 16, empty: !this.turns.length }).map((v) =>
+    const veil = veilRects({ w, h, column: COLUMN, r: 16, empty: !this.turns.length, haze }).map((v) =>
       div().absolute().left(v.x).top(v.y).w(v.w).h(v.h)
         .when(!v.fade, (el) => el.bg(ground))
         .when(v.fade, (el) => el.child(paint(RECT(), Background.linear_gradient(180, ground, `${String(t.background).slice(0, 7)}00`)))));
@@ -741,17 +784,24 @@ export default class Chat extends View {
       .child(label);
     const pct = s ? Math.round(s.opacity * 100) : 0;
     const nudge = (d) => this.setBg(pr.key, { opacity: Math.round(Math.min(OPACITY.max, Math.max(OPACITY.min, s.opacity + d)) * 100) / 100 });
-    const panel = v_flex().id("kc-bg-panel").absolute().top(42).right(10).w(280).p(12).gap(10).rounded(12).border(1).border_color(ink(t, 0.1))
+    // 320 wide (#87): the five effects on one row (appearance.rs:23-39, its segmented « Background effect »).
+    const panel = v_flex().id("kc-bg-panel").absolute().top(42).right(10).w(320).p(12).gap(10).rounded(12).border(1).border_color(ink(t, 0.1))
       .bg(t.popover).shadow_lg()
       .on_mouse_down_out((_e, cx) => { this.bgMenu = false; this.bgClosedAt = Date.now(); cx.notify(); })
       .child(div().text_size(12).font_semibold().text_color(ink(t, 1)).child(tr("bg.title", { project: pr.name })))
       .child(h_flex().gap(8).items_center().child(button("kc-bg-pick", tr("bg.pick"), (cx) => this.pickBg(cx, pr)))
-        .when(Boolean(this.bgNote?.busy), (el) => el.child(svg(SPIN).size(12).text_color(t.working).spin(900))))
+        .when(Boolean(this.bgNote?.busy) || this.bgBusy.size > 0, (el) => el.child(svg(SPIN).size(12).text_color(t.working).spin(900))))
       .child(div().text_size(11).text_color(ink(t, 0.45)).child(tr("bg.drop")))
       .when(Boolean(this.bgNote?.err), (el) => el.child(div().text_size(11).text_color(ERR).child(tr("bg.failed", { why: this.bgNote.err }))))
       .when(Boolean(s), (el) => el
-        .child(row(tr("bg.color"), seg("kc-bg-color", [["photo", tr("bg.photo")], ["project", tr("bg.project")]], s.color, (v) => this.setBg(pr.key, { color: v }))))
-        .child(row(tr("bg.cell"), seg("kc-bg-cell", CELL_SIZES.map((c) => [c, `${c} px`]), s.cell, (v) => this.setBg(pr.key, { cell: v }))))
+        .child(v_flex().gap(6)
+          .child(div().text_size(11).text_color(ink(t, 0.5)).child(tr("bg.effect")))
+          .child(seg("kc-bg-effect", EFFECTS.map((e) => [e, tr(`fx.${e}`)]), s.effect, (v) => this.setBg(pr.key, { effect: v })))
+          .child(div().text_size(11).line_height("16px").text_color(ink(t, 0.45)).child(tr(`fxd.${s.effect}`))))
+        // The dither's own (#57): its color and its cells.
+        .when(s.effect === "dither", (el) => el
+          .child(row(tr("bg.color"), seg("kc-bg-color", [["photo", tr("bg.photo")], ["project", tr("bg.project")]], s.color, (v) => this.setBg(pr.key, { color: v }))))
+          .child(row(tr("bg.cell"), seg("kc-bg-cell", CELL_SIZES.map((c) => [c, `${c} px`]), s.cell, (v) => this.setBg(pr.key, { cell: v })))))
         .child(row(tr("bg.opacity"), h_flex().gap(4).items_center()
           .child(button("kc-bg-less", "−", () => nudge(-OPACITY.step))) // i18n: tech
           .child(div().w(44).text_size(12).text_color(ink(t, 1)).flex().justify_center().child(`${pct} %`))

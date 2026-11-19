@@ -2,7 +2,7 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, childOf, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects } from "./chat-view.js";
+import { pickTarget, tallyText, childOf, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects, hazeRows } from "./chat-view.js";
 import strings from "./strings.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
@@ -106,10 +106,12 @@ assert.equal(projectOf(reg, "/w/remote/x", null), null, "another machine's proje
 assert.equal(projectOf(null, "/w/proj", null), null);
 
 assert.equal(bgSettings(null), null);
-assert.deepEqual(bgSettings({ src: "/d/src-1.png", w: 10, h: 20 }), { src: "/d/src-1.png", w: 10, h: 20, cell: 2, color: "photo", opacity: 0.24, scope: "all" }, "Kylian's defaults: 2 px cells, the photo's color");
-assert.deepEqual(bgSettings({ src: "s", cell: 6, color: "project", opacity: 0.9, scope: "empty" }), { src: "s", w: null, h: null, cell: 6, color: "project", opacity: 0.65, scope: "empty" });
+assert.deepEqual(bgSettings({ src: "/d/src-1.png", w: 10, h: 20 }), { src: "/d/src-1.png", w: 10, h: 20, effect: "dither", cell: 2, color: "photo", opacity: 0.24, scope: "all" }, "Kylian's defaults: the dither, 2 px cells, the photo's color (a setting from before #87 reads as it did)");
+assert.deepEqual(bgSettings({ src: "s", cell: 6, color: "project", opacity: 0.9, scope: "empty" }), { src: "s", w: null, h: null, effect: "dither", cell: 6, color: "project", opacity: 0.65, scope: "empty" });
 assert.equal(bgSettings({ src: "s", cell: 3, opacity: 0.01 }).cell, 2);
 assert.equal(bgSettings({ src: "s", opacity: 0.01 }).opacity, 0.05);
+assert.equal(bgSettings({ src: "s", effect: "haze" }).effect, "haze");
+assert.equal(bgSettings({ src: "s", effect: "none" }).effect, "dither", "an unknown effect: the dither");
 
 // The clean-up of data/kt-chat: what no setting refers to, in chat-bg.ts' names only.
 const dir = [
@@ -133,11 +135,44 @@ assert.equal(orphans(dir, {}).length, 11, "no setting at all: every texture and 
 assert.deepEqual(orphans(["src-aaaaaaaa.png"], { x: { src: "src-aaaaaaaa.png", cell: 3 } }), [], "a setting's defaults count (cell 3 is read as 2)");
 assert.deepEqual(orphans(["src-aaaaaaaa.png"], { x: { cell: 2 } }), ["src-aaaaaaaa.png"], "a setting without a source refers to nothing");
 assert.deepEqual(orphans(null, settingsNow), []);
+// #87: the effects' textures (the rule: every name chat-bg.ts writes is in a pattern, else it never goes).
+const fxDir = [
+  "src-aaaaaaaa.png", "bg-aaaaaaaa-2-photo.png", "fx-aaaaaaaa-ascii.png", "fx-aaaaaaaa-halftone.png", "fx-aaaaaaaa-scanlines.png",
+  "fx-aaaaaaaa-haze-session-768-171717.png", "fx-aaaaaaaa-haze-session-896-171717.png", "fx-aaaaaaaa-haze-empty-768-171717.png",
+  "fx-aaaaaaaa-haze-session-768-f5f5f5.png", "fx-aaaaaaaa-haze.png", "fx-AAAAAAAA-ascii.png", "fx-aaaaaaaa-sepia.png",
+];
+const ascii = { a: { src: "/x/src-aaaaaaaa.png", effect: "ascii" } };
+assert.deepEqual(orphans(fxDir, ascii), [
+  "bg-aaaaaaaa-2-photo.png", "fx-aaaaaaaa-halftone.png", "fx-aaaaaaaa-scanlines.png",
+  "fx-aaaaaaaa-haze-session-768-171717.png", "fx-aaaaaaaa-haze-session-896-171717.png", "fx-aaaaaaaa-haze-empty-768-171717.png",
+  "fx-aaaaaaaa-haze-session-768-f5f5f5.png",
+], "an effect no longer chosen goes, the chosen one stays; never a name of another shape");
+const haze = { a: { src: "/x/src-aaaaaaaa.png", effect: "haze" } };
+assert.deepEqual(orphans(fxDir, haze, new Set(["/d/fx-aaaaaaaa-haze-session-896-171717.png"])), [
+  "bg-aaaaaaaa-2-photo.png", "fx-aaaaaaaa-ascii.png", "fx-aaaaaaaa-halftone.png", "fx-aaaaaaaa-scanlines.png",
+  "fx-aaaaaaaa-haze-session-768-171717.png", "fx-aaaaaaaa-haze-empty-768-171717.png", "fx-aaaaaaaa-haze-session-768-f5f5f5.png",
+], "the Haze: only the variants in use (another height, state or theme goes)");
+assert.deepEqual(orphans(fxDir, haze).filter((n) => n.includes("haze")), [], "none of its variants known yet (start-up): all kept");
+assert.equal(orphans(fxDir, {}).filter((n) => n.startsWith("fx-")).length, 7, "no setting: every effect texture of ours");
+assert.deepEqual(orphans(["src-aaaaaaaa.png", "bg-aaaaaaaa-2-photo.png"], { a: { src: "/x/src-aaaaaaaa.png" } }), [], "a setting from before #87: its dither stays");
+
+// The Haze's rows: what the view shows of the image at bgLayers' whole scale, by steps of 128.
+assert.equal(hazeRows({ w: 1100, h: 800, iw: 2048, ih: 1365 }), 896, "scale 1: 800 rows, up to 896");
+assert.equal(hazeRows({ w: 1100, h: 800, iw: 1024, ih: 683 }), 512, "scale 2: 400 rows, up to 512");
+assert.equal(hazeRows({ w: 1100, h: 2000, iw: 2048, ih: 1365 }), 1024, "never more than the image (scale 2: 1000 → 1024 ≤ 1365)");
+assert.equal(hazeRows({ w: 1100, h: 1360, iw: 2048, ih: 1365 }), 1365, "capped at the image");
+assert.equal(hazeRows({ w: 0, h: 800, iw: 10, ih: 10 }), 0);
 
 assert.equal(fadeAt(0), 1);
 assert.equal(fadeAt(0.18), 1);
 assert.equal(fadeAt(0.72), 0);
 assert.equal(fadeAt(0.9), 0);
+// The Haze's own fade (#87), longer: session 1 to 18 %, gone at 76 %; empty gone at 90 %.
+assert.equal(fadeAt(0.18, false, true), 1);
+assert.ok(Math.abs(fadeAt(0.47, false, true) - 0.5) < 0.001, "halfway between 0.18 and 0.76");
+assert.ok(fadeAt(0.72, false, true) > 0 && fadeAt(0.76, false, true) === 0);
+assert.ok(Math.abs(fadeAt(0.3, true, true) - 0.94) < 1e-9);
+assert.ok(fadeAt(0.85, true, true) > 0 && fadeAt(0.9, true, true) === 0);
 assert.ok(Math.abs(fadeAt(0.25) - 0.805) < 0.001, "halfway between 0.18 (1) and 0.32 (0.61)");
 assert.ok(fadeAt(0.3, true) > fadeAt(0.3, false), "an empty conversation fades later");
 
@@ -212,6 +247,7 @@ const vr = veilRects({ w: 1200, h: 1000, column: 832 });
 assert.deepEqual(vr.map((v) => [v.x, v.w, v.y, v.h, v.fade]), [[184, 832, 0, 180, false], [184, 832, 180, 540, true]]);
 assert.equal(vr[1].y + vr[1].h, Math.round(1000 * 0.72), "gone where the image is gone (fadeAt)");
 assert.ok(fadeAt(0.72) === 0 && fadeAt(0.18) === 1);
+assert.equal(veilRects({ w: 1200, h: 1000, column: 832, haze: true })[1].y + veilRects({ w: 1200, h: 1000, column: 832, haze: true })[1].h, 760, "the Haze's veil follows its own fade");
 const narrow = veilRects({ w: 600, h: 400, column: 832 });
 assert.deepEqual([narrow[0].x, narrow[0].x + narrow[0].w], [16, 584], "a narrow view: kept off the corners");
 assert.deepEqual(veilRects({ w: 20, h: 400 }), []);

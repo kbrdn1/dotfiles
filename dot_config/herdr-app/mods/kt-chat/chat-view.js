@@ -200,6 +200,8 @@ export function projectOf(entries, cwd, root) {
 
 export const OPACITY = { min: 0.05, max: 0.65, step: 0.04, dflt: 0.24 };
 export const CELL_SIZES = [2, 4, 6];
+/** chat-bg.ts' effects (#87; chat-bg.check.mjs compares the two lists): Monocode's, the dither first. */
+export const EFFECTS = ["dither", "ascii", "halftone", "scanlines", "haze"];
 
 /** A project's settings, as stored (shared kt.chat.backgrounds[id]), with the defaults and bounds. */
 export function bgSettings(raw) {
@@ -207,6 +209,7 @@ export function bgSettings(raw) {
   const o = Number(raw.opacity);
   return {
     src: raw.src, w: raw.w ?? null, h: raw.h ?? null,
+    effect: EFFECTS.includes(raw.effect) ? raw.effect : "dither",
     cell: CELL_SIZES.includes(raw.cell) ? raw.cell : 2,
     color: raw.color === "project" ? "project" : "photo",
     opacity: Number.isFinite(o) ? Math.min(OPACITY.max, Math.max(OPACITY.min, Math.round(o * 100) / 100)) : OPACITY.dflt,
@@ -214,42 +217,73 @@ export function bgSettings(raw) {
   };
 }
 
-// What chat-bg.ts writes in data/kt-chat: a kept source, a dithered texture. Nothing else there is ours.
+// What chat-bg.ts writes in data/kt-chat: a kept source, a dithered texture, an effect's texture, a
+// Haze's (per view: empty or not, its rows, its ground). Nothing else there is ours.
 const SRC = /^src-([0-9a-f]{8})\.png$/;
 const TEX = /^bg-([0-9a-f]{8})-(\d+)-(photo|[0-9a-f]{6})\.png$/;
+const FX = /^fx-([0-9a-f]{8})-(ascii|halftone|scanlines)\.png$/;
+const HAZE = /^fx-([0-9a-f]{8})-haze-(empty|session)-(\d+)-([0-9a-f]{6})\.png$/;
 
 /**
  * The files of data/kt-chat no setting refers to any more (shared kt.chat.backgrounds), to unlink one
- * by one. Kept: each setting's source (src-<hash>.png) and its texture at its cell: « photo », or any
- * tint for « project » (the project's color isn't in the setting, and it may change). Only names in
- * chat-bg.ts' two patterns are ever listed.
+ * by one. Kept: each setting's source (src-<hash>.png) and the texture of its effect only:
+ * - the dither at its cell: « photo », or any tint for « project » (the project's color isn't in the
+ *   setting, and it may change);
+ * - ASCII, Halftone, Scanlines: fx-<hash>-<effect>.png;
+ * - Haze: the variants `inUse` holds (the names the view shows or has made since it started: the
+ *   others belong to another height, theme or state); none of that image's in it, all of them (the
+ *   view hasn't said yet which: at start-up).
+ * Only names in chat-bg.ts' four patterns are ever listed.
  */
-export function orphans(names, all) {
-  const keep = { src: new Set(), tex: [] };
+export function orphans(names, all, inUse = new Set()) {
+  const keep = { src: new Set(), tex: [], fx: new Set(), haze: new Set() };
   for (const raw of Object.values(all ?? {})) {
     const s = bgSettings(raw);
     const h = s?.src?.split("/").pop()?.match(SRC)?.[1];
     if (!h) continue;
     keep.src.add(h);
-    keep.tex.push({ h, cell: String(s.cell), photo: s.color === "photo" });
+    if (s.effect === "dither") keep.tex.push({ h, cell: String(s.cell), photo: s.color === "photo" });
+    else if (s.effect === "haze") keep.haze.add(h);
+    else keep.fx.add(`${h}-${s.effect}`);
   }
+  const used = [...(inUse ?? [])].map((n) => String(n).split("/").pop());
+  const known = new Set(used.map((n) => n.match(HAZE)?.[1]).filter(Boolean));
   return (names ?? []).filter((n) => {
     const src = n.match(SRC);
     if (src) return !keep.src.has(src[1]);
     const tex = n.match(TEX);
-    if (!tex) return false;
-    return !keep.tex.some((k) => k.h === tex[1] && k.cell === tex[2] && (k.photo ? tex[3] === "photo" : tex[3] !== "photo"));
+    if (tex) return !keep.tex.some((k) => k.h === tex[1] && k.cell === tex[2] && (k.photo ? tex[3] === "photo" : tex[3] !== "photo"));
+    const fx = n.match(FX);
+    if (fx) return !keep.fx.has(`${fx[1]}-${fx[2]}`);
+    const haze = n.match(HAZE);
+    if (haze) return !keep.haze.has(haze[1]) || (known.has(haze[1]) && !used.includes(n));
+    return false;
   });
 }
 
-// Monocode's background_fade (crates/monocode-core/src/project_appearance.rs), for a conversation
-// and for an empty one: 1 at the top, gone by 72 % of the view's height.
+/** The Haze's ground in a dark theme: Monocode's 23,23,23 (chat-bg.ts DARK_GROUND, the check compares). */
+export const HAZE_DARK = "#171717";
+
+/** The Haze's rows (#87): the image rows the view shows at bgLayers' whole scale, by steps of 128. */
+export const HAZE_STEP = 128;
+export function hazeRows({ w, h, iw, ih }) {
+  if (!(w > 0 && h > 0 && iw > 0 && ih > 0)) return 0;
+  const s = Math.max(1, Math.ceil(Math.max(w / iw, h / ih)));
+  return Math.min(ih, Math.ceil(h / s / HAZE_STEP) * HAZE_STEP);
+}
+
+// Monocode's background_fade (crates/monocode-core/src/project_appearance.rs:258-296), for a
+// conversation and for an empty one: 1 at the top, gone by 72 % of the view's height; the Haze's
+// (#87) longer, gone by 76 % (90 % when empty).
 const FADE = {
   session: [[0, 1], [0.18, 1], [0.32, 0.61], [0.47, 0.32], [0.62, 0.11], [0.72, 0]],
   empty: [[0, 1], [0.19, 1], [0.3, 0.79], [0.42, 0.5], [0.54, 0.2], [0.64, 0.05], [0.72, 0]],
+  hazeSession: [[0, 1], [0.18, 1], [0.76, 0]],
+  hazeEmpty: [[0, 1], [0.19, 1], [0.3, 0.94], [0.42, 0.72], [0.54, 0.42], [0.66, 0.16], [0.78, 0.04], [0.9, 0]],
 };
-export function fadeAt(y, empty = false) {
-  const stops = empty ? FADE.empty : FADE.session;
+const stopsOf = (empty, haze) => (haze ? (empty ? FADE.hazeEmpty : FADE.hazeSession) : empty ? FADE.empty : FADE.session);
+export function fadeAt(y, empty = false, haze = false) {
+  const stops = stopsOf(empty, haze);
   for (let i = 1; i < stops.length; i++) {
     const [a, va] = stops[i - 1], [b, vb] = stops[i];
     if (y <= b) return va + (vb - va) * Math.min(1, Math.max(0, (y - a) / (b - a)));
@@ -267,12 +301,12 @@ export function fadeAt(y, empty = false) {
  * view's rounded top corners (`r`). [{ x, y, w, h, fade }].
  */
 export const VEIL = 0.5;
-export function veilRects({ w, h, column = 832, r = 16, empty = false }) {
+export function veilRects({ w, h, column = 832, r = 16, empty = false, haze = false }) {
   if (!(w > 0 && h > 0)) return [];
   const x = Math.max(r, Math.floor((w - column) / 2));
   const x1 = Math.min(w - r, Math.ceil((w + column) / 2));
   if (x1 <= x) return [];
-  const stops = empty ? FADE.empty : FADE.session;
+  const stops = stopsOf(empty, haze);
   const y1 = Math.round(h * stops[1][0]);
   const y2 = Math.round(h * stops[stops.length - 1][0]);
   return [{ x, y: 0, w: x1 - x, h: y1, fade: false }, { x, y: y1, w: x1 - x, h: y2 - y1, fade: true }];
@@ -285,7 +319,7 @@ export function veilRects({ w, h, column = 832, r = 16, empty = false }) {
  * `band` px whose opacity follows the fade (the fade belongs to the view, not to the texture).
  * [{ x, y, w, h, o, ix, iy, iw, ih }]: a window, its opacity, the image's place and size in it.
  */
-export function bgLayers({ w, h, iw, ih, windows, opacity, empty = false, band = 16 }) {
+export function bgLayers({ w, h, iw, ih, windows, opacity, empty = false, haze = false, band = 16 }) {
   if (!(w > 0 && h > 0 && iw > 0 && ih > 0)) return [];
   const s = Math.max(1, Math.ceil(Math.max(w / iw, h / ih)));
   const dw = iw * s, dh = ih * s;
@@ -294,7 +328,7 @@ export function bgLayers({ w, h, iw, ih, windows, opacity, empty = false, band =
   for (const [x, y, ww, hh] of windows) {
     for (let y0 = y; y0 < y + hh;) {
       const y1 = Math.min(y + hh, (Math.floor(y0 / band) + 1) * band);
-      const o = Math.round(opacity * fadeAt((y0 + y1) / 2 / h, empty) * 1000) / 1000;
+      const o = Math.round(opacity * fadeAt((y0 + y1) / 2 / h, empty, haze) * 1000) / 1000;
       const last = out[out.length - 1];
       if (o >= 0.005) {
         // Steps of the same opacity, one above the other in the same columns, are one window.
