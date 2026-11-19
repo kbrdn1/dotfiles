@@ -746,7 +746,8 @@ export function viz(t, m = null, { roll } = {}) {
     const g = donutGeometry(values, size, cell);
     const colors = slices.map((s, i) => color(t, s.color ?? `series${(i % 6) + 1}`));
     let figure = value;
-    if (figure == null) figure = total >= 1e4 ? Math.round(total).toString().replace(/\B(?=(\d{3})+$)/g, " ") : compact(total, 0.1);
+    // A no-break space (U+00A0) between thousands, as i18n.js' num(): the mono font has no U+202F.
+    if (figure == null) figure = total >= 1e4 ? Math.round(total).toString().replace(/\B(?=(\d{3})+$)/g, " ") : compact(total, 0.1);
     const fit = Math.floor(Math.min(26, (g.inner * 2 - 16) / (String(figure).length * 0.62)));
     const ring = div().relative().size(size).flex_none().children([
       ...[...g.paths].map(([k, p]) => paint(p, colors[k])),

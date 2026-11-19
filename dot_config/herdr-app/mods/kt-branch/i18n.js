@@ -110,8 +110,9 @@ export function makeT(dict) {
   };
 }
 
-// Numbers. fr: 1 234 567,5 (a narrow no-break space, as Intl's fr); en: 1,234,567.5.
-const GROUP = { fr: " ", en: "," };
+// Numbers. fr: 1 234 567,5 with a no-break space (U+00A0), not Intl's narrow one (U+202F): the mono
+// font has no glyph for that one, and 48 128 read 48128. en: 1,234,567.5.
+const GROUP = { fr: " ", en: "," };
 const POINT = { fr: ",", en: "." };
 
 /** `n` with the language's separators; `digits`: exactly that many decimals, else up to 3. */

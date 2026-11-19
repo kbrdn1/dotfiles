@@ -118,10 +118,10 @@ assert.equal(I.plural("fr", undefined), "other");
 
 // Numbers.
 store["kt.lang"] = "fr";
-assert.equal(I.num(1234567.891), "1 234 567,891");
-assert.equal(I.num(1234.5, 2), "1 234,50");
+assert.equal(I.num(1234567.891), "1 234 567,891"); // U+00A0: the mono font has no U+202F
+assert.equal(I.num(1234.5, 2), "1 234,50");
 assert.equal(I.num(999), "999");
-assert.equal(I.num(-1234), "-1 234");
+assert.equal(I.num(-1234), "-1 234");
 assert.equal(I.num(-0.0001), "0");
 assert.equal(I.compact(999), "999");
 assert.equal(I.compact(1234), "1,2 k");
