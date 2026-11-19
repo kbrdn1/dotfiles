@@ -79,8 +79,10 @@ import { menuFor, move as menuMove, pick as menuPick, typed as typedCommand, eff
 import { menuView, wave, rail, routeWords, ROW, ROWS } from "./menu.js";
 import { tokenAt, merge, filesOf, routeOf } from "./complete.js";
 import { STEPS as FLOW_STEPS } from "./workflows.js";
-import { blockOf, sayReady, etimeMs, sayFail } from "./keysend.js";
+import { keysSend as keysRoute, sayReadyOf, sayFail } from "./keysend.js";
 import { say as sayBridge } from "./say.js";
+// « Compacter » by the ctx ring (compact.js, shared with Context's head): asks, waits for rest, /compact.
+import { Compactor, compactButton, ioOf } from "./compact.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
 import { motionState, frame, enter, collapse, rows, MS, DY } from "./motion.js";
@@ -104,6 +106,8 @@ import strings from "./strings.js";
 import * as fs from "fs/promises";
 
 const tr = makeT(strings);
+// The host functions keysend.js, say.js and compact.js are handed (they import none: shared, checked bare).
+const HOST = { agents, hc, exec, home, readTextFile, writeTextFile, stat: (p) => fs.stat(p), openOverlay };
 const MONO = "Monaspace Krypton";
 const CODE = "Monaspace Neon";
 const K = 30; // turns read at first, and per read of « Tours précédents »
@@ -332,6 +336,7 @@ export default class Chat extends View {
     this.menuScroll = ScrollHandle.new();
     this.wave = null;
     this.pendingRoute = null;
+    this.compactor = new Compactor("kt-chat", HOST); // « Compacter » by the ctx ring (compact.js)
     this.composer.on("change", (_e, cx) => {
       const had = Boolean(this.draft.trim());
       this.draft = this.composer.value();
@@ -379,6 +384,7 @@ export default class Chat extends View {
         }
         else if (name === "tl") this.tlCommand(arg);
         else if (name === "confirmed") this.confirmed(cx, arg); // kt-confirm said yes to a /command (askRoute's id)
+        else if (name === "compact-ok") this.compactor.yes(arg); // kt-confirm said yes to « Compacter » (its ask's id)
         cx.notify();
       }
     });
@@ -814,15 +820,7 @@ export default class Chat extends View {
   async deliver(cx, a, r, text, atts) {
     if (r.via === "keys") return this.keysSend(cx, a.address, r, text);
     if (r.via === "say") {
-      const io = {
-        home: home(),
-        read: (p) => readTextFile(p).catch(() => null),
-        write: async (p, s) => writeTextFile(p, s, await readTextFile(p).catch(() => null)),
-        hc: (args) => hc(args),
-        sleep: (ms) => new Promise((done) => cx.timer.after(ms, () => done())),
-        blocked: async (tm) => agents().find((x) => x.address === tm)?.status === "blocked",
-      };
-      const s = await sayBridge(a.address, text.trim(), io);
+      const s = await sayBridge(a.address, text.trim(), ioOf(HOST, cx, a.address));
       return s.ok ? s : { ok: false, why: sayFail(s.why) }; // its own words, never the plugin's raw code
     }
     // #93: the files above the field go with it, as `@path` (attach.js promptOf; composer.js clean()
@@ -854,49 +852,20 @@ export default class Chat extends View {
   }
 
   /**
-   * #81, keysend.js: a Claude Code built-in typed into the agent's prompt, then Enter, only at rest: its
-   * status idle or done, its prompt empty on screen (`hc read`), then reading exactly the command once
-   * typed (read again a few times while the screen catches up: never Enter on a doubt). Any step that
-   * fails stops before Enter: what was typed stays in the terminal's prompt, never sent.
+   * #81, keysend.js keysSend (shared with Context's « Compacter »): a Claude Code built-in typed into the
+   * agent's prompt, then Enter, only at rest: its status idle or done, its prompt empty on screen (`hc
+   * read`), then reading exactly the command once typed, its command list's chosen row too (read again a
+   * few times while the screen catches up: never Enter on a doubt). Any step that fails stops before
+   * Enter: what was typed stays in the terminal's prompt, never sent.
    */
-  async keysSend(cx, address, r, text) {
-    const status = () => agents().find((x) => x.address === address)?.status ?? null;
-    // A read that failed (thrown, timed out, a non-zero exit) is null: blockOf stops on it (« read »).
-    const screen = async () => {
-      const r = await hc(["read", address]).catch(() => null);
-      return r?.code === 0 && typeof r.stdout === "string" ? r.stdout : null;
-    };
-    let b = blockOf({ status: status(), before: await screen(), text });
-    if (b) return { ok: false, why: `keys-${b.why}` };
-    if ((await hc(["keys", address, ...r.keys]).catch(() => null))?.code !== 0) return { ok: false, why: "keys-failed" };
-    for (let i = 0; i < 6; i++) {
-      b = blockOf({ status: status(), after: await screen(), text });
-      if (!b) break;
-      await new Promise((done) => cx.timer.after(120, () => done()));
-    }
-    if (b) return { ok: false, why: `keys-${b.why}` };
-    return (await hc(["keys", address, "enter"]).catch(() => null))?.code === 0 ? { ok: true } : { ok: false, why: "keys-failed" };
+  keysSend(cx, address, r, text) {
+    return keysRoute(ioOf(HOST, cx, address), address, r.keys, text);
   }
 
-  /**
-   * #81: herdr-bridge can type a /command into this agent's box (keysend.js sayReady): its session token is
-   * there and not older than the agent's process (`hc get` foreground.pid, `ps -o etime=`). No token file:
-   * false at once, nothing else asked. This computer's agents only (the Chat writes to no other).
-   */
-  async sayReady(a) {
-    if (!a?.address || a.address.includes("/")) return false;
-    const p = `${home()}/.claude/cache/herdr/${a.address}.saytoken.json`;
-    const text = await readTextFile(p).catch(() => null);
-    if (!text) return false;
-    const mtime = await fs.stat(p).then((s) => s.mtimeMs).catch(() => null);
-    let pid = null;
-    try {
-      pid = JSON.parse((await hc(["get", a.address, "--json"])).stdout)?.foreground?.pid ?? null;
-    } catch {
-      pid = null;
-    }
-    const age = pid ? etimeMs((await exec("ps", ["-o", "etime=", "-p", String(pid)]).catch(() => null))?.stdout) : null;
-    return mtime != null && age != null && sayReady(text, mtime, Date.now() - age);
+  /** #81, keysend.js sayReadyOf: herdr-bridge can type a /command into this agent's box (its session token
+   *  fresh). No token file: false at once. This computer's agents only (the Chat writes to no other). */
+  sayReady(a) {
+    return sayReadyOf(ioOf(HOST, null, a?.address), a?.address); // no sleep in it: no cx needed
   }
 
   /** A built-in that resets or ends the session (/clear, /exit, /logout) asks first: kt-confirm, which
@@ -2982,21 +2951,27 @@ export default class Chat extends View {
         .when(Boolean(perm), (el) => el.child(toolPill(PERM[perm] ?? OWN("lock"), [[tr(`perm.${perm}`) || perm, 0.7]], full ? FULL_ACCESS : null)))
         .child(div().flex_1())
         .child(send));
+    // « Compacter » (compact.js): what it does now goes in the same words' slot (no line of its own).
+    const cw = this.compactor.words(a?.address);
     const say = this.sending ? tr("composer.sending")
       : this.sendErr ? tr(`composer.err.${this.sendErr.why}`, { why: this.sendErr.message ?? "" })
+        : cw.note ? cw.note
         : this.cpl.route ? this.cpl.route // #81: the route the /command at the head takes
         : this.handle.is_focused() ? tr("hint")
           : m === "queue" ? tr("composer.queue") : m === "blocked" ? tr("composer.held") : tr("composer.hint");
+    const sayErr = Boolean(this.sendErr) || (!this.sending && cw.error);
     const ctx = Number(this.line?.ctx_pct);
     const bar = (icon, text, id) => h_flex().id(id).h(24).px(6).ml(-6).gap(6).items_center().rounded(6).text_size(12).text_color(ink(t, 0.55))
       .child(svg(icon).size(14).flex_none()).child(div().max_w(256).truncate().child(text));
     const under = h_flex().pt(6).px(15).gap(10).items_center().min_w(0)
       .when(Boolean(pr), (el) => el.child(bar(I(pr.worktree ? "folder-tree" : "folder"), pr.worktree ? tr("ws.worktree") : tr("ws.checkout"), "kc-ws")))
       .when(Boolean(pr?.branch), (el) => el.child(bar(I("git-branch"), pr.branch, "kc-br")))
-      .child(div().flex_1().min_w(0).truncate().flex().justify_end().text_size(11).text_color(this.sendErr ? ERR : ink(t, 0.45)).child(say))
+      .child(div().flex_1().min_w(0).truncate().flex().justify_end().text_size(11).text_color(sayErr ? ERR : ink(t, 0.45)).child(say))
       // kt-composer's CTX item: its label, the 14 px ring, the percent rolling in the ring's color (levels.js'
       // context thresholds by the window's size); the ring's tooltip says « Contexte 77 % » (ring.strings.js).
+      // « Compacter » before it (Kylian: where the context shows), h 22 in the line's 24: nothing moves.
       .when(Number.isFinite(ctx), (el) => el.child(h_flex().gap(7).items_center().flex_none().whitespace_nowrap()
+        .child(compactButton(t, "kc-compact", cw, () => this.compactor.press(a.address, this.line?.session_id ?? null)))
         .child(div().flex_none().font_family(MONO).text_size(10.5).text_color(t.muted).child("CTX")) // i18n: tech
         .child(ring(t, "kc-ctx-ring", ctx, 14, { kind: "ctx", window: this.line?.window }))
         .child(roll(this.m, "kc-ctx-n", `${Math.round(ctx)}%`, 16).font_family(MONO).text_size(11)
@@ -3362,6 +3337,9 @@ export default class Chat extends View {
       this.load(cx);
     }
     this.live(cx, tg, want);
+    // « Compacter » (compact.js): a yes waiting for rest goes when the agent's status says so (a render
+    // follows each status change, as live() does).
+    if (!checking()) this.compactor.tick(cx, { address: tg.agent?.address, session: this.line?.session_id ?? null });
     // #88: a project deleted by force (kt-projects) leaves kt.chat.backgrounds from outside this copy: its
     // last texture is forgotten and data/kt-chat swept, as after a setting changed here.
     const bgAll = shared(BG) ?? {};

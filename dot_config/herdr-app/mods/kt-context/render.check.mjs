@@ -35,6 +35,7 @@ plugin({ setup(build) {
     focused: () => ({ terminal: "t9" }), panes: () => [], spaces: () => [], theme: () => T, layout: () => LAYOUT, readTextFile: async () => "",
     exec: async () => ({ code: 0, stdout: "" }), home: () => "/h", appHome: () => "/h/.config/herdr-app", nextCommand: () => new Promise(() => {}),
     checking: () => true, run: () => {}, openOverlay: () => {}, shared: () => undefined, setShared: () => {}, settings: () => ({ dark: true }),
+    agents: () => [], hc: async () => ({ code: 0, stdout: "" }), writeTextFile: async () => null, // « Compacter » (compact.js)
   } }));
 } });
 globalThis.window = { paint_path: () => { paints++; return el(); } };

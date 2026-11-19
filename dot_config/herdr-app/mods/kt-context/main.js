@@ -16,6 +16,8 @@
 //   compactions (auto or manual, before and after) as lines under it.
 // The transcript (soon past readTextFile's 1 MiB) goes through ctx-index.ts (Bun, by exec), from the byte
 // offset read last: only when the status line changed (a call answered), only while Context shows.
+// - « Compacter » in the gauge's head (Kylian, 2026-11-19; kt-chat's compact.js, the same as the Chat's by
+//   its ctx ring): kt-confirm asks, /compact goes at rest (working: at the end of the turn, said under it).
 // Follows the focused terminal, else the shown tab's agent (as Flow). Local terminals only.
 // Keys (vim.js; kt-keys lists them, group "panel"): `kt-context.focus` (pane.go) or
 // `kt-context.key:<keys>` gives Context the keyboard: r reads the whole transcript again; [ ] the
@@ -23,7 +25,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { focused, panes, spaces, theme, layout, readTextFile, exec, home, appHome, nextCommand, checking, run, openOverlay, shared } from "herdr";
+import { focused, panes, spaces, agents, theme, layout, readTextFile, writeTextFile, exec, hc, home, appHome, nextCommand, checking, run, openOverlay, shared } from "herdr";
+import * as fs from "fs/promises";
 import { makeT, compact, relative, time } from "./i18n.js";
 import strings from "./strings.js";
 import { motionState, frame, enter } from "./motion.js";
@@ -36,8 +39,13 @@ import { roll } from "./roll.js";
 import { ring } from "./ring.js";
 import { Vim, keysOf } from "./vim.js";
 import { merge, breakdown, grid, gridInk, details, curve, current, sessionId, SPREAD } from "./model.js";
+// « Compacter » by the gauge (Kylian, 2026-11-19): kt-chat's compact.js, a byte-identical copy (with
+// compact.strings.js, keysend.js and say.js): asks (kt-confirm), waits for rest, /compact in the terminal.
+import { Compactor, compactButton } from "./compact.js";
 
 const tr = makeT(strings);
+// The host functions compact.js is handed (it imports none: shared, checked bare).
+const HOST = { agents, hc, exec, home, readTextFile, writeTextFile, stat: (p) => fs.stat(p), openOverlay };
 const ME = "context"; // this block's id in the layout's "panel-body" stack
 const EVERY = 4000; // the status line, while Context shows
 const MONO = "Monaspace Krypton";
@@ -103,6 +111,7 @@ export default class Context extends View {
     this.showGen = 0;
     this.open = new Set(); // the unfolded rows: kc-d-<category> (Details), kc-curve; all folded at first
     this.gridMemo = null; // the grid's paths, built again only when its squares change
+    this.compactor = new Compactor("kt-context", HOST); // « Compacter » (compact.js)
     if (checking()) return;
     cx.spawn(async (cx) => {
       for (;;) {
@@ -112,10 +121,13 @@ export default class Context extends View {
           this.focusIn();
           for (const k of keysOf(c.slice(4))) this.act(this.vim.handle(k), cx);
         } else if (c === "refresh") this.read(cx, true);
+        else if (c.startsWith("compact-ok:")) this.compactor.yes(c.slice(11)); // kt-confirm's yes to « Compacter »
         cx.notify();
       }
     });
     cx.timer.every(EVERY, (cx) => {
+      // A compaction waiting for the end of a turn goes even while Context is hidden (its address, kept).
+      if (this.compactor.tick(cx, { address: this.term, session: this.line?.session_id ?? null })) cx.notify();
       if (visible()) this.read(cx);
       else if (this.shown) { this.shown = false; cx.notify(); }
     });
@@ -215,13 +227,18 @@ export default class Context extends View {
 
   head(t, now) {
     const l = this.line;
+    // « Compacter » (compact.js) for the followed agent, and what it does now on a line of its own.
+    const agent = this.compactor.status(this.term) != null;
+    const cw = this.compactor.words(this.term);
     return this.card(t, "kc-head")
       .child(h_flex().gap(12).items_center()
         .child(ring(t, "kc-ring", now.pct, 44, { kind: "ctx", window: now.window, roll, m: this.motion }))
         .child(v_flex().flex_1().min_w(0).gap(3)
           .child(h_flex().gap(8).items_center()
             .child(div().flex_1().min_w(0).truncate().text_size(13.5).font_semibold().child(tr("title")))
-            .when(this.keyed, (el) => el.child(modePill(t, this.vim))))
+            .when(this.keyed, (el) => el.child(modePill(t, this.vim)))
+            .when(agent, (el) => el.child(compactButton(t, "kc-compact", cw, () => this.compactor.press(this.term, l.session_id ?? null)))))
+          .when(Boolean(cw.note), (el) => el.child(div().truncate().text_size(11).text_color(cw.error ? t.ansi1 : t.muted).child(cw.note)))
           .child(div().truncate().font_family(MONO).text_size(11.5).text_color(t.muted)
             .child(tr("of", { used: compact(now.tokens), window: compact(now.window) })))
           // A compaction since the last call: its « after », until the next call says exactly.
@@ -366,6 +383,8 @@ export default class Context extends View {
     const vis = visible();
     const target = terminal();
     if (vis && !checking() && (!this.shown || target !== this.term)) this.read(cx);
+    // « Compacter »: a yes goes at once when the agent rests (the command's notify brings this render).
+    if (!checking()) this.compactor.tick(cx, { address: this.term, session: this.line?.session_id ?? null });
     if (vis && !this.shown) this.showGen++;
     this.shown = vis;
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));

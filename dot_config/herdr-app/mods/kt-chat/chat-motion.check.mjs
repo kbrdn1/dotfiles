@@ -81,6 +81,7 @@ const { ingest } = await import("./chat-model.js");
 const { index } = await import("./chat-index.ts");
 const { motionState, frame } = await import("./motion.js");
 const { mdState } = await import("./markdown.js");
+const { Compactor } = await import("./compact.js");
 
 // The tree under an element, flat; a node's calls by name.
 const flat = (p, out = []) => { const n = p?.__node; if (!n) return out; out.push(n); for (const k of n.kids) flat(k, out); return out; };
@@ -97,6 +98,7 @@ function chat({ reduced = false } = {}) {
     open: new Set(), shownSteps: new Map(), hover: null, copied: null, md: mdState(), att: new Map(), attQ: [],
     fresh: new Set(), liveItems: null, foldAt: null, going: new Set(), lastLedge: {}, subsKnown: new Map(), subRuns: new Map(), drafts: [],
     motion: motionState(), bgMenu: false, bgNote: null, bgBusy: new Set(), line: null, state: ingest(null, read),
+    compactor: new Compactor("kt-chat", host),
   });
   c.rebuild(false);
   c.win = { from: 0, to: c.turns.length };

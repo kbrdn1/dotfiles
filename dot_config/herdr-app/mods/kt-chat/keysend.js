@@ -1,25 +1,46 @@
 // keysend.js (kt-chat, #81 L4): the raw-keys route of a Claude Code built-in (complete.js' routeOf: via
-// "keys"), pure. Kylian's rule: at rest, prompt empty, the screen read again before Enter. The steps
-// (main.js runs them with hc): status idle or done; `hc read` -> promptEmpty(); `hc keys <t> …keys`;
-// `hc read` -> typedOk(); then `hc keys <t> enter`. Any step that fails stops before Enter, and says
-// why (what was typed stays in the terminal's prompt, never sent). Checked by keysend.check.mjs.
+// "keys"). Kylian's rule: at rest, prompt empty, the screen read again before Enter. The steps
+// (keysSend() runs them with hc): status idle or done; `hc read` -> promptEmpty(); `hc keys <t> …keys`;
+// `hc read` -> typedOk() and the command list's chosen row; then `hc keys <t> enter`. Any step that
+// fails stops before Enter, and says why (what was typed stays in the terminal's prompt, never sent).
 // Measured on a throwaway session (2.1.328, 2026-11-19): `/context` typed key by key, its command list
 // opens ABOVE the prompt (its chosen row "  ❯ /context", indented), the prompt keeps its two rules,
 // Enter runs it (a new turn, the status stays idle). Vim mode shows « -- INSERT -- » under the prompt;
-// in NORMAL the letters would be motions: not at rest.
+// in NORMAL the letters would be motions: not at rest. The prompt's ❯ is followed by a no-break space
+// (seen on a live session): trim() takes it.
+// Shared byte for byte (source kt-chat, a copy in kt-context: its « Compacter », compact.js): no host
+// import, the host comes in as `io`. Checked by keysend.check.mjs (kt-chat).
+
+// The prompt's line index in `hc read` text: the last "❯" line framed by ─ rules; -1: none.
+function promptAt(lines) {
+  for (let i = lines.length - 1; i > 0; i--) {
+    if (!lines[i].trimEnd().startsWith("❯")) continue;
+    if ((lines[i - 1]?.trim() ?? "").startsWith("─") && (lines[i + 1]?.trim() ?? "").startsWith("─")) return i;
+  }
+  return -1;
+}
 
 // The prompt line of Claude Code's TUI in `hc read` text: the last "❯" line framed by ─ rules. (Not
 // attach.js' promptOf (#93), which composes the text a message sends.)
 export function promptLine(screen) {
   const lines = String(screen ?? "").split("\n");
-  for (let i = lines.length - 1; i > 0; i--) {
-    const l = lines[i].trimEnd();
-    if (!l.startsWith("❯")) continue;
-    const above = lines[i - 1]?.trim() ?? "";
-    const below = lines[i + 1]?.trim() ?? "";
-    if (above.startsWith("─") && below.startsWith("─")) return l.slice(1).trim();
+  const i = promptAt(lines);
+  return i < 0 ? null : lines[i].trimEnd().slice(1).trim(); // no prompt on screen (a dialog, a pager): not at rest
+}
+
+/** The command Claude Code's command list has chosen, the one Enter takes: the list opens ABOVE the
+ *  prompt's rule while a /command is typed ("  ❯ /context   What fills…", indented), a long description
+ *  going on under its row at the description's column (seen on /compact, 2.1.328); null: no list. */
+export function listChoice(screen) {
+  const lines = String(screen ?? "").split("\n");
+  const i = promptAt(lines);
+  for (let j = i - 2; i > 0 && j >= 0; j--) {
+    const m = /^\s+(❯\s*)?(\/\S+)/.exec(lines[j]);
+    if (!m && /^\s{8,}\S/.test(lines[j])) continue; // a description going on
+    if (!m) break; // above the list
+    if (m[1]) return m[2];
   }
-  return null; // no prompt on screen (a dialog, a pager): not at rest
+  return null;
 }
 
 /** Empty: nothing typed (a fresh session shows its « Try "…" » hint, dim, as text), and not in vim's NORMAL. */
@@ -63,10 +84,11 @@ export function etimeMs(s) {
 }
 
 /**
- * The step that stops the route, or null: { why: "busy" | "read" | "prompt" | "typed" }. `before` and
- * `after` are the screens read before and after typing; a key left out is a step not reached yet, but a
- * screen given as null (a read that failed, a timeout) stops it: never type, never Enter, on a prompt
- * nobody read (#81 review: Enter went on a prompt that held « foo »).
+ * The step that stops the route, or null: { why: "busy" | "read" | "prompt" | "typed" | "list" }.
+ * `before` and `after` are the screens read before and after typing; a key left out is a step not
+ * reached yet, but a screen given as null (a read that failed, a timeout) stops it: never type, never
+ * Enter, on a prompt nobody read (#81 review: Enter went on a prompt that held « foo »). After typing,
+ * the command list's chosen row must name the command itself: Enter takes that row, not the prompt.
  */
 export function blockOf(step) {
   const { status, text } = step;
@@ -75,7 +97,56 @@ export function blockOf(step) {
   if ("before" in step && !promptEmpty(step.before)) return { why: "prompt" };
   if ("after" in step && typeof step.after !== "string") return { why: "read" };
   if ("after" in step && !typedOk(step.after, text)) return { why: "typed" };
+  if ("after" in step) {
+    const chosen = listChoice(step.after);
+    if (chosen != null && chosen !== String(text).trim().split(/\s+/)[0]) return { why: "list" };
+  }
   return null;
+}
+
+/**
+ * The keys route, run: the screen read (`hc read`), the keys, the screen read again until it reads
+ * exactly `text` (6 reads, 120 ms apart: never Enter on a doubt), then Enter. io = { hc(args),
+ * status(): the agent's status now, sleep(ms) }. -> { ok } | { ok: false, why: "keys-<blockOf's why>" |
+ * "keys-failed" }. A read that failed (thrown, timed out, a non-zero exit) is null: blockOf stops on it.
+ */
+export async function keysSend(io, address, keys, text) {
+  const screen = async () => {
+    const r = await io.hc(["read", address]).catch(() => null);
+    return r?.code === 0 && typeof r.stdout === "string" ? r.stdout : null;
+  };
+  let b = blockOf({ status: io.status(), before: await screen(), text });
+  if (b) return { ok: false, why: `keys-${b.why}` };
+  if ((await io.hc(["keys", address, ...keys]).catch(() => null))?.code !== 0) return { ok: false, why: "keys-failed" };
+  for (let i = 0; i < 6; i++) {
+    b = blockOf({ status: io.status(), after: await screen(), text });
+    if (!b) break;
+    await io.sleep(120);
+  }
+  if (b) return { ok: false, why: `keys-${b.why}` };
+  return (await io.hc(["keys", address, "enter"]).catch(() => null))?.code === 0 ? { ok: true } : { ok: false, why: "keys-failed" };
+}
+
+/**
+ * herdr-bridge can type into this agent's box (sayReady): its session token is there and not older than
+ * the agent's process (`hc get` foreground.pid, `ps -o etime=`). No token file: false at once, nothing
+ * else asked. This computer's agents only. io = { home, read(path), mtime(path), hc(args), exec(cmd,
+ * args), now() }.
+ */
+export async function sayReadyOf(io, address) {
+  if (!address || address.includes("/")) return false;
+  const p = `${io.home}/.claude/cache/herdr/${address}.saytoken.json`;
+  const text = await io.read(p).catch(() => null);
+  if (!text) return false;
+  const mtime = await io.mtime(p).catch(() => null);
+  let pid = null;
+  try {
+    pid = JSON.parse((await io.hc(["get", address, "--json"])).stdout)?.foreground?.pid ?? null;
+  } catch {
+    pid = null;
+  }
+  const age = pid ? etimeMs((await io.exec("ps", ["-o", "etime=", "-p", String(pid)]).catch(() => null))?.stdout) : null;
+  return mtime != null && age != null && sayReady(text, mtime, io.now() - age);
 }
 
 /**

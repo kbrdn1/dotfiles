@@ -1,7 +1,7 @@
 // bun keysend.check.mjs: keysend.js on invented TUI screens (Claude Code's prompt framed by rules, as
 // `hc read` gives it): the prompt read, empty or hinted, what was typed, the step that stops.
 import assert from "node:assert/strict";
-import { promptLine, promptEmpty, typedOk, blockOf, sayReady, etimeMs, SAY_FAILS, sayFail } from "./keysend.js";
+import { promptLine, promptEmpty, typedOk, blockOf, sayReady, etimeMs, SAY_FAILS, sayFail, listChoice, keysSend, sayReadyOf } from "./keysend.js";
 import strings from "./strings.js";
 
 const RULE = "─".repeat(40);
@@ -17,6 +17,34 @@ assert.equal(promptLine(""), null);
 const listed = ["  ❯ /context        Show what fills the context", "    /cleanup         Optimize", RULE, "❯ /context", RULE, "  -- INSERT --"].join("\n");
 assert.equal(promptLine(listed), "/context", "the list's chosen row isn't the prompt");
 assert.ok(typedOk(listed, "/context"));
+// The list's chosen row is the one Enter takes: it must name the command itself (another one ranked
+// first would run instead).
+assert.equal(listChoice(listed), "/context");
+assert.equal(listChoice(screen("/compact")), null, "no list on screen");
+const ranked = ["  ❯ /compact-notes    Notes", "    /compact          Summarize", RULE, "❯ /compact", RULE].join("\n");
+assert.equal(listChoice(ranked), "/compact-notes");
+assert.deepEqual(blockOf({ status: "idle", after: ranked, text: "/compact" }), { why: "list" }, "another command chosen: no Enter");
+assert.equal(blockOf({ status: "idle", after: listed, text: "/context" }), null, "the command itself chosen: Enter");
+assert.equal(blockOf({ status: "idle", after: ["  ❯ /compact   Summarize", RULE, "❯ /compact keep tests", RULE].join("\n"), text: "/compact keep tests" }), null, "its arguments after it");
+assert.ok(strings.fr["composer.err.keys-list"] && strings.en["composer.err.keys-list"]);
+// As /compact showed it (2.1.328): a description too long goes on under its row, at its column.
+const wrapped = [
+  " ▝▝   ▝▝   /w/demo · /rc",
+  "  ❯ /compact                                             Free up context by summarizing the conversation so",
+  "    /autocompact                                         Set how full the context gets before auto-summarizing",
+  "    /computer-use                                        Read this skill before the first step of any request",
+  "                                                         any desktop app), to look at their screen, or for",
+  RULE, "❯ /compact", RULE,
+].join("\n");
+assert.equal(listChoice(wrapped), "/compact", "its row found over a wrapped description");
+assert.equal(listChoice(wrapped.replace("  ❯ /compact", "    /compact").replace("    /autocompact", "  ❯ /autocompact")), "/autocompact");
+assert.deepEqual(blockOf({ status: "idle", after: wrapped.replace("  ❯ /compact", "    /compact").replace("    /autocompact", "  ❯ /autocompact"), text: "/compact" }), { why: "list" });
+// The prompt's ❯ is followed by a no-break space on a live session (2.1.328): read as nothing typed.
+const nbsp = ["⏺ ok", RULE, "❯ ", RULE].join("\n");
+assert.equal(promptLine(nbsp), "");
+assert.ok(promptEmpty(nbsp));
+assert.ok(typedOk(["⏺ ok", RULE, "❯ /compact", RULE].join("\n"), "/compact"));
+assert.equal(listChoice(["  ❯ /compact   Summarize", RULE, "❯ /compact", RULE].join("\n")), "/compact");
 
 assert.ok(promptEmpty(screen("")));
 assert.ok(promptEmpty(screen('Try "fix lint errors"')), "a fresh session's hint");
@@ -74,5 +102,53 @@ assert.equal(etimeMs(""), null);
 const now = 10_000_000;
 assert.equal(sayReady(tok, now - 5000, now - etimeMs("00:10")), true, "token written after the process started");
 assert.equal(sayReady(tok, now - 60_000, now - etimeMs("00:10")), false, "a resumed session's old token: stale");
+
+// keysSend (shared since « Compacter », compact.js): its io, the screens it reads, Enter only on the command.
+{
+  const run = async ({ status = "idle", before = "", after = "/compact", list = null } = {}) => {
+    const calls = [];
+    let typed = false;
+    const screenOf = (p) => [...(list && typed ? [`  ❯ ${list}   Summarize`] : []), RULE, `❯ ${p}`.trimEnd(), RULE].join("\n");
+    const io = {
+      status: () => status,
+      sleep: async () => {},
+      hc: async (a) => {
+        calls.push(a.join(" "));
+        if (a[0] === "read") return { code: 0, stdout: screenOf(typed ? after : before) };
+        if (a[0] === "keys" && a[2] !== "enter") typed = true;
+        return { code: 0, stdout: "" };
+      },
+    };
+    return { res: await keysSend(io, "t9", [..."/compact"], "/compact"), calls };
+  };
+  let r = await run();
+  assert.deepEqual(r.res, { ok: true });
+  assert.deepEqual(r.calls, ["read t9", "keys t9 / c o m p a c t", "read t9", "keys t9 enter"]);
+  r = await run({ list: "/compact" });
+  assert.deepEqual(r.res, { ok: true }, "its own row chosen in the list");
+  r = await run({ list: "/compact-notes" });
+  assert.deepEqual([r.res.why, r.calls.includes("keys t9 enter")], ["keys-list", false], "another row chosen: never Enter");
+  r = await run({ status: "working" });
+  assert.deepEqual([r.res.why, r.calls.length], ["keys-busy", 1]);
+  r = await run({ before: "brouillon" });
+  assert.deepEqual([r.res.why, r.calls.some((c) => c.startsWith("keys"))], ["keys-prompt", false]);
+}
+// sayReadyOf: no token file, nothing else asked; a fresh token, ready; an old one, not.
+{
+  const asked = [];
+  const io = (files, { etime = "00:10", mtime = 10_000 } = {}) => ({
+    home: "/tfx", now: () => 20_000,
+    read: async (p) => { asked.push(`read ${p}`); return files[p] ?? null; },
+    mtime: async () => mtime,
+    hc: async (a) => { asked.push(a.join(" ")); return { code: 0, stdout: JSON.stringify({ foreground: { pid: 42 } }) }; },
+    exec: async (c, a) => { asked.push(`${c} ${a.join(" ")}`); return { code: 0, stdout: etime }; },
+  });
+  const P = "/tfx/.claude/cache/herdr/t9.saytoken.json";
+  assert.equal(await sayReadyOf(io({}), "t9"), false);
+  assert.deepEqual(asked, [`read ${P}`], "no token: neither hc get nor ps");
+  assert.equal(await sayReadyOf(io({ [P]: tok }), "t9"), true, "a token written after the process started");
+  assert.equal(await sayReadyOf(io({ [P]: tok }, { mtime: 1_000 }), "t9"), false, "an older run's token");
+  assert.equal(await sayReadyOf(io({ [P]: tok }), "vps/t9"), false, "another machine's agent: never");
+}
 
 console.log("kt-chat keysend: ok");
