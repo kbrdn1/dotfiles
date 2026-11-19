@@ -256,20 +256,24 @@ export default class Keys extends View {
   globals() {
     const section = `layout:${shared("layout") ?? "kbrdn-threads"}`;
     const rows = [];
-    for (const b of keys()) {
+    const all = keys();
+    // The layout's Mac keys for the same action, after the ctrl-b one (KEYMAP.md: vim first, Mac second).
+    const mac = (k) => all.filter((x) => x.section === section && x.keys.startsWith("cmd-") && actionKey(x.action) === k).map((x) => x.keys);
+    for (const b of all) {
       if (b.section !== section || !b.keys.startsWith("ctrl-b ")) continue;
       const k = actionKey(b.action);
       if (k === "tab.select") {
         if (!rows.some((r) => r.k === "tab.select")) rows.push({ g: "global", k, keys: "ctrl-b 1…9", what: tr("g.tab.select") });
         continue;
       }
-      rows.push({ g: "global", k, keys: b.keys, what: ORDER.includes(k) ? tr(`g.${k}`) : b.action });
+      rows.push({ g: "global", k, keys: [b.keys, ...mac(k)].join(" / "), what: ORDER.includes(k) ? tr(`g.${k}`) : b.action });
     }
     const at = (r) => (ORDER.includes(r.k) ? ORDER.indexOf(r.k) : ORDER.length);
     rows.sort((a, b) => at(a) - at(b));
     // Without the prefix (keys.json, both layout sections): they take ctrl-h / ctrl-l from the terminal.
     rows.push({ g: "global", keys: "ctrl-h / ctrl-l", what: tr("g.panelLR") }); // i18n: tech
-    rows.push({ g: "global", keys: "cmd-t / cmd-p / cmd-w / cmd-1…9", what: tr("g.mac"), where: "Mac" }); // i18n: tech
+    // ⌘T, ⌘W, ⌘⇧W, ⌘B sit beside their actions above; the other Mac keys, as examples.
+    rows.push({ g: "global", keys: "cmd-p / cmd-1…9", what: tr("g.mac"), where: "Mac" }); // i18n: tech
     return rows;
   }
 

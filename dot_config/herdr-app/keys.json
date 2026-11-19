@@ -134,7 +134,8 @@
     "cmd-t": { "command": "mod.open", "args": { "name": "kt-new" } },
     "cmd-p": { "command": "mod.open", "args": { "name": "kt-picker" } },
     "cmd-w": "kt-head.close-tab",
-    "cmd-shift-w": "kt-head.close-pane"
+    "cmd-shift-w": "kt-head.close-pane",
+    "cmd-b": "kt-head.side-toggle"
   },
   "layout:kbrdn-threads-glass": {
     "ctrl-b h": "pane.go:left",
@@ -198,7 +199,8 @@
     "cmd-t": { "command": "mod.open", "args": { "name": "kt-new" } },
     "cmd-p": { "command": "mod.open", "args": { "name": "kt-picker" } },
     "cmd-w": "kt-head.close-tab",
-    "cmd-shift-w": "kt-head.close-pane"
+    "cmd-shift-w": "kt-head.close-pane",
+    "cmd-b": "kt-head.side-toggle"
   },
   "mod:kt-picker": {
     "cmd-1": "kt-picker.filter:1",
