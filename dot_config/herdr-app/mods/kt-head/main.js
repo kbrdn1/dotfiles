@@ -17,7 +17,7 @@ import strings from "./strings.js";
 // Copied byte for byte from mods/kt-threads/halo.js: the halo the brand part draws, kt-threads below.
 import { HALO, haloLayers } from "./halo.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): a machine away refuses at once (#61).
-import { guard, reachable, stateOf } from "./machines.js";
+import { guard, reachable, stateOf, machineTag } from "./machines.js";
 // #47: when the home page shows by itself (pure, autohub.check.mjs).
 import { facts, shouldShow } from "./autohub.js";
 // #54: the thread's two faces, Terminal | Chat (pure, view.check.mjs).
@@ -337,6 +337,8 @@ export default class Head extends View {
       .items_center()
       .when(Boolean(p), (el) =>
         el
+          // A thread on another machine (#64): « main-vps › » first, its state's dot and ROOT (machines.js).
+          .when(Boolean(p.machine), (el) => el.child(machineTag(t, p.machine, { id: "kh-machine", size: 11 })).child(sep()))
           .child(this.tile(t, pr))
           .child(div().flex_none().text_size(13).font_medium().text_color(page ? t.muted : t.foreground).child(pr.name))
           .child(sep())

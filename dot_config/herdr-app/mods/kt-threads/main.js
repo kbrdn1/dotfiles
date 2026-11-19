@@ -43,7 +43,7 @@ import { filterOf, filtering, openFirst, moveInGroup } from "./thread-filter.js"
 import * as model from "./threads-model.js";
 import { age, duration, until, label, startOf, endOf, isAlive, FADE, PROJECT_COLORS, assignColors, sortRegistry, where } from "./threads-model.js";
 import * as io from "./threads-io.js";
-import { pollMachines, guard, reachable } from "./machines.js";
+import { pollMachines, guard, reachable, stateOf, stateWord, stateColor, machineList } from "./machines.js";
 import { Vim, keysOf, step } from "./vim.js";
 // Copied byte for byte from mods/kbrdn-toast/decide.js (a mod can't import from another folder): edit
 // there, then copy.
@@ -970,6 +970,12 @@ export default class Threads extends View {
             .child(icon ?? (logo ? image(logo).size(18) : div().text_size(11).font_semibold().text_color(t.chrome).child([...name][0]?.toUpperCase() ?? "?"))),
         );
     };
+    // Another machine's project (#64): its name says the machine (and its state when it doesn't answer),
+    // its square is greyed then, and a dot in its corner is the machine's state (machines.js).
+    const onM = (name, m) => (m ? [name, m, stateWord(m)].filter(Boolean).join(" · ") : name);
+    const away = (m) => Boolean(m) && !reachable(m);
+    const mDot = (el, m, key) => (!m ? el : el.child(div().id(`kt-bar-m-${key}`).absolute().bottom(-3).right(-3).size(9).rounded(5)
+      .border(2).border_color(t.chrome).bg(stateColor(t, stateOf(m).status))));
     // One square per project (its group of spaces): ringed when any of them shows; a click goes
     // to the one shown, else the group's first. Home: a house, no project color.
     const live = ({ s, kids }, e, house = false) => {
@@ -977,11 +983,11 @@ export default class Threads extends View {
       const blocked = group.some((x) => x.status === "blocked");
       const go = group.find((x) => x.active) ?? s;
       const on = group.some((x) => x.active);
-      return square(s.id, house ? this.homeLabel(s) : e?.name ?? s.name, spaceColor(t, s), logoOf(e), on, false, () => run("space.select", { id: go.id }),
+      return mDot(square(s.id, onM(house ? this.homeLabel(s) : e?.name ?? s.name, s.machine), spaceColor(t, s), logoOf(e), on, away(s.machine), () => run("space.select", { id: go.id }),
         house ? svg(I("house")).size(14).text_color(on ? t.accent : t.muted) : null, e?.id ?? null, house ? "home" : e?.id ?? s.id)
         .when(blocked, (el) =>
           // Still: the agent's card is its one pulse.
-          el.child(div().id(`kt-bar-wait-${s.id}`).absolute().top(-3).right(-3).size(9).rounded(5).border(2).border_color(t.chrome).bg(t.blocked)));
+          el.child(div().id(`kt-bar-wait-${s.id}`).absolute().top(-3).right(-3).size(9).rounded(5).border(2).border_color(t.chrome).bg(t.blocked))), s.machine, s.id);
     };
     // `on`: the square of the shown project.
     const groups = [
@@ -991,9 +997,10 @@ export default class Threads extends View {
         return { key: e.id, on: [g.s, ...g.kids].some((x) => x.active), el: live(g, e) };
       }),
       ...loose.map((g) => ({ key: g.s.id, on: [g.s, ...g.kids].some((x) => x.active), el: live(g, null) })),
+      // A closed project on a machine away doesn't reopen: its hover says why (onM).
       ...closedReg.map((e, i) => ({ key: `closed-${e.id}`, on: false,
-        el: square(`closed-${i}`, tr("closed", { name: e.name }), paint(t, e.color) ?? t.dim, logoOf(e), false, true,
-          () => run("space.new", { folder: e.folder, name: e.name, machine: e.machine ?? "" }), null, e.id, e.id) })),
+        el: mDot(square(`closed-${i}`, tr("closed", { name: onM(e.name, e.machine) }), paint(t, e.color) ?? t.dim, logoOf(e), false, true,
+          () => { if (!away(e.machine)) run("space.new", { folder: e.folder, name: e.name, machine: e.machine ?? "" }); }, null, e.id, e.id), e.machine, `closed-${i}`) })),
     ];
     const n = groups.length;
     if (!n) return null;
@@ -1897,6 +1904,7 @@ export default class Threads extends View {
       ...(agentsOpen ? Object.fromEntries(agentPages.map((p) => [`kt-${p}`, () => show(p)])) : {}),
       "kt-gwm": () => show("gwm"),
       ...(hasNotes ? { "kt-notes": () => show("notes") } : {}),
+      "kt-machines": () => run("mod.open", { name: "kt-machines" }),
       "kt-search": () => run("mod.open", { name: "kt-picker" }),
     };
     // A thread's line, then its decision pills' (pillStops).
@@ -2100,6 +2108,12 @@ export default class Threads extends View {
             .font_family(MONO).text_size(10.5).text_color(navPage === "gwm" ? t.foreground : t.muted).child(roll(m, "kt-nav-gwm-n", String(worktrees), 14)), navPage === "gwm"))
         // file-text until kt-notes gives its own icon.
         .when(this.hasNotes, (el) => el.child(tool("kt-notes", "file-text", "Notes", () => show("notes"), null, navPage === "notes")))
+        // Machines (#64, kt-machines): the other machines' state, their logins, adding one. Its badge: how
+        // many, on the dot of the one that needs you most (login, away, loading), none without one.
+        .child(tool("kt-machines", "server", tr("machines"), () => run("mod.open", { name: "kt-machines" }), ((ms) => !ms.length ? null
+          : h_flex().flex_none().h(18).px(7).gap(5).items_center().rounded_full().border(1).border_color(t.border)
+            .child(div().size(6).flex_none().rounded_full().bg(stateColor(t, ["login", "away", "loading"].find((st) => ms.some((x) => x.status === st)) ?? "ready")))
+            .child(div().font_family(MONO).text_size(10.5).text_color(t.muted).child(String(ms.length))))(machineList())))
         .child(tool("kt-search", "search", tr("search"), () => run("mod.open", { name: "kt-picker" }))))
       // kbrdn.dev `.eyebrow` over the list, and the filter as a `.segment` pill.
       .child(
