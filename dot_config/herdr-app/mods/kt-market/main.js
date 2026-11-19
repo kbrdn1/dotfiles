@@ -14,7 +14,8 @@
 // source and commit, the licence, what an install would run or write, the risks, the parts, the README.
 // Installer (issue #70): an inspected plugin opens kt-plugins' dialog on it (lot 3), an MCP server
 // kt-mcp's form filled with public values only (lot 4), a skill kt-skills' « Depuis GitHub » with the
-// inspected commit (lot 5); kt-market itself runs nothing. The other types show their plan only.
+// inspected commit (lot 5); an aitmpl loop: « Copier le /loop », or « Adapter en me:loop » through
+// kt-automation's « Créer un loop » (lot 7, loops.js). kt-market itself runs nothing.
 // Keys (vim.js): the page opens typing in the filter (INSERT: ctrl-n/p ↓ ↑ move, enter opens the
 // detail, esc NORMAL). NORMAL: j/k gg/G ctrl-d/u (j past the last row: the next page; k before the
 // first: the previous page, then the filter), / the filter, tab / shift-tab the type, enter/o/l the
@@ -39,6 +40,7 @@ import { refreshOn } from "./bus.js";
 import { docOf, mdState, view, tabs, target } from "./markdown.js";
 import { makeT, relative, compact } from "./i18n.js";
 import { TYPES, SOURCES, levelOf, code, mcpForm, skillForm } from "./model.js";
+import { loopForm, loopPrompt } from "./loops.js";
 import strings from "./strings.js";
 
 const tr = makeT(strings);
@@ -319,7 +321,27 @@ export default class Market extends View {
       if (!f) return;
       openOverlay({ mod: "kt-skills", kind: "dialog", width: 1, height: 1, frame: "none", modal: true,
         props: { add: f.add, prefill: f.prefill, expect: f.expect } });
+    } else if (x.type === "loop" && d.plan.route === "loop-session") {
+      // An aitmpl loop (lot 7): kt-automation's « Créer un loop », as its page opens it (its contract),
+      // filled with loops.js' intention (no word of the recipe, the pinned source). Its confirmation
+      // sends that intention to the Automatisation session; nothing is written here.
+      const f = loopForm(this.loopItem(x, d), d, activeSpace()?.id ?? null);
+      if (!f) return;
+      openOverlay({ mod: "kt-automation", kind: "dialog", width: 1, height: 1, frame: "none", modal: true, props: f });
     }
+  }
+
+  // A loop row with its inspection's repo (owner, name, path): what loops.js validates and names.
+  loopItem(x, d) {
+    return { ...x, repo: d?.src ?? null };
+  }
+
+  // « Copier le /loop »: the recipe's command, as written (shown in full above it).
+  copyLoop(d, cx) {
+    const p = loopPrompt(d);
+    if (!p) return;
+    cx.write_to_clipboard(p);
+    notify({ title: tr("loopCopied"), body: p.split("\n")[0], level: "success", timeout: 2500 });
   }
 
   // Whether Installer is offered for an inspected item: lots 3 to 5 (plugins, MCP, skills), not blocked,
@@ -329,7 +351,8 @@ export default class Market extends View {
     const mine = this.inst?.[x.id];
     if (!p || (mine && mine.state !== "present")) return false;
     return (x.type === "plugin" && p.route === "kt-plugins") || (x.type === "mcp" && p.route === "kt-mcp" && Boolean(mcpForm(x.name, d.variants?.[0])))
-      || (x.type === "skill" && p.route === "kt-skills" && Boolean(skillForm(p, d.head)));
+      || (x.type === "skill" && p.route === "kt-skills" && Boolean(skillForm(p, d.head)))
+      || (x.type === "loop" && p.route === "loop-session" && Boolean(loopForm(this.loopItem(x, d), d, null)));
   }
 
   // a (NORMAL): Installer on the detail's item (else the cursor's); not inspected yet: inspect first,
@@ -697,8 +720,9 @@ export default class Market extends View {
     const mine = this.inst?.[x.id];
     const have = Boolean(mine) && mine.state !== "present";
     const installable = this.installable(x, d);
-    const note = x.type === "mcp" ? "installNoteMcp" : x.type === "skill" ? "installNoteSkill" : p?.addMarket ? "installCommunity" : "installNote";
-    const tip = x.type === "mcp" ? "installTipMcp" : x.type === "skill" ? "installTipSkill" : "installTip";
+    const loop = x.type === "loop";
+    const note = loop ? "loopNote" : x.type === "mcp" ? "installNoteMcp" : x.type === "skill" ? "installNoteSkill" : p?.addMarket ? "installCommunity" : "installNote";
+    const tip = loop ? "loopAdaptTip" : x.type === "mcp" ? "installTipMcp" : x.type === "skill" ? "installTipSkill" : "installTip";
     const lic = d.repoFacts?.license && d.repoFacts.license !== "NOASSERTION" ? d.repoFacts.license : null;
     const doc = d.readme?.text ? docOf(this.md, noImages(d.readme.text)) : null;
     this.docShown = Boolean(doc);
@@ -714,10 +738,14 @@ export default class Market extends View {
         .child(this.eyebrow(t, tr("plan.title")))
         .child(p?.route ? this.block(t, p.lines.length ? p.lines.join("\n") : tr("plan.noLines")) : this.block(t, tr(`why.${p?.why}`) || tr("why.no-route"), t.blocked))
         .when(Boolean(p?.writes?.length), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.writes", { list: p.writes.join(", ") }))))
+        // A loop (lot 7): « Copier le /loop » (the recipe's own command) beside « Adapter en me:loop ».
+        .when(loop && Boolean(loopPrompt(d)), (el) => el.child(h_flex().pt(2).gap(10).items_center()
+          .child(this.chip(t, "ktmk-loop-copy", tr("loopCopy"), false, (cx) => this.copyLoop(d, cx), tr("loopCopyTip")))))
         .when(installable, (el) => el.child(h_flex().pt(2).gap(10).items_center()
-          .child(this.chip(t, "ktmk-install", tr("install"), true, () => this.install(x, d), tr(tip)))
+          .child(this.chip(t, "ktmk-install", tr(loop ? "loopAdapt" : "install"), true, () => this.install(x, d), tr(tip)))
           .child(div().flex_1().min_w(0).text_size(11.5).line_height("17px").text_color(t.dim).child(tr(note)))))
-        .when(!installable, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr(have ? "mine.planHave" : "plan.readOnly")))))
+        .when(!installable, (el) => el.child(div().text_size(11.5).text_color(t.dim)
+          .child(tr(have ? "mine.planHave" : loop && p?.route === "loop-session" ? "loopNoForm" : "plan.readOnly")))))
       .child(this.risks(t, d.flags ?? []))
       .children(this.specifics(t, x, d))
       .when(files.length > 0, (el) => el.child(v_flex().gap(6)

@@ -32,8 +32,8 @@ const TTL = { official: 0, known: 0, community: DAY, "herdr-dev": HOUR, aitmpl: 
 const LOCAL = ["official", "community", "known", "herdr-dev", "aitmpl"];
 const LIVE_TTL = DAY, DETAIL_TTL = 7 * DAY, GH_TTL = 7 * DAY;
 // The detail's shape: a cached one of another shape is inspected again (2: plan.addMarket; 3: an MCP's
-// plan as kt-mcp's form shows it, plan.form; 4: a skill's plan.name).
-const DETAIL_V = 4;
+// plan as kt-mcp's form shows it, plan.form; 4: a skill's plan.name; 5: src, the repo as an object).
+const DETAIL_V = 5;
 const UA = { "user-agent": "kt-market" };
 // A download's bounds: per file, in all, files.
 const FILE_MAX = 256 * 1024, TREE_MAX = 8 * 1024 * 1024, FILES_MAX = 400;
@@ -540,7 +540,9 @@ async function detail(id, args) {
   const c = await readJson(file);
   if (!args.includes("--force") && c?.v === DETAIL_V && c.id === id && c.pin === (it.pin?.value ?? null) && now() - Date.parse(c.at) < DETAIL_TTL) return out({ ...c, cached: true });
   const d = { v: DETAIL_V, id, at: new Date().toISOString(), pin: it.pin?.value ?? null, item: ROW_OF(it), head: null, flags: [...it.flags], errors: [],
-    readme: null, files: [], findings: [], plan: null };
+    readme: null, files: [], findings: [], plan: null,
+    // The repo as an object (a row only has "owner/name"): loops.js and the herdr thread build on it.
+    src: it.repo ? { owner: it.repo.owner, name: it.repo.name, path: it.repo.path ?? "" } : null };
   try {
     if (it.type === "plugin") await inspectPlugin(it, d);
     else if (it.type === "mcp") await inspectMcp(it, d);
