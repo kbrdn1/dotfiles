@@ -4,24 +4,28 @@
 // Sections: the header (the index's state, r), Now (the live agents, a click goes to the one to see),
 // This week (six cards against the same days of the week before, their 8 weeks as bars), Activity (the
 // year in plain squares, viz.calendar, ‹ year ›), the week's workflows and skills, its sub-agents, the
-// projects (this week's most active first).
+// projects (this week's most active first). #48: the year of GitHub instead of the agents' (tab). #49: one
+// project's view, the shown space's unless kt.project is "*" (v switches to the global one): its worktrees
+// (gwm), its week with its PRs (gh pr list) and what review and CI caught (~/Reports' recaps, the flows),
+// its year, its PRs (a click opens the Inbox on one), its launches.
 // The indexer runs (exec, bun by its path: exec's PATH has no ~/.nix-profile): on the first show and on
 // coming back after 60 s, the old summary staying shown; on the bus's "agents" while shown, 60 s apart at
 // most (a bump in between waits for its turn); on r. A hidden copy doesn't render, so it doesn't hear
 // the bus: it catches up when it shows. One 5 s tick while shown (the page left, a bump waiting, the day
 // and the minute changing); none while hidden.
-// Keys (vim.js): j / k gg / G the sections, [ / ] or h / l the year, r index, ? kt-keys, q / esc back
-// to the thread when there is one.
-// Mod commands: kt-hub.focus, key:<keys>, refresh, year:<yyyy>.
+// Keys (vim.js): j / k gg / G the sections, [ / ] or h / l the year, tab the source (global view), v the
+// view, r index (and the project's PRs and worktrees), ? kt-keys, q / esc back to the thread when there is one.
+// Mod commands: kt-hub.focus, key:<keys>, refresh, year:<yyyy>, source:<agents|github>, scope:<auto|global>.
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
-import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, settings, panes } from "herdr";
-import { week, ranked, projectRows, year, years, now, delta, localDay, dayShift } from "./model.js";
+import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, setShared, settings, panes } from "herdr";
+import { week, ranked, projectRows, year, years, now, delta, localDay, dayShift, familyOf } from "./model.js";
 import { ghArgs, parseYear, stale, githubYear } from "./github.js";
+import { keyOf as folderKey, projectWeek, projectYear, projectYears, weekPrs, weekChecks, prListArgs } from "./project.js";
 import { makeT, num, date, time, relative, duration } from "./i18n.js";
 import strings from "./strings.js";
-import { Vim, keysOf, step } from "./vim.js";
+import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { dither, iconBtn, bandRow } from "./band.js";
 import { motionState, frame, enter } from "./motion.js";
 import { skeleton } from "./skeleton.js";
@@ -37,6 +41,8 @@ const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
 const AGAIN_MS = 60e3; // the indexer at most once a minute, unless r
 const SECTIONS = ["now", "week", "act", "rank", "proj"];
+const P_SECTIONS = ["phead", "pweek", "pact", "pprs", "plaunch"]; // #49: one project's view
+const STALE_MS = 3600e3; // a project's PRs (gh) and worktrees (gwm): asked again after an hour, or on r
 const CARDS = ["s", "p", "a", "sub", "pr", "streak"];
 const FAMILY = { workflow: "ansi4", loop: "ansi5", skill: "ansi2" };
 
@@ -74,6 +80,13 @@ export default class Hub extends View {
     this.gh = new Map(); // year -> { text, cache, view, tips } (text: the file as read, for writeTextFile)
     this.ghBusy = new Set();
     this.ghErr = null;
+    // #49: the view (auto: the shown project unless kt.project is "*"; or global; or the project), the
+    // folders' repos (git), each repo's worktrees (gwm) and PRs (gh), each project's year.
+    this.scope = "auto";
+    this.roots = new Map(); // folder -> repo root | null (undefined: being asked)
+    this.side = new Map(); // project key -> { at, busy, prs, prErr, wts }
+    this.pYear = new Map(); // project key -> its year shown
+    this.pHeat = new Map(); // `${key}|${year}` -> its year and levels, per summary
     this.cur = "now";
     this.reveal = false;
     this.width = 1000;
@@ -93,6 +106,7 @@ export default class Hub extends View {
         } else if (c === "refresh") this.index(cx, "commande");
         else if (c.startsWith("year:")) this.pickYear(Number(c.slice(5)));
         else if (c === "source:agents" || c === "source:github") this.setSource(c.slice(7), cx);
+        else if (c === "scope:auto" || c === "scope:global" || c === "scope:project") this.setScope(c.slice(6));
         cx.notify();
       }
     });
@@ -121,6 +135,7 @@ export default class Hub extends View {
     const ys = years(s);
     if (!ys.includes(this.year)) this.year = ys.at(-1) ?? null;
     this.heat.clear();
+    this.pHeat.clear();
     const reg = shared("kt.projects");
     this.regKey = JSON.stringify(reg ?? null);
     this.d = { today, w, launches: ranked(s.days, w, "l"), subs: ranked(s.days, w, "sub"), rows: projectRows(s.projects, reg, w), years: ys };
@@ -203,6 +218,87 @@ export default class Hub extends View {
     if (s === "github") this.ghLoad(cx, this.ghYear);
   }
 
+  // ---------- one project (#49) ----------
+
+  // The project the hub would show: none with « Tous les projets » (kt.project "*"), at Home, with no space
+  // or on another machine; else the shown space's, by the registry (its folder holds the space's), else by
+  // its repo (git, once per folder; a worktree climbs to its main checkout).
+  candidate(cx) {
+    if (!this.sum || shared("kt.project") === "*") return null;
+    const s = spaces().find((x) => x.active);
+    if (!s || s.machine || !s.folder || s.folder === home()) return null;
+    const reg = (shared("kt.projects") ?? []).filter((r) => r && !r.machine && r.folder).map((r) => r.folder.replace(/\/+$/, ""));
+    let key = folderKey(s.folder, reg);
+    if (!key) {
+      const root = this.rootOf(s.folder, cx);
+      if (!root) return null;
+      key = folderKey(root, reg) ?? root;
+    }
+    const entry = (shared("kt.projects") ?? []).find((r) => r?.folder?.replace(/\/+$/, "") === key) ?? null;
+    const p = this.sum.projects?.[key] ?? null;
+    return { key, p, entry, name: entry?.name ?? p?.name ?? key.split("/").pop(), slug: p?.slug ?? null, root: this.roots.get(s.folder) ?? key };
+  }
+
+  rootOf(folder, cx) {
+    if (this.roots.has(folder)) return this.roots.get(folder) ?? null;
+    if (checking()) return null;
+    this.roots.set(folder, undefined);
+    cx.spawn(async (cx) => {
+      const r = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: folder }).catch(() => ({ code: 1, stdout: "" }));
+      const dir = r.code === 0 ? r.stdout.trim() : null;
+      this.roots.set(folder, dir ? (dir.endsWith("/.git") ? dir.slice(0, -5) : dir) : null);
+      cx.notify();
+    });
+    return null;
+  }
+
+  setScope(s) {
+    this.scope = s === "project" ? "auto" : s;
+    this.cur = null;
+  }
+
+  // A project's PRs of the week (gh) and its worktrees (gwm), once an hour while it shows, or on r.
+  sideLoad(cx, pr, force = false) {
+    if (checking() || !pr) return;
+    const was = this.side.get(pr.key);
+    if (was?.busy || (!force && was && Date.now() - was.at < STALE_MS)) return;
+    const st = { at: Date.now(), busy: true, prs: was?.prs ?? null, prErr: null, wts: was?.wts ?? null };
+    this.side.set(pr.key, st);
+    cx.spawn(async (cx) => {
+      const since = dayShift(this.d.w.from, -7);
+      const [g, wt] = await Promise.all([
+        pr.slug ? exec("gh", prListArgs(pr.slug, since), { timeout: 30e3 }).catch((e) => ({ code: -1, stdout: "", stderr: String(e?.message ?? e) })) : null,
+        exec("gwm", ["list", "--format", "json", "--deny-bootstrap"], { cwd: pr.root, timeout: 20e3 }).catch(() => ({ code: -1, stdout: "" })),
+      ]);
+      if (g) {
+        const list = g.code === 0 ? parse(g.stdout) : null;
+        if (Array.isArray(list)) st.prs = list;
+        else st.prErr = (g.stderr?.trim().split("\n")[0] || `gh ${g.code}`).slice(0, 160);
+      }
+      const w = wt.code === 0 ? parse(wt.stdout) : null;
+      const all = Array.isArray(w) ? w : Array.isArray(w?.worktrees) ? w.worktrees : null;
+      if (all) st.wts = all.filter((x) => !(x.is_main ?? x.main)).map((x) => x.branch ?? x.name ?? String(x.path ?? "").split("/").pop()).filter(Boolean);
+      st.busy = false;
+      cx.notify();
+    });
+  }
+
+  // Its year (heat pairs to levels, quartiles each side of the junction), once per summary.
+  pHeatOf(pr, y) {
+    const k = `${pr.key}|${y}`;
+    if (!this.pHeat.has(k)) {
+      const h = projectYear(pr.p, y, this.sum, this.d.today);
+      this.pHeat.set(k, { ...h, levels: quartileLevels(h.values, h.split), tips: new Map() });
+    }
+    return this.pHeat.get(k);
+  }
+
+  openPr(slug, n) {
+    if (!slug || !n) return;
+    setShared("kt.inbox.open", { repo: slug, kind: "pr", number: n, at: Date.now() });
+    run("layout.select", { stack: "view", child: "inbox" });
+  }
+
   // One pass of the indexer; a pass running elsewhere (its lock) answers busy: its summary is read after.
   index(cx, why) {
     if (checking() || this.running) return;
@@ -252,8 +348,15 @@ export default class Hub extends View {
     if (this.d?.years.includes(y)) this.year = y;
   }
 
-  // The shown source's year, one step back or forward (GitHub: asked when shown).
+  // The shown source's year, one step back or forward (GitHub: asked when shown; a project: its own years).
   stepYear(by, cx) {
+    const pr = this.pv;
+    if (pr) {
+      const ys = projectYears(pr.p, this.d.today);
+      const i = ys.indexOf(this.pYear.get(pr.key) ?? ys.at(-1));
+      if (i >= 0 && ys[i + by] != null) this.pYear.set(pr.key, ys[i + by]);
+      return;
+    }
     const gh = this.source === "github";
     const ys = gh ? this.ghYears() : this.d?.years ?? [];
     const i = ys.indexOf(gh ? this.ghYear : this.year);
@@ -295,17 +398,26 @@ export default class Hub extends View {
   }
 
   press(k, cx) {
+    // v: the view, global or the shown project (#49); v does nothing else in vim.js.
+    if (keyOf(k).name === "v") {
+      this.setScope(this.scope === "global" ? "auto" : "global");
+      return true;
+    }
     const a = this.vim.handle(k);
     if (!a) return false;
     if (a === "pending" || a === "count") return true;
+    const secs = this.pv ? P_SECTIONS : SECTIONS;
     if (["down", "up", "top", "bottom", "half-down", "half-up"].includes(a)) {
-      this.cur = SECTIONS[step(a, SECTIONS.indexOf(this.cur), SECTIONS.length, this.vim.count, 4)];
+      this.cur = secs[step(a, secs.indexOf(this.cur), secs.length, this.vim.count, 4)];
       this.reveal = true;
     } else if (a === "panel-prev" || a === "left") this.stepYear(-1, cx);
     else if (a === "panel-next" || a === "right") this.stepYear(1, cx);
-    else if (a === "tab-next" || a === "tab-prev") this.setSource(this.source === "github" ? "agents" : "github", cx);
+    else if ((a === "tab-next" || a === "tab-prev") && !this.pv) this.setSource(this.source === "github" ? "agents" : "github", cx);
     else if (a === "open" && this.cur === "now") this.go(now(agents()).go);
-    else if (a === "refresh") this.index(cx, "r");
+    else if (a === "refresh") {
+      this.index(cx, "r");
+      if (this.pv) this.sideLoad(cx, this.pv, true);
+    }
     else if (a === "help") openOverlay({ mod: "kt-keys", kind: "dialog", width: 1, height: 1, frame: "none", props: { group: "pages" } });
     else if (a === "quit" || a === "escape") this.leavePage();
     else return false;
@@ -348,13 +460,31 @@ export default class Hub extends View {
       ? div().id("hub-b-running").size(28).flex_none().flex().items_center().justify_center().tooltip(tr("tip.running"))
         .child(svg(SPIN).size(14).spin(900).text_color(t.muted))
       : iconBtn(t, "hub-b-refresh", I("refresh-cw"), tr("tip.refresh"), (cx) => this.index(cx, "bouton"));
+    // #49: Global or the shown project (v), when there is one; the band takes the project's color.
+    const cand = this.cand;
+    const tint = this.pv ? this.colorOf(t, this.pv.entry) : t.accent;
+    const seg = cand ? h_flex().flex_none().h(28).p(2).gap(2).items_center().rounded_full().border(1).border_color(t.border).bg(t.raised)
+      .children([["global", tr("view.global"), null], ["auto", cand.name, cand]].map(([k, label, pr]) => {
+        const on = k === "global" ? !this.pv : Boolean(this.pv);
+        return h_flex().id(`hub-scope-${k}`).h(22).px(10).gap(6).items_center().rounded_full().text_size(12)
+          .text_color(on ? t.foreground : t.muted).when(on, (el) => el.bg(alpha(pr ? this.colorOf(t, pr.entry) : t.accent, "33")))
+          .when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)))
+          .tooltip(tr("view.tip")).on_click((_e, cx) => { cx.stop_propagation(); this.setScope(k); cx.notify(); })
+          .child(pr ? div().max_w(160).truncate().child(label) : label);
+      })) : null;
     return this.card(t).id("hub-head").relative().flex_none().px(4).pb(4)
       .on_size_change((x, cx) => { if (x.width !== this.headW) { this.headW = x.width; cx.notify(); } })
-      .children([dither(this.headW, 60, 16, t.accent)].filter(Boolean))
-      .child(bandRow(t, { m: this.m, color: t.accent, icon: I("house"), title: tr("title"),
+      .children([dither(this.headW, 60, 16, tint)].filter(Boolean))
+      .child(bandRow(t, { m: this.m, color: tint, icon: I("house"), title: this.pv ? tr("titleProject", { name: this.pv.name }) : tr("title"),
         dot: this.running ? t.working : this.err ? t.ansi1 : null,
         sub: [`${date(at)} · ${time(at)}`, state],
-        buttons: [refresh] }));
+        buttons: [seg, refresh] }));
+  }
+
+  // A registry entry's color (a theme name or #hex), else the accent.
+  colorOf(t, e) {
+    const c = e?.color;
+    return c ? (c.startsWith("#") ? c : t[c] ?? t.accent) : t.accent;
   }
 
   // ---------- now ----------
@@ -573,6 +703,110 @@ export default class Hub extends View {
       rows.length ? v_flex().gap(2).children(rows.map((r) => this.projRow(t, r))) : this.muted(t, tr("proj.none")));
   }
 
+  // ---------- one project (#49) ----------
+
+  // Its head: the registry's mark, its repo, its open worktrees (gwm).
+  pHead(t, pr) {
+    const side = this.side.get(pr.key);
+    const wts = side?.wts;
+    const tileRow = { kind: pr.p?.kind ?? "repo", entry: pr.entry, name: pr.name };
+    return this.section(t, "phead", tr("proj.head"), null, h_flex().gap(10).items_center().px(4)
+      .child(this.tile(t, tileRow))
+      .child(v_flex().flex_1().min_w(0).gap(2)
+        .child(div().truncate().text_size(13.5).text_color(t.foreground).child(pr.name))
+        .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child([pr.slug, pr.root.replace(home(), "~")].filter(Boolean).join(" · "))))
+      .child(div().flex_none().max_w(420).truncate().font_family(MONO).text_size(11).text_color(wts?.length ? t.foreground : t.dim)
+        .child(wts == null ? (side?.busy ? tr("proj.wtReading") : "") : wts.length ? tr("proj.wts", { n: wts.length, list: wts.slice(0, 4).join(", ") }) : tr("proj.wtNone"))));
+  }
+
+  pCard(t, id, cw, name, main, { d = null, detail = "", tip = "", better = "higher" } = {}) {
+    const pct = d == null || d === 0 ? null : `${d > 0 ? "+" : "−"}${tr("pct", { n: Math.abs(d) })}`;
+    return v_flex().id(`hub-pc-${id}`).w(cw).flex_none().p(12).rounded(12).border(1).border_color(t.border).bg(t.raised).when(Boolean(tip), (el) => el.tooltip(tip))
+      .child(this.V.stat(name, main, { delta: pct, detail: d === 0 ? tr("week.same") : detail, better, width: cw - 24, id: `hub-ps-${this.pv.key}-${id}` }));
+  }
+
+  pWeek(t, pr, pw, prs, checks) {
+    const W = this.width - 24;
+    const cols = W >= 1050 ? 4 : 2;
+    const cw = Math.floor((W - 8 * (cols - 1)) / cols);
+    const vs = tr("week.vs");
+    const cards = [
+      this.pCard(t, "s", cw, tr("card.s"), num(pw.now.s), { d: delta(pw.now.s, pw.before.s), detail: vs, tip: tr("tip.s") }),
+      this.pCard(t, "a", cw, tr("card.a"), duration(pw.now.a * 1000), { d: delta(pw.now.a, pw.before.a), detail: vs, tip: tr("tip.a") }),
+      this.pCard(t, "p", cw, tr("card.p"), num(pw.now.p), { d: delta(pw.now.p, pw.before.p), detail: vs, tip: tr("tip.p") }),
+      this.pCard(t, "prs", cw, tr("proj.cardPrs"), prs ? tr("proj.openedMerged", { o: prs.opened, m: prs.merged }) : "—",
+        { detail: prs?.median != null ? tr("proj.median", { t: duration(prs.median) }) : prs ? tr("proj.noMerge") : tr("proj.ghNone"), tip: tr("proj.prsTip") }),
+      this.pCard(t, "review", cw, tr("proj.cardReview"), `${checks.fixed} / ${checks.found}`,
+        { detail: checks.reports ? tr("proj.fixedDetail", { runs: tr("proj.reviewRuns", { n: checks.reviewRuns }) }) : tr("proj.noReport"), tip: tr("proj.reviewTip") }),
+      this.pCard(t, "ci", cw, tr("proj.cardCi"), `${checks.ciOk} / ${checks.ciOk + checks.ciFail}`,
+        { detail: tr("proj.ciDetail", { runs: tr("proj.ciRuns", { n: checks.ciRuns }) }), tip: tr("proj.ciTip") }),
+    ];
+    return this.section(t, "pweek", tr("week.title"), div().flex_none().text_size(11).text_color(t.dim).child(tr("week.sub")), h_flex().flex_wrap().gap(8).children(cards));
+  }
+
+  pAct(t, pr) {
+    const ys = projectYears(pr.p, this.d.today);
+    const y = this.pYear.get(pr.key) ?? ys.at(-1);
+    const i = ys.indexOf(y);
+    const h = this.pHeatOf(pr, y);
+    const arrow = (id, icon, tip, by, on) => div().id(id).size(24).flex_none().rounded_full().flex().items_center().justify_center()
+      .text_color(on ? t.muted : t.dim).when(!on, (el) => el.opacity(0.4))
+      .when(on, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+        .on_click((_e, cx) => { cx.stop_propagation(); this.stepYear(by, cx); cx.notify(); }))
+      .child(svg(I(icon)).size(13));
+    const right = h_flex().flex_none().gap(4).items_center()
+      .child(arrow("hub-py-prev", "chevron-left", tr("act.prev"), -1, i > 0))
+      .child(div().font_family(MONO).text_size(12).text_color(t.foreground).child(String(y)))
+      .child(arrow("hub-py-next", "chevron-right", tr("act.next"), 1, i >= 0 && i < ys.length - 1));
+    const junction = this.sum.junction;
+    const cal = this.V.calendar(h.levels, {
+      start: h.start, months: tr("act.months").split(" "), weekdays: tr("act.weekdays").split(" "), legend: [tr("act.less"), tr("act.more")],
+      mark: h.split > 0 ? h.split : null, markTip: junction ? tr("act.mark", { date: date(`${junction}T12:00:00`, { year: true }) }) : null,
+      tip: (a, b) => this.weekTip(h, a, b), color: this.colorOf(t, pr.entry), id: `hub-pcal-${pr.key}-${y}`,
+    });
+    return this.section(t, "pact", tr("act.title"), right, v_flex().gap(6)
+      .child(div().font_family(MONO).text_size(11).text_color(t.muted).child(tr("act.total", { active: num(h.active), sessions: num(h.sessions) })))
+      .child(cal));
+  }
+
+  // The week's PRs (gh): number, title, state, its review and CI when a report has them; a click opens it in
+  // the Inbox (kt.inbox.open), as kt-flow does.
+  pPrs(t, pr, prs) {
+    const side = this.side.get(pr.key);
+    const err = side?.prErr ? div().text_size(12).text_color(t.ansi1).child(tr("proj.ghError", { error: side.prErr })) : null;
+    if (!pr.slug) return this.section(t, "pprs", tr("proj.prsTitle"), null, this.muted(t, tr("proj.noSlug")));
+    if (!prs) return this.section(t, "pprs", tr("proj.prsTitle"), null, err ?? this.muted(t, side?.busy ? tr("proj.ghReading") : tr("proj.ghNone")));
+    const STATE = { OPEN: t.ansi2, MERGED: t.ansi5, CLOSED: t.dim };
+    const rows = prs.rows.slice(0, 10).map((x) => {
+      const c = x.draft ? t.dim : STATE[x.state] ?? t.dim;
+      return h_flex().id(`hub-pr-${x.n}`).h(30).px(6).gap(10).items_center().rounded(10).cursor_pointer().hover((s) => s.bg(t.hover))
+        .tooltip(tr("proj.prTip")).on_click((_e, cx) => { cx.stop_propagation(); this.openPr(pr.slug, x.n); })
+        .child(div().w(46).flex_none().font_family(MONO).text_size(11).text_color(t.muted).child(`#${x.n}`)) // i18n: tech
+        .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(t.foreground).child(x.title))
+        .child(div().flex_none().h(18).px(7).flex().items_center().rounded_full().border(1).border_color(alpha(c, "66")).bg(alpha(c, "1a"))
+          .font_family(MONO).text_size(9.5).text_color(c).child(x.draft ? "draft" : String(x.state ?? "").toLowerCase())) // i18n: tech
+        .child(div().w(120).flex_none().flex().justify_end().font_family(MONO).text_size(10.5).text_color(t.dim)
+          .child(x.review ? tr("proj.prReview", { p: x.review.passes, f: x.review.fixed, n: x.review.found }) : ""))
+        .child(div().w(70).flex_none().flex().justify_end().font_family(MONO).text_size(10.5).text_color(x.ci?.fail ? t.ansi1 : t.dim)
+          .child(x.ci ? tr("proj.prCi", { ok: x.ci.ok, n: x.ci.total }) : ""));
+    });
+    return this.section(t, "pprs", tr("proj.prsTitle"), null, v_flex().gap(2)
+      .children(rows.length ? rows : [this.muted(t, tr("proj.noPr"))]).when(Boolean(err), (el) => el.child(err)));
+  }
+
+  pLaunches(t, pw) {
+    const list = pw.launches.map((x) => ({ ...x, family: familyOf(x.name) })).filter((x) => x.family !== "command");
+    return this.section(t, "plaunch", tr("launch.title"), null, this.rankRows(t, list, (x) => t[FAMILY[x.family]] ?? t.accent, tr("launch.none")));
+  }
+
+  projectBody(t, pr) {
+    const pw = projectWeek(pr.p, this.d.w);
+    const side = this.side.get(pr.key);
+    const prs = side?.prs ? weekPrs(side.prs, this.sum.reports, pr.slug, this.d.w) : null;
+    const checks = weekChecks(this.sum.reports, this.sum.flows, pr.slug, this.d.w);
+    return [this.pHead(t, pr), this.pWeek(t, pr, pw, prs, checks), this.pAct(t, pr), this.pPrs(t, pr, prs), this.pLaunches(t, pw)];
+  }
+
   // ---------- page ----------
 
   // Before the first summary: the sections' shapes as bars (skeleton.js), breathing.
@@ -590,13 +824,15 @@ export default class Hub extends View {
     if (!this.sum || !this.d) {
       return v_flex().flex_1().min_h(0).child(this.readError ? div().p(16).text_size(13).text_color(t.ansi1).child(tr("index.unreadable", { error: this.readError })) : this.skeletonBody(t));
     }
-    if (this.regKey !== JSON.stringify(shared("kt.projects") ?? null)) this.derive(); // a project added, renamed, recoloured
-    const kids = [this.nowSection(t), this.weekSection(t), this.actSection(t), this.rankSection(t), this.projSection(t)];
+    const pr = this.pv;
+    const kids = pr ? this.projectBody(t, pr)
+      : [this.nowSection(t), this.weekSection(t), this.actSection(t), this.rankSection(t), this.projSection(t)];
     if (this.reveal) {
-      this.scroll.scroll_to_item(Math.max(0, SECTIONS.indexOf(this.cur)));
+      this.scroll.scroll_to_item(Math.max(0, (pr ? P_SECTIONS : SECTIONS).indexOf(this.cur)));
       this.reveal = false;
     }
-    return enter(this.m, v_flex().flex_1().min_h(0), "hub-in", { dy: 0 })
+    // The view's key in the id: global and each project fade in when they come.
+    return enter(this.m, v_flex().flex_1().min_h(0), `hub-in-${pr?.key ?? "global"}`, { dy: 0 })
       .child(v_flex().id("hub-body").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).p(4).pb(16).gap(4).children(kids));
   }
 
@@ -624,6 +860,12 @@ export default class Hub extends View {
     this.keyed = this.handle.is_focused();
     const t = theme();
     this.V = viz(t, this.m, { roll });
+    // The view (#49): the shown project's, unless global; its PRs and worktrees asked while it shows.
+    if (this.sum && this.d && this.regKey !== JSON.stringify(shared("kt.projects") ?? null)) this.derive(); // a project added, renamed, recoloured
+    this.cand = this.sum && this.d ? this.candidate(cx) : null;
+    this.pv = this.scope === "global" ? null : this.cand;
+    if (this.pv && vis) this.sideLoad(cx, this.pv);
+    if (!(this.pv ? P_SECTIONS : SECTIONS).includes(this.cur)) this.cur = (this.pv ? P_SECTIONS : SECTIONS)[0];
     return v_flex().id("hub-root").size_full().gap(4).text_color(t.foreground)
       .track_focus(this.handle)
       .on_key_down((e, cx) => this.key(e, cx))

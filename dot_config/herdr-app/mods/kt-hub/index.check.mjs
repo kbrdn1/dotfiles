@@ -56,7 +56,7 @@ put(`${D}/shared.json`, JSON.stringify({ "kt.projects": [
 ] }));
 const PROJ = `${D}/projects`;
 const cfg = {
-  home: HOME, projects: PROJ, history: `${D}/history.jsonl`, store: `${D}/store`, shared: `${D}/shared.json`, out: `${D}/out`,
+  home: HOME, projects: PROJ, history: `${D}/history.jsonl`, store: `${D}/store`, reports: `${D}/reports`, shared: `${D}/shared.json`, out: `${D}/out`,
   scratch: /^\/nowhere\//,
   // chezmoi, faked: ~/.config is managed and lives in the dots repo; git is real.
   resolve: (cwd) => (cwd.startsWith(`${HOME}/.config`) ? X.gitRoot(`${D}/dots`) : X.gitRoot(cwd)),
@@ -138,6 +138,15 @@ put(cfg.history, lines(
   JSON.stringify({ display: "et ça", timestamp: Date.parse("2026-11-09T09:01:00Z"), project: `${D}/repo` }),
   JSON.stringify({ display: "déjà dans les transcripts", timestamp: Date.parse("2026-11-18T09:00:00Z"), project: `${D}/reg/proj`, sessionId: A }),
 ));
+// #49: a branch report (me:report) and a plan (left to #50), in ~/Reports.
+put(`${D}/reports/o-r/feat-1/facts.json`, JSON.stringify({ kind: "report", generatedAt: "2026-11-18T19:00:00+00:00", facts: {
+  repo: "o/r", branch: "feat/#1-x", issue: "1", totals: { files: 2, add: 40, del: 3 },
+  pr: { number: 3, title: "une PR", state: "MERGED", isDraft: false, url: "https://github.com/o/r/pull/3" },
+  ci: { total: 3, ok: 2, fail: 1, pending: 0, runs: [] },
+  review: { passes: [{ pass: 1, p0: 0, p1: 1, p2: 1, p3: 2 }, { pass: 2, p0: 0, p1: 0, p2: 0, p3: 1 }],
+    findings: [{ prio: "P1", status: "fixed" }, { prio: "P2", status: "fixed" }, { prio: "P3", status: null }] } } }));
+put(`${D}/reports/o-r/plans/p/facts.json`, JSON.stringify({ kind: "plan", facts: { issues: [] } }));
+put(`${D}/reports/o-r/broken/facts.json`, "{");
 put(`${cfg.store}/me_claude-flow-x.json`, JSON.stringify({
   "flow:o/r#1": { workflow: "me:issue-worktree-pr", repo: "o/r", issue: 1, pr: 3, steps: { issue: { status: "done" }, merge: { status: "pending" } } },
   "other:key": { x: 1 },
@@ -217,6 +226,20 @@ const late = X.summarize({ days: {}, prs: { u: { d: "2026-11-18", r: "o/q", n: 1
 } }, Date.parse("2026-11-19T08:00:00Z"));
 assert.deepEqual(Object.keys(late.projects), ["/q"]);
 assert.deepEqual(late.projects["/q"].days["2026-11-18"], [2, 5, 0, 1]);
+assert.deepEqual(late.projects["/q"].heat, { 2026: [[321, 2]] }, "its heat joins too");
+
+// #49: a project's launches (a 5th element, only when there are some), its sessions of every year as
+// [index, sessions] pairs (the history before the junction included), the reports' recaps, the flows.
+const proj = s.projects[`${D}/reg/proj`];
+assert.deepEqual(proj.days["2026-11-18"][4], { "me:x": 1, "me:merge": 1 });
+assert.equal(s.projects[`${D}/repo`].days["2026-11-18"].length, 4, "no launch: four");
+assert.deepEqual(proj.heat["2026"], [[313, 1], [319, 2], [321, 4], [322, 1]], "the 10th (history), the 16th (OLD and h-lost), the 18th, the 19th");
+assert.equal(s.reports.length, 1, "the plan and the broken file are no branch report");
+assert.deepEqual(s.reports[0], { repo: "o/r", branch: "feat/#1-x", issue: "1", at: Date.parse("2026-11-18T19:00:00Z"),
+  pr: { n: 3, title: "une PR", state: "MERGED", url: "https://github.com/o/r/pull/3", draft: false },
+  ci: { ok: 2, fail: 1, pending: 0, total: 3 }, review: { passes: 2, found: 2, fixed: 2, open: 0 }, lines: [40, 3] });
+assert.deepEqual(s.flows.map((f) => [f.key, f.steps.issue, f.doneAt.issue]), [["flow:o/r#1", "done", 0]]);
+assert.equal(X.recap({ kind: "plan", facts: { repo: "o/r" } }), null);
 assert.deepEqual(s.streak, { cur: 2, best: 2 });
 assert.equal(s.days["2026-11-18"].ids, undefined, "no session ids in the summary");
 assert.equal(readdirSync(cfg.out).filter((f) => f.includes(".tmp")).length, 0, "atomic writes leave no tmp");

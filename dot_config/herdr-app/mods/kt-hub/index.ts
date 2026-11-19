@@ -422,6 +422,7 @@ export type Archive = {
   projects: Record<string, Project>;
   prs: Record<string, { d: string; r: string | null; n: number | null }>;
   flows: Record<string, any>;
+  reports?: Record<string, { t: number; r: ReturnType<typeof recap> }>; // ~/Reports' branch facts (not archived: they stay)
   pass?: { at: number; ms: number; files: number; read: number };
 };
 const empty = (): Archive => ({ v: V, first: null, junction: null, historyDone: false, files: {}, cwds: {}, days: {}, projects: {}, prs: {}, flows: {} });
@@ -451,16 +452,23 @@ export function freeze(A: Archive, today: string) {
 const total = (c: Count) => Object.values(c ?? {}).reduce((s, v) => s + v, 0);
 const strip = ({ ids, ...b }: Bucket) => b;
 
+// A day's year and its index from January 1st.
+function yearIndex(d: string): [number, number] {
+  const [y, m, dd] = d.split("-").map(Number);
+  return [y, Math.round((new Date(y, m - 1, dd, 12).getTime() - new Date(y, 0, 1, 12).getTime()) / 864e5)];
+}
+
 /** What the page draws, ready (< 100 KB): the last KEEP_DAYS days, each year's sessions per day for the
- * heatmap, the projects' days ([sessions, active ms, prompts, PRs]), the streak, the pass. */
+ * heatmap, the projects' days ([sessions, active s, prompts, PRs, launches?]) and their sessions per day
+ * of every year (`heat`, [index, sessions] pairs: a project's heatmap), the reports' recaps and the flows
+ * (#49), the streak, the pass. */
 export function summarize(A: Archive, now: number) {
   const today = localDay(now);
   const from = dayShift(today, -KEEP_DAYS);
   const days = Object.fromEntries(Object.entries(A.days).filter(([d]) => d >= from).sort().map(([d, b]) => [d, strip(b)]));
   const years: Record<string, number[]> = {};
   for (const [d, b] of Object.entries(A.days)) {
-    const [y, m, dd] = d.split("-").map(Number);
-    const i = Math.round((new Date(y, m - 1, dd, 12).getTime() - new Date(y, 0, 1, 12).getTime()) / 864e5);
+    const [y, i] = yearIndex(d);
     (years[y] ??= Array(new Date(y, 1, 29).getDate() === 29 ? 366 : 365).fill(0))[i] = total(b.s);
   }
   // The streak: active days in a row, up to today (or yesterday, today not begun), and the best.
@@ -475,19 +483,27 @@ export function summarize(A: Archive, now: number) {
   // a gh:<slug> project (found by a pr-link only) joins the project that has that slug since.
   const owner: Record<string, string> = {};
   for (const [k, p] of Object.entries(A.projects)) if (p.slug && p.kind !== "gh") owner[p.slug] ??= k;
-  const projects: Record<string, { name: string; kind: string; slug: string | null; last: number; days: Record<string, number[]> }> = {};
+  type Row = { name: string; kind: string; slug: string | null; last: number; days: Record<string, any[]>; heat: Record<string, Map<number, number>> };
+  const projects: Record<string, Row> = {};
   const row = (k: string) => {
     const into = owner[A.projects[k]?.slug ?? ""] ?? k;
     const p = A.projects[into] ?? { name: k, kind: "gh", slug: k.slice(3), last: 0 };
-    return (projects[into] ??= { name: p.name, kind: p.kind, slug: p.slug ?? null, last: p.last, days: {} });
+    return (projects[into] ??= { name: p.name, kind: p.kind, slug: p.slug ?? null, last: p.last, days: {}, heat: {} });
   };
   for (const [k, p] of Object.entries(A.projects)) {
     const r = row(k);
     r.last = Math.max(r.last, p.last);
     for (const [d, b] of Object.entries(p.days)) {
+      const s = total(b.s);
+      if (s) {
+        const [y, i] = yearIndex(d);
+        const h = (r.heat[y] ??= new Map());
+        h.set(i, (h.get(i) ?? 0) + s);
+      }
       if (d < from) continue;
       const v = (r.days[d] ??= [0, 0, 0, 0]);
-      v[0] += total(b.s); v[1] += Math.round(b.a / 1000); v[2] += total(b.p);
+      v[0] += s; v[1] += Math.round(b.a / 1000); v[2] += total(b.p);
+      for (const [n, c] of Object.entries(b.l ?? {})) (v[4] ??= {})[n] = (v[4][n] ?? 0) + c;
     }
   }
   for (const pr of Object.values(A.prs)) {
@@ -495,16 +511,65 @@ export function summarize(A: Archive, now: number) {
     const k = owner[pr.r] ?? (A.projects[`gh:${pr.r}`] ? `gh:${pr.r}` : null);
     if (k) (row(k).days[pr.d] ??= [0, 0, 0, 0])[3]++;
   }
+  const out: Record<string, any> = {};
   for (const [k, p] of Object.entries(projects)) {
-    if (!Object.keys(p.days).length) delete projects[k];
-    else p.days = Object.fromEntries(Object.entries(p.days).sort());
+    if (!Object.keys(p.days).length && !Object.keys(p.heat).length) continue;
+    out[k] = { ...p, days: Object.fromEntries(Object.entries(p.days).sort()),
+      heat: Object.fromEntries(Object.entries(p.heat).map(([y, h]) => [y, [...h].sort((a, b) => a[0] - b[0])])) };
   }
-  return { v: V, at: now, today, first: A.first, junction: A.junction, pass: A.pass ?? null, streak: { cur, best }, days, years, projects };
+  const reports = Object.values(A.reports ?? {}).map((x) => x.r).filter((r) => r && r.at >= new Date(`${from}T00:00:00`).getTime()).sort((a, b) => b.at - a.at);
+  const flows = Object.entries(A.flows ?? {}).map(([key, f]) => ({ key, workflow: f.workflow ?? null, repo: f.repo ?? null, issue: f.issue ?? null, pr: f.pr ?? null,
+    steps: Object.fromEntries(Object.entries<any>(f.steps ?? {}).map(([s, v]) => [s, v?.status ?? null])), doneAt: f.doneAt ?? {},
+    review: f.review?.iteration ?? 0, ci: f.ci?.iteration ?? 0, first: f.first, seen: f.seen }));
+  return { v: V, at: now, today, first: A.first, junction: A.junction, pass: A.pass ?? null, streak: { cur, best }, days, years, projects: out, reports, flows };
+}
+
+/** A branch report's facts.json (me:report) as the hub tells it: its PR, its CI now, its review (passes,
+ * blocking findings P0 to P2 and how many were fixed), its lines. null when it isn't one. */
+export function recap(o: any) {
+  const f = o?.facts;
+  if (!f || o?.kind !== "report" || !f.repo) return null;
+  const passes = Array.isArray(f.review?.passes) ? f.review.passes : [];
+  const blocking = (Array.isArray(f.review?.findings) ? f.review.findings : []).filter((x: any) => /^P[0-2]$/.test(x?.prio ?? ""));
+  const last = passes.at(-1);
+  return {
+    repo: f.repo, branch: f.branch ?? null, issue: f.issue ?? null, at: Date.parse(o.generatedAt) || 0,
+    pr: f.pr ? { n: f.pr.number ?? null, title: f.pr.title ?? "", state: f.pr.state ?? null, url: f.pr.url ?? null, draft: Boolean(f.pr.isDraft) } : null,
+    ci: f.ci ? { ok: f.ci.ok ?? 0, fail: f.ci.fail ?? 0, pending: f.ci.pending ?? 0, total: f.ci.total ?? 0 } : null,
+    review: passes.length ? { passes: passes.length, found: blocking.length, fixed: blocking.filter((x: any) => x.status === "fixed").length,
+      open: last ? (last.p0 ?? 0) + (last.p1 ?? 0) + (last.p2 ?? 0) : 0 } : null,
+    lines: f.totals ? [f.totals.add ?? 0, f.totals.del ?? 0] : null,
+  };
+}
+
+/** ~/Reports/<repo>/<branch>/facts.json: read again when their mtime moved (they stay on disk: no archive,
+ * a deleted one goes). */
+export function readReports(dir: string, A: Archive) {
+  const seen = new Set<string>();
+  A.reports ??= {};
+  let repos: string[] = [];
+  try { repos = readdirSync(dir); } catch { return; }
+  for (const r of repos) {
+    let branches: string[] = [];
+    try { branches = readdirSync(join(dir, r)); } catch { continue; }
+    for (const b of branches) {
+      if (b === "plans") continue;
+      const file = join(dir, r, b, "facts.json");
+      let t: number;
+      try { t = statSync(file).mtimeMs; } catch { continue; }
+      seen.add(file);
+      if (A.reports[file]?.t === t) continue;
+      let o: any = null;
+      try { o = JSON.parse(readFileSync(file, "utf8")); } catch {}
+      A.reports[file] = { t, r: recap(o) };
+    }
+  }
+  for (const f of Object.keys(A.reports)) if (!seen.has(f)) delete A.reports[f];
 }
 
 // ---------------------------------------------------------------- the pass
 
-export type Cfg = { home: string; projects: string; history: string; store: string; shared: string; out: string; now?: () => number; resolve?: (cwd: string) => Resolved; scratch?: RegExp };
+export type Cfg = { home: string; projects: string; history: string; store: string; reports?: string; shared: string; out: string; now?: () => number; resolve?: (cwd: string) => Resolved; scratch?: RegExp };
 
 export function defaults(home: string): Cfg {
   return {
@@ -512,6 +577,7 @@ export function defaults(home: string): Cfg {
     projects: join(home, ".claude/projects"),
     history: join(home, ".claude/history.jsonl"),
     store: join(home, ".claude/plugins/store"),
+    reports: join(home, "Reports"),
     shared: join(home, ".config/herdr-app/shared.json"),
     out: join(home, ".config/herdr-app/data/kt-hub"),
   };
@@ -588,6 +654,7 @@ export function run(cfg: Cfg) {
       for (const d of Object.keys(A.days)) if (d < A.junction && (!A.first || d < A.first)) A.first = d;
     }
     archiveFlows(cfg.store, A, t0);
+    if (cfg.reports) readReports(cfg.reports, A);
     freeze(A, localDay(t0));
     A.pass = { at: clock(), ms: clock() - t0, files, read };
     save();
