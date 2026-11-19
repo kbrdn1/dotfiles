@@ -6,7 +6,8 @@
 // and a row above it growing lets the bottom go; A3 « Tours précédents » lands on the state as it is
 // then; A7 the timeline lights what older / newer bring, nothing while the view is lost; A14 a sideways
 // swipe scrolls; A16 what a render draws of the folded work goes to the reader's turn first, an opened
-// fold past the budget held closed, and a press keeps its row where it is when folds above it change.
+// fold of another turn past the budget held closed whole, and a press keeps its row where it is when
+// folds above it change (what the reader's turn draws: budget.check.mjs).
 import assert from "node:assert/strict";
 import { plugin } from "bun";
 import { readdirSync, readFileSync } from "node:fs";
@@ -202,31 +203,28 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
   assert.equal(cx.notified, 1, "a redraw to serve it first");
   c.pressTurn("kc-turn-C", {}, cx);
   assert.equal(cx.notified, 1, "pressed again: nothing changes");
-  c.budget = { steps: 10 };
-  assert.equal(c.take(6), 6);
-  assert.equal(c.take(6), 4, "what is left");
-  assert.equal(c.take(6), 0, "then nothing");
-  c.budget = null;
-  assert.equal(c.take(60), 60, "outside a render's turns: all of it");
 }
 {
-  // A fold (two phases of one call, their narration, the answer): drawn open while the budget holds it.
+  // A fold (two phases of one call, their narration, the answer): another turn's is drawn whole while
+  // the budget holds it, else held closed whole; the reader's is outside the budget.
   const tool = (id, o, tid) => ({ k: "assistant", o, uuid: id, mid: `m${id}`, at: o, model: "m", blocks: [{ t: "tool", id: tid, name: "Bash", kind: "execute", title: "ls", input: { command: "ls" } }] });
-  const res = (o, tid) => ({ k: "result", o, tool: tid, at: o, ok: true, text: "ok" });
+  const res = (o, tid, text = "ok") => ({ k: "result", o, tool: tid, at: o, ok: true, text });
   const said = (id, o, text) => ({ k: "assistant", o, uuid: id, mid: `m${id}`, at: o, model: "m", blocks: [{ t: "text", text }] });
-  const c = chat([{ k: "user", o: 0, uuid: "F", at: 0, turn: true, text: "plie" }, tool("f1", 1, "x1"), res(2, "x1"), said("f2", 3, "je regarde"), tool("f3", 4, "x2"), res(5, "x2"), said("f4", 6, "voilà")], { start: 0, end: 7 });
+  const c = chat([{ k: "user", o: 0, uuid: "F", at: 0, turn: true, text: "plie" }, tool("f1", 1, "x1"), res(2, "x1", "a\nb\nc"), said("f2", 3, "je regarde"), tool("f3", 4, "x2"), res(5, "x2"), said("f4", 6, "voilà")], { start: 0, end: 7 });
   const [f] = c.turns;
   assert.deepEqual(f.fold, { start: 0, end: 2 });
-  assert.deepEqual(c.foldCost(f), { fixed: 2 + 5 + 2, rows: 2 }, "two headers, a prose block (fixed), a step each (rows)");
-  c.budget = { steps: 100, fresh: true };
+  assert.equal(c.foldCost(f), 2 + 1 + 5 + 2 + 1, "two headers and their step each, a prose block");
+  c.open.add("s:x1");
+  assert.equal(c.foldCost(f), 11 + 1 + 3, "an opened detail counts its lines (the command's, the output's)");
+  c.budget = { steps: 100, fresh: false };
   assert.equal(c.holds(f), true);
-  assert.equal(c.budget.steps, 91, "drawn open: its headers and prose spent now, its steps as they are drawn");
+  assert.equal(c.budget.steps, 85, "another turn's fold drawn: its whole cost spent at once");
   c.budget = { steps: 10, fresh: false };
-  assert.equal(c.holds(f), false, "past the budget: held closed");
+  assert.equal(c.holds(f), false, "past the budget: held closed, whole");
   assert.equal(c.budget.steps, 10, "held: nothing spent");
-  c.budget = { steps: 3, fresh: true };
-  assert.equal(c.holds(f), true, "the reader's turn (the first served) is always drawn as opened");
-  assert.equal(c.take(2), 0, "its steps then cut to what is left");
+  c.budget = { steps: 0, fresh: true };
+  assert.equal(c.holds(f), true, "the reader's turn (the first served) is drawn as opened, whatever is left");
+  assert.equal(c.budget.steps, 0, "and spends nothing: it is outside the budget");
   c.budget = null;
   assert.equal(c.holds(f), true, "outside a render: as opened");
 }

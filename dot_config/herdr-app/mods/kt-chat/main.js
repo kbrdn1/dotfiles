@@ -130,12 +130,14 @@ const CODE_MAX = 400; // and at most, opened
 // then says how many are left, a click shows them).
 const CODE_SPANS = 600;
 const CODE_ROWS = 240;
-// A16: what one render may draw of the work it folds, in rows (a step, a detail line, a sub-agent: 1; a
-// phase's header: FOLD_HEAD; a prose block in a fold, a markdown view: PROSE_ROWS), the reader's turn
-// first (body()). Measured under herdr-app check on the busy fixture (30 calls a turn), the window at
+// A16: what one render may draw of the work other turns fold, in rows (a step, a line of an opened
+// detail, a sub-agent: 1; a phase's header: FOLD_HEAD; a prose block in a fold, a markdown view:
+// PROSE_ROWS). Measured under herdr-app check on the busy fixture (30 calls a turn), the window at
 // CAP: all folds closed ~27 ms, 3 opened ~30 ms, 15 opened interrupted 5 times in 6 (#90's tree); a
-// step budget alone left 4 in 6 (a fold's headers and prose cost ~0.9 ms, steps or not). So past the
-// budget a fold the reader opened is drawn closed (held), and a click in its turn serves it first.
+// fold's headers and prose cost ~0.9 ms, steps or not. So a fold opened in another turn than the
+// reader's is drawn whole while it fits, else held closed whole (a click in its turn serves it first);
+// the reader's turn is outside the budget, and nothing is ever cut inside a turn drawn (the cold
+// review's P1: a budget spent in drawing order starved what the reader looked at).
 const ROW_BUDGET = 190; // ~4 busy folds open
 const FOLD_HEAD = 2;
 const PROSE_ROWS = 5;
@@ -1824,46 +1826,47 @@ export default class Chat extends View {
   }
 
   /**
-   * A16: rows of steps, detail lines and sub-agents one render may still draw (ROW_BUDGET, handed out in
-   * body() from the reader's turn outwards): what is asked for, or what is left. With no render's budget
-   * (outside body()), all of it.
-   */
-  take(want) {
-    const b = this.budget;
-    if (b?.steps == null) return want;
-    const k = Math.max(0, Math.min(want, b.steps));
-    b.steps -= k;
-    return k;
-  }
-
-  /**
-   * A16: whether a fold the reader opened is drawn open in this render. Its cost (foldCost) must fit in
-   * what the budget has left; the first turn a render serves (the reader's: body()) is always drawn as
-   * opened (its steps and details still cut to the budget). Drawn open, its headers and prose are spent
-   * here, its steps and sub-agents as they are drawn (take()).
+   * A16: whether a fold the reader opened is drawn open in this render, always whole. The reader's turn
+   * (the first a render serves: body()) is outside the budget: drawn as opened, with all it shows. Another
+   * turn's is drawn when its whole cost (foldCost) fits in what the budget has left (then spent), else held
+   * closed. Nothing is cut inside a turn drawn: a step, an opened detail, « N étapes de plus » are drawn
+   * in full or not at all, with their fold.
    */
   holds(turn) {
     const b = this.budget;
-    if (b?.steps == null) return true;
-    const { fixed, rows } = this.foldCost(turn);
-    if (!b.fresh && b.steps < fixed + rows) return false;
-    b.steps -= fixed;
+    if (b?.steps == null || b.fresh) return true;
+    const cost = this.foldCost(turn);
+    if (b.steps < cost) return false;
+    b.steps -= cost;
     return true;
   }
 
-  /** A16: a fold's cost in rows: its phases' headers and prose (fixed), its shown steps and sub-agents (rows). */
+  /**
+   * A16: a fold's cost in rows: each phase's header and the steps it shows (the opened details among
+   * them, line by line, as detail() caps them), each prose block, each sub-agent's row and opened report.
+   */
   foldCost(turn) {
     const f = turn.fold;
-    let fixed = 0, rows = 0;
+    let c = 0;
     for (let n = f.start; n <= f.end; n++) {
       const it = turn.items[n];
       if (it.type === "activity") {
-        fixed += FOLD_HEAD;
-        rows += Math.min(it.steps.length, this.shownSteps.get(it.id) ?? STEPS);
-      } else if (it.type === "subagents") rows += it.runs.length;
-      else if (it.type === "block") fixed += PROSE_ROWS;
+        const shown = it.steps.slice(it.steps.length - Math.min(it.steps.length, this.shownSteps.get(it.id) ?? STEPS));
+        c += FOLD_HEAD + shown.length;
+        for (const b of shown) if (this.open.has(`s:${b.id}`)) c += this.detailRows(b);
+      } else if (it.type === "subagents") {
+        for (const b of it.runs) c += 1 + (this.open.has(`r:${b.id}`) ? Math.min(LINES, lines(b.result?.text).length) : 0);
+      } else if (it.type === "block") c += PROSE_ROWS;
     }
-    return { fixed, rows };
+    return c;
+  }
+
+  /** A16: the rows a step's opened detail draws (its text's lines, a command's, a diff's), as detail() caps them. */
+  detailRows(b) {
+    if (b.role === "thinking") return Math.min(LINES, lines(b.text).length);
+    const r = b.result ?? {}, i = b.input ?? {};
+    const diff = (r.diff ?? []).reduce((k, h) => k + h.lines.length, 0);
+    return Math.min(LINES, lines(i.command).length) + Math.min(LINES, lines(r.text).length) + Math.min(LINES * 2, diff);
   }
 
   setHover(cx, id, on) {
@@ -1899,16 +1902,12 @@ export default class Chat extends View {
     return div().text_size(12).line_height("16px").text_color(ink(t, a)).child(text);
   }
 
-  // A detail box's text: one div per line (a line wraps), the last LINES of them, mono 12/20. A16: as
-  // many as the render's budget leaves (take()); fewer, it says how many there are: a press in the
-  // turn serves it first (pressTurn), and they come.
+  // A detail box's text: one div per line (a line wraps), the last LINES of them, mono 12/20.
   mono(t, text, color) {
     const all = lines(text);
-    const want = Math.min(all.length, LINES);
-    const k = this.take(want);
-    const rows = v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px").text_color(color ?? ink(t, 0.6))
-      .children(all.slice(all.length - k).map((l) => div().min_w(0).child(l || " ")));
-    return k < want ? v_flex().min_w(0).child(this.label(t, tr("code.more", { n: all.length }), 0.45)).child(rows) : rows;
+    const shown = all.length > LINES ? all.slice(-LINES) : all;
+    return v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px").text_color(color ?? ink(t, 0.6))
+      .children(shown.map((l) => div().min_w(0).child(l || " ")));
   }
 
   // tab_tile.rs:465-469: a 22×18 tile, radius 5, its glyph white at 12 px.
@@ -1942,14 +1941,13 @@ export default class Chat extends View {
       if (r.create) out.push(this.label(t, tr("detail.created", { n: r.lines ?? 0 })));
       const rows = [];
       for (const h of r.diff) for (const l of h.lines) rows.push(l);
-      const drawn = this.take(Math.min(rows.length, LINES * 2)); // A16: what the render's budget leaves
-      if (drawn) {
-        out.push(v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px").children(rows.slice(0, drawn).map((l) => {
+      if (rows.length) {
+        out.push(v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px").children(rows.slice(0, LINES * 2).map((l) => {
           const c = l[0] === "+" ? t.ansi2 : l[0] === "-" ? ERR : null;
           return div().min_w(0).px(4).rounded(3).text_color(c ?? ink(t, 0.6)).when(Boolean(c), (el) => el.bg(alpha(c, "1a"))).child(l || " ");
         })));
       }
-      if (r.diff.some((h) => h.cut) || rows.length > drawn) out.push(this.label(t, tr("detail.diffCut")));
+      if (r.diff.some((h) => h.cut) || rows.length > LINES * 2) out.push(this.label(t, tr("detail.diffCut")));
     } else if (b.kind === "read" && r?.file) {
       out.push(this.label(t, r.file.image ? tr("detail.image") : tr("detail.lines", { a: r.file.start ?? 1, b: (r.file.start ?? 1) + Math.max(0, (r.file.lines ?? 1) - 1), n: r.file.total ?? r.file.lines ?? 0 })));
     } else {
@@ -2009,11 +2007,8 @@ export default class Chat extends View {
   activity(t, item, live) {
     const c = item.tally ?? tally(item.steps);
     const n = Math.min(item.steps.length, this.shownSteps.get(item.id) ?? STEPS);
-    // A16: the last n steps asked for, as many as the render's budget leaves; the rest wait under
-    // « N étapes de plus » (a press in the turn serves it first: pressTurn).
-    const drawn = this.take(n);
-    const hidden = item.steps.length - drawn;
-    const steps = item.steps.slice(item.steps.length - drawn);
+    const hidden = item.steps.length - n;
+    const steps = hidden ? item.steps.slice(-n) : item.steps;
     const more = (id, icon, text, to) => h_flex().id(id).py(2).gap(6).items_center().cursor_pointer()
       .text_size(12).text_color(ink(t, 0.45)).hover((s) => s.text_color(ink(t, 0.8)))
       .on_click((_e, cx) => { this.shownSteps.set(item.id, to); cx.notify(); })
@@ -2047,7 +2042,6 @@ export default class Chat extends View {
   // transcript/tasks.rs:358-549: a sub-agent's row, py 4 px 6, radius 6, a 0.08 ground when hovered or
   // open: its mark in its color, its name at ink 0.75, model and state at 12 ink 0.4, a chevron.
   subagents(t, item) {
-    this.take(item.runs.length); // A16: their rows count, always drawn (an opened report's lines: mono())
     return v_flex().min_w(0).children(item.runs.map((b) => {
       const a = b.result?.agent ?? {};
       const c = agentColor(t, a.color);
