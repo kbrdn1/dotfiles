@@ -385,7 +385,7 @@ export default class Workflow extends View {
   dot(t, st) {
     if (!st) return null;
     const bad = st.miss.length > 0;
-    return div().size(8).flex_none().rounded_full().bg(bad ? t.ansi1 : st.copy ? t.ansi3 : t.done);
+    return div().size(8).flex_none().rounded_full().bg(bad ? t.ansi1 : st.copy ? t.blocked : t.done);
   }
 
   tip(st, fallback) {
@@ -404,7 +404,8 @@ export default class Workflow extends View {
     const S = skeleton(t, this.m);
     const bar = (id, w) => S.pulse(S.line(w, { h: 7, lh: 15 }).id(id));
     const chezText = !d ? bar("ktw-f-chez-sk", 110) : chez.error ? tr("chezError", { error: chez.error }) : chez.n ? tr("drift", { n: chez.n }) : tr("upToDate");
-    const chezColor = !d ? t.dim : chez.error ? t.ansi1 : chez.n ? t.ansi3 : t.done;
+    // A warning is the warning state's color (blocked), never the workflow's ansi3 (#81: one hue, one meaning).
+    const chezColor = !d ? t.dim : chez.error ? t.ansi1 : chez.n ? t.blocked : t.done;
     // At least 150 px each: on a narrow page, the facts go to the next line rather than to nothing.
     const fact = (id, label, value, color, tip) => v_flex().id(id).flex_1().min_w(150).gap(2).px(10).py(6)
       .when(Boolean(tip), (el) => el.tooltip(tip))
@@ -447,11 +448,11 @@ export default class Workflow extends View {
   // An intention that couldn't go to the live session: why, Réessayer, the session, dismiss.
   noticeRow(t) {
     const n = this.notice;
-    const btn = (id, label, fn) => h_flex().id(id).flex_none().h(26).px(10).items_center().rounded_full().border(1).border_color(alpha(t.ansi3, "66"))
-      .text_size(12).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(alpha(t.ansi3, "24")))
+    const btn = (id, label, fn) => h_flex().id(id).flex_none().h(26).px(10).items_center().rounded_full().border(1).border_color(alpha(t.blocked, "66"))
+      .text_size(12).text_color(t.foreground).cursor_pointer().hover((s) => s.bg(alpha(t.blocked, "24")))
       .on_click((_e, cx) => { fn(cx); cx.notify(); }).child(label);
-    return enter(this.m, h_flex().mx(4).px(10).py(6).gap(8).items_center().rounded(12).border(1).border_color(alpha(t.ansi3, "66")).bg(alpha(t.ansi3, "14")), "ktw-notice", { dy: 0 })
-      .child(svg(I("circle-alert")).size(14).flex_none().text_color(t.ansi3))
+    return enter(this.m, h_flex().mx(4).px(10).py(6).gap(8).items_center().rounded(12).border(1).border_color(alpha(t.blocked, "66")).bg(alpha(t.blocked, "14")), "ktw-notice", { dy: 0 })
+      .child(svg(I("circle-alert")).size(14).flex_none().text_color(t.blocked))
       .child(v_flex().flex_1().min_w(0).gap(1)
         .child(div().text_size(12.5).text_color(t.foreground).child(n.why))
         .child(div().truncate().font_family(MONO).text_size(11).text_color(t.muted).child(intention(n.intent))))
@@ -537,7 +538,7 @@ export default class Workflow extends View {
       const intent = `le workflow ${cmd}`; // i18n: agent
       this.item(kids, { id: `wf:${id}`, select: r.select, path: st.path, cmd, intent });
       const cale = !r.command ? null : st.noCommand ? [t.ansi1, r.cale ? tr("caleMissing") : tr("commandMissing")]
-        : st.copy ? [t.ansi3, tr("copyNotCale")] : [t.done, r.cale ? tr("cale") : tr("command")];
+        : st.copy ? [t.blocked, tr("copyNotCale")] : [t.done, r.cale ? tr("cale") : tr("command")];
       return this.ring(v_flex().id(`ktw-wf-${id}`).flex_1().min_w(0).p(12).gap(6).rounded(12).border(1), t, on)
         .when(st.miss.length > 0 && !on, (el) => el.border_color(alpha(t.ansi1, "80")))
         .cursor_pointer().when(!on, (el) => el.hover((s) => s.bg(t.hover)))
@@ -597,7 +598,7 @@ export default class Workflow extends View {
       const st = this.state(x.id);
       const on = this.keyed && this.cur === x.id;
       this.item(kids, { id: x.id, select: x.name, path: st?.path, cmd: `/${x.name}`, intent: `le loop ${x.name}` }); // i18n: agent
-      const color = { shell: t.ansi2, agents: t.ansi5 }[x.check] ?? t.dim;
+      const color = { shell: t.ansi2 }[x.check] ?? t.dim; // "agents" neutral: ansi5 is the automations'
       kids.push(row([
         h_flex().gap(6).items_center().min_w(0)
           .children([this.dot(t, st)].filter(Boolean))
@@ -665,7 +666,7 @@ export default class Workflow extends View {
       const mode = String(p.defaultMode ?? "default");
       // i18n: agent (the intention)
       kids.push(box("perms", "Permissions", "les permissions (settings.json, permissions)",
-        kv("defaultMode", mode, mode === "bypassPermissions" ? t.ansi3 : null),
+        kv("defaultMode", mode, mode === "bypassPermissions" ? t.blocked : null),
         kv(tr("rules"), `${(p.allow ?? []).length} allow · ${(p.ask ?? []).length} ask · ${(p.deny ?? []).length} deny`), // i18n: tech
         this.eyebrow(t, "deny", t.dim), // i18n: tech
         (p.deny ?? []).length ? h_flex().flex_wrap().gap(4).children((p.deny ?? []).map((x) => chip(String(x), t.ansi1)))
@@ -689,7 +690,7 @@ export default class Workflow extends View {
     // i18n: agent (the intention; « Templates hc » is hc's name)
     kids.push(box("templates", `Templates hc${tpl?.length ? ` · ${tpl.length}` : ""}`, "les templates hc (~/.config/herdr-core/templates)",
       tpl == null ? div().text_size(12).text_color(t.ansi1).child(tr("noTemplates"))
-        : tpl.length ? h_flex().flex_wrap().gap(4).children(tpl.map((x) => chip(x, t.ansi5)))
+        : tpl.length ? h_flex().flex_wrap().gap(4).children(tpl.map((x) => chip(x, null))) // hc templates: no category, neutral
           : div().text_size(12).text_color(t.dim).child(tr("emptyTemplates"))));
   }
 

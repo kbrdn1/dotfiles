@@ -734,7 +734,7 @@ export default class Plugins extends View {
     const off = actions.map(([k]) => [k, this.refusal(k, x)]).filter(([, r]) => r && !already.includes(r));
     const d = this.doc?.key === x.key ? this.doc : null;
     // The band: the marketplace's tint (its pill's), the plugin's state on the mark's dot.
-    const tint = t[marketTint(x.market, this.markets)] ?? t.ansi5;
+    const tint = t[marketTint(x.market, this.markets)] ?? t.muted;
     const sub = [x.market === SYNCED ? "claude.ai" : x.market, scopeLabel(x), x.version, x.synced ? tr("state.loaded") : x.enabled ? tr("state.on") : tr("state.off")].join(" · ");
     // Fades in each time another plugin opens (enter(), the plugin's key in the id).
     return enter(this.m, card(t), `ktp-detail-${x.key}`, { dy: 0 }).w(w).flex_none().h_full().overflow_hidden()

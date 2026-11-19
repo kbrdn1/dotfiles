@@ -118,13 +118,12 @@ export function codeBlock(t, id, lang, text) {
 
 // ---------- Crosstalk's head (data/orchestrator/DESIGN-REFERENCE.md) ----------
 
-// Marketplace tints (FILTERS.md: ansi4, ansi5, ansi6… in order), by name order among the known ones,
-// so a marketplace keeps its tint on the page and in Parcourir; claude.ai's own: accent.
-const MARKET_TINTS = ["ansi4", "ansi5", "ansi6", "ansi2", "ansi3", "accent"];
-export function marketTint(name, markets) {
-  if (name === "synced") return "accent";
-  const names = Object.keys(markets ?? {}).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  return MARKET_TINTS[Math.max(0, names.indexOf(name)) % MARKET_TINTS.length];
+// A marketplace's tint: none. One hue, one meaning (categories.js, #81): the five hues are the agent's
+// categories (workflow, skill, MCP, loop, automation), and a marketplace is none of them, so its pill,
+// its dot and its detail band stay neutral (the theme's muted / dim). Kept as a function: the call
+// sites stay one place to change.
+export function marketTint(_name, _markets) {
+  return null;
 }
 
 /** A 60 px head over a dither of `color`, inside its card's 1 px border (`radius`: the card's minus
