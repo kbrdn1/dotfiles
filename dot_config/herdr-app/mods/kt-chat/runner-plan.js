@@ -1,17 +1,52 @@
 // What the runner above the Chat composer draws, as data (piste A, #86 follow-up). Pure: no Herdr, no GPUI,
-// so runner.check.mjs runs it in Bun. runner.js turns a plan into elements.
+// so runner.check.mjs runs it in Bun, with its chance seeded. runner.js turns a plan into elements.
 //
 // Clawd for the `claude` agent when his poses were extracted on this machine (brand/companions/clawd/
-// extract.mjs), else the program's companion (Ember, Prompt: companion.js). Everything moves natively
-// (two poses swapped by opacity square waves) except the jump of « fini », four poses once, one render each.
+// extract.mjs), else the program's companion (Ember, Prompt: companion.js). What he does follows what the
+// agent does (a mood: types, reads, thinks, waits, rests, fails), and within a mood a variant drawn by chance
+// every EPOCH: a pair of poses swapped natively, sometimes a glance (another pose a moment, natively too).
+// Renders: one per state change, one per step of the jump, one per EPOCH while there is more than one
+// variant to show (the only timer); everything between moves natively.
 export const STEP = 85; // the companions' cadence
+export const EPOCH = 80 * STEP; // 6.8 s: how long a variant holds before chance may change it
 export const CLAWD_POSES = ["idle", "type-0", "type-1", "read-0", "read-1", "look-0", "look-1", "done-0", "done-1", "done-2", "done-3", "error"];
 const JUMP = ["done-0", "done-1", "done-2", "done-3"];
 const SHOWN = new Set(["working", "blocked", "done", "error"]);
 const COMPANIONS = new Set(["claude", "codex"]); // the programs brand/companions draws
-// ms each pose of a swap stays: typing at twice the companions' step; the magnifier holds about as long as
-// in Anthropic's animation (1.6 s); the glance as the terminal Clawd's look (5 x 60 ms), on the step
-const TYPE_MS = 2 * STEP, READ_MS = 19 * STEP, LOOK_MS = 4 * STEP;
+
+/**
+ * Each mood's variants. poses: one (still) or two swapped every ms. glance: `pose` shown `for` ms in the
+ * middle of every `every` ms over the rest. Typing at twice the companions' step; the slow magnifier holds
+ * about as long as in Anthropic's animation (1.6 s); the glance as the terminal Clawd's look (5 x 60 ms).
+ */
+export const VARIANTS = {
+  type: [
+    { poses: ["type-0", "type-1"], ms: 2 * STEP },
+    { poses: ["type-0", "type-1"], ms: 2 * STEP, glance: { pose: "look-0", every: 34 * STEP, for: 7 * STEP } },
+    { poses: ["type-0", "type-1"], ms: 3 * STEP, glance: { pose: "look-1", every: 50 * STEP, for: 8 * STEP } },
+  ],
+  read: [
+    { poses: ["read-0", "read-1"], ms: 19 * STEP },
+    { poses: ["read-0", "read-1"], ms: 8 * STEP },
+    { poses: ["read-1"] },
+  ],
+  think: [
+    { poses: ["look-0", "look-1"], ms: 6 * STEP },
+    { poses: ["idle"], glance: { pose: "look-0", every: 24 * STEP, for: 8 * STEP } },
+    { poses: ["idle", "look-1"], ms: 10 * STEP },
+  ],
+  blocked: [
+    { poses: ["look-0", "look-1"], ms: 4 * STEP },
+    { poses: ["idle"], glance: { pose: "look-1", every: 28 * STEP, for: 8 * STEP } },
+    { poses: ["look-0", "idle"], ms: 6 * STEP },
+  ],
+  rest: [
+    { poses: ["idle"] },
+    { poses: ["idle"], glance: { pose: "look-0", every: 60 * STEP, for: 6 * STEP } },
+    { poses: ["idle"], glance: { pose: "look-1", every: 50 * STEP, for: 6 * STEP } },
+  ],
+  error: [{ poses: ["error"] }],
+};
 
 export const keyOf = (program) => (typeof program === "string" ? program : program?.key ?? null);
 
@@ -37,6 +72,57 @@ export function runnerProps(agent, bridge) {
   return { props, key: JSON.stringify([props.terminal, props.status, keyOf(props.program) ?? null, a === undefined ? "-" : a && [a.tool, a.what], props.since ?? null]) };
 }
 
+/** The action that counts, as companion.js's pick() reads it: one from before this state began is over
+ *  (it thinks: null); undefined stays undefined (no bridge). */
+export function freshAction(action, since) {
+  if (action === undefined) return undefined;
+  return action && (!action.at || since == null || action.at >= since) ? action : null;
+}
+
+/** What Clawd is doing, from Herdr's status and the action's accessory (companion.js accessoryFor):
+ *  reading or searching, the magnifier; thinking with no tool or a sub-agent working, the glances; any
+ *  other tool (an edit, a command, a message sent), typing. */
+export function moodOf(status, acc) {
+  if (status === "error") return "error";
+  if (status === "blocked") return "blocked";
+  if (status === "done") return "rest";
+  if (acc === "read" || acc === "web") return "read";
+  if (acc === "think" || String(acc ?? "").startsWith("agent")) return "think";
+  return "type";
+}
+
+const MOODS = Object.keys(VARIANTS);
+
+/** Three integers mixed into 32 bits (integer ops only: a render's budget is tight): the runner's chance,
+ *  seeded, so the check replays it. */
+export function hash(seed, salt, n) {
+  let h = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(salt + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(n + 0x27d4eb2f, 0x165667b1);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; h = Math.imul(h, 0x297a2d39); h ^= h >>> 15;
+  return h >>> 0;
+}
+
+/** The variant of a mood for an epoch: drawn by chance, never the one just before inside a run of RUN
+ *  epochs (each step moves by 1 to n-1; 64 epochs, 7 min: at most 63 integer hashes a render); a run
+ *  starts from its own draw, so only its first epoch may repeat the one before. */
+export const RUN = 64;
+export function variantAt(mood, seed, epoch) {
+  const n = VARIANTS[mood]?.length ?? 1;
+  if (n < 2) return 0;
+  const salt = MOODS.indexOf(mood), start = Math.floor(epoch / RUN) * RUN;
+  let v = hash(seed, salt, start) % n;
+  for (let e = start + 1; e <= epoch; e++) v = (v + 1 + (hash(seed, salt, e) % (n - 1))) % n;
+  return v;
+}
+
+/** A glance's two native opacity loops, created together (so in phase): `show` is up `ms` ms in the
+ *  middle of each `every`, `hide` (on the rest) is 1 - show, so one is always up. Steep enough that the
+ *  crossfade takes ~8 ms. */
+export function glanceLoops(every, ms) {
+  const span = Math.max(2, Math.ceil(every / 16));
+  const b = (span * ms) / every, a = span - b;
+  return { show: { from: -a, to: b, period: every, easing: "linear" }, hide: { from: 1 + a, to: 1 - b, period: every, easing: "linear" } };
+}
+
 /** When the jump of « fini » began: a done seen arriving from work. A thread opened already done, or
  *  another thread, has none: Clawd just stands. */
 export function doneAt(prev, next, now) {
@@ -46,20 +132,29 @@ export function doneAt(prev, next, now) {
 }
 
 /**
- * o: { status, program, acc (companion.js accessoryFor), reduced, clawd (his manifest or null), doneAt, now }.
- * -> null (not there) | { who: "companion" } | { who: "clawd", poses: [one] or [a, b], ms?, wake? }
- *    two poses swap natively every ms; wake: when to render again (the next step of the jump).
+ * o: { status, program, acc (companion.js accessoryFor of the fresh action), reduced, clawd (his manifest
+ * or null), doneAt, now, seed }.
+ * -> null (not there) | { who: "companion" }
+ *  | { who: "clawd", mood, variant, poses: [one] or [a, b], ms?, glance?, wake? }
+ *    two poses swap natively every ms; glance: { pose, every, for }; wake: when to render again (the
+ *    jump's next step, or the next epoch's draw). Reduced motion: the mood's first pose, still, no wake.
  */
 export function plan(o) {
   if (!runnerShown(o.status, o.program)) return null;
   if (keyOf(o.program) !== "claude" || !o.clawd) return { who: "companion" };
-  const still = (pose) => ({ who: "clawd", poses: [pose] });
-  const swap = (a, b, ms) => (o.reduced ? still(a) : { who: "clawd", poses: [a, b], ms });
-  if (o.status === "error") return still("error");
-  if (o.status === "blocked") return swap("look-0", "look-1", LOOK_MS);
-  if (o.status === "working") return o.acc === "read" ? swap("read-0", "read-1", READ_MS) : swap("type-0", "type-1", TYPE_MS);
-  // done
-  const i = o.doneAt == null || o.reduced ? JUMP.length : Math.floor((o.now - o.doneAt) / STEP);
-  if (i < 0 || i >= JUMP.length) return still("idle");
-  return { who: "clawd", poses: [JUMP[i]], wake: o.doneAt + (i + 1) * STEP };
+  const mood = moodOf(o.status, o.acc);
+  const list = VARIANTS[mood];
+  if (o.reduced) return { who: "clawd", mood, variant: 0, poses: [list[0].poses[0]] };
+  if (mood === "rest" && o.doneAt != null) {
+    const i = Math.floor((o.now - o.doneAt) / STEP);
+    if (i >= 0 && i < JUMP.length) return { who: "clawd", mood, variant: -1, poses: [JUMP[i]], wake: o.doneAt + (i + 1) * STEP };
+  }
+  const epoch = Math.floor(o.now / EPOCH);
+  const variant = variantAt(mood, o.seed ?? 0, epoch);
+  const { poses, ms, glance } = list[variant];
+  const p = { who: "clawd", mood, variant, poses };
+  if (ms) p.ms = ms;
+  if (glance) p.glance = glance;
+  if (list.length > 1) p.wake = (epoch + 1) * EPOCH;
+  return p;
 }

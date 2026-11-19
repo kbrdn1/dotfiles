@@ -1,5 +1,6 @@
-// bun runner.check.mjs : runner-plan.js, what the runner draws in each state (pure, no Herdr).
-import { runnerShown, plan, doneAt, runnerProps, keepBottom, STEP } from "./runner-plan.js";
+// bun runner.check.mjs : runner-plan.js, what the runner draws in each state (pure, no Herdr), its chance
+// replayed from fixed seeds.
+import { runnerShown, plan, doneAt, runnerProps, keepBottom, freshAction, moodOf, variantAt, glanceLoops, hash, VARIANTS, CLAWD_POSES, STEP, EPOCH, RUN } from "./runner-plan.js";
 
 let failed = 0;
 const eq = (got, want, what) => {
@@ -11,22 +12,59 @@ const clawd = { complete: true, poses: {} };
 eq(["working", "blocked", "done", "error", "idle", undefined].map((s) => runnerShown(s, "claude")), [true, true, true, true, false, false], "shown: by status");
 eq([runnerShown("working", "codex"), runnerShown("working", { key: "claude" }), runnerShown("working", "pi"), runnerShown("working", null)], [true, true, false, false], "shown: by program");
 
-const P = (o) => plan({ program: "claude", clawd, now: 10_000, ...o });
+// what he does: the mood, from the status and the action's accessory
+eq(["read", "web", "edit", "bash", "git", "tests", null, "think", "agent-claude", "agent-codex"].map((a) => moodOf("working", a)),
+  ["read", "read", "type", "type", "type", "type", "type", "think", "think", "think"], "mood: by accessory (a message sent types)");
+eq(["blocked", "done", "error"].map((s) => moodOf(s, "read")), ["blocked", "rest", "error"], "mood: the status first");
+eq([freshAction(undefined, 5), freshAction(null, 5), freshAction({ tool: "Read", at: 4 }, 5), freshAction({ tool: "Read", at: 6 }, 5)?.tool, freshAction({ tool: "Read" }, 5)?.tool],
+  [undefined, null, null, "Read", "Read"], "fresh: an action from before this state is over");
+// every variant names extracted poses only
+eq(Object.values(VARIANTS).flat().flatMap((v) => [...v.poses, v.glance?.pose].filter(Boolean)).filter((p) => !CLAWD_POSES.includes(p)), [], "variants: known poses");
+
+// chance: seeded, replayed, every variant comes, never the same twice in a row inside a run
+eq(hash(1, 0, 3) === hash(1, 0, 3) && hash(1, 0, 3) !== hash(2, 0, 3) && hash(1, 0, 3) !== hash(1, 1, 3), true, "hash: deterministic, the seed and the salt count");
+for (const mood of ["type", "read", "think", "blocked", "rest"]) {
+  const seq = Array.from({ length: 160 }, (_, e) => variantAt(mood, 42, e));
+  eq(new Set(seq).size, VARIANTS[mood].length, `${mood}: every variant comes`);
+  eq(seq.filter((v, e) => e % RUN !== 0 && v === seq[e - 1]).length, 0, `${mood}: no repeat inside a run`);
+  eq(seq.filter((v, e) => e > 0 && v === seq[e - 1]).length <= 2, true, `${mood}: a repeat only where a run starts (${seq.filter((v, e) => e > 0 && v === seq[e - 1]).length})`);
+}
+eq(variantAt("error", 42, 7), 0, "error: one variant");
+eq(Array.from({ length: 16 }, (_, e) => variantAt("type", 7, e)).join("") !== Array.from({ length: 16 }, (_, e) => variantAt("type", 8, e)).join(""), true, "two seeds, two runs");
+
+// the plan
+const P = (o) => plan({ program: "claude", clawd, now: 10 * EPOCH + 100, seed: 42, ...o });
 eq(P({ status: "idle" }), null, "idle: not there");
 eq(P({ status: "working", program: "codex" }), { who: "companion" }, "codex: its companion");
 eq(P({ status: "working", clawd: null }), { who: "companion" }, "claude without his poses: Ember");
-eq(P({ status: "working", acc: "edit" }), { who: "clawd", poses: ["type-0", "type-1"], ms: 2 * STEP }, "working: types");
-eq(P({ status: "working", acc: null }), { who: "clawd", poses: ["type-0", "type-1"], ms: 2 * STEP }, "working, thinking: types");
-eq(P({ status: "working", acc: "read" }), { who: "clawd", poses: ["read-0", "read-1"], ms: 19 * STEP }, "reading: the magnifier");
-eq(P({ status: "blocked" }), { who: "clawd", poses: ["look-0", "look-1"], ms: 4 * STEP }, "blocked: glances");
-eq(P({ status: "error" }), { who: "clawd", poses: ["error"] }, "error: still");
-eq(P({ status: "working", reduced: true }), { who: "clawd", poses: ["type-0"] }, "reduced motion: one pose");
-// the jump: four steps, one render each, then standing
-eq([0, 84, 85, 170, 255, 339].map((dt) => P({ status: "done", doneAt: 10_000 - dt }).poses[0]), ["done-0", "done-0", "done-1", "done-2", "done-3", "done-3"], "done: the jump's steps");
-eq(P({ status: "done", doneAt: 10_000 - 100 }).wake, 10_000 + 70, "done: the next step's time");
-eq(P({ status: "done", doneAt: 10_000 - 340 }), { who: "clawd", poses: ["idle"] }, "done: then standing, no wake");
-eq(P({ status: "done", doneAt: null }), { who: "clawd", poses: ["idle"] }, "opened done: standing");
-eq(P({ status: "done", doneAt: 10_000, reduced: true }), { who: "clawd", poses: ["idle"] }, "reduced motion: no jump");
+const w = P({ status: "working", acc: "edit" });
+eq([w.mood, VARIANTS.type[w.variant].poses, w.wake], ["type", w.poses, 11 * EPOCH], "working: types, a variant, then the next epoch");
+eq(P({ status: "working", acc: "read" }).mood, "read", "reading: the magnifier");
+eq(P({ status: "working", acc: "think" }).mood, "think", "thinking: glances");
+eq(P({ status: "blocked" }).mood, "blocked", "blocked: waits");
+eq(P({ status: "error" }), { who: "clawd", mood: "error", variant: 0, poses: ["error"] }, "error: still, no wake");
+eq(P({ status: "working", acc: "edit", now: 10 * EPOCH + 100 }).variant, P({ status: "working", acc: "edit", now: 11 * EPOCH - 1 }).variant, "inside an epoch: the same variant");
+eq(P({ status: "working", acc: "edit", now: 10 * EPOCH }).variant !== P({ status: "working", acc: "edit", now: 11 * EPOCH }).variant, true, "the next epoch: another one");
+for (const s of [["working", "edit"], ["working", "read"], ["working", "think"], ["blocked", null], ["done", null], ["error", null]])
+  eq(P({ status: s[0], acc: s[1], reduced: true }), { who: "clawd", mood: moodOf(s[0], s[1]), variant: 0, poses: [VARIANTS[moodOf(s[0], s[1])][0].poses[0]] }, `reduced motion: one pose, still (${s.join(" ")})`);
+// the jump: four steps, one render each, then resting
+const T = 10 * EPOCH + 1000;
+eq([0, 84, 85, 170, 255, 339].map((dt) => P({ status: "done", doneAt: T - dt, now: T }).poses[0]), ["done-0", "done-0", "done-1", "done-2", "done-3", "done-3"], "done: the jump's steps");
+eq(P({ status: "done", doneAt: T - 100, now: T }).wake, T + 70, "done: the next step's time");
+const rest = P({ status: "done", doneAt: T - 340, now: T });
+eq([rest.mood, rest.variant >= 0, rest.wake], ["rest", true, 11 * EPOCH], "done: then resting, with its draws");
+eq(P({ status: "done", doneAt: null }).mood, "rest", "opened done: resting");
+eq(P({ status: "done", doneAt: T, now: T, reduced: true }).poses, ["idle"], "reduced motion: no jump");
+
+// a glance's windows: up `for` ms in the middle of each period, the rest down meanwhile
+const at = (l, t) => { const h = l.period / 2, u = t % l.period, x = u < h ? u / h : 2 - u / h; return Math.min(1, Math.max(0, l.from + (l.to - l.from) * x)); };
+for (const [every, ms] of [[40 * STEP, 8 * STEP], [60 * STEP, 6 * STEP], [24 * STEP, 8 * STEP]]) {
+  const g = glanceLoops(every, ms);
+  let up = 0, both = 0, none = 0;
+  for (let t = 0; t < every; t++) { const s = at(g.show, t), r = at(g.hide, t); if (s > 0.5) up++; if (s > 0.5 && r > 0.5) both++; if (s < 0.5 && r < 0.5) none++; }
+  eq(Math.abs(up - ms) <= 16 && both === 0 && none <= 2, true, `glance ${every}/${ms}: up ${up} ms, both ${both}, none ${none}`);
+  eq(at(g.show, every / 2) === 1 && at(g.show, 0) === 0 && at(g.hide, 0) === 1, true, `glance ${every}/${ms}: in the middle`);
+}
 
 // when the jump began
 const t = (prev, next) => doneAt(prev, next, 777);

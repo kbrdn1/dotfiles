@@ -2097,7 +2097,9 @@ export default class Chat extends View {
         // runner: its band in the flow, first, on the card's left edge: the transcript ends above it and
         // nothing is drawn over it or under it (Kylian, 2026-11-19: the live turn went over Clawd when it
         // bit into the transcript). this.band: render() worked it out, to keep a followed view at the bottom.
-        .when(this.band, (el) => el.child(runnerBand(this.runner)))
+        // It comes in as the ledges do (#92 rise(): motion.js enter(), fades in and rises in a box that
+        // clips; reduced motion: as it is); it goes at once, its place with it.
+        .when(this.band, (el) => el.child(this.rise(runnerBand(this.runner), "kc-runner-band")))
         .when(Boolean(blocked), (el) => el.child(blocked))
         .child(v_flex().w_full()
           .when(Boolean(tasksEl), (el) => el.child(tasksEl))

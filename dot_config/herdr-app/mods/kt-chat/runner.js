@@ -1,19 +1,22 @@
-// The runner above the Chat composer (piste A, #86 follow-up): Clawd types, reads with his magnifier,
-// glances around when blocked, jumps once when done; the program's companion (companion.js) without him.
+// The runner above the Chat composer (piste A, #86 follow-up): Clawd does what the agent does (types,
+// reads with his magnifier, glances around while it thinks or waits, jumps once when done, then rests and
+// looks around now and then), a variant drawn by chance every few seconds (runner-plan.js); the program's
+// companion (companion.js) without him.
 // A retained nested view: kt-chat makes it once (`cx.new(Runner)` in init), mounts it when runnerShown(),
 // and hands it runnerProps() ({ terminal, status, program, action, since }) with set_props from a task.
-// Its own renders (a state change, the four steps of the jump) never render kt-chat (measured: 201 renders
-// of a nested view for 8 of its parent). companion.js is a copy of brand/companions/companion.js (kt-mods'
-// SHARED; src/build.py writes its data and refreshes the copies).
+// Its own renders (a state change, the four steps of the jump, one per epoch) never render kt-chat
+// (measured: 201 renders of a nested view for 8 of its parent). companion.js is a copy of
+// brand/companions/companion.js (kt-mods' SHARED; src/build.py writes its data and refreshes the copies).
 //
 // The strip: 96 x 56 css px. kt-chat owns its place: a 96 x 56 box first in the composer's flow, between
 // the transcript and the rest of the composer, so nothing overlaps it (keepBottom keeps a followed view at
-// the bottom when it comes and goes). The runner fills that box and has no handler.
+// the bottom when it comes and goes); it comes in with kt-chat's rise() (motion.js enter(): fades in and
+// rises, in a box that clips). The runner fills that box and has no handler.
 import { View, div, image } from "gpui-kit";
 import { appHome, shared, checking } from "herdr";
 import * as fs from "fs/promises";
 import { companion, accessoryFor } from "./companion.js";
-import { plan, runnerShown, runnerProps, keepBottom, doneAt, keyOf, CLAWD_POSES } from "./runner-plan.js";
+import { plan, runnerShown, runnerProps, keepBottom, freshAction, glanceLoops, doneAt, keyOf, CLAWD_POSES } from "./runner-plan.js";
 
 export { runnerShown, runnerProps, keepBottom };
 
@@ -27,17 +30,18 @@ export function runnerBand(runner) {
   return div().flex_none().w(W).h(H).child(runner);
 }
 
-/** The strip for one state: a function of its inputs, so a test mod can draw it without the view. */
-export function draw({ p, clawd, memo, now, reduced, cx }) {
+/** The strip for one state: a function of its inputs, so a test mod can draw it without the view.
+ *  reduced: kt.reducedMotion, as motion.js's frame() reads it (one pose, still). seed: the view's chance. */
+export function draw({ p, clawd, memo, now, reduced, seed, cx }) {
   const key = keyOf(p.program);
-  const pl = plan({ ...p, acc: accessoryFor(p.action, key), reduced, clawd, now });
+  const pl = plan({ ...p, acc: accessoryFor(freshAction(p.action, p.since), key), reduced, clawd, now, seed });
   const strip = div().id("kc-runner").relative().w(W).h(H);
   if (!pl) return strip;
   if (pl.who === "companion") {
     return strip.child(div().absolute().left(LEFT).top(H - GROUND - 16)
       .child(companion({ program: p.program, state: p.status, action: p.action, since: p.since, size: 24, id: `kc-runner-${p.terminal}`, memo, cx })));
   }
-  // one timer per step of the jump, even if kt-chat hands new props mid-jump (companion.js's guard)
+  // one timer per wake (the jump's next step, the next epoch), even if kt-chat hands new props meanwhile
   if (pl.wake != null && cx && !checking() && memo.runnerWake !== pl.wake) {
     memo.runnerWake = pl.wake;
     cx.timer.after(Math.max(16, pl.wake - now), (cx) => cx.notify());
@@ -46,19 +50,29 @@ export function draw({ p, clawd, memo, now, reduced, cx }) {
     const m = clawd.poses[name];
     return image(`${DIR}/${name}@2x.png`).absolute().left(LEFT - m.anchor[0]).top(H - GROUND - m.anchor[1]).w(m.size[0]).h(m.size[1]);
   };
-  if (pl.poses.length === 1) return strip.child(pose(pl.poses[0]));
-  // two poses stacked, each shown half the time by an opacity square wave in opposite phases
-  const wave = (up) => ({ from: up ? -K : K + 1, to: up ? K + 1 : -K, period: 2 * pl.ms, easing: "linear" });
-  const [a, b] = pl.poses;
-  return strip
-    .child(div().id(`kc-runner-${a}`).absolute().left(0).top(0).size_full().loop("opacity", wave(false)).child(pose(a)))
-    .child(div().id(`kc-runner-${b}`).absolute().left(0).top(0).size_full().loop("opacity", wave(true)).child(pose(b)));
+  const layer = (id) => div().id(id).absolute().left(0).top(0).size_full();
+  // ids carry the mood and the variant: a new draw starts its loops afresh, in phase with each other
+  const tag = `kc-runner-${pl.mood}-${pl.variant}`;
+  let base = layer(tag);
+  if (pl.poses.length === 1) base = base.child(pose(pl.poses[0]));
+  else {
+    // two poses stacked, each shown half the time by an opacity square wave in opposite phases
+    const wave = (up) => ({ from: up ? -K : K + 1, to: up ? K + 1 : -K, period: 2 * pl.ms, easing: "linear" });
+    const [a, b] = pl.poses;
+    base = base.child(layer(`${tag}-a`).loop("opacity", wave(false)).child(pose(a)))
+      .child(layer(`${tag}-b`).loop("opacity", wave(true)).child(pose(b)));
+  }
+  if (!pl.glance) return strip.child(base);
+  // a glance: its pose up a moment in the middle of each period, the rest down meanwhile (two windows)
+  const g = glanceLoops(pl.glance.every, pl.glance.for);
+  return strip.child(base.loop("opacity", g.hide)).child(layer(`${tag}-glance`).loop("opacity", g.show).child(pose(pl.glance.pose)));
 }
 
 export class Runner extends View {
   init(props, cx) {
     this.p = { ...(props ?? {}), doneAt: null };
-    this.memo = {}; // companion.js's, for the fallback
+    this.memo = {}; // companion.js's, for the fallback; runnerWake, the pending wake
+    this.seed = (Math.random() * 2 ** 31) >>> 0; // this copy's chance (a check injects its own)
     this.clawd = null;
     if (checking()) return;
     cx.spawn(async (cx) => {
@@ -74,6 +88,6 @@ export class Runner extends View {
   }
 
   render(cx) {
-    return draw({ p: this.p, clawd: this.clawd, memo: this.memo, now: Date.now(), reduced: Boolean(shared("kt.reducedMotion")), cx });
+    return draw({ p: this.p, clawd: this.clawd, memo: this.memo, now: Date.now(), reduced: Boolean(shared("kt.reducedMotion")), seed: this.seed, cx });
   }
 }
