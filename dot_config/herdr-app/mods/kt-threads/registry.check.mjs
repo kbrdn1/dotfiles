@@ -56,6 +56,23 @@ assert.equal(d.ok, true, d.reason);
 assert.equal(d.list.filter((e) => e.folder === `${P}/new-hub`).length, 1);
 assert.deepEqual([d.list[1].color, d.list[1].order, d.list.length], ["ansi5", 1, 3]);
 
+// #88: a move keeps `from` in `formerly`, for the Accueil to tie that folder's history to the entry.
+assert.deepEqual(hub.formerly, [`${P}/old-hub`], "the old folder kept as a former one");
+// Replayed, the move done already (no entry at `from`, one at `to`): `from` only joins `formerly`.
+const r1 = moveProject(a.list, { "kt.chat.backgrounds": backgrounds }, { from: `${P}/hub-older`, to: `${P}/new-hub` }, true);
+assert.equal(r1.ok, true, r1.reason);
+assert.deepEqual(r1.list[1].formerly, [`${P}/old-hub`, `${P}/hub-older`], "a second former folder, after the first");
+assert.deepEqual([r1.list[1].id, r1.list[1].name, r1.list[1].color, r1.list[1].order, r1.list.length], [idOf(`${P}/new-hub`), "new-hub", "ansi5", 1, 3], "nothing else moves");
+assert.deepEqual(r1.maps, {}, "a replay leaves the maps alone");
+assert.deepEqual(a.list[1].formerly, [`${P}/old-hub`], "the input list untouched");
+// Replayed again: refused, nothing to write.
+const r2 = moveProject(r1.list, {}, { from: `${P}/hub-older`, to: `${P}/new-hub` }, true);
+assert.equal(r2.ok, false);
+assert.match(r2.reason, /former folder of .*new-hub already/);
+// Moved back to a former folder: that one leaves `formerly`, the one it leaves joins.
+const back = moveProject(r1.list, {}, { from: `${P}/new-hub`, to: `${P}/old-hub` }, true);
+assert.deepEqual(back.list[1].formerly, [`${P}/hub-older`, `${P}/new-hub`]);
+
 // Not on the disk: refused, unless force (prepared ahead of the rename).
 assert.equal(moveProject(list, {}, { from: `${P}/tv-old`, to: `${P}/tv-new` }, false).ok, false);
 assert.equal(moveProject(list, {}, { from: `${P}/tv-old`, to: `${P}/tv-new`, force: true }, false).ok, true);

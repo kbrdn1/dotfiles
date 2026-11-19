@@ -14,6 +14,10 @@
 //   `to`'s id ([null, to]) and folder, and the name and logos given; its color, order and other fields stay.
 //   The maps keyed by project id (kt.chat.backgrounds) follow it. An entry already made for `to` (kt-threads
 //   adds one when a space opens there) goes: the moved one, with its color and place, stands for it.
+//   `from` joins the entry's `formerly` (its former folders, no duplicate, never its folder now): the Accueil
+//   ties those folders' history to it. Replayed, the move done already (no entry at `from`, one at `to`):
+//   `from` only joins its `formerly` (and the name and logos given apply), the maps untouched; refused when
+//   it's there already.
 // project-add {folder, name, logos?, force?}: a new entry, last, with no color yet; refused when the folder
 //   has one.
 // Both refuse a folder (`to`, `folder`) that isn't on the disk, unless `force` (a move prepared before the
@@ -128,8 +132,14 @@ export function moveProject(list, maps, input, exists) {
   if (!exists && input.force !== true) return no(`${to} is not on the disk (force: true to move ahead of the rename)`); // i18n: tech
   const [oldId, newId] = [idOf(from), idOf(to)];
   const e = (list ?? []).find((x) => !x.machine && x.id === oldId);
-  if (!e) return no(`no project at ${from}`); // i18n: tech
-  const moved = { ...e, id: newId, folder: to, ...(input.name !== undefined ? { name: input.name } : {}), ...(logos ? { logos } : {}) };
+  // Replayed: moved already, `from` only joins the entry's former folders.
+  const done = e ? null : (list ?? []).find((x) => !x.machine && x.id === newId);
+  if (!e && !done) return no(`no project at ${from}`); // i18n: tech
+  if (done && (done.formerly ?? []).includes(from)) return no(`${from} is a former folder of ${to} already`); // i18n: tech
+  const base = e ?? done;
+  const formerly = [...new Set([...(base.formerly ?? []), from])].filter((f) => f !== to);
+  const moved = { ...base, id: newId, folder: to, formerly, ...(input.name !== undefined ? { name: input.name } : {}), ...(logos ? { logos } : {}) };
+  if (done) return { ok: true, list: list.map((x) => (x === done ? moved : x)), maps: {}, id: newId };
   const next = list.filter((x) => x.id !== newId).map((x) => (x === e ? moved : x));
   const changed = {};
   for (const [key, map] of Object.entries(maps ?? {})) {
