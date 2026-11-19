@@ -64,7 +64,13 @@ import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markd
 import { attachmentsOf, photoSize } from "./att-model.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
-import { motionState, frame, enter, MS } from "./motion.js";
+import { motionState, frame, enter, collapse, MS } from "./motion.js";
+// #84, the composer's ledges: the agent's tasks and sub-agents from its herdr-bridge file (shelf.js),
+// drawn as the sidebar draws its sub-agents: kt-threads' branches (tree.js) and companions
+// (companion-logo.js, a byte-identical copy).
+import { tasksLedge, agentsLedge, shownAgents, agentAge, isAlive, startOf, endOf, FADE, say as sayTask, runOf, watching } from "./shelf.js";
+import { twig, treeLine } from "./tree.js";
+import { companion, variantFor } from "./companion-logo.js";
 // The context as the composer's status line says it (kt-composer): kt-threads' ring and its threshold
 // colors (ring.js, levels.js), the percent rolling (roll.js); byte-identical copies.
 import { ring, ringColor } from "./ring.js";
@@ -87,6 +93,10 @@ const MAX_ENTRIES = 900; // --max-entries: JSON.parse + build() stay ~15 ms in t
 const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before the oldest go
 // The live tail: a delta read this often, only while the Chat shows and its agent works.
 const TICK = 750;
+const BRIDGE = 2000; // #84: the bridge file read again while the agent works or shows sub-agents
+// runner: vim-nav's runner.js (a copy of brand/companions/runner.js) brings runnerShown(status, program)
+// and its Runner view; until then no runner: its band (composerView) stays out and kc-bottom where it is.
+const runnerShown = () => false;
 const STEPS = 6; // steps a phase shows before « N étapes de plus »
 const MORE = 30; // steps each « N étapes de plus » adds
 const LINES = 60; // lines a detail box shows
@@ -209,6 +219,18 @@ export default class Chat extends View {
     this.bgNote = null; // { busy } | { err } of the last image chosen
     this.cleanDue = true; // sweepBg() at the next render: once at start, then after each setting
     this.bgKeys = null; // the projects kt.chat.backgrounds had at the last render (#88: one gone elsewhere sweeps too)
+    // #84: the agent's herdr-bridge file as last read (its todos and agents) and whose it is, what was
+    // last drawn of it, the reads' timer; the ledges unfolded (per agent), the sub-agent whose detail
+    // shows, the companions' memos (companion-logo.js).
+    this.bridge = null;
+    this.bridgeFor = null;
+    this.bridgeKey = null;
+    this.bridgeReading = false;
+    this.bridgeTicker = null;
+    this.tasksOpen = new Set();
+    this.agentsOpen = new Set();
+    this.subOpen = null;
+    this.memos = {};
     this.scroll = ScrollHandle.new();
     this.md = mdState();
     this.motion = motionState();
@@ -1746,7 +1768,8 @@ export default class Chat extends View {
         .children(children))
       .when(Boolean(rail), (el) => el.child(rail))
       // transcript.rs:5986-6062, « jump to bottom »: 30 round, border 0.1, ground 0.04, chevron 16 at 0.7.
-      .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(8).left(0).right(0).justify_center()
+      // Over the runner's band when it shows (#84, vim-nav's runner: 56 px over the composer).
+      .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(8 + (runnerShown(tg.agent?.status, tg.agent?.program) ? 56 : 0)).left(0).right(0).justify_center()
         .child(h_flex().id("kc-bottom").size(30).rounded_full().items_center().justify_center().border(1).border_color(ink(t, 0.1))
           .bg(ink(t, 0.04)).cursor_pointer().tooltip(tr("bottom")).text_color(ink(t, 0.7)).hover((s) => s.text_color(ink(t, 1)))
           .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.jump = null; this.win = win.bottom(this.turns.length); this.reveal = "bottom"; cx.notify(); })
@@ -1761,7 +1784,7 @@ export default class Chat extends View {
    * paper). Under it (pt 6, px 15, gap 10, 12 px at 0.55): the checkout or worktree, the branch, and on
    * the right what the composer says, then the context.
    */
-  composerView(t, tg, pr) {
+  composerView(t, tg, pr, cx) {
     const a = tg.agent;
     const dark = Boolean(settings().dark);
     const m = sendMode(a?.status ?? null);
@@ -1827,11 +1850,194 @@ export default class Chat extends View {
         .child(ring(t, "kc-ctx-ring", ctx, 14, { kind: "ctx", window: this.line?.window }))
         .child(roll(this.m, "kc-ctx-n", `${Math.round(ctx)}%`, 16).font_family(MONO).text_size(11)
           .text_color(ringColor(t, Math.round(ctx), { kind: "ctx", window: this.line?.window ?? 1_000_000 })))));
+    // #84: the agent's tasks on a ledge over the card, its sub-agents on one under it, both against
+    // the card (shelf.js); nothing when there is nothing to follow. A dialog waiting goes above them.
+    const bridge = this.bridgeOf(a?.address);
+    const tasks = tasksLedge(bridge?.todos);
+    const subs = agentsLedge(bridge?.agents, Date.now(), a?.address ?? "");
     return h_flex().w_full().flex_none().justify_center()
-      .child(v_flex().w_full().max_w(COLUMN).px(10).pb(6).gap(8)
+      .child(v_flex().relative().w_full().max_w(COLUMN).px(10).pb(6).gap(8)
         .when(Boolean(blocked), (el) => el.child(blocked))
-        .child(card)
-        .child(under));
+        .child(v_flex().w_full()
+          .when(Boolean(tasks), (el) => el.child(this.tasksShelf(t, tasks, a, cx)))
+          .child(card)
+          .when(Boolean(subs), (el) => el.child(this.agentsShelf(t, subs, a, cx))))
+        .child(under)
+        // runner: vim-nav's runner, 96 × 56 over the card's left edge, on whatever is on top (the tasks,
+        // a dialog, the card), biting into the transcript: no id, no handler, nothing caught there.
+        .when(runnerShown(a?.status, a?.program), (el) => el.child(div().absolute().top(-56).left(10).w(96).h(56))));
+  }
+
+  // ---------- the composer's ledges (#84, shelf.js) ----------
+
+  /** The bridge file as last read, only when it is this agent's (never another agent's tasks). */
+  bridgeOf(address) {
+    return address && this.bridgeFor === address ? this.bridge : null;
+  }
+
+  /**
+   * Reads the agent's herdr-bridge file, threads-io.js' read for one agent (the sidebar's source, so
+   * both say the same): a torn read keeps the last one; a redraw only when what the ledges show
+   * changes (the tasks, the sub-agents, their ages, one leaving after GONE).
+   */
+  readBridge(cx, address) {
+    if (!address || address.includes("/") || this.bridgeReading) return;
+    this.bridgeReading = true;
+    cx.spawn(async (cx) => {
+      let next = this.bridgeOf(address);
+      try {
+        const s = await readTextFile(`${home()}/.claude/cache/herdr/${address}.json`);
+        next = s ? JSON.parse(s) : null;
+      } catch {
+        // a torn read keeps the last one
+      }
+      this.bridgeReading = false;
+      const now = Date.now();
+      const key = JSON.stringify([address, next?.todos ?? null, next?.agents ?? null, shownAgents(next?.agents, now).map((a) => agentAge(a, now))]);
+      this.bridgeFor = address;
+      this.bridge = next;
+      if (key !== this.bridgeKey) {
+        this.bridgeKey = key;
+        cx.notify();
+      }
+    });
+  }
+
+  /**
+   * The reads' timer, every BRIDGE ms while this face shows and its agent works or shows sub-agents
+   * (their ages move, an ended one goes after GONE); it stops itself when that ends. A data timer: the
+   * ledges' motion is native.
+   */
+  watchBridge(cx) {
+    const tg = target();
+    const address = !this.fixed && tg.agent && !tg.reason ? tg.agent.address : null;
+    const on = watching({ address, shown: this.isShown(), status: tg.agent?.status, agents: this.bridgeOf(address)?.agents, now: Date.now() });
+    if (on && !this.bridgeTicker) {
+      this.bridgeTicker = cx.timer.every(BRIDGE, (cx) => {
+        this.watchBridge(cx);
+        if (this.bridgeTicker) this.readBridge(cx, target().agent?.address);
+      });
+    } else if (!on && this.bridgeTicker) {
+      this.bridgeTicker.cancel();
+      this.bridgeTicker = null;
+    }
+  }
+
+  /** A ledge's 30 px header: what it holds, a chevron; a click folds or unfolds it (`set`, per agent). */
+  shelfHead(t, id, set, key, open, chevron, ...parts) {
+    return h_flex().id(id).h(30).gap(8).items_center().cursor_pointer()
+      .on_click((_e, cx) => {
+        cx.stop_propagation();
+        if (open) set.delete(key);
+        else set.add(key);
+        cx.notify();
+      })
+      .children(parts)
+      .child(h_flex().size(20).flex_none().rounded(6).items_center().justify_center().text_color(ink(t, 0.45))
+        .hover((s) => s.bg(ink(t, 0.08)).text_color(ink(t, 0.9)))
+        .child(svg(I(chevron)).size(12)));
+  }
+
+  /**
+   * The tasks' ledge on top of the card, Monocode's composer shelf (conversation/composer_shelf.rs):
+   * rounded on its free side, no edge against the card, 8 in, ground 0.03, edge 0.08 dark / 0.06
+   * light. Folded by default: its header says the one in front and done / total. Unfolded: the
+   * sidebar's lines (kt-threads todoList: ✓ done, ● running, ○ to do), six, then "+N".
+   */
+  tasksShelf(t, led, a, cx) {
+    const key = a?.address ?? "";
+    const open = this.tasksOpen.has(key);
+    const dark = Boolean(settings().dark);
+    const mark = (s) => (s === "completed" ? svg(I("check")).size(11).flex_none().text_color(t.done)
+      : s === "in_progress" ? div().size(7).rounded(4).flex_none().bg(t.working)
+        : div().size(7).rounded(4).flex_none().border(1.5).border_color(t.dim));
+    const rows = () => v_flex().pb(6)
+      .children(led.rows.map((x) => h_flex().h(22).gap(8).items_center()
+        .child(h_flex().w(16).flex_none().items_center().justify_center().child(mark(x.status)))
+        .child(div().flex_1().min_w(0).truncate().text_size(12.5)
+          .text_color(x.status === "in_progress" ? ink(t, 0.9) : x.status === "completed" ? ink(t, 0.4) : ink(t, 0.6)).child(sayTask(x)))))
+      .when(led.more > 0, (el) => el.child(div().pl(24).h(18).font_family(MONO).text_size(10.5).text_color(ink(t, 0.4)).child(`+${led.more}`)));
+    // A spinner only while a task runs and its agent works (an active state); else the list's icon.
+    const busy = led.live && a?.status === "working";
+    const head = this.shelfHead(t, "kc-tasks-head", this.tasksOpen, key, open, open ? "chevron-down" : "chevron-up",
+      h_flex().size(16).flex_none().items_center().justify_center().text_color(ink(t, 0.6))
+        .child(busy ? svg(SPIN).size(12).spin(900) : svg(I("list")).size(13)),
+      div().flex_none().text_size(12.5).font_medium().text_color(ink(t, 0.8)).child(tr("shelf.tasks")),
+      div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ink(t, 0.4)).child(led.current),
+      div().flex_none().font_family(MONO).text_size(11).text_color(ink(t, 0.45)).child(`${led.done} / ${led.total}`));
+    const body = collapse(this.m, `kc-tasks-${key}`, open, rows, { cx });
+    return enter(this.m, v_flex().mx(8).px(10).rounded_t(10).border_t(1).border_x(1).border_color(ink(t, dark ? 0.08 : 0.06)).bg(ink(t, 0.03))
+      .child(head).when(Boolean(body), (el) => el.child(body)), `kc-tasks-${key}-ledge`, { dy: 0 });
+  }
+
+  /**
+   * The sub-agents' ledge under the card: the same ledge upside down (rounded below, no edge against
+   * the card). Folded by default: its header shows the first ones' companions, how many and how many
+   * run. Unfolded: kt-threads' branches (tree.js), the trunk leaving from under the first companion,
+   * each one's companion in its coiffe (variantFor, its siblings the bridge's whole list), what it does,
+   * its age; an ended one fades after FADE (the sidebar's rules, shelf.js). A click on one shows its
+   * detail under it, or folds it.
+   */
+  agentsShelf(t, led, a, cx) {
+    const key = a?.address ?? "";
+    const open = this.agentsOpen.has(key);
+    const dark = Boolean(settings().dark);
+    const now = Date.now();
+    const rest = treeLine(t);
+    const H = 28; // kt-threads' BRANCH_H
+    const pet = (x, id) => companion({
+      program: a?.program, id, cx, size: 20, height: 16,
+      variant: variantFor(`${key}:${x.id}`, led.kin),
+      state: isAlive(x) ? "working" : x.state === "done" ? "done" : x.state === "error" ? "error" : "idle",
+      since: isAlive(x) ? startOf(x) : now - endOf(x) < 5000 ? undefined : endOf(x),
+      memo: (this.memos[`${key}:${x.id}`] ??= {}),
+    });
+    const n = led.rows.length;
+    // A live one's branch in its state's color, a failed one in a muted red, the others at rest.
+    const colorOf = (x) => (isAlive(x) ? alpha(t.working, "99") : x.state === "error" ? alpha(t.ansi1, "80") : rest);
+    const row = (x, i) => {
+      const ended = !isAlive(x);
+      const last = i === n - 1;
+      const shown = this.subOpen === x.id;
+      const color = colorOf(x);
+      return v_flex()
+        .child(h_flex().id(`kc-sa-${key}-${x.id}`).h(H).gap(8).items_center().rounded(6).cursor_pointer().hover((s) => s.bg(ink(t, 0.05)))
+          .on_click((_e, cx) => { cx.stop_propagation(); this.subOpen = shown ? null : x.id; cx.notify(); })
+          .child(twig(t, { h: H, x: 10, last: last && !shown, color, rest }))
+          .child(h_flex().flex_1().min_w(0).gap(8).items_center().when(ended && now - endOf(x) > FADE, (el) => el.opacity(0.45))
+            .child(pet(x, `kc-sa-pet-${key}-${x.id}`))
+            .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ended ? ink(t, 0.5) : ink(t, 0.85)).child(x.what || x.name || "agent")) // i18n: tech
+            .child(div().flex_none().pr(4).font_family(MONO).text_size(11).text_color(ink(t, 0.45)).child(agentAge(x, now)))))
+        .when(shown, (el) => el.child(this.subDetail(t, x, last, rest, now)));
+    };
+    const alive = led.alive;
+    const head = this.shelfHead(t, "kc-agents-head", this.agentsOpen, key, open, open ? "chevron-up" : "chevron-down",
+      // Unfolded, the trunk leaves from under the first companion (its 16 px in the 30 px header: 7 down
+      // to the branches, which the fold's clipping would cut from a reach of theirs).
+      h_flex().relative().flex_none().gap(2).items_center().children(led.rows.slice(0, 3).map((x) => pet(x, `kc-sa-head-${key}-${x.id}`)))
+        .when(open, (el) => el.child(div().absolute().top(16).left(10).h(7).border_l(1).border_color(colorOf(led.rows[0])))),
+      div().flex_1().min_w(0).truncate().text_size(12.5).text_color(ink(t, 0.8))
+        .child(`${tr("shelf.agents", { n })} · ${alive ? tr("shelf.running", { n: alive }) : tr("shelf.ended", { n })}`));
+    const body = collapse(this.m, `kc-agents-${key}`, open, () => v_flex().pb(6).children(led.rows.map(row)), { cx });
+    return enter(this.m, v_flex().mx(8).px(10).rounded_b(10).border_b(1).border_x(1).border_color(ink(t, dark ? 0.08 : 0.06)).bg(ink(t, 0.03))
+      .child(head).when(Boolean(body), (el) => el.child(body)), `kc-agents-${key}-ledge`, { dy: 0 });
+  }
+
+  /**
+   * A sub-agent's detail under its branch: its type and model when its Agent call is in the loaded
+   * turns (shelf.js runOf), how long it runs or ran (the bridge), its prompt's first three lines. The
+   * trunk goes on through it unless it is the last.
+   */
+  subDetail(t, x, last, rest, now) {
+    const run = runOf(this.turns, x.id);
+    const d = duration(Math.max(0, (isAlive(x) ? now : endOf(x)) - startOf(x)));
+    const when = isAlive(x) ? tr("shelf.for", { d }) : x.state === "error" ? tr("shelf.error", { d }) : tr("shelf.done", { d });
+    const facts = [run?.block?.input?.type ?? run?.type, run?.model, when].filter(Boolean).join(" · ");
+    const prompt = lines(run?.block?.input?.prompt ?? "").filter((l) => l.trim()).slice(0, 3);
+    return v_flex().relative().pl(28).pb(6).gap(2).min_w(0)
+      .when(!last, (el) => el.child(div().absolute().top(0).bottom(0).left(10).border_l(1).border_color(rest)))
+      .child(div().min_w(0).truncate().text_size(12).text_color(ink(t, 0.55)).child(facts))
+      .children(prompt.map((l) => div().min_w(0).truncate().text_size(12).text_color(ink(t, 0.4)).child(l)));
   }
 
   // ---------- live (#55) ----------
@@ -1862,6 +2068,13 @@ export default class Chat extends View {
       this.decision = null;
       if (this.sendErr?.why === "blocked") this.sendErr = null;
     }
+    // #84: the agent's herdr-bridge file (its tasks, its sub-agents), read when this face shows or its
+    // agent or status changes, then by watchBridge()'s timer while there is something to follow.
+    // runner: here kt-chat learns a status or agent change, but during render: set_props (it notifies)
+    // goes in a cx.spawn started from here, as readBridge's read does, never called directly.
+    const address = !this.fixed && tg.agent && !tg.reason ? tg.agent.address : null;
+    if (address && shown && (!this.wasShown || status !== this.lastStatus || this.bridgeFor !== address)) this.readBridge(cx, address);
+    this.watchBridge(cx);
     this.wasShown = shown;
     this.lastStatus = status;
     if (tick && !this.ticker) {
@@ -1973,7 +2186,7 @@ export default class Chat extends View {
       .when(Boolean(bg), (el) => el.child(bg))
       .child(v_flex().absolute().top(0).left(0).right(0).bottom(0)
         .child(enter(this.m, this.body(t, cx, tg, keyed), `kc-body-${want ?? "none"}`, { dy: 0 }).flex_1().min_h(0))
-        .when(writes, (el) => el.child(this.composerView(t, tg, pr))))
+        .when(writes, (el) => el.child(this.composerView(t, tg, pr, cx))))
       .children(this.bgControls(t, pr) ?? []);
   }
 }
