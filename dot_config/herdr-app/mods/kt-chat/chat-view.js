@@ -132,6 +132,65 @@ export function clampText(text, { lines = 4, cols = 76 } = {}) {
   return { text: src, cut: false };
 }
 
+/**
+ * Markdown folded on its SOURCE, before it is drawn, never in the middle of its syntax: `lines`
+ * visual lines of `cols` and `chars` characters at most (Monocode's interjection: four lines, 300
+ * characters, transcript.rs:4798), cut after a whole word, then what the cut left open is closed
+ * again: a code fence, an inline code span, a `**` of the last paragraph; a link never finished is
+ * dropped from its `[`. { text, cut }: the text to draw, and whether something was left out.
+ */
+export function foldMd(text, { lines = 4, cols = 110, chars = 300 } = {}) {
+  const src = String(text ?? "").replace(/\s+$/, "");
+  const c = clampText(src, { lines, cols });
+  let out = c.cut ? c.text.replace(/…$/, "") : src;
+  let cut = c.cut;
+  if (out.length > chars) {
+    out = out.slice(0, chars);
+    cut = true;
+  }
+  if (!cut) return { text: src, cut: false };
+  const word = out.search(/\s\S*$/); // the partial word at the end goes
+  if (word > out.length * 0.6) out = out.slice(0, word);
+  out = out.replace(/\s+$/, "");
+  if ((out.match(/^\s*(```|~~~)/gm) ?? []).length % 2) {
+    // Inside code: whole lines only (a code line cut at a word reads as a bug), then the fence closed.
+    const kept = out.split("\n");
+    if (kept.length > 2 && src.split("\n")[kept.length - 1] !== kept[kept.length - 1]) kept.pop();
+    return { text: `${kept.join("\n")}\n\`\`\``, cut: true };
+  }
+  const nl = out.lastIndexOf("\n");
+  let last = out.slice(nl + 1);
+  const open = last.lastIndexOf("[");
+  if (open >= 0 && !/\]\([^)]*\)/.test(last.slice(open))) last = last.slice(0, open).replace(/\s+$/, "");
+  out = out.slice(0, nl + 1) + last;
+  const para = out.slice(out.lastIndexOf("\n\n") + 1);
+  const ticks = (para.match(/`/g) ?? []).length % 2;
+  const outside = para.replace(/`[^`]*`/g, "").replace(/`[^`]*$/, "");
+  const close = ticks ? "`" : (outside.match(/\*\*/g) ?? []).length % 2 ? "**" : "";
+  return { text: `${out}…${close}`, cut: true };
+}
+
+/**
+ * A notice's header (the mod translates `key` with `vars`): who, and what happened, the sender's
+ * own summary when there is one, never made up. Kylian (2026-11-19): « hub-dev a fini son tour »,
+ * not « idle notification »; « claude-80 (session) » for another session; a task's name.
+ */
+export function noticeHead(from) {
+  const name = from?.name || null;
+  const summary = from?.summary || null;
+  if (from?.kind === "task") {
+    const st = String(from.status ?? "completed");
+    const how = st === "completed" ? "" : /^(killed|stopped|cancell?ed|interrupted)$/.test(st) ? "Stopped" : "Failed";
+    return { key: `head.task${how}${from.task ? "Named" : ""}`, vars: { name: from.task ?? "" } };
+  }
+  if (from?.kind === "peer") return { key: summary ? "head.peerSaid" : "head.peer", vars: { name, summary } };
+  if (from?.kind === "teammate") {
+    if (from.idle) return { key: summary ? "head.idleSaid" : "head.idle", vars: { name, summary } };
+    return { key: summary ? "head.said" : "head.msg", vars: { name, summary } };
+  }
+  return { key: "sentDuring", vars: {} };
+}
+
 /** Monocode's `content(a)` token: the theme's ink (foreground) at alpha `a`, as #rrggbbaa. */
 export const ink = (t, a) => `${String(t.foreground).slice(0, 7)}${Math.round(Math.min(1, Math.max(0, a)) * 255).toString(16).padStart(2, "0")}`;
 
@@ -205,6 +264,27 @@ export function fadeAt(y, empty = false) {
     if (y <= b) return va + (vb - va) * Math.min(1, Math.max(0, (y - a) / (b - a)));
   }
   return 0;
+}
+
+/**
+ * A veil under the reading column, where the background shows (Kylian, 2026-11-19: the dither's
+ * cells ran through the letters). Monocode needs none: its artwork is smooth and fades at the same
+ * place (fadeAt); our Bayer cells are hard 2 px dots that break a glyph's edges even at 0.24, and a
+ * lower default would also dim the sides Kylian wants to see. So the column alone gets a veil of the
+ * theme's ground at VEIL, following the same fade (none where the image is gone), as two rectangles:
+ * full to the fade's first stop, then a top-to-bottom gradient to nothing at its last. Kept off the
+ * view's rounded top corners (`r`). [{ x, y, w, h, fade }].
+ */
+export const VEIL = 0.5;
+export function veilRects({ w, h, column = 832, r = 16, empty = false }) {
+  if (!(w > 0 && h > 0)) return [];
+  const x = Math.max(r, Math.floor((w - column) / 2));
+  const x1 = Math.min(w - r, Math.ceil((w + column) / 2));
+  if (x1 <= x) return [];
+  const stops = empty ? FADE.empty : FADE.session;
+  const y1 = Math.round(h * stops[1][0]);
+  const y2 = Math.round(h * stops[stops.length - 1][0]);
+  return [{ x, y: 0, w: x1 - x, h: y1, fade: false }, { x, y: y1, w: x1 - x, h: y2 - y1, fade: true }];
 }
 
 /**

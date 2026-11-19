@@ -112,52 +112,82 @@ const attrsOf = (s) => {
   for (const a of String(s ?? "").matchAll(/([\w-]+)="([^"]*)"/g)) out[a[1]] = a[2];
   return out;
 };
-const firstText = (s, max = 160) => {
-  const l = String(s ?? "").split("\n").map((x) => x.trim()).find(Boolean) ?? "";
-  return l.length > max ? l.slice(0, max - 1) + "…" : l;
-};
+
+/**
+ * A task-notification's parts: its task's name (the `Agent "…"` of its summary, else the summary),
+ * status, summary and result (what the task answered, markdown).
+ */
+export function taskOf(raw) {
+  const text = String(raw ?? "");
+  const tag = (n) => text.match(new RegExp(`<${n}>([\\s\\S]*?)</${n}>`))?.[1]?.trim() ?? null;
+  const summary = tag("summary"); // i18n: tech
+  return { name: (summary && /"([^"]+)"/.exec(summary)?.[1]) ?? summary ?? "", status: tag("status"), summary, result: tag("result") ?? "" }; // i18n: tech
+}
+
+/** One `<teammate-message>` / `<cross-session-message>`: who, what about, its body; an idle_notification's JSON read for its result. */
+function partOf(w) {
+  const at = attrsOf(w[2]);
+  const b = w[3].trim();
+  let body = b, summary = at.summary ?? null, idle = false;
+  if (b.startsWith("{")) {
+    try {
+      const j = JSON.parse(b);
+      idle = j.type === "idle_notification";
+      const said = j.result ?? j.message ?? j.text ?? j.content ?? null;
+      body = typeof said === "string" ? said : idle ? "" : b;
+      summary = j.summary ?? summary ?? (j.type && !idle ? j.type.replace(/_/g, " ") : null);
+    } catch {
+      // plain text after all
+    }
+  }
+  return { kind: w[1] === "teammate-message" ? "teammate" : "peer", name: at["from-name"] ?? at.teammate_id ?? at.from ?? "", color: at.color ?? null, summary, idle, body };
+}
+
+/**
+ * Consecutive parts of one sender, one group: one header, a count, their bodies (a body repeating the
+ * one before it said once). Measured on the lead's transcript (2026-11-19): 213 of 354 idle notices
+ * came in a line of 2 to 14 messages, 134 next to a message of their own sender.
+ */
+function groupsOf(parts) {
+  const out = [];
+  for (const p of parts) {
+    const g = out[out.length - 1];
+    if (g && g.kind === p.kind && g.name === p.name) {
+      g.count++;
+      g.idle = g.idle && p.idle;
+      g.color ??= p.color;
+      g.summary ??= p.summary;
+      if (p.body && p.body !== g.bodies[g.bodies.length - 1]) g.bodies.push(p.body);
+    } else out.push({ kind: p.kind, name: p.name, color: p.color, summary: p.summary, idle: p.idle, count: 1, bodies: p.body ? [p.body] : [] });
+  }
+  return out.map(({ bodies, ...g }) => ({ ...g, text: bodies.join("\n\n") }));
+}
 
 /**
  * What a user message is, from its text (after hc's wrappers, chat-index.ts strip()) and its line's
  * origin. Kylian typed only « human »; the rest came in by the harness and is shown folded, never
  * as his bubble:
  * - « teammate » (`<teammate-message teammate_id color summary?>`, an idle_notification's JSON body
- *   read for its summary or result) and « peer » (`<cross-session-message from-name>`), wherever in
- *   the text (the harness puts words before and a note after): { name, color, summary, body };
- * - « task » (`<task-notification>`): its summary and status;
+ *   read for its result) and « peer » (`<cross-session-message from-name>`), wherever in the text
+ *   (the harness puts words before and a note after), grouped by consecutive sender (groupsOf);
+ * - « task » (`<task-notification>`): its task's name, status and result (taskOf);
  * - `<system-reminder>` blocks go; a message of nothing else is « system », hidden.
- * Answers { kind, text, name?, color?, summary?, status?, count? }; `text` is what is left to show.
+ * Answers { kind, text, name?, color?, summary?, idle?, count?, status?, task?, groups? }: the first
+ * sender's group, and `groups` (all of them) when several senders follow one another; `text` is what
+ * is left to show. `summary` is the sender's own (an attribute, the JSON's), never made up.
  */
 export function classify(raw, origin = null) {
   const text = String(raw ?? "");
   if (origin?.kind === "task-notification" || /<task-notification>/.test(text)) {
-    const tag = (n) => text.match(new RegExp(`<${n}>([\\s\\S]*?)</${n}>`))?.[1]?.trim() ?? null;
-    return { kind: "task", text: tag("summary") ?? "", status: tag("status") }; // i18n: tech
+    const tk = taskOf(text);
+    return { kind: "task", text: tk.result, status: tk.status, task: tk.name }; // i18n: tech
   }
   const wraps = [...text.matchAll(/<(teammate-message|cross-session-message|agent-message)\b([^>]*)>([\s\S]*?)<\/\1>/g)];
   if (wraps.length) {
-    const a = attrsOf(wraps[0][2]);
-    const bodies = wraps.map((w) => {
-      const b = w[3].trim();
-      if (!b.startsWith("{")) return { body: b, summary: attrsOf(w[2]).summary ?? null };
-      try {
-        const j = JSON.parse(b);
-        const said = j.summary ?? j.result ?? j.message ?? j.text ?? null;
-        return { body: typeof said === "string" ? said : b, summary: j.summary ?? (j.type ? j.type.replace(/_/g, " ") : null) };
-      } catch {
-        return { body: b, summary: attrsOf(w[2]).summary ?? null };
-      }
-    });
-    return {
-      kind: wraps[0][1] === "teammate-message" ? "teammate" : "peer",
-      name: a["from-name"] ?? a.teammate_id ?? a.from ?? "",
-      color: a.color ?? null,
-      summary: bodies[0].summary ?? firstText(bodies[0].body),
-      count: wraps.length,
-      text: bodies.map((b) => b.body).join("\n\n"),
-    };
+    const groups = groupsOf(wraps.map(partOf));
+    return { ...groups[0], ...(groups.length > 1 ? { groups } : {}) };
   }
-  if (origin?.kind === "peer") return { kind: "peer", name: origin.name ?? "", color: null, summary: firstText(text), count: 1, text };
+  if (origin?.kind === "peer") return { kind: "peer", name: origin.name ?? "", color: null, summary: null, idle: false, count: 1, text };
   const rest = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trim();
   if (!rest && /<system-reminder>/.test(text)) return { kind: "system", text: "" };
   return { kind: "human", text: rest };
@@ -304,7 +334,7 @@ export function build(entries, opts = {}) {
       } else cur.blocks.push({ role: "notice", id: `n${e.o}:${e.kind}`, ...e });
     } else if (e.k === "user") {
       // A message delivered mid-turn (queued_command): an interjection, not a new turn.
-      cur.blocks.push({ role: "note", id: e.uuid ?? `u${e.o}`, text: e.text, from: e.from ?? null, at: e.at });
+      cur.blocks.push({ role: "note", id: e.uuid ?? `u${e.o}`, text: e.text, from: e.from ?? null, groups: e.groups ?? null, at: e.at });
     }
   }
   turns.forEach((turn, n) => {

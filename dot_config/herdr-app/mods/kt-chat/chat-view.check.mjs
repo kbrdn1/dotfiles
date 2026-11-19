@@ -2,7 +2,8 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText } from "./chat-view.js";
+import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects } from "./chat-view.js";
+import strings from "./strings.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
 const claude = (address, tab) => ({ address, tab, program: { key: "claude", name: "Claude Code" }, app: "claude-code" });
@@ -186,5 +187,56 @@ ls = bgLayers({ w: 600, h: 400, iw: 2048, ih: 1365, windows: corners, opacity: 0
 assert.deepEqual(ls.slice(0, 2).map((l) => [l.x, l.w, l.ix]), [[6, 588, -730], [2, 596, -726]]);
 assert.ok(ls.every((l) => l.x + l.ix === -724), "the same image place in every window");
 assert.deepEqual(bgLayers({ w: 0, h: 400, iw: 10, ih: 10, windows: one, opacity: 1 }), []);
+
+// ── A notice's body: markdown folded on its source (Kylian's capture, 2026-11-19) ────────────────
+// Short: untouched. Long: cut at a whole word, and what the cut left open is closed again.
+assert.deepEqual(foldMd("Court **gras**."), { text: "Court **gras**.", cut: false });
+// The capture's shape: a paragraph, then a bold heading cut in its middle; never a raw `**`.
+const cap = `La page est à jour : la section réunit maintenant (c) et (a).\n\n**Ordre dans la section** ${"mot ".repeat(80)}`;
+const f1 = foldMd(cap);
+assert.ok(f1.cut);
+assert.equal((f1.text.match(/\*\*/g) ?? []).length % 2, 0, f1.text);
+assert.ok(f1.text.endsWith("…"), f1.text);
+const f2 = foldMd(`Début\n\n**${"long ".repeat(70)}fin**`);
+assert.ok(f2.text.endsWith("…**"), f2.text);
+// A `**` inside inline code doesn't count; an inline code span cut open is closed.
+assert.ok(!foldMd(`Voir \`a**b\` puis ${"suite ".repeat(70)}`).text.endsWith("**"));
+const f3 = foldMd(`Lance \`${"x ".repeat(200)}\``);
+assert.ok(f3.text.endsWith("…`"), f3.text);
+// A code fence left open is closed; a link never finished goes from its `[`.
+const f4 = foldMd("Avant\n```js\nconst a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\n```\nAprès");
+assert.equal(f4.text, "Avant\n```js\nconst a = 1;\n```", "inside code: whole lines, then the fence closed");
+assert.ok(foldMd("```\n" + "x".repeat(400) + "\n```").text.startsWith("```\nxxx"), "one long code line: its start, not an empty block");
+const f5 = foldMd(`${"mot ".repeat(70)}[le lien](https://example.invalid/une/page/longue/qui/continue`);
+assert.ok(!f5.text.includes("[le lien"), f5.text);
+// Four lines at most.
+assert.ok(foldMd("a\nb\nc\nd\ne\nf").text.split("\n").length <= 4);
+
+// ── A notice's header: who and what happened (fr and en keys exist, no em dash) ───────────────────
+assert.deepEqual(noticeHead({ kind: "teammate", name: "lot-a", idle: true, summary: null }), { key: "head.idle", vars: { name: "lot-a", summary: null } });
+assert.deepEqual(noticeHead({ kind: "teammate", name: "lot-a", idle: true, summary: "en pause" }).key, "head.idleSaid");
+assert.deepEqual(noticeHead({ kind: "teammate", name: "lot-a", summary: "maquette prête" }), { key: "head.said", vars: { name: "lot-a", summary: "maquette prête" } });
+assert.equal(noticeHead({ kind: "teammate", name: "lot-a" }).key, "head.msg");
+assert.deepEqual(noticeHead({ kind: "peer", name: "claude-80" }), { key: "head.peer", vars: { name: "claude-80", summary: null } });
+assert.deepEqual(noticeHead({ kind: "task", status: "completed", task: "revue" }), { key: "head.taskNamed", vars: { name: "revue" } });
+assert.equal(noticeHead({ kind: "task", status: "failed", task: null }).key, "head.taskFailed");
+assert.equal(noticeHead({ kind: "task", status: "killed", task: "x" }).key, "head.taskStoppedNamed");
+assert.equal(noticeHead(null).key, "sentDuring");
+const keys = ["head.msg", "head.said", "head.idle", "head.idleSaid", "head.peer", "head.peerSaid", "head.task", "head.taskNamed", "head.taskFailed", "head.taskFailedNamed", "head.taskStopped", "head.taskStoppedNamed", "sentDuring"];
+for (const lang of ["fr", "en"]) for (const k of keys) {
+  assert.ok(strings[lang][k], `${lang}.${k}`);
+  assert.ok(!String(strings[lang][k]).includes("—"), `${lang}.${k}: no em dash`);
+}
+assert.equal(strings.fr["head.idle"].replace("{name}", "lot-a"), "lot-a a fini son tour");
+assert.equal(strings.fr["head.peer"].replace("{name}", "claude-80"), "claude-80 (session)");
+
+// ── The veil under the column: where the background shows, off the rounded corners ───────────────
+const vr = veilRects({ w: 1200, h: 1000, column: 832 });
+assert.deepEqual(vr.map((v) => [v.x, v.w, v.y, v.h, v.fade]), [[184, 832, 0, 180, false], [184, 832, 180, 540, true]]);
+assert.equal(vr[1].y + vr[1].h, Math.round(1000 * 0.72), "gone where the image is gone (fadeAt)");
+assert.ok(fadeAt(0.72) === 0 && fadeAt(0.18) === 1);
+const narrow = veilRects({ w: 600, h: 400, column: 832 });
+assert.deepEqual([narrow[0].x, narrow[0].x + narrow[0].w], [16, 584], "a narrow view: kept off the corners");
+assert.deepEqual(veilRects({ w: 20, h: 400 }), []);
 
 console.log("chat-view ok");

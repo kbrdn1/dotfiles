@@ -23,7 +23,7 @@
 // Live (#55, live()): while this face shows and the agent works, a delta (`--from end`) every TICK
 // ms, plus one at each status change and on coming back on screen; nothing at rest.
 
-import { View, div, svg, image } from "gpui-kit";
+import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
 import { agents, focused, panes, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, checking, nextCommand, notify, props, layout, run } from "herdr";
 // #56: the composer (pure, composer.check.mjs); kt-threads' decide.js (a byte-identical copy, with
@@ -36,6 +36,7 @@ import { ingest, prepend, build, tally, foldedSteps, trim, pendingQueue } from "
 import {
   pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, orphans, clampText,
+  foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
 import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markdown.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
@@ -100,6 +101,10 @@ const AGENT_COLOR = { red: "ansi1", green: "ansi2", yellow: "ansi3", blue: "ansi
 const agentColor = (t, c) => (c ? t[AGENT_COLOR[c]] ?? (c.startsWith("#") ? c : null) : null) ?? t.accent;
 
 const lines = (s) => String(s ?? "").replace(/\n+$/, "").split("\n");
+// A gradient filling its parent (kt-keys viz.js's way): the veil's fade.
+const RECT = () => PathBuilder.fill().move_to("0%", "0%").line_to("100%", "0%").line_to("100%", "100%").line_to("0%", "100%").close().build();
+const paint = (path, c) => globalThis.window.paint_path(path, c).absolute().inset_0();
+const hex2 = (a) => Math.round(Math.min(1, Math.max(0, a)) * 255).toString(16).padStart(2, "0");
 const target = () => pickTarget({ focused, agents, panes });
 const appPath = (p) => (p && p.startsWith(appHome() + "/") ? p.slice(appHome().length + 1) : p);
 
@@ -625,9 +630,15 @@ export default class Chat extends View {
     if (w <= 30 || h <= 30) return null;
     const layers = bgLayers({ w, h, iw: img.w, ih: img.h, windows: bandWindows(w, h, 16, ALL), opacity: s.opacity, empty: !this.turns.length });
     const src = appPath(img.path);
+    // The veil under the reading column (chat-view.js veilRects: why, and why not a lower opacity).
+    const ground = `${String(t.background).slice(0, 7)}${hex2(VEIL)}`;
+    const veil = veilRects({ w, h, column: COLUMN, r: 16, empty: !this.turns.length }).map((v) =>
+      div().absolute().left(v.x).top(v.y).w(v.w).h(v.h)
+        .when(!v.fade, (el) => el.bg(ground))
+        .when(v.fade, (el) => el.child(paint(RECT(), Background.linear_gradient(180, ground, `${String(t.background).slice(0, 7)}00`)))));
     return div().absolute().top(0).left(0).w(w).h(h).children(layers.map((l) =>
       div().absolute().left(l.x).top(l.y).w(l.w).h(l.h).overflow_hidden()
-        .child(image(src).absolute().left(l.ix).top(l.iy).w(l.iw).h(l.ih).opacity(l.o))));
+        .child(image(src).absolute().left(l.ix).top(l.iy).w(l.iw).h(l.ih).opacity(l.o)))).children(veil);
   }
 
   // The background's settings: a small button at the top right, its panel under it.
@@ -897,10 +908,7 @@ export default class Chat extends View {
       return div().py(4).text_size(14).line_height("24px").text_color(ERR)
         .child([tr("notice.error"), b.code].filter(Boolean).join(" · ") + (b.text ? ` : ${b.text}` : ""));
     }
-    if (b.kind === "task") {
-      const failed = b.status && b.status !== "completed";
-      return this.milestone(t, `kc-tk-${b.id}`, I(failed ? "circle-alert" : "check"), [failed ? tr("notice.taskFailed") : tr("notice.task"), b.text].filter(Boolean).join(" · "), { color: failed ? ERR : null });
-    }
+    if (b.kind === "task") return this.noticeCard(t, b.id, { kind: "task", status: b.status, task: b.task ?? null }, b.text);
     if (b.kind === "command") {
       return v_flex().my(4).px(10).py(8).gap(4).min_w(0).rounded(10).border(1).border_color(ink(t, 0.1)).bg(ink(t, 0.06))
         .child(this.label(t, tr("notice.command"), 0.45))
@@ -909,24 +917,49 @@ export default class Chat extends View {
     return null;
   }
 
-  // transcript.rs:4796-4869, an interjection: py 16, a 1 px rule at 0.12 on each side of its label
-  // (12 px, 0.55), its body at 12.5/20, 0.7, folded past four lines or 300 characters (:4798) with
-  // « Afficher plus ». `dot`: the sender's color. `id`: the fold's key (o:<id>).
-  interjection(t, label, body, { id = null, dot = null } = {}) {
-    const rule = () => div().flex_1().h(1).bg(ink(t, 0.12));
-    const open = id && this.open.has(`o:${id}`);
-    const folded = body ? clampText(body, { lines: 4, cols: 110 }) : null;
-    const long = Boolean(folded?.cut) || (body?.length ?? 0) > 300;
-    const shown = !body ? null : open || !long ? body : folded.cut ? folded.text : `${body.slice(0, 299)}…`;
-    return v_flex().py(16).gap(8).min_w(0)
-      .child(h_flex().gap(10).items_center().min_w(0).child(rule())
-        .child(h_flex().flex_none().max_w(560).min_w(0).gap(6).items_center()
-          .when(Boolean(dot), (el) => el.child(div().size(6).flex_none().rounded_full().bg(dot)))
-          .child(div().min_w(0).truncate().text_size(12).text_color(ink(t, 0.55)).child(label)))
-        .child(rule()))
-      .when(Boolean(shown), (el) => el.child(div().min_w(0).overflow_hidden().text_size(12.5).line_height("20px").text_color(ink(t, 0.7))
-        .children(lines(shown).map((l) => div().min_w(0).child(l || " ")))))
-      .when(long && Boolean(id), (el) => el.child(this.more(t, `kc-im-${id}`, open, () => this.toggle(`o:${id}`))));
+  // A notice from elsewhere (another agent, another session, a task) or a message Kylian sent while
+  // the agent worked (Kylian, 2026-11-19): a discreet surface, so the background's cells never run
+  // through its words (ink 0.05, border 0.08, radius 10), a 2 px edge in the sender's color, its header
+  // (the dot, who and what happened: chat-view.js noticeHead, the count of what came together), its
+  // body in markdown folded on its SOURCE (foldMd: never inside a `**`), « Afficher plus » as a link
+  // aligned with it, and clear space under it before the answer. `from` null: Kylian's own message.
+  noticeCard(t, id, from, text) {
+    const head = noticeHead(from);
+    const label = tr(head.key, { ...head.vars, name: head.vars.name || tr("anAgent") });
+    const failed = from?.kind === "task" && head.key.startsWith("head.taskFailed");
+    const color = !from ? ink(t, 0.3) : from.kind === "task" ? (failed ? ERR : ink(t, 0.35)) : agentColor(t, from.color);
+    const open = this.open.has(`o:${id}`);
+    const body = String(text ?? "").trim();
+    const folded = body ? foldMd(body) : null;
+    const shown = !body ? null : open || !folded.cut ? body : folded.text;
+    return v_flex().id(`kc-nc-${id}`).relative().mt(8).mb(20).pl(14).pr(12).py(10).gap(6).min_w(0).overflow_hidden()
+      .rounded(10).border(1).border_color(ink(t, 0.08)).bg(ink(t, 0.05))
+      .child(div().absolute().left(0).top(8).bottom(8).w(2).rounded(1).bg(color))
+      .child(h_flex().gap(6).items_center().min_w(0)
+        .when(from?.kind === "task", (el) => el.child(svg(I(failed ? "circle-alert" : "check")).size(12).flex_none().text_color(color)))
+        .when(from?.kind !== "task", (el) => el.child(div().size(6).flex_none().rounded_full().bg(color)))
+        .child(div().min_w(0).truncate().text_size(12).line_height("16px").text_color(ink(t, 0.6)).child(label))
+        .when((from?.count ?? 1) > 1, (el) => el.child(div().flex_none().h(16).px(6).flex().items_center().rounded_full()
+          .bg(ink(t, 0.08)).text_size(10.5).text_color(ink(t, 0.6)).child(String(from.count)))))
+      .when(Boolean(shown), (el) => el.child(div().min_w(0).overflow_hidden().text_size(13).line_height("20px").text_color(ink(t, 0.78))
+        .child(TextView.markdown(`kc-nb-${id}${open ? "-all" : ""}`, shown).selectable(true))))
+      .when(Boolean(folded?.cut), (el) => el.child(this.moreLink(t, `kc-nm-${id}`, open, () => this.toggle(`o:${id}`))));
+  }
+
+  /** An entry from elsewhere: one card per sender when several followed one another (classify's groups). */
+  notices(t, id, e) {
+    if (e.groups?.length > 1) return v_flex().min_w(0).children(e.groups.map((g, i) => this.noticeCard(t, `${id}-${i}`, g, g.text)));
+    return this.noticeCard(t, id, e.from ?? null, e.text);
+  }
+
+  // « Afficher plus » under a notice: a link aligned with its words, 12/16 at 0.6 (transcript.rs:5411-5434's
+  // words and size), a chevron after it, no pill (Kylian, 2026-11-19).
+  moreLink(t, id, open, onClick) {
+    return h_flex().child(h_flex().id(id).gap(4).items_center().text_size(12).line_height("16px").text_color(ink(t, 0.6))
+      .cursor_pointer().hover((s) => s.text_color(ink(t, 1)))
+      .on_click((_e, cx) => { cx.stop_propagation(); onClick(); cx.notify(); })
+      .child(open ? tr("showLess") : tr("showMore"))
+      .child(svg(I(open ? "chevron-up" : "chevron-down")).size(12)));
   }
 
   // transcript.rs:5411-5434, « Show more » / « Show less »: 12/16 at 0.6, a 0.08 ground when hovered,
@@ -936,13 +969,6 @@ export default class Chat extends View {
       .cursor_pointer().hover((s) => s.bg(ink(t, 0.08)).text_color(ink(t, 1)))
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(); cx.notify(); })
       .child(open ? tr("showLess") : tr("showMore")));
-  }
-
-  /** Another agent's message, folded (classify(): never Kylian's bubble): who, about what, its text. */
-  injected(t, id, from, text) {
-    const name = from.name || tr("anAgent");
-    const label = [tr(from.kind === "peer" ? "fromPeer" : "fromAgent", { name }), from.count > 1 ? tr("andMore", { n: from.count - 1 }) : null, from.summary].filter(Boolean).join(" · ");
-    return this.interjection(t, label, text, { id, dot: agentColor(t, from.color) });
   }
 
   /**
@@ -1065,10 +1091,7 @@ export default class Chat extends View {
     const b = it.block;
     if (b.role === "prose") return this.prose(t, cx, b, ctx.top);
     if (b.role === "notice") return this.notice(t, b);
-    if (b.role === "note") {
-      if (b.from?.kind === "system") return null;
-      return b.from ? this.injected(t, b.id, b.from, b.text) : this.interjection(t, tr("sentDuring"), b.text, { id: b.id });
-    }
+    if (b.role === "note") return b.from?.kind === "system" ? null : this.notices(t, b.id, b);
     return null;
   }
 
@@ -1082,11 +1105,7 @@ export default class Chat extends View {
     const u = turn.user;
     if (!u) return null;
     if (u.from?.kind === "system") return null;
-    if (u.from?.kind === "task") {
-      const failed = u.from.status && u.from.status !== "completed";
-      return this.interjection(t, [failed ? tr("notice.taskFailed") : tr("notice.task"), u.text].filter(Boolean).join(" · "), null);
-    }
-    if (u.from) return this.injected(t, turn.id, u.from, u.text);
+    if (u.from) return this.notices(t, turn.id, u);
     const text = u.cmd ? [u.cmd.name, u.cmd.args].filter(Boolean).join(" ") : u.text ?? "";
     const pill = !text.includes("\n") && text.length <= 60;
     const id = `u:${turn.id}`;

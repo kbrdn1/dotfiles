@@ -12,7 +12,7 @@
 //   `start` is where the emitted part
 //   begins (a line start), `more` says there is something before it (`--to start` reads it).
 // A --from past the end of the file (a file rewritten) starts again from 0.
-import { toolKind, toolTitle, classify } from "./chat-model.js";
+import { toolKind, toolTitle, classify, taskOf } from "./chat-model.js";
 
 const HEAVY = /^\{"type":"(api-request|file-history|session-owner|bridge-session|atis-latch|tools-used|frame-link|last-prompt)/;
 const ATTACHMENT = /"attachment":\{"type":"([a-z_]+)"/;
@@ -47,10 +47,13 @@ function textOf(content: any): { text: string; images: number } {
 /** <tag ...>inner</tag> around a whole message (peer, teammate, agent): its sender and inner text. */
 /** classify()'s answer as an entry's `from` (no text: it stays the entry's own). */
 function fromOf(c: any): Entry {
-  if (c.kind === "task") return { kind: "task", status: c.status ?? null };
+  if (c.kind === "task") return { kind: "task", status: c.status ?? null, task: c.task || null };
   if (c.kind === "system") return { kind: "system" };
-  return { kind: c.kind, name: c.name ?? "", color: c.color ?? null, summary: c.summary ?? null, count: c.count ?? 1 };
+  return { kind: c.kind, name: c.name ?? "", color: c.color ?? null, summary: c.summary ?? null, count: c.count ?? 1, ...(c.idle ? { idle: true } : {}) };
 }
+
+/** An entry's senders when several follow one another in one message (classify's groups), each with its text. */
+const groupsOf = (c: any): Entry => (c.groups ? { groups: c.groups.map((g: any) => ({ ...fromOf(g), text: cap(g.text, 8000) })) } : {});
 
 /**
  * What a message sent by `hc send` and a paste come wrapped in, seen in transcripts (2026-11-19):
@@ -224,7 +227,7 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
       else {
         // Who speaks (chat-model.js classify): only « human » is Kylian's; the rest is shown folded.
         const c = classify(strip(text), o.origin);
-        if (c.kind !== "human") e.from = fromOf(c);
+        if (c.kind !== "human") Object.assign(e, { from: fromOf(c) }, groupsOf(c));
         e.text = cap(c.text, 20000);
       }
       return out.concat(e);
@@ -249,12 +252,13 @@ export function normalize(o: any, off: number, meta: Meta, home: string): Entry[
       if (a.type !== "queued_command") return [];
       const { text } = textOf(a.prompt);
       if (a.commandMode === "task-notification" || /^\s*<task-notification>/.test(text)) {
-        return [{ k: "notice", o: off, uuid: o.uuid, at, kind: "task", status: tag(text, "status") ?? null, text: cap(tag(text, "summary") ?? "", 2000) }];
+        const tk = taskOf(text);
+        return [{ k: "notice", o: off, uuid: o.uuid, at, kind: "task", status: tk.status, task: tk.name || null, text: cap(tk.result, 4000) }];
       }
       if (a.isMeta || !text.trim()) return [];
       const c = classify(strip(text), a.origin);
       if (c.kind === "system") return [];
-      return [{ k: "user", o: off, uuid: o.uuid, at, turn: false, text: cap(c.text, 20000), ...(c.kind !== "human" ? { from: fromOf(c) } : {}) }];
+      return [{ k: "user", o: off, uuid: o.uuid, at, turn: false, text: cap(c.text, 20000), ...(c.kind !== "human" ? { from: fromOf(c), ...groupsOf(c) } : {}) }];
     }
   }
   return [];

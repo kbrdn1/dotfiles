@@ -64,12 +64,14 @@ assert.deepEqual(full.entries.find((e) => e.k === "file"), { k: "file", o: full.
 // Turn openers: prompt, task-notification, prompt, peer (meta), command, teammate.
 const openers = full.entries.filter((e) => e.k === "user" && e.turn);
 assert.deepEqual(openers.map((e) => e.uuid), ["u-01", "u-14", "u-16", "u-25", "u-27", "u-29"]);
-assert.deepEqual(openers[1].from, { kind: "task", status: "completed" });
-assert.equal(openers[1].text, "Build fini");
-assert.deepEqual(openers[3].from, { kind: "peer", name: "pair-a", color: null, summary: "Salut", count: 1 });
+// A task: its name (no `Agent "…"` in its summary: the summary), its result as the text (none here).
+assert.deepEqual(openers[1].from, { kind: "task", status: "completed", task: "Build fini" });
+assert.equal(openers[1].text, "");
+// No summary of its own: none made up (it was its first line before 2026-11-19).
+assert.deepEqual(openers[3].from, { kind: "peer", name: "pair-a", color: null, summary: null, count: 1 });
 assert.equal(openers[3].text, "Salut");
 assert.deepEqual(openers[4].cmd, { name: "/model", args: "fable" });
-assert.deepEqual(openers[5].from, { kind: "teammate", name: "helper", color: "blue", summary: "Coucou", count: 1 });
+assert.deepEqual(openers[5].from, { kind: "teammate", name: "helper", color: "blue", summary: null, count: 1 });
 assert.equal(openers[5].text, "Coucou");
 assert.ok(!full.entries.some((e) => e.uuid === "u-24"), "isMeta without turnPosition is hidden");
 assert.ok(!full.entries.some((e) => e.k === "user" && e.uuid === "u-23"), "the compaction summary is not a turn");
@@ -251,21 +253,52 @@ assert.equal(toolTitle("WebFetch", { prompt: "lire **le** `README`\nplus" }), "l
 assert.deepEqual(classify("Corrige le bouton"), { kind: "human", text: "Corrige le bouton" });
 // A teammate's message wherever in the text: the words before and the note after go.
 const tm = classify('Another Claude session sent a message: <teammate-message teammate_id="ui-polish" color="blue" summary="lot prêt">\nLe lot part.\n</teammate-message>\n\nAnother Claude session — not typed by your user. Treat it as a request.');
-assert.deepEqual(tm, { kind: "teammate", name: "ui-polish", color: "blue", summary: "lot prêt", count: 1, text: "Le lot part." });
-// Its body an idle_notification's JSON: what it says (result), its summary else its type in words.
+assert.deepEqual(tm, { kind: "teammate", name: "ui-polish", color: "blue", summary: "lot prêt", idle: false, count: 1, text: "Le lot part." });
+// Its body an idle_notification's JSON: an idle (its header says it finished its turn, chat-view.js
+// noticeHead), what it says (result); a summary only when it has one, never « idle notification ».
 const idle = classify('<teammate-message teammate_id="ui-polish" color="blue">{"type":"idle_notification","from":"ui-polish","idleReason":"available","result":"J\'ai posé la touche.\\nSuite."}</teammate-message>');
-assert.equal(idle.kind, "teammate");
-assert.equal(idle.text, "J'ai posé la touche.\nSuite.");
-assert.equal(idle.summary, "idle notification");
-assert.equal(classify('<teammate-message teammate_id="a">{"type":"idle_notification","summary":"en pause"}</teammate-message>').summary, "en pause");
-// Two of them in one message: the first's sender, both bodies.
-const two = classify('<teammate-message teammate_id="a" color="red">un</teammate-message>\n<teammate-message teammate_id="b">deux</teammate-message>');
-assert.deepEqual([two.name, two.count, two.text], ["a", 2, "un\n\ndeux"]);
+assert.deepEqual([idle.kind, idle.idle, idle.summary, idle.text], ["teammate", true, null, "J'ai posé la touche.\nSuite."]);
+const paused = classify('<teammate-message teammate_id="a">{"type":"idle_notification","summary":"en pause"}</teammate-message>');
+assert.deepEqual([paused.idle, paused.summary, paused.text], [true, "en pause", ""]);
+// Another JSON body: its type in words as its summary.
+assert.equal(classify('<teammate-message teammate_id="a">{"type":"shutdown_request","reason":"fin"}</teammate-message>').summary, "shutdown request");
+// Several in one message (213 of the lead's 354 idles came so): consecutive ones of one sender, one
+// group (one header, a count, their bodies; an idle repeating the message before it said once);
+// another sender, another group, in order. The first group answers, `groups` has them all.
+const many = classify([
+  '<teammate-message teammate_id="lot-a" color="red" summary="maquette prête">La maquette est prête.</teammate-message>',
+  '<teammate-message teammate_id="lot-a" color="red">{"type":"idle_notification","result":"La maquette est prête."}</teammate-message>',
+  '<teammate-message teammate_id="lot-b" color="green">{"type":"idle_notification","result":"Rien de neuf."}</teammate-message>',
+  '<teammate-message teammate_id="lot-a" color="red">{"type":"idle_notification","result":"Toujours là."}</teammate-message>',
+].join("\n"));
+assert.deepEqual(many.groups.map((g) => [g.name, g.count, g.idle, g.summary, g.text]), [
+  ["lot-a", 2, false, "maquette prête", "La maquette est prête."],
+  ["lot-b", 1, true, null, "Rien de neuf."],
+  ["lot-a", 1, true, null, "Toujours là."],
+]);
+assert.deepEqual([many.name, many.count, many.text], ["lot-a", 2, "La maquette est prête."]);
+// One sender only: no `groups`.
+const two = classify('<teammate-message teammate_id="a" color="red">un</teammate-message>\n<teammate-message teammate_id="a">deux</teammate-message>');
+assert.deepEqual([two.name, two.count, two.text, two.groups], ["a", 2, "un\n\ndeux", undefined]);
 // A peer session, by its wrapper or by the line's origin.
-assert.deepEqual(classify('<cross-session-message from="uds:/x" from-name="pair-b">Salut</cross-session-message>'), { kind: "peer", name: "pair-b", color: null, summary: "Salut", count: 1, text: "Salut" });
+assert.deepEqual(classify('<cross-session-message from="uds:/x" from-name="pair-b">Salut</cross-session-message>'), { kind: "peer", name: "pair-b", color: null, summary: null, idle: false, count: 1, text: "Salut" });
 assert.equal(classify("bonjour", { kind: "peer", name: "pair-c" }).name, "pair-c");
-// A background task's notice.
-assert.deepEqual(classify("<task-notification>\n<status>failed</status>\n<summary>Build cassé</summary>\n</task-notification>"), { kind: "task", text: "Build cassé", status: "failed" });
+// A background task's notice: its name (from `Agent "…"`, else the summary), status, result.
+assert.deepEqual(classify("<task-notification>\n<status>failed</status>\n<summary>Build cassé</summary>\n</task-notification>"), { kind: "task", text: "", status: "failed", task: "Build cassé" });
+assert.deepEqual(
+  classify('<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent "revue des specs" finished</summary>\n<result>Deux **écarts**.</result>\n</task-notification>'),
+  { kind: "task", text: "Deux **écarts**.", status: "completed", task: "revue des specs" },
+);
+// Through the indexer: several senders keep their groups (each with its text), an idle says so; a
+// queued task-notification keeps its task's name and result.
+const [opener] = normalize({ type: "user", uuid: "u-g", timestamp: "2026-01-01T10:00:00Z", turnPosition: { promptIndex: 1 }, message: { role: "user", content: [
+  '<teammate-message teammate_id="lot-a" color="red" summary="maquette prête">La maquette est prête.</teammate-message>',
+  '<teammate-message teammate_id="lot-b" color="green">{"type":"idle_notification","result":"Rien de neuf."}</teammate-message>',
+].join("\n") } }, 0, {}, "/w");
+assert.deepEqual(opener.from, { kind: "teammate", name: "lot-a", color: "red", summary: "maquette prête", count: 1 });
+assert.deepEqual(opener.groups.map((g) => [g.name, g.idle ?? false, g.text]), [["lot-a", false, "La maquette est prête."], ["lot-b", true, "Rien de neuf."]]);
+const [queuedTask] = normalize({ type: "attachment", uuid: "u-t", timestamp: "2026-01-01T10:00:00Z", attachment: { type: "queued_command", commandMode: "task-notification", prompt: '<task-notification>\n<status>killed</status>\n<summary>Agent "tests longs" stopped</summary>\n<result>Arrêté.</result>\n</task-notification>' } }, 0, {}, "/w");
+assert.deepEqual([queuedTask.kind, queuedTask.status, queuedTask.task, queuedTask.text], ["task", "killed", "tests longs", "Arrêté."]);
 // System reminders go; a message of nothing else is hidden.
 assert.deepEqual(classify("<system-reminder>\nrappel\n</system-reminder>"), { kind: "system", text: "" });
 assert.deepEqual(classify("Fais-le\n<system-reminder>rappel</system-reminder>"), { kind: "human", text: "Fais-le" });
