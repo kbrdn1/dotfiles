@@ -141,14 +141,32 @@ export function plainOf(md) {
     .trim();
 }
 
+// A selection taken from a message to quote it, told from a copy that only happens to be in its text
+// (« dev », a branch, a path copied in a terminal): whole words of the message, at least QUOTE_WORDS
+// words and QUOTE_CHARS characters as read. Anything less quotes the whole message.
+export const QUOTE_WORDS = 3;
+export const QUOTE_CHARS = 12;
+// A letter (any script: its cases differ) or a digit: what a word is made of.
+const wordChar = (ch) => Boolean(ch) && (ch.toLowerCase() !== ch.toUpperCase() || /[0-9_]/.test(ch));
+
+/** Whether `clip` is a selection of `message` (see above): long enough, and on its words' edges. */
+export function selectionOf(message, clip) {
+  const c = plainOf(clip);
+  if (c.length < QUOTE_CHARS || c.split(" ").length < QUOTE_WORDS) return false;
+  const m = plainOf(message);
+  for (let i = m.indexOf(c); i >= 0; i = m.indexOf(c, i + 1)) if (!wordChar(m[i - 1]) && !wordChar(m[i + c.length])) return true;
+  return false;
+}
+
 /**
- * What « Citer » puts in the field: the part of `message` copied last (`clip`, the clipboard, when it
- * comes from this message: a selection), else the whole message; each line after `> `, then a blank line.
+ * What « Citer » puts in the field: the part of `message` copied last (`clip`, the clipboard, when it is
+ * a selection of this message: selectionOf), else the whole message; each line after `> `, then a blank
+ * line.
  */
 export function quoteOf(message, clip) {
   const c = String(clip ?? "").trim();
   const whole = String(message ?? "").trim();
-  const piece = c.length >= 2 && plainOf(whole).includes(plainOf(c)) ? c : whole;
+  const piece = selectionOf(whole, c) ? c : whole;
   if (!piece) return "";
   return `${piece.split("\n").map((l) => (l.trim() ? `> ${l}` : ">")).join("\n")}\n\n`;
 }

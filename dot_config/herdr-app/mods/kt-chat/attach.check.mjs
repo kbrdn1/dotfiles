@@ -71,5 +71,16 @@ assert.equal(quoteOf(msg, "devis est prêt"), "> devis est prêt\n\n", "a select
 assert.equal(quoteOf(msg, "autre chose ailleurs"), "> Le **devis** est prêt.\n>\n> Voir [le fichier](./devis.pdf) et `make check`.\n\n", "not from it: the whole message");
 assert.equal(quoteOf(msg, ""), quoteOf(msg, null));
 assert.equal(quoteOf("", "x"), "");
+// A copy that only happens to be in the message is no selection (cold review, pass 2, point 7): « dev »
+// copied in a terminal, then Citer under an answer that says « dev », quotes the answer.
+const answer = "La branche dev est à jour : rien à fusionner.";
+assert.equal(quoteOf(answer, "dev"), `> ${answer}\n\n`, "« dev »: a banal copy, the whole answer");
+assert.equal(quoteOf(answer, "est à"), `> ${answer}\n\n`, "two short words: not enough");
+assert.equal(quoteOf(answer, "anche dev est à jour"), `> ${answer}\n\n`, "cut inside a word: no selection");
+assert.equal(quoteOf(answer, "branche dev est à jour"), "> branche dev est à jour\n\n", "whole words, long enough: the selection");
+assert.equal(quoteOf(msg, "Voir le fichier et make check"), "> Voir le fichier et make check\n\n", "as read on screen: link and code without their marks");
+const pose = "Clé déjà posée là-bas";
+assert.equal(quoteOf(pose, "éjà posée là-bas"), `> ${pose}\n\n`, "an accented letter is a letter: cut inside a word");
+assert.equal(quoteOf(pose, "déjà posée là-bas"), "> déjà posée là-bas\n\n");
 
 console.log("attach: ok");
