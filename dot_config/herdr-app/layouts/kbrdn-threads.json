@@ -68,20 +68,28 @@
                   "gap": 4,
                   "children": [
                     {
-                      "id": "main",
-                      "type": "block",
-                      "content": {
-                        "tab": "active",
-                        "pane": {
-                          "background": "background",
-                          "border": { "width": 1, "color": "border" },
-                          "focus": { "width": 1, "color": "accent" },
-                          "radius": 16,
-                          "gap": 4,
-                          "lone": true
-                        }
-                      },
-                      "floating": [{ "id": "details", "content": { "mod": "kt-details" }, "edge": "right", "align": "start" }]
+                      "id": "thread-body",
+                      "type": "stack",
+                      "active": "main",
+                      "floating": [{ "id": "details", "content": { "mod": "kt-details" }, "edge": "right", "align": "start" }],
+                      "children": [
+                        {
+                          "id": "main",
+                          "type": "block",
+                          "content": {
+                            "tab": "active",
+                            "pane": {
+                              "background": "background",
+                              "border": { "width": 1, "color": "border" },
+                              "focus": { "width": 1, "color": "accent" },
+                              "radius": 16,
+                              "gap": 4,
+                              "lone": true
+                            }
+                          }
+                        },
+                        { "id": "chat", "type": "block", "content": { "mod": "kt-chat" } }
+                      ]
                     },
                     {
                       "id": "composer",
@@ -91,6 +99,7 @@
                     }
                   ]
                 },
+                { "id": "hub", "type": "block", "content": { "mod": "kt-hub" } },
                 { "id": "inbox", "type": "block", "content": { "mod": "kt-inbox" } },
                 { "id": "kanban", "type": "block", "content": { "mod": "kt-kanban" } },
                 { "id": "workflow", "type": "block", "content": { "mod": "kt-workflow" } },
