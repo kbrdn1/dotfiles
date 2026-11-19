@@ -37,10 +37,14 @@ Closes #29
 
 ## Workflow
 
+Sur une machine où l'on travaille la config, passer la source sur `dev` une fois après l'installation (`install.sh` installe `main`) : `git -C ~/.local/share/chezmoi switch dev`.
+
+Tout changement qui arrive sur `dev` ajoute sa ligne sous `[Unreleased]` de [`CHANGELOG.md`](CHANGELOG.md), dans le même commit ou la même PR : c'est ce que la release déplace ensuite.
+
 **Petit changement** (un correctif, un lot de mods vérifié) : directement sur `dev`.
 
 1. `chezmoi add <chemins explicites>` (jamais de `chezmoi apply` sans chemin : `~/.claude` doit rester en `0700`)
-2. `git add` des mêmes fichiers, puis commit
+2. `git add` des mêmes fichiers et de `CHANGELOG.md`, puis commit
 3. `git push origin dev`
 
 **Changement plus gros** : une branche et une PR vers `dev`.
