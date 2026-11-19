@@ -12,13 +12,14 @@
 //   there is no bridge (Codex): the body works with nothing in hand.
 // - since: when the state began (ms), if known (herdr-bridge's since); else the first time this
 //   memo saw the state. Herdr gives no time for done or blocked: the memo is what keeps it.
-// - memo: an object the caller keeps per companion (per agent); cx: the render's cx, to schedule
-//   the next step of a one-shot (the done celebration, the wave) and the fall asleep after 10 min.
+// - memo: an object the caller keeps per companion (per agent: a one-shot's cue, the asleep timer);
+//   cx: the render's cx, to schedule falling asleep after 10 min.
 // - size: the tile's width in css px (24 draws 21x16, 32 draws 31.5x24): the PNG is picked so one
 //   image pixel is one screen pixel, never scaled. dpr: the screen scale, 2 by default.
 // What moves: working and blocked swap two frames natively (no script, no timer); done and a
-// click's wave play once in under a second (a short timer.after chain); idle, asleep and error
-// are still.
+// click's wave play once in under a second, natively too (once(): opacity transitions with delays,
+// one cue render, no timer stepping an image); idle, asleep and error are still. The one timer left
+// is falling asleep after 10 min idle: a state, not a frame.
 import { div, image, svg } from "gpui-kit";
 import { settings, theme } from "herdr";
 
@@ -80,26 +81,37 @@ export function companion(o) {
   const A = P.anims[anim];
   const [bw, bh] = DATA.grid;
   const [aw, ah] = DATA.accessory_grid;
+  // an accessory on a body: it moves only while its body does (working, blocked, the done celebration)
+  const holder = (c, a, tag) => {
+    const C = c && DATA.accessories[c];
+    if (!C) return null;
+    const [sx, sy] = DATA.slots[C.slot];
+    const still = a === "sleep" || a === "idle" || a === "error";
+    return div().absolute().left(sx * s).top(sy * s).w(aw * s).h(ah * s)
+      .child(still ? frame(src(C.frames[C.play[0]]), aw * s, ah * s) : layer(C, src, aw * s, ah * s, `${tag}-${c}`));
+  };
   let body;
-  let wake = null; // when to draw again: the next step of a one-shot, or falling asleep
+  let held = holder(acc, anim, id);
+  let wake = null; // when to draw again: falling asleep (a state, not a frame)
+  let rest = anim;
   if (A.mode === "once") {
-    const i = Math.min(A.play.length - 1, Math.max(0, Math.floor((now - start) / A.ms)));
-    body = frame(src(A.frames[A.play[i]]), bw * s, bh * s);
-    wake = start + (i + 1) * A.ms;
-    if (i === A.play.length - 1) wake = start + A.play.length * A.ms;
+    // the done celebration, a click's wave: played natively (once()), then what shows after them, with
+    // its accessory; the one-shot's own (the sparkles) goes with it
+    const n = A.play.length;
+    const next = pick({ key, state: o.state, action: o.action, since, now: start + n * A.ms + 1, memo: { ...memo, waveAt: null } });
+    const after = P.anims[next.anim]?.mode === "once" ? { anim: "idle", acc: null } : next;
+    const oid = `${id}-${anim}-${start}`;
+    const then = div().absolute().left(0).top(0).w(bw * s).h(bh * s)
+      .child(layer(P.anims[after.anim], src, bw * s, bh * s, `${oid}-after-${after.anim}`));
+    const theirs = holder(after.acc, after.anim, `${oid}-after`);
+    body = once(oid, A.play.map((f) => frame(src(A.frames[f]), bw * s, bh * s)), A.ms,
+      theirs ? then.child(theirs) : then, memo, bw * s, bh * s);
+    if (held) held = held.id(`${oid}-held`).opacity(memo.armed === oid ? 0 : 1).transition("opacity", step(n * A.ms));
+    rest = after.anim;
   } else {
     body = layer(A, src, bw * s, bh * s, `${id}-${anim}`);
-    if (anim === "idle") wake = since + DATA.timing.sleep_after_ms;
   }
-  let held = null;
-  if (acc && DATA.accessories[acc]) {
-    const C = DATA.accessories[acc];
-    const [sx, sy] = DATA.slots[C.slot];
-    // an accessory moves only while its body does (working, blocked, the done celebration)
-    const still = anim === "sleep" || anim === "idle" || anim === "error";
-    held = div().absolute().left(sx * s).top(sy * s).w(aw * s).h(ah * s)
-      .child(still ? frame(src(C.frames[C.play[0]]), aw * s, ah * s) : layer(C, src, aw * s, ah * s, `${id}-${acc}`));
-  }
+  if (rest === "idle") wake = since + DATA.timing.sleep_after_ms;
   if (wake != null && o.cx && memo.wake !== wake && wake > now) {
     memo.wake = wake;
     o.cx.timer.after(Math.ceil(wake - now) + 5, (cx) => cx.notify());
@@ -118,6 +130,29 @@ export function companion(o) {
 // One image, drawn at one image pixel per screen pixel.
 function frame(path, w, h) {
   return image(path).absolute().left(0).top(0).w(w).h(h);
+}
+
+// An opacity step `delay` ms after the target changes: crisp (16 ms), linear.
+const step = (delay) => ({ duration: 16, delay, easing: "linear" });
+
+/**
+ * A one-shot played natively, no timer stepping its images: `frames` (elements drawn at 0,0) one after
+ * the other `ms` apart, then `after` for good. Each frame sits in two boxes whose opacity transitions show
+ * it at i * ms and hide it at (i + 1) * ms; `after` shows at n * ms. They start together when the one-shot
+ * is armed: the render after its first layout (on_size_change, the cue motion.js enter() takes), so one
+ * render more, then nothing. Before that the first frame shows. `id`: one per one-shot (a new start, a
+ * new id: it plays again); `memo.armed` keeps the armed one. w, h: the frames' box.
+ */
+export function once(id, frames, ms, after, memo, w, h) {
+  const armed = memo.armed === id;
+  const box = (key) => div().id(`${id}-${key}`).absolute().left(0).top(0).w(w).h(h);
+  let el = box("once");
+  if (!armed) el = el.on_size_change((_size, cx) => { if (memo.armed === id) return; memo.armed = id; cx.notify(); });
+  frames.forEach((f, i) => {
+    el = el.child(box(`in${i}`).opacity(i === 0 || armed ? 1 : 0).transition("opacity", step(i * ms))
+      .child(box(`out${i}`).opacity(armed ? 0 : 1).transition("opacity", step((i + 1) * ms)).child(f)));
+  });
+  return el.child(box("after").opacity(armed ? 1 : 0).transition("opacity", step(frames.length * ms)).child(after));
 }
 
 // A loop: its two frames stacked, each shown half the time by an opacity square wave in opposite

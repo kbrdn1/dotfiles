@@ -54,10 +54,12 @@ const ui = {
 // hc and agents() go through these two, which a case may swap (#81's keys route).
 let hcFake = async () => ({});
 let agentsFake = () => [];
+// checking() answers live.checking: true for the Chat (as herdr-app check), false where a timer is the point.
+const live = { checking: true };
 const host = {
   agents: () => agentsFake(), panes: () => [], spaces: () => [], terminals: () => [], theme: () => ({}), settings: () => ({ dark: true, zoom: 1 }),
   props: () => ({}), shared: () => undefined, layout: () => null, focused: () => null, keys: () => ({}),
-  home: () => "/h", appHome: () => "/h/.config/herdr-app", checking: () => true, nextCommand: () => new Promise(() => {}),
+  home: () => "/h", appHome: () => "/h/.config/herdr-app", checking: () => live.checking, nextCommand: () => new Promise(() => {}),
   exec: async () => ({ code: 0, stdout: "" }), hc: (a) => hcFake(a), readTextFile: async () => "", writeTextFile: async () => {},
 };
 const stub = (set, own, make) => Object.fromEntries([...set].map((n) => [n, n in own ? own[n] : make(n)]));
@@ -392,6 +394,74 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   c.closeBg(x);
   assert.equal(c.bgMenu, false, "it closes at once");
   assert.equal(x.timers.length, 0, "no timer");
+}
+
+// ── The runner (Clawd, or Ember / Prompt): no timer ever steps an image (the cold review's P2) ──────
+// A one-shot (the jump of « fini », the companion's done and wave) is companion.js once(): each image in
+// two boxes whose opacity transitions show it at i * ms and hide it at (i + 1) * ms, armed by one cue (the
+// first layout's on_size_change), then the scene after it; the only timer left is the next draw of a
+// variant, while the agent works or waits.
+{
+  live.checking = false;
+  const { draw: runner } = await import("./runner.js");
+  const { EPOCH, STEP, CLAWD_POSES } = await import("./runner-plan.js");
+  const clawd = { complete: true, poses: Object.fromEntries(CLAWD_POSES.map((p) => [p, { size: [24, 30], anchor: [0, 30] }])) };
+  const now = 10 * EPOCH + 1000;
+  const at = (memo, o) => { const x = cx(); const nodes = flat(runner({ p: { terminal: "tA", program: "claude", since: 0, ...o }, clawd, memo, now, reduced: false, seed: 42, cx: x })); return { x, nodes }; };
+  const byId = (nodes, id) => nodes.find((n) => callsOf(n, "id").some(([v]) => v === id));
+  const opacityOf = (n) => callsOf(n, "opacity").at(-1)?.[0];
+  const delayOf = (n) => callsOf(n, "transition").find(([k]) => k === "opacity")?.[1].delay;
+
+  // Done, just arrived: the jump, once; no timer; the cue on its first layout.
+  const memo = {};
+  let r = at(memo, { status: "done", doneAt: now });
+  assert.equal(r.x.timers.length, 0, "the jump: no timer");
+  const jid = `kc-runner-jump-${now}`;
+  const once = byId(r.nodes, `${jid}-once`);
+  assert.ok(once && callsOf(once, "on_size_change").length === 1, "the jump waits for its cue (first layout)");
+  assert.deepEqual([0, 1, 2, 3].map((i) => [opacityOf(byId(r.nodes, `${jid}-in${i}`)), opacityOf(byId(r.nodes, `${jid}-out${i}`))]),
+    [[1, 1], [0, 1], [0, 1], [0, 1]], "before the cue: the first pose only");
+  // The cue: one render more, then the targets, each with its delay.
+  callsOf(once, "on_size_change")[0][0]({}, r.x);
+  assert.equal(r.x.notified, 1, "the cue draws once more");
+  r = at(memo, { status: "done", doneAt: now });
+  assert.equal(r.x.timers.length, 0, "armed: still no timer");
+  assert.deepEqual([0, 1, 2, 3].map((i) => [delayOf(byId(r.nodes, `${jid}-in${i}`)), delayOf(byId(r.nodes, `${jid}-out${i}`))]),
+    [[0, STEP], [STEP, 2 * STEP], [2 * STEP, 3 * STEP], [3 * STEP, 4 * STEP]], "each pose shown at i x 85 ms, hidden at (i + 1) x 85 ms");
+  const after = byId(r.nodes, `${jid}-after`);
+  assert.deepEqual([opacityOf(after), delayOf(after)], [1, 4 * STEP], "then the resting scene, for good");
+  assert.equal(callsOf(byId(r.nodes, `${jid}-once`), "on_size_change").length, 0, "armed: no cue any more");
+
+  // The draws: a timer while the agent works or waits, none once done.
+  assert.deepEqual(["working", "blocked", "done", "error"].map((status) => at({}, { status, action: { tool: "Edit", at: 1 } }).x.timers.map(([ms]) => ms)),
+    [[11 * EPOCH - now], [11 * EPOCH - now], [], []], "the next draw's timer: not once done");
+
+  // The companion (Prompt for Codex): its done celebration once, natively; no timer either.
+  const cm = {};
+  const done = at(cm, { status: "done", program: "codex", since: now });
+  assert.deepEqual(done.x.timers.map(([ms]) => ms), [600000 + 5], "the companion's done: no timer steps it, the one timer is falling asleep 10 min later");
+  const cid = `kc-runner-tA-done-${now}`;
+  assert.ok(byId(done.nodes, `${cid}-once`), "its done is a once()");
+  callsOf(byId(done.nodes, `${cid}-once`), "on_size_change")[0][0]({}, done.x);
+  const armed = at(cm, { status: "done", program: "codex", since: now });
+  assert.deepEqual([delayOf(byId(armed.nodes, `${cid}-in1`)), delayOf(byId(armed.nodes, `${cid}-after`)), delayOf(byId(armed.nodes, `${cid}-held`))],
+    [110, 440, 440], "its frames 110 ms apart, then idle, its sparkles gone with them");
+  assert.equal(armed.x.timers.length, 0, "armed: no timer");
+
+  // A click's wave on a blocked companion: once, natively, then blocked again with its bang, both in the
+  // box shown after the wave (nothing to draw again: no timer).
+  const wm = { waveAt: now };
+  const wave = at(wm, { status: "blocked", program: "codex", since: now - 1000 });
+  const wid = `kc-runner-tA-wave-${now}`;
+  assert.equal(wave.x.timers.length, 0, "the wave: no timer");
+  callsOf(byId(wave.nodes, `${wid}-once`), "on_size_change")[0][0]({}, wave.x);
+  const waved = at(wm, { status: "blocked", program: "codex", since: now - 1000 });
+  const box = byId(waved.nodes, `${wid}-after`);
+  const under = (n, out = []) => { out.push(n); for (const q of n.kids) under(q.__node, out); return out; };
+  const ids = under(box).flatMap((n) => callsOf(n, "id").map(([v]) => v));
+  assert.deepEqual([delayOf(box), ids.includes(`${wid}-after-blocked-a`), ids.includes(`${wid}-after-bang-a`)], [4 * 170, true, true],
+    "after the wave (4 x 170 ms): blocked and its bang");
+  live.checking = true;
 }
 
 console.log("chat-motion.check: ok");

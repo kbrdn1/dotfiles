@@ -42,19 +42,23 @@ eq([w.mood, VARIANTS.type[w.variant].poses, w.wake], ["type", w.poses, 11 * EPOC
 eq(P({ status: "working", acc: "read" }).mood, "read", "reading: the magnifier");
 eq(P({ status: "working", acc: "think" }).mood, "think", "thinking: glances");
 eq(P({ status: "blocked" }).mood, "blocked", "blocked: waits");
+// the timer of the draws runs while the agent works or waits: done, the last draw holds (error: one pose)
+eq(["working", "blocked", "done", "error"].map((s) => P({ status: s, acc: "edit" }).wake ?? null), [11 * EPOCH, 11 * EPOCH, null, null], "wake: not once done");
 eq(P({ status: "error" }), { who: "clawd", mood: "error", variant: 0, poses: ["error"] }, "error: still, no wake");
 eq(P({ status: "working", acc: "edit", now: 10 * EPOCH + 100 }).variant, P({ status: "working", acc: "edit", now: 11 * EPOCH - 1 }).variant, "inside an epoch: the same variant");
 eq(P({ status: "working", acc: "edit", now: 10 * EPOCH }).variant !== P({ status: "working", acc: "edit", now: 11 * EPOCH }).variant, true, "the next epoch: another one");
 for (const s of [["working", "edit"], ["working", "read"], ["working", "think"], ["blocked", null], ["done", null], ["error", null]])
   eq(P({ status: s[0], acc: s[1], reduced: true }), { who: "clawd", mood: moodOf(s[0], s[1]), variant: 0, poses: [VARIANTS[moodOf(s[0], s[1])][0].poses[0]] }, `reduced motion: one pose, still (${s.join(" ")})`);
-// the jump: four steps, one render each, then resting
+// the jump: its four poses once, natively (runner.js hands them to companion.js once()), over the
+// resting variant; no timer: drawn while its 340 ms last, gone after
 const T = 10 * EPOCH + 1000;
-eq([0, 84, 85, 170, 255, 339].map((dt) => P({ status: "done", doneAt: T - dt, now: T }).poses[0]), ["done-0", "done-0", "done-1", "done-2", "done-3", "done-3"], "done: the jump's steps");
-eq(P({ status: "done", doneAt: T - 100, now: T }).wake, T + 70, "done: the next step's time");
-const rest = P({ status: "done", doneAt: T - 340, now: T });
-eq([rest.mood, rest.variant >= 0, rest.wake], ["rest", true, 11 * EPOCH], "done: then resting, with its draws");
-eq(P({ status: "done", doneAt: null }).mood, "rest", "opened done: resting");
-eq(P({ status: "done", doneAt: T, now: T, reduced: true }).poses, ["idle"], "reduced motion: no jump");
+const J = { poses: ["done-0", "done-1", "done-2", "done-3"], ms: STEP };
+eq([0, 100, 339].map((dt) => P({ status: "done", doneAt: T - dt, now: T }).jump), [0, 100, 339].map((dt) => ({ ...J, at: T - dt })), "done: the jump, from doneAt");
+eq([340, 5000].map((dt) => P({ status: "done", doneAt: T - dt, now: T }).jump ?? null), [null, null], "done: no jump once it is over");
+const rest = P({ status: "done", doneAt: T, now: T });
+eq([rest.mood, VARIANTS.rest[rest.variant].poses, rest.wake ?? null], ["rest", rest.poses, null], "done: the jump over the resting variant, no wake");
+eq([P({ status: "done", doneAt: null }).mood, P({ status: "done", doneAt: null }).jump ?? null], ["rest", null], "opened done: resting, no jump");
+eq(P({ status: "done", doneAt: T, now: T, reduced: true }), { who: "clawd", mood: "rest", variant: 0, poses: ["idle"] }, "reduced motion: no jump");
 
 // a glance's windows: up `for` ms in the middle of each period, the rest down meanwhile
 const at = (l, t) => { const h = l.period / 2, u = t % l.period, x = u < h ? u / h : 2 - u / h; return Math.min(1, Math.max(0, l.from + (l.to - l.from) * x)); };

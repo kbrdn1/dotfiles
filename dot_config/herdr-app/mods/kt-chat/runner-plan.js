@@ -5,8 +5,9 @@
 // extract.mjs), else the program's companion (Ember, Prompt: companion.js). What he does follows what the
 // agent does (a mood: types, reads, thinks, waits, rests, fails), and within a mood a variant drawn by chance
 // every EPOCH: a pair of poses swapped natively, sometimes a glance (another pose a moment, natively too).
-// Renders: one per state change, one per step of the jump, one per EPOCH while there is more than one
-// variant to show (the only timer); everything between moves natively.
+// Renders: one per state change (and one cue for the jump of « fini », played natively), one per EPOCH
+// while the agent works or waits (the only timer: done, the last draw holds); everything between moves
+// natively, no timer ever steps an image.
 export const STEP = 85; // the companions' cadence
 export const EPOCH = 80 * STEP; // 6.8 s: how long a variant holds before chance may change it
 export const CLAWD_POSES = ["idle", "type-0", "type-1", "read-0", "read-1", "look-0", "look-1", "done-0", "done-1", "done-2", "done-3", "error"];
@@ -135,9 +136,11 @@ export function doneAt(prev, next, now) {
  * o: { status, program, acc (companion.js accessoryFor of the fresh action), reduced, clawd (his manifest
  * or null), doneAt, now, seed }.
  * -> null (not there) | { who: "companion" }
- *  | { who: "clawd", mood, variant, poses: [one] or [a, b], ms?, glance?, wake? }
- *    two poses swap natively every ms; glance: { pose, every, for }; wake: when to render again (the
- *    jump's next step, or the next epoch's draw). Reduced motion: the mood's first pose, still, no wake.
+ *  | { who: "clawd", mood, variant, poses: [one] or [a, b], ms?, glance?, jump?, wake? }
+ *    two poses swap natively every ms; glance: { pose, every, for }; jump: { poses, ms, at }, the jump of
+ *    « fini » played once natively (companion.js once()) before the variant, from `at`; wake: when to
+ *    draw again, the next epoch's draw, while the agent works or waits (done: the last draw, then
+ *    nothing; error has one pose). Reduced motion: the mood's first pose, still, no jump, no wake.
  */
 export function plan(o) {
   if (!runnerShown(o.status, o.program)) return null;
@@ -145,16 +148,13 @@ export function plan(o) {
   const mood = moodOf(o.status, o.acc);
   const list = VARIANTS[mood];
   if (o.reduced) return { who: "clawd", mood, variant: 0, poses: [list[0].poses[0]] };
-  if (mood === "rest" && o.doneAt != null) {
-    const i = Math.floor((o.now - o.doneAt) / STEP);
-    if (i >= 0 && i < JUMP.length) return { who: "clawd", mood, variant: -1, poses: [JUMP[i]], wake: o.doneAt + (i + 1) * STEP };
-  }
   const epoch = Math.floor(o.now / EPOCH);
   const variant = variantAt(mood, o.seed ?? 0, epoch);
   const { poses, ms, glance } = list[variant];
   const p = { who: "clawd", mood, variant, poses };
   if (ms) p.ms = ms;
   if (glance) p.glance = glance;
-  if (list.length > 1) p.wake = (epoch + 1) * EPOCH;
+  if (mood === "rest" && o.doneAt != null && o.now >= o.doneAt && o.now - o.doneAt < JUMP.length * STEP) p.jump = { poses: [...JUMP], ms: STEP, at: o.doneAt };
+  if (o.status !== "done" && list.length > 1) p.wake = (epoch + 1) * EPOCH;
   return p;
 }

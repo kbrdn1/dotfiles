@@ -4,8 +4,8 @@
 // companion (companion.js) without him.
 // A retained nested view: kt-chat makes it once (`cx.new(Runner)` in init), mounts it when runnerShown(),
 // and hands it runnerProps() ({ terminal, status, program, action, since }) with set_props from a task.
-// Its own renders (a state change, the four steps of the jump, one per epoch) never render kt-chat
-// (measured: 201 renders of a nested view for 8 of its parent). companion.js is a copy of
+// Its own renders (a state change, the jump's one cue, one per epoch while the agent works or waits) never
+// render kt-chat (measured: 201 renders of a nested view for 8 of its parent). companion.js is a copy of
 // brand/companions/companion.js (kt-mods' SHARED; src/build.py writes its data and refreshes the copies).
 //
 // The strip: 96 x 56 css px. kt-chat owns its place: a 96 x 56 box first in the composer's flow, between
@@ -15,7 +15,7 @@
 import { View, div, image } from "gpui-kit";
 import { appHome, shared, checking } from "herdr";
 import * as fs from "fs/promises";
-import { companion, accessoryFor } from "./companion.js";
+import { companion, accessoryFor, once } from "./companion.js";
 import { plan, runnerShown, runnerProps, keepBottom, freshAction, glanceLoops, doneAt, keyOf, CLAWD_POSES } from "./runner-plan.js";
 
 export { runnerShown, runnerProps, keepBottom };
@@ -39,9 +39,9 @@ export function draw({ p, clawd, memo, now, reduced, seed, cx }) {
   if (!pl) return strip;
   if (pl.who === "companion") {
     return strip.child(div().absolute().left(LEFT).top(H - GROUND - 16)
-      .child(companion({ program: p.program, state: p.status, action: p.action, since: p.since, size: 24, id: `kc-runner-${p.terminal}`, memo, cx })));
+      .child(companion({ program: p.program, state: p.status, action: p.action, since: p.since, now, size: 24, id: `kc-runner-${p.terminal}`, memo, cx })));
   }
-  // one timer per wake (the jump's next step, the next epoch), even if kt-chat hands new props meanwhile
+  // one timer per wake (the next epoch, while the agent works or waits), even if kt-chat hands new props meanwhile
   if (pl.wake != null && cx && !checking() && memo.runnerWake !== pl.wake) {
     memo.runnerWake = pl.wake;
     cx.timer.after(Math.max(16, pl.wake - now), (cx) => cx.notify());
@@ -62,10 +62,16 @@ export function draw({ p, clawd, memo, now, reduced, seed, cx }) {
     base = base.child(layer(`${tag}-a`).loop("opacity", wave(false)).child(pose(a)))
       .child(layer(`${tag}-b`).loop("opacity", wave(true)).child(pose(b)));
   }
-  if (!pl.glance) return strip.child(base);
-  // a glance: its pose up a moment in the middle of each period, the rest down meanwhile (two windows)
-  const g = glanceLoops(pl.glance.every, pl.glance.for);
-  return strip.child(base.loop("opacity", g.hide)).child(layer(`${tag}-glance`).loop("opacity", g.show).child(pose(pl.glance.pose)));
+  let scene = base;
+  if (pl.glance) {
+    // a glance: its pose up a moment in the middle of each period, the rest down meanwhile (two windows)
+    const g = glanceLoops(pl.glance.every, pl.glance.for);
+    scene = layer(`${tag}-scene`).child(base.loop("opacity", g.hide)).child(layer(`${tag}-glance`).loop("opacity", g.show).child(pose(pl.glance.pose)));
+  }
+  if (!pl.jump) return strip.child(scene);
+  // the jump of « fini », once and natively (companion.js once(): no timer steps it), then the scene
+  const j = pl.jump, jid = `kc-runner-jump-${j.at}`;
+  return strip.child(once(jid, j.poses.map((n) => layer(`${jid}-${n}`).child(pose(n))), j.ms, scene, memo, W, H));
 }
 
 export class Runner extends View {
