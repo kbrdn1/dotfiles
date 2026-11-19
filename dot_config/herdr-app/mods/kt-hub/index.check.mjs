@@ -329,6 +329,36 @@ s = sum();
 assert.equal(s.days["2026-11-10"].p.hist, 1, "the summary's 12 weeks reach back before the junction");
 assert.deepEqual(s.streak, { cur: 0, best: 2 });
 
+// ---------------------------------------------------------------- #88: a project deleted by force
+// kt-projects asks (shared "kt.hub.forget", { folder: at }); the pass purges it once, under its lock.
+{
+  const before = arch(), shared0 = readFileSync(cfg.shared, "utf8");
+  const ask = (at) => put(cfg.shared, JSON.stringify({ ...JSON.parse(shared0), "kt.hub.forget": { [`${D}/repo`]: at } }));
+  const of = (A) => [Object.entries(A.cwds).filter(([c, r]) => c === `${D}/repo` || r?.root === `${D}/repo`).length, Object.values(A.files).filter((st) => st.proj === `${D}/repo`).length];
+  assert.ok(before.projects[`${D}/repo`] && of(before).every((n) => n > 0), "it has days, folders and sessions");
+  ask(1000);
+  X.run(cfg);
+  a = arch();
+  assert.equal(a.projects[`${D}/repo`], undefined, "its days and heatmap");
+  assert.deepEqual(of(a), [0, 0], "the folders that resolved to it, its sessions' project");
+  assert.deepEqual(a.projects[`${D}/reg/proj`], before.projects[`${D}/reg/proj`], "another project stays");
+  assert.deepEqual(a.days, before.days, "the global days stay");
+  assert.deepEqual(a.forgot, { [`${D}/repo`]: 1000 }, "the purge kept");
+  assert.equal(sum().projects[`${D}/repo`], undefined, "the summary follows");
+  // Its session goes on: a new project, which the same request leaves; a newer one purges it again.
+  appendFileSync(`${PROJ}/-wt/${B}.jsonl`, lines(prompt(B, `${D}/wts/feat-1`, "2026-11-30T09:00:00Z"), reply(B, `${D}/wts/feat-1`, "2026-11-30T09:00:30Z", "b3")));
+  X.run(cfg);
+  assert.deepEqual(Object.keys(arch().projects[`${D}/repo`].days), ["2026-11-30"], "only its new day");
+  ask(1000);
+  X.run(cfg);
+  assert.ok(arch().projects[`${D}/repo`], "not replayed");
+  ask(2000);
+  X.run(cfg);
+  assert.equal(arch().projects[`${D}/repo`], undefined, "a newer request purges again");
+  assert.deepEqual(arch().forgot, { [`${D}/repo`]: 2000 });
+  put(cfg.shared, shared0);
+}
+
 // A broken archive stops the pass: starting over would lose the days the transcripts no longer hold.
 writeFileSync(`${cfg.out}/archive.json`, "{");
 assert.throws(() => X.run(cfg));

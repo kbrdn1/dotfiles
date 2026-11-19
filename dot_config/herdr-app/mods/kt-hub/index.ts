@@ -455,6 +455,7 @@ export type Archive = {
   plans?: Record<string, { t: number; p: ReturnType<typeof planOf> }>; // #50: ~/Reports' plans (not archived either)
   notes?: { path: string; title: string; vault: string; at: number; type: string | null }[]; // #50: the vault's notes of these days
   pass?: { at: number; ms: number; files: number; read: number };
+  forgot?: Record<string, number>; // #88: the purges done (shared "kt.hub.forget"), folder -> its request's at
 };
 const empty = (): Archive => ({ v: V, first: null, junction: null, historyDone: false, titled: true, files: {}, cwds: {}, days: {}, projects: {}, prs: {}, flows: {} });
 
@@ -476,6 +477,24 @@ export function backfillTitles(A: Archive, ctx: Ctx) {
     if (st.cwd && !st.proj) st.proj = attribute(st.cwd, st.pr ?? null, ctx);
   }
   A.titled = true;
+}
+
+/** #88: the projects deleted by force (shared "kt.hub.forget", { folder: at }, written by kt-projects),
+ * purged once per request: their days and heatmap (projects[folder]), the folders known to resolve to it,
+ * the sessions' project. The global days keep their counts: they are no project's. A.forgot keeps each
+ * purge's `at`, so none is replayed; a session opened there later makes a new project. Irreversible: the
+ * transcripts of the days before the junction are gone, the archive alone held them. */
+export function forget(A: Archive, req: Record<string, number> | undefined) {
+  const done: string[] = [];
+  for (const [folder, at] of Object.entries(req ?? {})) {
+    if (!Number.isFinite(at) || (A.forgot?.[folder] ?? 0) >= at) continue;
+    delete A.projects[folder];
+    for (const [cwd, r] of Object.entries(A.cwds)) if (cwd === folder || (r && r.root === folder)) delete A.cwds[cwd];
+    for (const st of Object.values(A.files)) if (st.proj === folder) delete st.proj;
+    (A.forgot ??= {})[folder] = at;
+    done.push(folder);
+  }
+  return done;
 }
 
 export function loadArchive(file: string): Archive {
@@ -754,6 +773,7 @@ export function run(cfg: Cfg) {
       if (!chezmoiManaged(cwd, cfg.home, chez)) return r;
       return (chezRoot ??= gitRoot(sh("chezmoi", ["source-path"]) ?? ""));
     });
+    forget(A, shared["kt.hub.forget"]); // #88: the projects deleted by force, purged under the lock
     const ctx: Ctx = { home: cfg.home, reg: registryOf(shared), scratch: cfg.scratch, cwds: A.cwds, resolve, projects: A.projects };
     seed(ctx, A.historyDone ? null : cfg.history);
     if (!A.titled) backfillTitles(A, ctx);

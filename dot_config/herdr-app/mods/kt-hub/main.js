@@ -16,8 +16,8 @@
 // The indexer runs (exec, bun by its path: exec's PATH has no ~/.nix-profile): on the first show and on
 // coming back after 60 s, the old summary staying shown; on the bus's "agents" while shown, 60 s apart at
 // most (a bump in between waits for its turn); on r. A hidden copy doesn't render, so it doesn't hear
-// the bus: it catches up when it shows. One 5 s tick while shown (the page left, a bump waiting, the day
-// and the minute changing); none while hidden.
+// the bus: it catches up when it shows. One tick while shown (each second the page left; each 5 s a bump
+// waiting, the day and the minute changing); none while hidden.
 // Keys (vim.js): j / k gg / G the sections, [ / ] or h / l the year, tab the source (global view), v the
 // view, r index (and the project's PRs and worktrees), enter (Now: go to the agent; Projects: all or 6),
 // ? kt-keys, q / esc back to the thread when there is one.
@@ -55,6 +55,8 @@ const H = (name) => `mods/kt-hub/${name}.svg`;
 const HISTORY = "mods/kt-panel-head/history.svg";
 const SPIN = "mods/workspace-chrome/spinner.svg";
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
+// A registry entry archived (#88, kt-projects; projects.js isArchived).
+const archived = (e) => Number.isFinite(e?.archived);
 const parse = (s) => { try { return JSON.parse(s ?? ""); } catch { return null; } };
 const paint = (path, c) => globalThis.window.paint_path(path, c).absolute().inset_0();
 const AGAIN_MS = 60e3; // the indexer at most once a minute, unless r
@@ -501,17 +503,20 @@ export default class Hub extends View {
     });
   }
 
-  // The 5 s tick, only while shown: the page left (so its return reads again), a bump's turn, the day
-  // and the minute (the clock, « il y a ») changing, the keyboard coming or going.
+  // The tick, only while shown: each second, the page left (a hidden copy doesn't render: this is how it
+  // knows, so its return reads again and opens at the top, a short leave included); each 5 s, a bump's
+  // turn, the day and the minute (the clock, « il y a ») changing, the keyboard coming or going.
   startTick(cx) {
     if (this.tick) return;
-    this.tick = cx.timer.every(5000, (cx) => {
+    let n = 0;
+    this.tick = cx.timer.every(1000, (cx) => {
       if (!visible()) {
         this.shown = false;
         this.tick?.cancel();
         this.tick = null;
         return;
       }
+      if (++n % 5) return;
       if (this.waiting && Date.now() - this.ranAt >= AGAIN_MS) this.index(cx, "bus");
       if (this.source === "github") this.ghLoad(cx, this.ghYear); // asks gh only when stale
       if (this.d && localDay(Date.now()) !== this.d.today) this.derive();
@@ -1021,16 +1026,22 @@ export default class Hub extends View {
     return box.bg(alpha(fill, r.entry ? "ff" : "66")).child(div().font_family(MONO).font_bold().text_size(11).text_color(t.chrome).child(([...name][0] ?? "?").toUpperCase()));
   }
 
+  // A pill after a project's name: not in the registry, archived (#88).
+  pill(t, text) {
+    return div().flex_none().h(16).px(6).flex().items_center().rounded_full().border(1).border_color(t.border).font_family(MONO).text_size(9.5).text_color(t.dim).child(text);
+  }
+
   projRow(t, r, seen) {
     const name = r.kind === "other" ? tr("proj.other") : r.name;
     const color = r.entry?.color ? (r.entry.color.startsWith("#") ? r.entry.color : t[r.entry.color] ?? t.accent) : t.accent;
     const fig = (v, w, s) => div().w(w).flex_none().flex().justify_end().font_family(MONO).text_size(11).text_color(v ? t.foreground : t.dim).child(s);
-    return h_flex().id(`hub-p-${r.key}`).h(34).px(4).gap(10).items_center().rounded(10).hover((s) => s.bg(t.hover))
+    const arch = archived(r.entry); // #88: still counted, dimmed and said
+    return h_flex().id(`hub-p-${r.key}`).h(34).px(4).gap(10).items_center().rounded(10).hover((s) => s.bg(t.hover)).when(arch, (el) => el.opacity(0.55))
       .child(this.tile(t, r))
       .child(h_flex().flex_1().min_w(0).gap(8).items_center()
         .child(div().min_w(0).truncate().text_size(13).text_color(r.s ? t.foreground : t.muted).child(name))
-        .when(!r.entry && (r.kind === "repo" || r.kind === "gh"), (el) => el.child(div().flex_none().h(16).px(6).flex().items_center().rounded_full()
-          .border(1).border_color(t.border).font_family(MONO).text_size(9.5).text_color(t.dim).child(tr("proj.unlisted")))))
+        .when(!r.entry && (r.kind === "repo" || r.kind === "gh"), (el) => el.child(this.pill(t, tr("proj.unlisted"))))
+        .when(arch, (el) => el.child(this.pill(t, tr("proj.archived")))))
       .child(div().id(`hub-ps-${r.key}`).w(96).flex_none().tooltip(tr("proj.sparkTip", { list: r.spark.join(" · ") })).child(this.spark(t, r.spark, color, `sp:${r.key}`)))
       .child(fig(r.s, 70, num(r.s)))
       .child(fig(r.a, 80, r.a ? duration(r.a * 1000) : "—"))
@@ -1214,7 +1225,9 @@ export default class Hub extends View {
     return this.card(t, "phead", tr("proj.head"), null, null, h_flex().gap(10).items_center()
       .child(this.tile(t, tileRow))
       .child(v_flex().flex_1().min_w(0).gap(2)
-        .child(div().truncate().text_size(13.5).text_color(t.foreground).child(pr.name))
+        .child(h_flex().min_w(0).gap(8).items_center()
+          .child(div().min_w(0).truncate().text_size(13.5).text_color(t.foreground).child(pr.name))
+          .when(archived(pr.entry), (el) => el.child(this.pill(t, tr("proj.archived")))))
         .child(div().truncate().font_family(MONO).text_size(10.5).text_color(t.muted).child([pr.slug, pr.root.replace(home(), "~")].filter(Boolean).join(" · "))))
       .child(div().flex_none().max_w(420).truncate().font_family(MONO).text_size(11).text_color(wts?.length ? t.foreground : t.dim)
         .child(wts == null ? (side?.busy ? tr("proj.wtReading") : "") : wts.length ? tr("proj.wts", { n: wts.length, list: wts.slice(0, 4).join(", ") }) : tr("proj.wtNone"))), i);
