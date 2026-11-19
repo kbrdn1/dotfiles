@@ -28,6 +28,6 @@
 - [ ] `chezmoi diff <chemins>` verifie
 - [ ] `chezmoi apply --dry-run <chemins>` sans erreur (jamais d'apply sans chemin)
 - [ ] `CHANGELOG.md` : une ligne sous `[Unreleased]`
-- [ ] Checks des mods touches : chaque `<mod>/*.check.mjs` lancé un par un (`for f in <mod>/*.check.mjs; do bun "$f"; done`, `bun` n'en lance qu'un par appel), `bun test` pour les `*.test.mjs` bun:test
+- [ ] Checks des mods touches : chaque `<mod>/*.check.mjs` lancé un par un avec `bun` (il n'en lance qu'un par appel), et `bun test <mod>` pour tous ses `*.test.mjs` (bun:test comme node:assert) ; un mod sans l'un ni l'autre : le dire
 - [ ] Config testee localement
 - [ ] Pas de regression sur les autres configs
