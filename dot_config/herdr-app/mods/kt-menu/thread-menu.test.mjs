@@ -105,6 +105,23 @@ test("Touches opens the layout's help (kt-keys), never Herdr's app.help; its key
   expect(ran).toEqual([["mod.open", { name: "kt-keys" }]]);
 });
 
+test("a project's menu (#88): Archive, Delete by force, both open kt-projects on it, nothing runs bare", () => {
+  ran.length = 0;
+  opened.length = 0;
+  props = { tab: "project", target: { id: "[null,\"/fake/proj\"]" }, overlay: "o1" };
+  const m = new Menu();
+  m.init(props, { focus_handle: () => ({ focus() {} }), spawn() {} });
+  m.render({});
+  expect(seen.map((s) => s[1])).toEqual(["project.archive", "project.delete"]);
+  m.choose(0, { write_to_clipboard() {}, notify() {} });
+  m.choose(1, { write_to_clipboard() {}, notify() {} });
+  expect(opened.map((o) => [o.mod, o.props])).toEqual([
+    ["kt-projects", { id: "[null,\"/fake/proj\"]", then: "archive" }],
+    ["kt-projects", { id: "[null,\"/fake/proj\"]", then: "delete" }],
+  ]);
+  expect(ran).toEqual([]);
+});
+
 test("only the keys help closes the menu first and starts a group: another mod.open takes neither", () => {
   expect(isHelp(["Touches", "mod.open", { name: "kt-keys" }])).toBe(true);
   expect(isHelp(["Mods", "mod.open", { name: "kt-mods" }])).toBe(false);

@@ -16,7 +16,9 @@
 // is closed first, as for « Retirer »); the archived ones are listed last, under « Archivés (n) »,
 // folded until clicked or reached by the keys. On an archived one, a or Enter restores it at its
 // place. D deletes one by force (any project): kt-confirm with its name to type, then the entry and
-// what Herdr keeps for it go (projects.js deletePlan); kt-projects alone runs it.
+// what Herdr keeps for it go (projects.js deletePlan); kt-projects alone runs it. The right-click menu of a
+// project in kt-threads' bar (kt-menu) opens this dialog with props { id, then: "archive" | "delete" }: on
+// that project, the step started at once, as its key would.
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
@@ -119,7 +121,12 @@ export default class Projects extends View {
     this.vim = new Vim({ field: true });
     this.listScroll = ScrollHandle.new();
     this.motion = motionState(); // motion.js sheet(): the veil fades and the card rises in, the reverse on dismiss
+    // kt-menu's Archive / Delete by force on a project (#88): opened on it, the step run as its key would.
+    const asked = props()?.id ? registry().find((e) => e.id === props().id) : null;
+    if (asked) { this.select(asked.id); this.reveal = true; }
     if (checking()) return;
+    const then = props()?.then;
+    if (asked && (then === "archive" || then === "delete")) cx.spawn(async (cx) => { this.start(asked, then); cx.notify(); });
     // kt-confirm answers with `kt-projects.confirmed`; `next` / `prev` pick a project; `browse`
     // opens or closes the list of the folder's images; `key:<keys>` types keys, for tests.
     cx.spawn(async (cx) => {

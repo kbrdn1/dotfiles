@@ -47,6 +47,9 @@ import * as io from "./threads-io.js";
 // Not `registry`: that name is this file's own registry() (the sorted kt.projects), and the app's runtime let the
 // local one win without a word, every registry.<fn> undefined (2026-11-19). kt-keys/parse.check.mjs catches it.
 import * as projectRegistry from "./registry.js";
+// A project archived (#88, projects.js: its source is here): out of the bar and the picker, restored when a
+// space opens on it. A namespace for the same reason as above: `shown` is a local name in places.
+import * as archiving from "./projects.js";
 import { pollMachines, guard, reachable, stateOf, stateWord, stateColor, machineList } from "./machines.js";
 import { Vim, keysOf, step } from "./vim.js";
 // Copied byte for byte from mods/kbrdn-toast/decide.js (a mod can't import from another folder): edit
@@ -523,6 +526,12 @@ export default class Threads extends View {
           next = next.map((x) => (x.id === id ? { ...x, color: colors[s.id] } : x));
           changed = true;
         }
+        // A space opened on an archived project brings it back (#88). Only a space not seen yet: those
+        // kt-projects closes before archiving may linger a tick, and must not undo it.
+        if (e && !this.seen.has(s.id) && archiving.isArchived(e)) {
+          next = archiving.restore(next, id) ?? next;
+          changed = true;
+        }
         this.seen.add(s.id);
       }
       if (changed) setShared("kt.projects", next);
@@ -569,7 +578,7 @@ export default class Threads extends View {
     const reg = registry();
     const open = ps.filter((s) => !this.isHome(s));
     const machines = new Set(open.map((s) => s.machine ?? null)).size;
-    const closed = reg.filter((e) => !open.some((s) => this.entryOf(s, reg) === e)).length;
+    const closed = archiving.shown(reg).filter((e) => !open.some((s) => this.entryOf(s, reg) === e)).length; // the picker skips the archived
     const lines = ps.filter((s) => this.isHome(s)).length + open.length + closed;
     const eyebrows = (machines > 1 ? machines : 0) + (closed ? 1 : 0);
     const at = this.projAt ?? { x: 8, y: 106 };
@@ -1014,6 +1023,8 @@ export default class Threads extends View {
   // A registry square drags (as the picker's lines): pressed, moved over another (a 2 px accent bar
   // where it lands), released there, it takes that one's place among its own group, open or closed
   // (moveInGroup: a drop outside it lands at its edge); a press released where it began is a click.
+  // An archived project has no square (#88); a right-click on a registry square, open or closed, opens its
+  // menu (kt-menu, tab "project": archive, delete by force, both through kt-projects).
   projectBar(t, all) {
     const reg = registry();
     const homes = all.filter((s) => this.isHome(s));
@@ -1021,7 +1032,7 @@ export default class Threads extends View {
     const isOpen = (id) => tree.some((g) => g.e?.id === id);
     const ordered = openFirst(reg, isOpen);
     const openReg = ordered.filter((e) => isOpen(e.id));
-    const closedReg = ordered.filter((e) => !isOpen(e.id));
+    const closedReg = ordered.filter((e) => !isOpen(e.id) && !archiving.isArchived(e)); // #88: not the archived
     const loose = tree.filter((g) => !g.e);
     // The ids as shown (drop targets): Home, the open, the loose spaces, the closed.
     this.barOpen = isOpen;
@@ -1046,6 +1057,8 @@ export default class Threads extends View {
         .when(this.barPress != null && this.barOver === drop && this.barPress !== drop, (el) => el.child(
           div().absolute().top(3).bottom(3).w(2).rounded(1).bg(t.accent).when(from < at, (b) => b.right(-5)).when(from > at, (b) => b.left(-5))))
         .when(Boolean(drag), (el) => el.on_mouse_down("left", () => { this.barPress = drag; this.barOver = drag; }))
+        .when(Boolean(drag), (el) => el.on_mouse_down("right", () =>
+          openOverlay({ mod: "kt-menu", kind: "popup", width: 200, props: { tab: "project", target: { id: drag } } })))
         .on_mouse_move((_e, cx) => {
           if (this.barPress != null && this.barOver !== drop) { this.barOver = drop; cx.notify(); }
         })

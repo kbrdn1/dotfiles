@@ -23,6 +23,8 @@ export default {
     copyBranch: "Copier la branche",
     copyAddress: "Copier l'adresse",
     copied: "Copié",
+    archiveProject: "Archiver",
+    deleteProject: "Supprimer de force…",
   },
   en: {
     splitRight: "Split right",
@@ -46,5 +48,7 @@ export default {
     copyBranch: "Copy the branch",
     copyAddress: "Copy the address",
     copied: "Copied",
+    archiveProject: "Archive",
+    deleteProject: "Delete by force…",
   },
 };

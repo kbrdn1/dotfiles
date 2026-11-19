@@ -1,5 +1,5 @@
 // Context menus (Herdr's items). Opened as a popup with
-// props { tab: "pane" | "tab" | "space" | "global", target }.
+// props { tab: "pane" | "tab" | "space" | "project" | "global", target }.
 // Keys (vim.js, #78): j/k or ↑/↓ move (round), gg/G the ends, ctrl-d/ctrl-u half the menu, Enter or o
 // runs, Esc or q closes. An item is [label, command, args].
 // kt-menu (a clone of the shipped `menu`, layout kbrdn-threads): every close goes through kt-confirm,
@@ -8,6 +8,9 @@
 // kt-new on a new worktree, Open shows the Worktrees page, Remove is left to that page's guarded remove.
 // A thread's menu is the same from kt-threads' cards and kt-head's title; its copies (name, Claude's
 // session id, folder, branch, terminal address) go to the clipboard with a "Copied" toast.
+// A project's (#88: a registry square of kt-threads' bar, target { id }, its registry id): Archive and
+// Delete by force, both opening kt-projects on it, which runs them as from its own keys (an open project's
+// spaces closed first, after asking; the name to type before a delete).
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -103,6 +106,11 @@ function items(p, git, session) {
         ...(git ? [[tr("newWorktree"), "worktree", { space: tg.id, action: "new" }], [tr("openWorktree"), "worktree", { space: tg.id, action: "open" }]] : []),
         [tr("close"), "space.close", { id: tg.id }],
       ];
+    case "project":
+      return [
+        [tr("archiveProject"), "project.archive", { id: tg.id }],
+        [tr("deleteProject"), "project.delete", { id: tg.id }],
+      ];
     default:
       return [
         [tr("newProject"), "space.new", {}],
@@ -121,6 +129,8 @@ export const isHelp = (it) => it[1] === "mod.open" && it[2]?.name === "kt-keys";
 
 function menuIcon(command) {
   if (command === "copy") return "mods/kt-menu/copy.svg";
+  if (command === "project.archive") return "mods/workspace-chrome/archive.svg";
+  if (command === "project.delete") return "mods/kt-menu/trash.svg";
   const name = command.endsWith(".close") ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.theme" ? "settings" : command === "pane.split" ? "panel-right" : command === "pane.zoom" ? "square" : "terminal";
   return `mods/workspace-chrome/${name}.svg`;
 }
@@ -181,7 +191,7 @@ export default class Menu extends View {
     // first, at once, as before: that dialog comes in on its own and takes the keyboard last. The rest
     // runs, then the menu leaves.
     const opens = (it[1] === "worktree" && it[2].action === "new") || ["tab.close", "pane.close", "space.close"].includes(it[1])
-      || it[1].endsWith(".rename") || isHelp(it);
+      || it[1].endsWith(".rename") || isHelp(it) || it[1].startsWith("project.");
     if (opens) closeOverlay(props()?.overlay);
     const full = { kind: "dialog", width: 1, height: 1, frame: "none" };
     if (it[1] === "worktree") {
@@ -195,6 +205,8 @@ export default class Menu extends View {
     // A rename asks the name in kt-prompt: tab.rename / space.rename never go out bare (Herdr's own prompt).
     else if (it[1] === "tab.rename") openOverlay({ mod: "kt-prompt", ...full, props: { rename: { tab: it[2].id } } });
     else if (it[1] === "space.rename") openOverlay({ mod: "kt-prompt", ...full, props: { rename: { space: it[2].id } } });
+    // #88: kt-projects alone archives and deletes by force (its confirms, deletePlan); it opens on the project.
+    else if (it[1].startsWith("project.")) openOverlay({ mod: "kt-projects", ...full, props: { id: it[2].id, then: it[1].slice(8) } });
     else run(it[1], it[2]);
     if (!opens) this.dismiss(cx);
   }
@@ -228,7 +240,7 @@ export default class Menu extends View {
       .children(
         rows(m, cx, "km-items", list, (it) => it[0], (it, i) =>
           v_flex()
-            .when(i > 0 && (it[1].endsWith(".close") || isHelp(it) || (["app.theme", "copy"].includes(it[1]) && list[i - 1][1] !== it[1])), el => el.child(div().mx(7).my(4).h(1).bg(t.border)))
+            .when(i > 0 && (it[1].endsWith(".close") || it[1] === "project.delete" || isHelp(it) || (["app.theme", "copy"].includes(it[1]) && list[i - 1][1] !== it[1])), el => el.child(div().mx(7).my(4).h(1).bg(t.border)))
             .child(h_flex()
             .id(`mi-${i}`)
             .h(31)
