@@ -230,4 +230,4 @@ Chaque commande est un point d'entrée léger qui délègue à un skill.
 ## Divers
 
 - **Output styles** : `assistant`, `honnest`, `senior-dev`
-- **Hooks** : `herdr-agent-state.sh`, `no-shell-write.allow`, `no-shell-write.check.ts`, `no-shell-write.ts`
+- **Hooks** : `PreToolUse : no-shell-write.ts`, `Notification : afplay need-human.mp3`, `SessionStart : herdr-agent-state.sh`, `Stop : afplay finish.mp3`, `WorktreeCreate : worktree-gwm.sh`, `WorktreeRemove : worktree-gwm.sh`

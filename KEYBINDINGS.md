@@ -82,12 +82,12 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `cmd-c` |  | `terminal.copy` |
 | `cmd-v` |  | `terminal.paste` |
 | `ctrl-v` |  | `terminal.paste_image` |
-| `alt-left` |  | `send:b` |
-| `alt-right` |  | `send:f` |
-| `alt-backspace` |  | `send:` |
-| `cmd-left` |  | `send:` |
-| `cmd-right` |  | `send:` |
-| `cmd-backspace` |  | `send:` |
+| `alt-left` |  | `send:\x1bb` |
+| `alt-right` |  | `send:\x1bf` |
+| `alt-backspace` |  | `send:\x17` |
+| `cmd-left` |  | `send:\x01` |
+| `cmd-right` |  | `send:\x05` |
+| `cmd-backspace` |  | `send:\x15` |
 
 ### Layout kbrdn-threads
 
@@ -101,7 +101,7 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `ctrl-b l` | Aller à droite : pane, panneau | `pane.go:right` |
 | `ctrl-b v` | Scinder à droite (le thread revient d'abord à l'écran) | `kt-head.split:right` |
 | `ctrl-b s` | Scinder en bas (le thread revient d'abord à l'écran) | `kt-head.split:down` |
-| `ctrl-b x` | Fermer le pane (confirmé) | `kt-head.close-pane` |
+| `ctrl-b x` | Fermer le pane (confirmé ; un Chat se ferme sans confirmation) | `kt-head.close-pane` |
 | `ctrl-b z` | Zoomer le pane | `kt-head.zoom` |
 | `cmd-d` | Scinder à droite (le thread revient d'abord à l'écran) | `kt-head.split:right` |
 | `cmd-shift-d` | Scinder en bas (le thread revient d'abord à l'écran) | `kt-head.split:down` |
@@ -150,17 +150,17 @@ Les libellés viennent de l'aide intégrée (`kt-keys`, touche `?`), qui lit le 
 | `ctrl-b shift-u` |  | `layout.select:automation` |
 | `ctrl-b shift-e` | Page Marketplaces | `layout.select:market` |
 | `ctrl-b t` | Retour au thread | `layout.select:thread` |
-| `ctrl-b space` |  | `kt-head.view` |
+| `ctrl-b space` | Le Chat de l'agent, en pane à côté de son terminal : l'ouvrir ou y aller, et revenir au terminal | `kt-head.view` |
 | `ctrl-b f` | Panneau sur Files | `kt-head.panel:files` |
 | `ctrl-b d` | Panneau sur Changes | `kt-head.panel:diff` |
 | `ctrl-b y` | Panneau sur History | `kt-head.panel:history` |
 | `ctrl-b e` | Panneau sur Flow | `kt-head.panel:flow` |
 | `ctrl-b r` | Panneau sur Crosstalk | `kt-head.panel:crosstalk` |
-| `ctrl-b ctrl-b` |  | `send:` |
+| `ctrl-b ctrl-b` |  | `send:\x02` |
 | `cmd-t` | Nouveau thread | `mod.open:kt-new` |
 | `cmd-p` |  | `mod.open:kt-picker` |
 | `cmd-w` | Fermer le thread (confirmé) | `kt-head.close-tab` |
-| `cmd-shift-w` | Fermer le pane (confirmé) | `kt-head.close-pane` |
+| `cmd-shift-w` | Fermer le pane (confirmé ; un Chat se ferme sans confirmation) | `kt-head.close-pane` |
 | `cmd-b` | Montrer / masquer la sidebar (son contenu glisse) | `kt-head.side-toggle` |
 | `f2` | Renommer le thread | `kt-head.rename:tab` |
 | `shift-f2` | Renommer le projet | `kt-head.rename:space` |
