@@ -15,6 +15,12 @@ mark, sparkles) are original too, and so are the ten variants' coiffes (crown, c
 wizard's hat, beanie, halo, top hat, bird, flower), laid on a logo's tile, never on the logo itself. The palette and the painting rules come from the author's own
 portfolio, `kbrdn.dev-v2` (`app/utils/cameos/art.ts`).
 
+**Clawd**, the Claude Code mascot, is © Anthropic. The runner above the Chat composer shows him for the
+`claude` agent only. `clawd/extract.mjs` takes his poses on this machine, from the Claude desktop app and
+claude.ai, into `data/companions/clawd/`, which no repository holds: they are extracted locally, never
+redistributed, and neither the script nor its check contains a pixel of him. Without them the runner shows
+Ember. This project is not affiliated with or endorsed by Anthropic.
+
 Trademarks: Claude and Claude Code are Anthropic's, Codex is OpenAI's, and the other programs'
 names and logos belong to their owners. Their logos appear only as the fallback, from Herdr's own
 icons. This project is not affiliated with or endorsed by any of them.
