@@ -439,35 +439,41 @@ assert.ok(nodes(v_list_of(render({ start: 0, end: 50 }, cx))) < 200, "a screen o
 function v_list_of(rows) { const x = el("v"); x.kids.push(...rows); return x; }
 // The scroll: a row, half the rows on screen, the top, the bottom, a row's number; a new document at its top.
 // scroll_to_item only brings a row into view (the nearest edge, seen on screen): a move aims at the
-// first row wholly off the screen, never at one of them (a row already shown moves nothing). The
-// rendered range holds one row more on each side (OVER): 40 and 69 are off screen, 41 to 68 on it.
+// first row wholly off the screen, never at one of them (a row already shown moves nothing). The range
+// (measured on screen): 40 is the first row on screen, 70 − 2 the first wholly below; the list's height
+// not known yet, rawScroll goes by the range alone.
 render({ start: 40, end: 70 }, cx);
 st.scroll.calls.length = 0;
 for (const how of ["down", "up", "half-down", "half-up", "bottom", "12", "top", "99999"]) rawScroll(st, how);
-assert.deepEqual(st.scroll.calls, [["item", 69, "top"], ["item", 40, "top"], ["item", 82, "top"], ["item", 27, "top"], ["bottom"], ["item", 12, "top"], ["item", 0, "top"], ["item", count - 1, "top"]]);
-for (const [how, at] of [["down", 69], ["up", 40], ["half-down", 82], ["half-up", 27]]) assert.ok(at < 41 || at > 68, `${how} aims off screen`);
-// ctrl-e / ctrl-y: a row a press, each way (#43). A model of the list as measured on screen
-// (2026-11-19): rows of 19 px, the rendered range = the rows on screen and one more on each side,
-// scroll_to_item bringing a row to the nearest edge, the list a whole number of rows tall (rawList).
-// Before: 3 rows a ctrl-e from the top, 2 a ctrl-y (seen on screen); here, 2 each way.
-{
-  const N = 400, R = 19, H = 43 * R;
+assert.deepEqual(st.scroll.calls, [["item", 68, "top"], ["item", 39, "top"], ["item", 81, "top"], ["item", 26, "top"], ["bottom"], ["item", 12, "top"], ["item", 0, "top"], ["item", count - 1, "top"]]);
+for (const [how, at] of [["down", 68], ["up", 39], ["half-down", 81], ["half-up", 26]]) assert.ok(at < 40 || at > 67, `${how} aims off screen`);
+// ctrl-e / ctrl-y: a row a press, each way (#43). An EMPIRICAL model of the list, measured on screen on
+// 2026-11-19: rows of 19 px, the rendered range from the first row on screen to the first wholly below
+// + 2 (stopping at the count), scroll_to_item bringing a row to the nearest edge, the list a whole
+// number of rows tall (rawList). It fails on both earlier rawScrolls, as the screen did: the first
+// one (end, start − 1) gave 3 rows a ctrl-e and 1 a ctrl-y, the second (end − 1, start) 2 and 0.
+for (const known of [true, false]) {
+  const N = 400, R = 19, T = 43, H = T * R;
   let off = 0;
-  const range = () => ({ start: Math.max(0, Math.floor(off / R) - 1), end: Math.min(N, Math.ceil((off + H) / R) + 1) });
-  const sim = { range: range(), total: N, scroll: { scroll_to_item(v) {
+  const range = () => ({ start: Math.floor(off / R), end: Math.min(N, Math.floor((off + H) / R) + 2) });
+  const sim = { range: range(), total: N, listOf: "kx", rows: new Map(known ? [["kx", T]] : []), scroll: { scroll_to_item(v) {
     if (v * R < off) off = v * R;
     else if ((v + 1) * R > off + H) off = (v + 1) * R - H;
     off = Math.max(0, Math.min(N * R - H, off));
   }, scroll_to_bottom() { off = N * R - H; } } };
   const press = (how) => { const was = off; rawScroll(sim, how); sim.range = range(); return off - was; };
-  assert.equal(press("up"), 0, "at the top, ctrl-y stays");
+  const k = known ? "" : " (height not known)";
+  assert.equal(press("up"), 0, `at the top, ctrl-y stays${k}`);
   const moves = ["down", "down", "down", "up", "down", "up", "up", "up"].map(press);
-  assert.deepEqual(moves, [R, R, R, -R, R, -R, -R, -R], "a row a press, from the top and after a change of way");
+  assert.deepEqual(moves, [R, R, R, -R, R, -R, -R, -R], `a row a press, from the top and after a change of way${k}`);
   const half = press("half-down");
-  assert.ok(Math.abs(half - Math.floor(43 / 2) * R) <= R, `half-down: half the screen (${half} px)`);
-  assert.ok(Math.abs(press("half-up") + half) <= R, "half-up: back about as far");
-  press("bottom");
-  assert.equal(press("down"), 0, "at the bottom, ctrl-e stays");
+  assert.ok(Math.abs(half - Math.floor(T / 2) * R) <= R, `half-down: half the screen (${half} px)${k}`);
+  assert.ok(Math.abs(press("half-up") + half) <= R, `half-up: back about as far${k}`);
+  if (!known) continue;
+  // Down to the last row, a row a press (the range stops at the count there): no stall before it.
+  off = (N - T - 3) * R;
+  sim.range = range();
+  assert.deepEqual([press("down"), press("down"), press("down"), press("down")], [R, R, R, 0], "to the very end, then it stays");
   assert.equal(press("up"), -R, "and ctrl-y goes back a row");
 }
 render({ start: 0, end: 30 }, cx);

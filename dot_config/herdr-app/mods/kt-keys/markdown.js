@@ -570,21 +570,24 @@ export function rawList(t, m, cx, st, { id, mod, doc }) {
  *  top when it is above the screen, the bottom when below; already on screen, nothing moves).
  *  scroll_to_item only brings a row into view (seen on screen, 2026-11-19), so a move aims at the first
  *  row wholly off the screen: below it to go down, above it to go up, half a screen further for the
- *  half pages. The range the list renders holds one row more on each side (OVER, measured on screen
- *  2026-11-19, #43: aiming at range.end moved 3 rows from the top, at start − 1 moved 2), so the first
- *  row wholly below is range.end − 1 and the first wholly above is range.start. The list is a whole
- *  number of rows tall (rawList), so both edges sit on a row's edge: a row a press, each way. */
-const OVER = 1;
+ *  half pages. The range the list renders, measured on screen (2026-11-19, #43, empirical): its start
+ *  is the first row on screen, its end the first row wholly below it + BELOW (2), short of the last
+ *  rows (it stops at the count). So the first row wholly above is range.start − 1, and the first wholly
+ *  below is range.start + the list's rows (rawList makes it a whole number of rows tall: both edges on
+ *  a row's edge, a row a press, each way), or range.end − BELOW before that height is known. */
+const BELOW = 2;
 export function rawScroll(st, how) {
   const { start, end } = st.range;
-  const half = Math.max(1, Math.floor((end - start - 2 * OVER) / 2));
+  const tall = st.rows.get(st.listOf);
+  const below = tall ? start + tall : end - BELOW;
+  const half = Math.max(1, Math.floor((below - start) / 2));
   const to = (v) => st.scroll.scroll_to_item(Math.max(0, Math.min(Math.max(0, st.total - 1), v)), "top");
   if (how === "top") to(0);
   else if (how === "bottom") st.scroll.scroll_to_bottom();
-  else if (how === "down") to(end - OVER);
-  else if (how === "up") to(start + OVER - 1);
-  else if (how === "half-down") to(end - OVER - 1 + half);
-  else if (how === "half-up") to(start + OVER - half);
+  else if (how === "down") to(below);
+  else if (how === "up") to(start - 1);
+  else if (how === "half-down") to(below - 1 + half);
+  else if (how === "half-up") to(start - half);
   else if (/^\d+$/.test(how)) to(Number(how));
 }
 
