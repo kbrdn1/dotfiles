@@ -47,6 +47,23 @@ assert.deepEqual(C.rank(items, "", { order: ORDER }).map((x) => x.name), ["me:go
 assert.deepEqual(C.rank(items, "co", { order: ORDER }).map((x) => x.name), ["commit", "compact"], "shorter first at the same rule; no match out");
 assert.deepEqual(C.rank([{ name: "b", category: "skill" }, { name: "b", category: "workflow" }], "b", { order: ORDER }).map((x) => x.category), ["workflow", "skill"], "a tie: by category");
 assert.equal(C.rank(Array.from({ length: 80 }, (_, i) => ({ name: `s${i}` })), "s").length, 50, "capped at 50");
+// presorted (a project's files, `git ls-files`' order): best score first, a tie in the list's own
+// order, the best 50, and no sort of the list: no localeCompare at all, whatever the query (#81
+// review, 20 000 paths per keystroke).
+{
+  const dirs = ["mods/kt-chat", "mods/kt-keys", "docs", "src/App", "src/lib"];
+  const files = Array.from({ length: 3000 }, (_, i) => `${dirs[i % 5]}/${["main", "Menu", "model", "complete", "a"][i % 7 % 5]}-${i}.${i % 3 ? "js" : "md"}`).sort();
+  const qs = ["", "m", "mn", "kt-chat/menu", "md", "zzz"];
+  const lc = String.prototype.localeCompare;
+  let calls = 0;
+  String.prototype.localeCompare = function (...a) { calls++; return lc.apply(this, a); };
+  const got = qs.map((q) => C.rank(files, q, { key: (p) => p, presorted: true }));
+  String.prototype.localeCompare = lc;
+  assert.equal(calls, 0, "no localeCompare: the list is never sorted");
+  const want = (q) => files.map((p, i) => [C.score(q, p), i, p]).filter(([s]) => s != null).sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, 50).map(([, , p]) => p);
+  assert.deepEqual(got, qs.map(want), "best score first, ties as the list comes, at most 50");
+  assert.deepEqual(got.map((r) => r.length), [50, 50, 50, 50, 50, 0]);
+}
 
 // ── names, loading, hints ───────────────────────────────────────────────────
 assert.equal(C.nameOf({ kind: "skill", rel: "me/loop/x/SKILL.md" }), "me:loop:x");
@@ -120,6 +137,10 @@ assert.deepEqual(C.routeOf("/model opus"), { via: "send", by: "agent" }, "not a 
 assert.deepEqual(C.routeOf("/me:goal découper", { say: true }), { via: "say", confirm: false });
 assert.deepEqual(C.routeOf("/clear", { say: true }), { via: "say", confirm: true }, "/clear still asks first");
 assert.deepEqual(C.routeOf("un message", { say: true }), { via: "send" }, "a plain message keeps hc send");
+assert.deepEqual(C.routeOf("/tmp/build.log : pourquoi ?", { say: true }), { via: "send" }, "a path is a message, never a command for the bridge (#81 review)");
+assert.deepEqual(C.routeOf("/Users/x/a.png", { say: true }), { via: "send" });
+assert.deepEqual(C.routeOf("/tmp/build.log"), { via: "send" }, "nor a skill the agent would invoke");
+assert.deepEqual(C.routeOf("/compact\\x"), { via: "send" });
 assert.deepEqual(C.routeOf("/compact", { builtins: [] }), { via: "send", by: "agent" }, "the built-ins are the caller's");
 assert.equal(C.keysOf("a:b"), null);
 assert.ok(C.typeable("/reload-plugins") && !C.typeable("/Compact") && !C.typeable("_"));

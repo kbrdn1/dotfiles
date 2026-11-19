@@ -45,10 +45,10 @@ export function tokenAt(text, cursor) {
 /** Monocode's score() (composer.rs): equal, the leaf's prefix, a substring, a subsequence; null: no match. */
 export function score(query, value) {
   const q = String(query ?? "").toLowerCase();
-  const v = String(value ?? "").toLowerCase();
   if (!q) return 0;
+  const v = String(value ?? "").toLowerCase();
   if (v === q) return 10000;
-  const leaf = v.split(/[/:]/).pop();
+  const leaf = v.slice(Math.max(v.lastIndexOf("/"), v.lastIndexOf(":")) + 1); // no array per value: 20 000 paths
   if (leaf.startsWith(q)) return 5000 - v.length;
   const at = v.indexOf(q);
   if (at >= 0) return 3000 - at - v.length;
@@ -63,8 +63,22 @@ export function score(query, value) {
 }
 
 /** The items matching `query`, best first, at most `limit`; ties (and an empty query): by category in
- *  `order` (categories.js' ORDER), then name. */
-export function rank(items, query, { limit = 50, key = (x) => x.name, order = [] } = {}) {
+ *  `order` (categories.js' ORDER), then name. `presorted`: the items come in their tie order already
+ *  (a project's files, as `git ls-files` sorts them, once per read): the score alone orders them, the
+ *  best `limit` kept as they come, the whole list never sorted (20 000 paths at each keystroke). */
+export function rank(items, query, { limit = 50, key = (x) => x.name, order = [], presorted = false } = {}) {
+  if (presorted) {
+    const top = []; // [score, item], best first; an equal score after the ones already in
+    for (const x of items ?? []) {
+      const sc = score(query, key(x));
+      if (sc == null || (top.length >= limit && sc <= top[top.length - 1][0])) continue;
+      let i = top.length;
+      while (i > 0 && top[i - 1][0] < sc) i--;
+      top.splice(i, 0, [sc, x]);
+      if (top.length > limit) top.pop();
+    }
+    return top.map(([, x]) => x);
+  }
   const cat = (x) => { const i = order.indexOf(x.category); return i < 0 ? order.length : i; };
   const scored = [];
   for (const x of items ?? []) {
@@ -234,7 +248,9 @@ export const keysOf = (text) => (typeable(text) ? [...String(text)].map((c) => (
  */
 export function routeOf(draft, { builtins = BUILTINS, say = false } = {}) {
   const text = String(draft ?? "").trim();
-  const m = /^\/([^\s]+)/.exec(text);
+  // A command's name, as tokenAt reads one: no `/` or `\` in it (`/tmp/build.log : pourquoi ?` is a
+  // message, never typed as a command by the bridge).
+  const m = /^\/([^\s/\\]+)(?=\s|$)/.exec(text);
   if (!m) return { via: "send" };
   if (say) return { via: "say", confirm: Boolean(builtins.find((x) => x.name === m[1])?.confirm) };
   const b = builtins.find((x) => x.name === m[1]);

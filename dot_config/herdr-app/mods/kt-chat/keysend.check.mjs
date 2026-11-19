@@ -1,7 +1,8 @@
 // bun keysend.check.mjs: keysend.js on invented TUI screens (Claude Code's prompt framed by rules, as
 // `hc read` gives it): the prompt read, empty or hinted, what was typed, the step that stops.
 import assert from "node:assert/strict";
-import { promptLine, promptEmpty, typedOk, blockOf, sayReady, etimeMs } from "./keysend.js";
+import { promptLine, promptEmpty, typedOk, blockOf, sayReady, etimeMs, SAY_FAILS, sayFail } from "./keysend.js";
+import strings from "./strings.js";
 
 const RULE = "─".repeat(40);
 const screen = (prompt, extra = "") => ["⏺ une réponse", "", RULE, `❯ ${prompt}`.trimEnd(), RULE, "  status line", extra].join("\n");
@@ -35,9 +36,26 @@ assert.deepEqual(blockOf({ status: "idle", before: screen("", "-- NORMAL --"), t
 assert.deepEqual(blockOf({ status: "idle", before: screen(""), after: screen("x/compact"), text: "/compact" }), { why: "typed" });
 assert.equal(blockOf({ status: "done", before: screen(""), after: screen("/compact"), text: "/compact" }), null);
 assert.equal(blockOf({ status: "idle", before: screen('Try "x"') }), null, "before typing");
+// A screen that couldn't be read (hc read failed: null) stops the route, before as after typing: never
+// Enter on a prompt nobody read (#81 review, P1).
+assert.deepEqual(blockOf({ status: "idle", before: null, text: "/compact" }), { why: "read" });
+assert.deepEqual(blockOf({ status: "idle", before: undefined, text: "/compact" }), { why: "read" });
+assert.deepEqual(blockOf({ status: "idle", before: screen(""), after: null, text: "/compact" }), { why: "read" });
+assert.deepEqual(blockOf({ status: "idle", after: null, text: "/compact" }), { why: "read" });
+
+// herdr-bridge's refusals (say.js): each its own words, fr and en, never the raw code (#81 review).
+for (const w of SAY_FAILS) {
+  for (const lang of ["fr", "en"]) {
+    const s = strings[lang][`composer.err.${sayFail(w)}`];
+    assert.ok(typeof s === "string" && s && !s.includes("{"), `${lang}: composer.err.say-${w}`);
+  }
+}
+assert.equal(sayFail("whatever-next"), "say-refused", "a code the plugin adds later: refused");
+assert.equal(sayFail("timeout"), "say-timeout");
+assert.ok(strings.fr["composer.err.keys-read"] && strings.en["composer.err.keys-read"]);
 
 // The bridge's say route: a fresh token of this session only.
-const tok = JSON.stringify({ token: "0123456789abcdef0123456789abcdef" });
+const tok = JSON.stringify({ token: "test-token-fixture" });
 assert.equal(sayReady(tok, 2000, 1000), true);
 assert.equal(sayReady(tok, 2000, 2000), true, "written at the session's start");
 assert.equal(sayReady(tok, 900, 1000), true, "within etime's 2 s slack (whole seconds)");

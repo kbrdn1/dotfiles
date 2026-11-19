@@ -51,14 +51,16 @@ const ui = {
   VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, scroll_to_bottom() {} }) },
   TextareaState: { new: () => ({ set_auto_grow() {}, on() {}, value: () => "", set_value() {}, replace() {}, focus() {} }) },
 };
-// hc and agents() go through these two, which a case may swap (#81's keys route).
+// hc, agents(), focused() and openOverlay() go through these, which a case may swap (#81's routes).
 let hcFake = async () => ({});
 let agentsFake = () => [];
+let focusedFake = () => null;
+let openOverlayFake = () => null;
 // checking() answers live.checking: true for the Chat (as herdr-app check), false where a timer is the point.
 const live = { checking: true };
 const host = {
   agents: () => agentsFake(), panes: () => [], spaces: () => [], terminals: () => [], theme: () => ({}), settings: () => ({ dark: true, zoom: 1 }),
-  props: () => ({}), shared: () => undefined, layout: () => null, focused: () => null, keys: () => ({}),
+  props: () => ({}), shared: () => undefined, layout: () => null, focused: () => focusedFake(), keys: () => ({}), openOverlay: (o) => openOverlayFake(o),
   home: () => "/h", appHome: () => "/h/.config/herdr-app", checking: () => live.checking, nextCommand: () => new Promise(() => {}),
   exec: async () => ({ code: 0, stdout: "" }), hc: (a) => hcFake(a), readTextFile: async () => "", writeTextFile: async () => {},
 };
@@ -355,12 +357,14 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
 {
   const RULE = "─".repeat(20);
   const screenOf = (p) => ["⏺ ok", RULE, `❯ ${p}`.trimEnd(), RULE, "  -- INSERT --"].join("\n");
-  const run = async ({ status = "idle", before = "", after = "/context" } = {}) => {
+  // fail: "before" | "after", the screen read that throws (a timeout) at that step.
+  const run = async ({ status = "idle", before = "", after = "/context", fail = null } = {}) => {
     const calls = [];
     let typed = false;
     agentsFake = () => [{ address: "t9", status }];
     hcFake = async (a) => {
       calls.push(a.join(" "));
+      if (a[0] === "read" && fail === (typed ? "after" : "before")) throw new Error("hc read: timed out");
       if (a[0] === "read") return { code: 0, stdout: screenOf(typed ? after : before) };
       if (a[0] === "keys" && a[2] !== "enter") typed = true;
       return { code: 0, stdout: "" };
@@ -380,8 +384,53 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.deepEqual([r.res.why, r.enter, r.calls.some((x) => x.startsWith("keys"))], ["keys-prompt", false, false], "a draft in the prompt: nothing typed");
   r = await run({ after: "x/context" });
   assert.deepEqual([r.res.why, r.enter], ["keys-typed", false], "the prompt doesn't read it: never Enter (typed, left there)");
+  // #81 review, P1: a screen that can't be read stops the route; before typing, nothing is typed (the
+  // prompt may hold « foo »: Enter would send « foo/compact »), after typing, no Enter.
+  r = await run({ before: "foo", fail: "before" });
+  assert.deepEqual([r.res.why, r.calls.some((x) => x.startsWith("keys"))], ["keys-read", false], "the first read fails: nothing typed");
+  r = await run({ fail: "after" });
+  assert.deepEqual([r.res.why, r.enter], ["keys-read", false], "the reads after typing fail: never Enter");
+  hcFake = async (a) => (a[0] === "read" ? { code: 1, stdout: "", stderr: "no such terminal" } : { code: 0, stdout: "" });
+  agentsFake = () => [{ address: "t9", status: "idle" }];
+  assert.equal((await chat().keysSend(cx(), "t9", { via: "keys", keys: ["/"] }, "/")).why, "keys-read", "a read that exits non-zero: unread too");
   hcFake = async () => ({});
   agentsFake = () => [];
+}
+
+// ── #81 review, P1: kt-confirm's « yes » runs only the ask it answers, in the copy that asked it ──
+{
+  const overlays = [];
+  openOverlayFake = (o) => { overlays.push(o); return null; };
+  const sent = [];
+  hcFake = async (a) => { sent.push(a.join(" ")); return { code: 0, stdout: "" }; };
+  agentsFake = () => [{ address: "t9", status: "idle", tab: "tab-1", program: { key: "claude" } }];
+  focusedFake = () => ({ tab: "tab-1" });
+  // Two Chats on the same agent: A asks /clear (then Kylian cancels: no callback), B asks /exit and gets a yes.
+  const A = chat();
+  const B = chat();
+  const route = (keys) => ({ via: "keys", keys: [...keys], confirm: true });
+  A.askRoute({ address: "t9" }, route("/clear"), "/clear");
+  B.askRoute({ address: "t9" }, route("/exit"), "/exit");
+  const ids = overlays.map((o) => o.props.command.name.replace(/^kt-chat\.confirmed:/, ""));
+  assert.ok(ids.every((s) => s && !s.startsWith("kt-chat.")) && ids[0] !== ids[1], "each ask carries its own id");
+  const x = cx();
+  const ran = [];
+  x.spawn = (fn) => ran.push(fn);
+  A.confirmed(x, ids[1]);
+  B.confirmed(x, ids[1]);
+  assert.equal(ran.length, 1, "B's yes: B sends; A's cancelled /clear doesn't");
+  assert.ok(A.pendingRoute, "A's ask stays its own (cancelled, it never gets a callback)");
+  B.confirmed(x, ids[1]);
+  assert.equal(ran.length, 1, "a second yes for the same ask: nothing more");
+  A.pendingRoute.at -= 10 * 60 * 1000;
+  A.confirmed(x, ids[0]);
+  assert.equal(ran.length, 1, "an old ask: nothing goes");
+  A.confirmed(x, "");
+  assert.equal(ran.length, 1);
+  openOverlayFake = () => null;
+  hcFake = async () => ({});
+  agentsFake = () => [];
+  focusedFake = () => null;
 }
 
 // ── Cold review, point 4: sub-agents launched together, one branch each ─────

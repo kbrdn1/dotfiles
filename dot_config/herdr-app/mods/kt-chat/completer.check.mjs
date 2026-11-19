@@ -55,6 +55,23 @@ p = pick(m, m.rows[0], { mention: (x) => mentionText("codex", `/abs/${x}`) });
 assert.equal(p.text, "/abs/mods/kt-chat/composer.js ", "Codex: the path, as attach.js writes it");
 assert.equal(pick({ start: 0, end: 4 }, { type: "file", path: "notes/a b.md" }, { mention: (x) => mentionText("claude", x) }).text, '"notes/a b.md" ', "a space: quoted, as attach.js writes it");
 
+// 20 000 files: a keystroke in `@` sorts nothing (#81 review: the whole list went through localeCompare
+// at each keystroke); the best matches still come first.
+{
+  const many = Array.from({ length: 20000 }, (_, i) => `src/m${String(i).padStart(5, "0")}/f.js`);
+  many.push("src/zz/menu.js");
+  const big = { ...catalog, files: many };
+  const lc = String.prototype.localeCompare;
+  let calls = 0;
+  String.prototype.localeCompare = function (...a) { calls++; return lc.apply(this, a); };
+  const shown = [menuFor("@", 1, big), menuFor("@m", 2, big), menuFor("@menu", 5, big)];
+  String.prototype.localeCompare = lc;
+  assert.equal(calls, 0, "no sort of the files at a keystroke");
+  assert.deepEqual(shown.map((x) => x.rows.length), [50, 50, 1]);
+  assert.equal(shown[2].rows[0].path, "src/zz/menu.js");
+  assert.equal(shown[0].rows[0].path, "src/m00000/f.js", "an empty query: the list's order");
+}
+
 // A command: its piece, then a space.
 m = menuFor("/go", 3, catalog);
 p = pick(m, m.rows[0]);

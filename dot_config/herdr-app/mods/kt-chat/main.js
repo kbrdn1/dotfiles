@@ -81,7 +81,7 @@ import { menuFor, move as menuMove, pick as menuPick, typed as typedCommand, eff
 import { menuView, wave, rail, routeWords, ROW, ROWS } from "./menu.js";
 import { tokenAt, merge, filesOf, routeOf } from "./complete.js";
 import { STEPS as FLOW_STEPS } from "./workflows.js";
-import { blockOf, sayReady, etimeMs } from "./keysend.js";
+import { blockOf, sayReady, etimeMs, sayFail } from "./keysend.js";
 import { say as sayBridge } from "./say.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
@@ -116,6 +116,7 @@ const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before th
 const TICK = 750;
 const BRIDGE = 2000; // #84: the bridge file read again while the agent works or shows sub-agents
 const STALE = 30000; // #81: the completions' catalog is read again when older, as the menu opens or the field takes focus
+const ASK_TTL = 300000; // #81: a kt-confirm « yes » later than this after its ask sends nothing
 // #81: a completed piece becomes a chip in the field (an InlineToken). Probed with herdr-app check
 // (2026-11-19): value(), what goes, gives the token's `text`; but check never draws a token, so the
 // chip's render (Textarea.token) is unproven until the capture slot: plain text until then.
@@ -379,7 +380,7 @@ export default class Chat extends View {
           else this.bgMenu = true;
         }
         else if (name === "tl") this.tlCommand(arg);
-        else if (name === "confirmed") this.confirmed(cx); // kt-confirm said yes to a /command (askRoute)
+        else if (name === "confirmed") this.confirmed(cx, arg); // kt-confirm said yes to a /command (askRoute's id)
         cx.notify();
       }
     });
@@ -823,7 +824,7 @@ export default class Chat extends View {
         blocked: async (tm) => agents().find((x) => x.address === tm)?.status === "blocked",
       };
       const s = await sayBridge(a.address, text.trim(), io);
-      return s.ok ? s : { ok: false, why: "say", message: s.why };
+      return s.ok ? s : { ok: false, why: sayFail(s.why) }; // its own words, never the plugin's raw code
     }
     // #93: the files above the field go with it, as `@path` (attach.js promptOf; composer.js clean()
     // keeps a mention at either end apart from hc's envelope).
@@ -861,7 +862,11 @@ export default class Chat extends View {
    */
   async keysSend(cx, address, r, text) {
     const status = () => agents().find((x) => x.address === address)?.status ?? null;
-    const screen = async () => (await hc(["read", address]).catch(() => null))?.stdout ?? null;
+    // A read that failed (thrown, timed out, a non-zero exit) is null: blockOf stops on it (« read »).
+    const screen = async () => {
+      const r = await hc(["read", address]).catch(() => null);
+      return r?.code === 0 && typeof r.stdout === "string" ? r.stdout : null;
+    };
     let b = blockOf({ status: status(), before: await screen(), text });
     if (b) return { ok: false, why: `keys-${b.why}` };
     if ((await hc(["keys", address, ...r.keys]).catch(() => null))?.code !== 0) return { ok: false, why: "keys-failed" };
@@ -896,20 +901,25 @@ export default class Chat extends View {
   }
 
   /** A built-in that resets or ends the session (/clear, /exit, /logout) asks first: kt-confirm, which
-   *  sends `kt-chat.confirmed` back (confirmed()). */
+   *  sends `kt-chat.confirmed:<id>` back (confirmed()). The id is this ask's own (its terminal and a
+   *  token, kt-plugins' way): a cancelled ask gets no callback, so it never runs later when another
+   *  copy's dialog says yes; a newer ask here replaces it. */
   askRoute(a, r, text) {
-    this.pendingRoute = { address: a.address, r, text };
+    const id = `${a.address}~${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`;
+    this.pendingRoute = { id, address: a.address, r, text, at: Date.now() };
     openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
       title: tr("composer.confirm.title", { cmd: text.trim().split(/\s+/)[0] }), detail: tr("composer.confirm.detail"),
-      label: tr("composer.confirm.label"), danger: true, command: { name: "kt-chat.confirmed" } } });
+      label: tr("composer.confirm.label"), danger: true, command: { name: `kt-chat.confirmed:${id}` } } });
   }
 
-  /** kt-confirm said yes: the route asked for goes, to the same agent only (keysSend checks it is at rest again). */
-  confirmed(cx) {
+  /** kt-confirm said yes to `id`: only the copy that asked it, while it is fresh (ASK_TTL), sends it, to
+   *  the same agent only (keysSend checks it is at rest again). Another id leaves this copy's ask alone. */
+  confirmed(cx, id) {
     const p = this.pendingRoute;
+    if (!p || !id || p.id !== id) return;
     this.pendingRoute = null;
     const a = target().agent;
-    if (!p || a?.address !== p.address || this.sending) return;
+    if (Date.now() - p.at > ASK_TTL || a?.address !== p.address || this.sending) return;
     this.sending = true;
     this.sendErr = null;
     cx.spawn(async (cx) => this.done(cx, p.text, [], await this.deliver(cx, a, p.r, p.text, [])));
@@ -1057,7 +1067,9 @@ export default class Chat extends View {
       } catch {
         j = null;
       }
-      const g = cwd ? await exec("git", ["-C", cwd, "ls-files", "-co", "--exclude-standard"], { timeout: 10000 }).catch(() => null) : null; // i18n: tech
+      // Sorted by git (completer.js ranks them as they come); quotepath off: a path with an accent as
+      // itself, not "\303\211" between quotes (the mention would name no file).
+      const g = cwd ? await exec("git", ["-c", "core.quotepath=off", "-C", cwd, "ls-files", "-co", "--exclude-standard"], { timeout: 10000 }).catch(() => null) : null; // i18n: tech
       c.loading = false;
       if (j) c.catalog = { ...c.catalog, commands: merge(j.items, j.listing, classify), tools: j.tools ?? [] };
       if (g?.code === 0) c.catalog = { ...c.catalog, files: filesOf(g.stdout) };

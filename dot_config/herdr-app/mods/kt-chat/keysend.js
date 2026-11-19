@@ -62,10 +62,26 @@ export function etimeMs(s) {
   return (((d * 24 + h) * 60 + mi) * 60 + se) * 1000;
 }
 
-/** The step that stops the route, or null: { why: "busy" | "prompt" | "typed" }. */
-export function blockOf({ status, before, after, text }) {
+/**
+ * The step that stops the route, or null: { why: "busy" | "read" | "prompt" | "typed" }. `before` and
+ * `after` are the screens read before and after typing; a key left out is a step not reached yet, but a
+ * screen given as null (a read that failed, a timeout) stops it: never type, never Enter, on a prompt
+ * nobody read (#81 review: Enter went on a prompt that held « foo »).
+ */
+export function blockOf(step) {
+  const { status, text } = step;
   if (status !== "idle" && status !== "done") return { why: "busy" };
-  if (before != null && !promptEmpty(before)) return { why: "prompt" };
-  if (after != null && !typedOk(after, text)) return { why: "typed" };
+  if ("before" in step && typeof step.before !== "string") return { why: "read" };
+  if ("before" in step && !promptEmpty(step.before)) return { why: "prompt" };
+  if ("after" in step && typeof step.after !== "string") return { why: "read" };
+  if ("after" in step && !typedOk(step.after, text)) return { why: "typed" };
   return null;
 }
+
+/**
+ * Why herdr-bridge's say() didn't send (say.js), as the words under the card say it: each has its own
+ * (composer.err.say-<why>), what the plugin may add later reads as « refused ». The box may hold the
+ * text (timeout, changed, blocked, enter: typed, never submitted) or not (the rest).
+ */
+export const SAY_FAILS = ["noBridge", "draft", "dialog", "changed", "token", "text", "timeout", "blocked", "enter", "refused"];
+export const sayFail = (why) => `say-${SAY_FAILS.includes(why) ? why : "refused"}`;

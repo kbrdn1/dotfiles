@@ -38,8 +38,10 @@ export function menuFor(text, cursor, catalog, { prev = null, dismissed = null }
       : rank(toolsOf(catalog?.tools, tok.query.slice(0, at)), tok.query.slice(at + 1), { limit: LIMIT, key: (t) => t.tool })
         .map((t) => ({ id: `mcp:${t.name}`, type: "tool", category: "mcp", name: t.name, label: `${t.server} › ${t.tool}`, description: t.description }));
   } else {
-    rows = rank((catalog?.files ?? []).map((p) => ({ name: p })), tok.query, { limit: LIMIT })
-      .map((f) => ({ id: `file:${f.name}`, type: "file", category: "file", path: f.name }));
+    // The project's files come sorted (`git ls-files`, read once per catalog): ranked as they come, the
+    // list never mapped nor sorted again at a keystroke (up to 20 000 paths).
+    rows = rank(catalog?.files ?? [], tok.query, { limit: LIMIT, key: (p) => p, presorted: true })
+      .map((p) => ({ id: `file:${p}`, type: "file", category: "file", path: p }));
   }
   const keep = prev?.rows?.[prev.active]?.id;
   const i = keep ? rows.findIndex((r) => r.id === keep) : -1;
