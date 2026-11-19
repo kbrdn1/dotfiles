@@ -128,7 +128,7 @@ held to that by `model.check.mjs`.
 
 | Page or panel | Mod | What it shows |
 |---|---|---|
-| Accueil (home) | `kt-hub` | The agents' activity, the GitHub year, a per-project view, what runs now, what is next, the agents per machine |
+| Accueil (home) | `kt-hub` | The agents' activity and their time per day and project (after Apple's Screen Time), the GitHub year, a per-project view, what runs now, what is next, the machines |
 | Inbox | `kt-inbox` | Pull requests and reviews waiting, their checks drawn as dithered graphs |
 | Kanban | `kt-kanban` | Agent threads as cards: columns, swimlanes, filters, saved views, actions on a card |
 | Chat | `kt-chat` | A thread's transcript, live, with a composer that writes to the agent (`ctrl-b space` toggles Terminal and Chat) |
@@ -138,8 +138,10 @@ held to that by `model.check.mjs`.
 | Marketplaces | `kt-market` | Search, inspect and install skills, MCP servers and plugins; nothing runs before the install form's confirmation |
 | Worktrees | `kt-gwm` | gwm worktrees, their health, bulk actions |
 | Notes | `kt-notes` | Notes, in three tabs |
-| Machines | `kt-machines` | The other machines (`hc machine ls`), their state and their logins |
+| Machines | `kt-machines`, `kt-machine-add` | The other machines (`hc machine ls`), their state and their logins; adding one, a translated clone of Herdr's own dialog |
 | Flow, Changes, History, Files, Crosstalk, Details | `kt-flow`, `kt-diff`, `kt-history`, `kt-files`, `kt-crosstalk`, `kt-details` | The right-hand panel of the selected thread |
+| Projects | `kt-project-picker`, `kt-projects` | The project picker, and Manage projects: rename, color, logos, order, archive, restore, force delete (the name typed to confirm) |
+| Dialogs | `kt-new`, `kt-prompt`, `kt-confirm`, `kt-keys` | A new thread, a rename, a confirmation, the help (`?`, `ctrl-b ?`, `⌘/`) |
 
 The interface is bilingual (fr / en). Every shortcut lives in
 `~/.config/herdr-app/keys.json` and is listed in [`KEYBINDINGS.md`](KEYBINDINGS.md);
@@ -167,7 +169,7 @@ because it holds `.credentials.json` and must stay `0700`.
 | `commands/` | Thin entry points (`/me:…`). Each one reads its skill's `SKILL.md`: Claude Code does not load a skill nested under `skills/me/` on its own, so the command is its way in. |
 | `hooks/` | `no-shell-write.ts`, a PreToolUse hook that refuses file writes made by the shell (redirections, `sed -i`, `tee`, heredocs, inline python or perl): files are written with Edit and Write. |
 | `agents/`, `output-styles/` | Sub-agents and output styles. |
-| `scripts/` | `statusline.ts` (the live status line, run through the Open Island wrapper) and its tests; `worktree-gwm.sh`, the WorktreeCreate / WorktreeRemove hooks that make Claude Code's own worktrees with gwm. |
+| `scripts/` | `statusline.ts` (the live status line, run by Bun) and its tests; `worktree-gwm.sh`, the WorktreeCreate / WorktreeRemove hooks that make Claude Code's own worktrees with gwm. |
 
 #### The idea behind it
 
@@ -207,7 +209,6 @@ Essential graphical tools:
 
 - **UI Enhancement**
   - [Sketchybar](https://github.com/FelixKratz/SketchyBar): Custom menu bar (AeroSpace + SketchyVim integration)
-  - [Open Island](https://github.com/Octane0411/open-vibe-island): Notch companion to monitor & control AI coding agents (Claude Code, Codex…)
   - [SF Symbols](https://developer.apple.com/sf-symbols/): Apple system symbols
   - [Sketchybar App Font](https://github.com/kvndrsslr/sketchybar-app-font): Icon font
 
