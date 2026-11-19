@@ -222,6 +222,18 @@ await check("kt-head", async () => {
       runTimers();
       assert.ok(env.ran.includes(command), `ctrl-b ${child}: the surface didn't get the keyboard (${command})`);
     }
+    // #86 (A1): ctrl-b v / s / z from a page over the Chat face: the thread and its terminals first, then
+    // the pane command, never a split nobody sees.
+    env.layout = { id: "root", children: [{ id: "view", type: "stack", active: "inbox", children: [
+      { id: "thread", children: [{ id: "thread-body", type: "stack", active: "chat", children: [{ id: "main" }, { id: "chat" }] }] }, { id: "inbox" }] }] };
+    const shown = [["layout.select", { stack: "view", child: "thread" }], ["layout.select", { stack: "thread-body", child: "main" }]];
+    for (const [command, then] of [["split:right", ["pane.split", { direction: "right" }]], ["split:down", ["pane.split", { direction: "down" }]], ["zoom", "pane.zoom"]]) {
+      env.ran = [];
+      env.commands = [command];
+      await load("kt-head");
+      await settle();
+      assert.deepEqual(env.ran, [...shown, then], `kt-head.${command}: the thread's terminals not on screen before it`);
+    }
   } finally {
     env.live = false;
     env.props = {};

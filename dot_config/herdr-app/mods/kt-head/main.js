@@ -26,6 +26,8 @@ import { guard, reachable, stateOf, machineTag } from "./machines.js";
 import { facts, shouldShow } from "./autohub.js";
 // #54: the thread's two faces, Terminal | Chat (pure, view.check.mjs).
 import { view } from "./view.js";
+// #86 (A1): the thread's terminals on screen before a pane command (pure, onthread.check.mjs).
+import { onThread } from "./onthread.js";
 
 const tr = makeT(strings);
 const ask = guard(exec);
@@ -116,6 +118,7 @@ function drawer() {
 function toggleDrawer() {
   const { mine, lead } = drawer();
   if (!lead) return;
+  onThread({ layout, run }); // #86: never a split or a zoom nobody sees
   if (mine.length === 1) run("pane.split", { direction: "down", pane: lead.pane });
   else {
     run("pane.zoom", { pane: lead.pane });
@@ -148,10 +151,10 @@ function button(m, t, id, icon, onClick, on = false, framed = false, tip = null)
   );
 }
 
-// A shell beside the thread's agent (a split to the right of its pane).
+// A shell to the right of the focused pane, as ctrl-b v (#86: one pane of reference), never a split nobody sees.
 function splitRight() {
-  const { lead } = drawer();
-  if (lead) run("pane.split", { direction: "right", pane: lead.pane });
+  onThread({ layout, run });
+  run("pane.split", { direction: "right" });
 }
 
 // The ctrl-b keys that are more than one command (keys.json `kt-head.<command>`), run by the crumbs
@@ -160,10 +163,13 @@ function splitRight() {
 // needs you, else the first done; `picker:<group>` opens Search on a group (0 all, 2 projects);
 // `worktree` opens New thread on a new worktree; `close-pane` / `close-tab` ask kt-confirm first;
 // `view` (ctrl-b space) switches the thread between its terminal and its Chat, and from a page brings
-// the thread back on its Chat (view.js), `view:chat` / `view:main` pick one.
+// the thread back on its Chat (view.js), `view:chat` / `view:main` pick one. `split:right|down` (ctrl-b v / s)
+// and `zoom` (ctrl-b z) act on the focused pane once the thread's terminals show (onthread.js, #86 A1),
+// as `close-pane` (ctrl-b x) and the split and drawer buttons do.
 const confirm = (title, detail, label, command) =>
   openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { title, detail, label, danger: true, command } });
 const face = (which) => view(which, { layout, run, setShared, panes, focused });
+const toThread = () => onThread({ layout, run });
 // The key bound to an action (shortcuts.js), for a tooltip.
 const keyOf = (...actions) => shortcut(keys(), shared("layout"), ...actions);
 // What gives each panel surface the keyboard (kt-files' panelTab, kt-panel-head): gwm-panel, kt-gwm's
@@ -175,7 +181,13 @@ const PANEL_FOCUS = { files: "kt-files.focus", diff: "kt-diff.focus", history: "
 function route(c, cx) {
   const [name, arg] = [c.split(":")[0], c.slice(c.indexOf(":") + 1)];
   if (name === "view") face(c.includes(":") ? arg : "");
-  else if (name === "rename") {
+  else if (name === "split") {
+    toThread();
+    run("pane.split", { direction: arg === "down" ? "down" : "right" });
+  } else if (name === "zoom") {
+    toThread();
+    run("pane.zoom");
+  } else if (name === "rename") {
     const s = spaces().find((x) => x.active);
     const id = arg === "space" ? s?.id : s?.tabs.find((x) => x.active)?.id;
     if (id) openOverlay({ mod: "kt-prompt", kind: "dialog", width: 1, height: 1, frame: "none", props: { rename: { [arg === "space" ? "space" : "tab"]: id } } });
@@ -199,6 +211,7 @@ function route(c, cx) {
     run("layout.select", { stack: "view", child: "thread" });
     openOverlay({ mod: "kt-new", kind: "dialog", width: 1, height: 1, frame: "none", props: { worktree: true } });
   } else if (name === "close-pane") {
+    toThread(); // the pane it asks about shows behind the dialog
     const p = panes().find((x) => x.pane === focused()?.pane);
     if (p) confirm(tr("pane.title"), tr("pane.detail", { name: p.title || p.program?.name || "Terminal" }), tr("close"), { name: "pane.close", args: { pane: p.pane } });
   } else if (name === "close-tab") {
@@ -406,7 +419,7 @@ export default class Head extends View {
         h_flex()
           .gap(2)
           .child(button(m, t, "kt-h-details", "file-text", () => setShared("kt.details", shared("kt.details") !== true), shared("kt.details") === true, false, tr("details")))
-          .child(button(m, t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, tip(tr("splitRight"), keyOf("pane.split:right"))))
+          .child(button(m, t, "kt-h-split", "mods/kt-head/columns-2.svg", splitRight, false, false, tip(tr("splitRight"), keyOf("kt-head.split:right", "pane.split:right"))))
           .child(button(m, t, "kt-h-drawer", "panel-bottom", toggleDrawer, drawer().open, false, tr("drawer")))
           // lucide panel-right-open while it's hidden, panel-right-close while it shows; panel.js moves it (#73).
           .child(((on) => button(m, t, "kt-h-panel", `mods/kt-head/panel-right-${on ? "close" : "open"}.svg`, (_e, cx) => togglePanel(cx), on, false,

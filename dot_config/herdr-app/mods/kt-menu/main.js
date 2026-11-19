@@ -125,9 +125,10 @@ function menuIcon(command) {
 // the worktrees go through kt-head, as here), else the command with its first argument (`pane.split:right`),
 // else the command.
 const SAME = { "tab.close": "kt-head.close-tab", "pane.close": "kt-head.close-pane", "worktree:new": "kt-head.worktree", "worktree:open": "layout.select:gwm",
-  "tab.rename": "kt-head.rename:tab", "space.rename": "kt-head.rename:space" };
+  "tab.rename": "kt-head.rename:tab", "space.rename": "kt-head.rename:space",
+  "pane.split:right": "kt-head.split:right", "pane.split:down": "kt-head.split:down", "pane.zoom": "kt-head.zoom" }; // #86
 const keyOf = (name, args) => shortcut(keys(), shared("layout"),
-  [SAME[name], SAME[`${name}:${args?.action}`], `${name}:${args && Object.values(args)[0]}`, name].filter(Boolean));
+  [SAME[name], SAME[`${name}:${args?.action}`], SAME[`${name}:${args && Object.values(args)[0]}`], `${name}:${args && Object.values(args)[0]}`, name].filter(Boolean));
 
 export default class Menu extends View {
   init(_props, cx) {

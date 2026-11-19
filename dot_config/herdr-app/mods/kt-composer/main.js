@@ -158,8 +158,10 @@ export default class SessionLine extends View {
     return agents().find((a) => a.address === f?.terminal) ?? agents().find((a) => a.focused) ?? null;
   }
 
+  // `focused` is each tab's own focused pane: the shown tab's, never another tab's (#86).
   pane(a) {
-    return panes().find((p) => p.terminal === a?.address) ?? panes().find((p) => p.focused);
+    const tab = focused()?.tab;
+    return panes().find((p) => p.terminal === a?.address) ?? panes().find((p) => p.focused && p.tab === tab);
   }
 
   read(cx) {

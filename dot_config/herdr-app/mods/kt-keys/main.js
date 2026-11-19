@@ -31,7 +31,7 @@ const groupName = (id) => tr(`group.${id}`);
 
 // Global: the ctrl-b actions in the order shown (keys.json's action, `command:arg` for an object
 // binding); what each does is strings.js' `g.<action>`.
-const ORDER = ["pane.go:left", "pane.go:right", "pane.go:down", "pane.go:up", "pane.split:right", "pane.split:down", "pane.zoom",
+const ORDER = ["pane.go:left", "pane.go:right", "pane.go:down", "pane.go:up", "kt-head.split:right", "kt-head.split:down", "kt-head.zoom",
   "kt-head.close-pane", "mod.open:kt-new", "tab.next", "tab.prev", "tab.select", "kt-head.rename:tab", "kt-head.close-tab", "space.new",
   "space.next", "space.prev", "kt-head.rename:space", "kt-head.picker:2", "kt-head.picker:0", "kt-head.worktree", "agent.next", "agent.prev",
   "kt-head.attention", "layout.select:thread", "layout.select:hub", "layout.select:inbox", "layout.select:kanban", "layout.select:skills", "layout.select:mcp", "layout.select:plugins",
