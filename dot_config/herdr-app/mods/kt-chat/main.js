@@ -28,6 +28,8 @@
 // reread, i write, [ ] Kylian's message before / after (the timeline, #85). `kt-chat.file:<path>`
 // shows that JSONL instead (tests), `file:` back; `kt-chat.tl:hover:<n>` / `tl:jump:<n>` / `tl:off`
 // hover or jump to the timeline's n-th message (captures: never the focus).
+// In the field (#81): `/` `#` `@` open the completion menu (commands, MCP tools, the project's files),
+// tab or enter takes its row, ctrl-n ctrl-p move it, esc closes it (a second esc leaves the field).
 //
 // The timeline (#85, timeline.js): Monocode's prompt outline, a bar per message Kylian typed on the
 // right edge of the transcript, the one on screen lit, a card on hover, a click or [ ] to it. No
@@ -46,7 +48,7 @@
 
 import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
-import { agents, focused, panes, spaces, terminals, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, checking, nextCommand, notify, props, layout, run, openOverlay } from "herdr";
+import { agents, focused, panes, spaces, terminals, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, writeTextFile, checking, nextCommand, notify, props, layout, run, openOverlay } from "herdr";
 // #86: kt-chat as a pane of the tab (props: {terminal}), its agent, its pane, the registry (pure).
 import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "./chat-pane.js";
 // #56: the composer (pure, composer.check.mjs); kt-threads' decide.js (a byte-identical copy, with
@@ -64,9 +66,19 @@ import { attachmentsOf, photoSize } from "./att-model.js";
 // #93: a turn's assets (its tools' images and files, the files its answer cites: assets.js), and the
 // field's attachments (a drop, a paste, a picked file) and « Citer » (attach.js).
 import { turnAssets } from "./assets.js";
-import { add as addDraft, remove as dropDraft, promptOf, PASTE_DIR, pasteArgs, pasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
+import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
 // kt-keys' categories.js (a byte-identical copy, with workflows.js): the pieces' one chip (#81 and #93).
-import { pieceChip } from "./categories.js";
+import { pieceChip, classify } from "./categories.js";
+// #81: the field's completions (/ # @): completer.js' menu over kt-keys' complete.js (byte-identical
+// copies, with complete.strings.js), menu.js' popup and its dither effects (the wave, a workflow's rail
+// of workflows.js' steps), and the route a /command takes: herdr-bridge's say.js when its session token
+// is fresh (keysend.js sayReady), a Claude Code built-in as keys (keysend.js), the rest by hc send.
+import { menuFor, move as menuMove, pick as menuPick, typed as typedCommand, effectOf } from "./completer.js";
+import { menuView, wave, rail, routeWords, ROW, ROWS } from "./menu.js";
+import { tokenAt, merge, filesOf, routeOf } from "./complete.js";
+import { STEPS as FLOW_STEPS } from "./workflows.js";
+import { blockOf, sayReady, etimeMs } from "./keysend.js";
+import { say as sayBridge } from "./say.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
 import { motionState, frame, enter, collapse, rows, MS, DY } from "./motion.js";
@@ -99,6 +111,11 @@ const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before th
 // The live tail: a delta read this often, only while the Chat shows and its agent works.
 const TICK = 750;
 const BRIDGE = 2000; // #84: the bridge file read again while the agent works or shows sub-agents
+const STALE = 30000; // #81: the completions' catalog is read again when older, as the menu opens or the field takes focus
+// #81: a completed piece becomes a chip in the field (an InlineToken). Probed with herdr-app check
+// (2026-11-19): value(), what goes, gives the token's `text`; but check never draws a token, so the
+// chip's render (Textarea.token) is unproven until the capture slot: plain text until then.
+const CHIPS = false;
 // runner: the runner above the composer (runner.js, runner-plan.js; companion.js for its fallback):
 // runnerShown(status, program) says when its band shows (composerView, in the flow), Runner is the nested
 // view drawn there, runnerProps what feedRunner() hands it, keepBottom when the band moves a followed view.
@@ -290,19 +307,36 @@ export default class Chat extends View {
     this.composer = TextareaState.new({ placeholder: tr("composer.ph") });
     // Monocode's field: one row of 22 px, up to 140 (input.rs:27, :407-411).
     this.composer.set_auto_grow(1, 6);
+    // #81, the completions: the catalog (complete.js merge's commands, the session's MCP tools, the
+    // project's files) and when it was read, the menu open (completer.js) and the last one shown (it fades
+    // out, menu.js), its openings (each fades in anew), the token Esc closed, a /command typed by hand
+    // already made a chip (its start), the route line under the card, the pieces the field holds as chips
+    // (token id -> piece), the waves started. Then the menu's scroll, the wave running ({ id, category,
+    // rail }), and a confirmed route waiting for kt-confirm.
+    this.cpl = { catalog: { commands: [], tools: [], files: [] }, at: 0, loading: false, menu: null, last: null, gen: 0, dismissed: null, typedAt: null, route: null, pieces: new Map(), n: 0 };
+    this.menuScroll = ScrollHandle.new();
+    this.wave = null;
+    this.pendingRoute = null;
     this.composer.on("change", (_e, cx) => {
       const had = Boolean(this.draft.trim());
       this.draft = this.composer.value();
       if (this.sendErr && this.sendErr.why !== "blocked") this.sendErr = null;
-      if (had !== Boolean(this.draft.trim())) cx.notify();
+      const moved = this.complete(cx);
+      if (moved || had !== Boolean(this.draft.trim())) cx.notify();
     });
-    // Enter sends; shift-enter asks for a line break (the field may give one by itself).
+    // Enter sends; shift-enter asks for a line break (the field may give one by itself). The menu open
+    // with rows: Enter takes its active row.
     this.composer.on("submit", (e, cx) => {
       if (e?.shift) this.composer.replace("\n");
+      else if (this.cpl.menu?.rows.length) this.accept(this.cpl.menu.active, cx);
       else this.send(cx);
     });
-    this.composer.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
-    this.composer.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
+    this.composer.on("focus", (_e, cx) => {
+      this.typing = true;
+      if (Date.now() - this.cpl.at > STALE) this.loadCatalog(cx); // a head start on the first `/`
+      cx.notify();
+    });
+    this.composer.on("blur", (_e, cx) => { this.typing = false; this.closeMenu(cx); cx.notify(); });
     // #93: the files waiting above the field (attach.js), a paste or a chooser running, a turn's assets
     // worked out once per turn and blocks (turnAssets).
     this.drafts = [];
@@ -331,6 +365,7 @@ export default class Chat extends View {
           else this.bgMenu = true;
         }
         else if (name === "tl") this.tlCommand(arg);
+        else if (name === "confirmed") this.confirmed(cx); // kt-confirm said yes to a /command (askRoute)
         cx.notify();
       }
     });
@@ -635,8 +670,10 @@ export default class Chat extends View {
   }
 
   press(e, cx) {
-    // The composer has the keyboard: typing is its own; esc gives the keyboard back to the turns.
+    // The composer has the keyboard: typing is its own; esc gives the keyboard back to the turns. The
+    // completion menu open (#81) takes its keys first: esc closes it (a second esc gives the keyboard back).
     if (this.typing) {
+      if (this.menuKey(keyOf(e).name, cx)) return true;
       if (keyOf(e).name !== "escape") return false;
       this.focusIn();
       return true;
@@ -725,25 +762,293 @@ export default class Chat extends View {
     this.sendErr = null;
     const text = this.draft;
     cx.spawn(async (cx) => {
-      // #93: the files above the field go with it, as `@path` (attach.js promptOf; composer.js clean()
-      // keeps a mention at either end apart from hc's envelope).
-      const res = sendResult(await hc(sendArgs(a.address, promptOf(text, atts))).catch((e) => (e instanceof Error ? e : new Error(String(e)))));
-      this.sending = false;
-      if (res.ok) {
-        // Only what was sent goes (typing meanwhile stays, a file added meanwhile too); the sent pieces
-        // go at once, as the text does.
-        if (this.composer.value() === text) this.composer.set_value("");
-        this.draft = this.composer.value();
-        const went = new Set(atts.map((x) => x.id));
-        this.drafts = this.drafts.filter((x) => !went.has(x.id));
-        this.follow = true;
-        this.jump = null;
-        this.win = win.bottom(this.turns.length);
-        this.reveal = "bottom";
-        this.load(cx, true);
-      } else this.sendErr = res;
+      // #81: a /command alone (no file waiting) takes its route (complete.js routeOf): herdr-bridge types
+      // it when its session token is fresh (sayReady: no token, nothing else asked), a Claude Code built-in
+      // goes as keys (keysend.js), the rest by hc send (a skill: the agent invokes it). /clear, /exit and
+      // /logout ask first (kt-confirm).
+      const r = !atts.length && /^\s*\//.test(text) ? routeOf(text, { say: await this.sayReady(a) }) : { via: "send" };
+      if (r.via === "none") return this.done(cx, text, atts, { ok: false, why: "untypable" });
+      if (r.confirm) {
+        this.sending = false;
+        this.askRoute(a, r, text);
+        return cx.notify();
+      }
+      this.done(cx, text, atts, await this.deliver(cx, a, r, text, atts));
+    });
+  }
+
+  /** The draft sent its route's way: { ok } or { ok: false, why, message }. */
+  async deliver(cx, a, r, text, atts) {
+    if (r.via === "keys") return this.keysSend(cx, a.address, r, text);
+    if (r.via === "say") {
+      const io = {
+        home: home(),
+        read: (p) => readTextFile(p).catch(() => null),
+        write: async (p, s) => writeTextFile(p, s, await readTextFile(p).catch(() => null)),
+        hc: (args) => hc(args),
+        sleep: (ms) => new Promise((done) => cx.timer.after(ms, () => done())),
+        blocked: async (tm) => agents().find((x) => x.address === tm)?.status === "blocked",
+      };
+      const s = await sayBridge(a.address, text.trim(), io);
+      return s.ok ? s : { ok: false, why: "say", message: s.why };
+    }
+    // #93: the files above the field go with it, as `@path` (attach.js promptOf; composer.js clean()
+    // keeps a mention at either end apart from hc's envelope).
+    return sendResult(await hc(sendArgs(a.address, promptOf(text, atts))).catch((e) => (e instanceof Error ? e : new Error(String(e)))));
+  }
+
+  /** A send's end. Sent: only what went leaves the field (typing meanwhile stays, a file added meanwhile
+   *  too; the sent pieces go at once, as the text does), and the live tail shows it come in. Refused or
+   *  failed: the text stays and the reason shows under the field. */
+  done(cx, text, atts, res) {
+    this.sending = false;
+    if (res.ok) {
+      if (this.composer.value() === text) {
+        this.composer.set_value("");
+        this.cpl.pieces.clear();
+      }
+      this.cpl.dismissed = null;
+      this.draft = this.composer.value();
+      const went = new Set(atts.map((x) => x.id));
+      this.drafts = this.drafts.filter((x) => !went.has(x.id));
+      this.follow = true;
+      this.jump = null;
+      this.win = win.bottom(this.turns.length);
+      this.reveal = "bottom";
+      this.load(cx, true);
+    } else this.sendErr = res;
+    cx.notify();
+  }
+
+  /**
+   * #81, keysend.js: a Claude Code built-in typed into the agent's prompt, then Enter, only at rest: its
+   * status idle or done, its prompt empty on screen (`hc read`), then reading exactly the command once
+   * typed (read again a few times while the screen catches up: never Enter on a doubt). Any step that
+   * fails stops before Enter: what was typed stays in the terminal's prompt, never sent.
+   */
+  async keysSend(cx, address, r, text) {
+    const status = () => agents().find((x) => x.address === address)?.status ?? null;
+    const screen = async () => (await hc(["read", address]).catch(() => null))?.stdout ?? null;
+    let b = blockOf({ status: status(), before: await screen(), text });
+    if (b) return { ok: false, why: `keys-${b.why}` };
+    if ((await hc(["keys", address, ...r.keys]).catch(() => null))?.code !== 0) return { ok: false, why: "keys-failed" };
+    for (let i = 0; i < 6; i++) {
+      b = blockOf({ status: status(), after: await screen(), text });
+      if (!b) break;
+      await new Promise((done) => cx.timer.after(120, () => done()));
+    }
+    if (b) return { ok: false, why: `keys-${b.why}` };
+    return (await hc(["keys", address, "enter"]).catch(() => null))?.code === 0 ? { ok: true } : { ok: false, why: "keys-failed" };
+  }
+
+  /**
+   * #81: herdr-bridge can type a /command into this agent's box (keysend.js sayReady): its session token is
+   * there and not older than the agent's process (`hc get` foreground.pid, `ps -o etime=`). No token file:
+   * false at once, nothing else asked. This computer's agents only (the Chat writes to no other).
+   */
+  async sayReady(a) {
+    if (!a?.address || a.address.includes("/")) return false;
+    const p = `${home()}/.claude/cache/herdr/${a.address}.saytoken.json`;
+    const text = await readTextFile(p).catch(() => null);
+    if (!text) return false;
+    const mtime = await fs.stat(p).then((s) => s.mtimeMs).catch(() => null);
+    let pid = null;
+    try {
+      pid = JSON.parse((await hc(["get", a.address, "--json"])).stdout)?.foreground?.pid ?? null;
+    } catch {
+      pid = null;
+    }
+    const age = pid ? etimeMs((await exec("ps", ["-o", "etime=", "-p", String(pid)]).catch(() => null))?.stdout) : null;
+    return mtime != null && age != null && sayReady(text, mtime, Date.now() - age);
+  }
+
+  /** A built-in that resets or ends the session (/clear, /exit, /logout) asks first: kt-confirm, which
+   *  sends `kt-chat.confirmed` back (confirmed()). */
+  askRoute(a, r, text) {
+    this.pendingRoute = { address: a.address, r, text };
+    openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
+      title: tr("composer.confirm.title", { cmd: text.trim().split(/\s+/)[0] }), detail: tr("composer.confirm.detail"),
+      label: tr("composer.confirm.label"), danger: true, command: { name: "kt-chat.confirmed" } } });
+  }
+
+  /** kt-confirm said yes: the route asked for goes, to the same agent only (keysSend checks it is at rest again). */
+  confirmed(cx) {
+    const p = this.pendingRoute;
+    this.pendingRoute = null;
+    const a = target().agent;
+    if (!p || a?.address !== p.address || this.sending) return;
+    this.sending = true;
+    this.sendErr = null;
+    cx.spawn(async (cx) => this.done(cx, p.text, [], await this.deliver(cx, a, p.r, p.text, [])));
+  }
+
+  // ---------- the completions (#81) ----------
+
+  /**
+   * On each change of the field (never in render): the menu for its text and cursor (completer.js), its
+   * catalog read again when older than STALE, a /command typed by hand at the head made a chip with its
+   * wave (once per place), the route that command takes (the line under the card). true: what shows changed.
+   */
+  complete(cx) {
+    const c = this.cpl;
+    if (c.quiet) return false; // its own chip going in (below): the change it raises is not Kylian's
+    const was = c.menu;
+    const { end } = this.composer.selected_range();
+    // Esc closed one token: another one (or none) under the cursor and the menu may open again.
+    const tok = tokenAt(this.draft, end);
+    if (c.dismissed && (tok?.trigger !== c.dismissed.trigger || tok?.start !== c.dismissed.start)) c.dismissed = null;
+    c.menu = menuFor(this.draft, end, c.catalog, { prev: was, dismissed: c.dismissed });
+    if (c.menu && !was) c.gen++;
+    if (c.menu) c.last = c.menu;
+    else if (was) this.menuGone(cx);
+    if (c.menu && Date.now() - c.at > STALE) this.loadCatalog(cx);
+    const ty = typedCommand(this.draft, c.catalog.commands);
+    let made = false;
+    if (!ty) c.typedAt = null;
+    else if (c.typedAt !== ty.start) {
+      c.typedAt = ty.start;
+      // Picked from the menu, it is a chip already (and its wave ran: accept() set typedAt).
+      if (!(this.composer.content().tokens ?? []).some((s) => s.range.start === ty.start)) {
+        c.pieces.set(ty.piece.id, ty.piece);
+        if (CHIPS) {
+          // The token puts the cursor at its end: put back where it was (the same length) before any
+          // change it raises is read (quiet: whatever order the events come in).
+          c.quiet = true;
+          try {
+            this.composer.replace_range_with_token({ start: ty.start, end: ty.start + ty.piece.text.length }, { id: ty.piece.id, text: ty.piece.text, label: ty.piece.label });
+            this.composer.set_selected_range({ start: end, end });
+          } finally {
+            c.quiet = false;
+          }
+        }
+        this.wave = { id: `kc-wave-${++c.n}`, ...effectOf(ty.piece) };
+        made = true;
+      }
+    }
+    // The route the command at the head would take (herdr-bridge's is asked only as it goes: send()).
+    const head = /^\s*\/(\S+)/.exec(this.draft)?.[1];
+    const route = head && c.catalog.commands.some((x) => x.name === head) ? routeWords(routeOf(this.draft, { say: false })) : null;
+    const changed = made || was !== c.menu || route !== c.route;
+    c.route = route;
+    return changed;
+  }
+
+  /** The menu's active row into the field (completer.js pick): a chip (CHIPS) then a space, with its wave;
+   *  a server only narrows the list to its tools (the menu stays). A press reads the menu fading too. */
+  accept(i, cx) {
+    const c = this.cpl;
+    const menu = c.menu ?? c.last;
+    const row = menu?.rows?.[i];
+    if (!row) return;
+    const program = target().agent?.program ?? "claude";
+    const p = menuPick(menu, row, { mention: (x) => mentionText(program, x) });
+    c.dismissed = null;
+    if (p.piece?.kind === "command") c.typedAt = p.start; // its wave is this one: complete() makes no second
+    if (p.piece && CHIPS) {
+      c.pieces.set(p.piece.id, p.piece);
+      this.composer.replace_range_with_token({ start: p.start, end: p.end }, { id: p.piece.id, text: p.piece.text, label: p.piece.label });
+      this.composer.replace(" ");
+    } else {
+      this.composer.set_selected_range({ start: p.start, end: p.end });
+      this.composer.replace(p.text);
+    }
+    if (p.piece) this.wave = { id: `kc-wave-${++c.n}`, ...effectOf(p.piece) };
+    this.composer.focus();
+    cx.notify();
+  }
+
+  /** The menu's keys while it is open: Tab takes the active row, ctrl-n / ctrl-p (↓ ↑ when the field
+   *  leaves them to the view) move it, esc closes it until another token. true: the key was the menu's. */
+  menuKey(name, cx) {
+    const c = this.cpl;
+    if (!c.menu) return false;
+    if (name === "escape") {
+      c.dismissed = { trigger: c.menu.trigger, start: c.menu.start };
+      this.closeMenu(cx);
+      return true;
+    }
+    if (name === "tab") {
+      if (c.menu.rows.length) this.accept(c.menu.active, cx);
+      return true;
+    }
+    const dir = name === "ctrl-n" || name === "down" ? 1 : name === "ctrl-p" || name === "up" ? -1 : 0;
+    if (!dir) return false;
+    c.menu = menuMove(c.menu, dir);
+    c.last = c.menu;
+    this.menuScroll.scroll_to_item(c.menu.active + 1); // the list's first child is the active row's fill
+    return true;
+  }
+
+  closeMenu(cx) {
+    if (!this.cpl.menu) return;
+    this.cpl.menu = null;
+    this.menuGone(cx);
+  }
+
+  /** The menu that just closed fades out (menu.js, MS.leave), then ONE timer lets it go; reduced motion: at once. */
+  menuGone(cx) {
+    const c = this.cpl;
+    const last = c.last;
+    if (!last) return;
+    if (this.m?.reduced) {
+      c.last = null;
+      return;
+    }
+    cx.timer.after(MS.leave + 20, (cx) => {
+      if (c.menu || c.last !== last) return;
+      c.last = null;
       cx.notify();
     });
+  }
+
+  /**
+   * What the menu completes, read off the UI thread, one read at a time: kt-keys' complete-index.ts (the
+   * /commands on disk, the session's own listing and MCP tools from its transcript; bun, local) merged
+   * with categories.js' classify, and the project's files (`git ls-files`, the agent's folder). Read
+   * again only when older than STALE, as the menu opens or the field takes focus: never on a timer.
+   */
+  loadCatalog(cx) {
+    const c = this.cpl;
+    if (c.loading || checking()) return;
+    c.loading = true;
+    c.at = Date.now();
+    const a = target().agent;
+    const cwd = a ? panes().find((p) => p.terminal === a.address)?.cwd ?? null : null;
+    const jsonl = this.line?.transcript_path ?? null;
+    cx.spawn(async (cx) => {
+      const args = [`${appHome()}/mods/kt-keys/complete-index.ts`, ...(cwd ? ["--root", cwd] : []), ...(jsonl ? ["--jsonl", jsonl] : [])];
+      const r = await exec(`${home()}/.nix-profile/bin/bun`, args, { timeout: 20000 }).catch(() => null);
+      let j = null;
+      try {
+        j = JSON.parse(r?.stdout || "null");
+      } catch {
+        j = null;
+      }
+      const g = cwd ? await exec("git", ["-C", cwd, "ls-files", "-co", "--exclude-standard"], { timeout: 10000 }).catch(() => null) : null; // i18n: tech
+      c.loading = false;
+      if (j) c.catalog = { ...c.catalog, commands: merge(j.items, j.listing, classify), tools: j.tools ?? [] };
+      if (g?.code === 0) c.catalog = { ...c.catalog, files: filesOf(g.stdout) };
+      // The open menu again, on what was read.
+      if (c.menu) {
+        const { end } = this.composer.selected_range();
+        c.menu = menuFor(this.draft, end, c.catalog, { prev: c.menu, dismissed: c.dismissed });
+        if (c.menu) c.last = c.menu;
+        else this.menuGone(cx);
+      }
+      cx.notify();
+    });
+  }
+
+  /** The popup over the transcript's bottom, in the composer's column (menu.js): it never covers the
+   *  card, and shows fewer rows when the transcript is short. null when nothing is open or fading. */
+  menuEl(t) {
+    const c = this.cpl;
+    if (!c.menu && !c.last) return null;
+    const rowsShown = Math.max(2, Math.min(ROWS, Math.floor((this.vh - 72) / ROW)));
+    const v = menuView(t, this.m, c.menu, { last: c.last, gen: c.gen, dark: Boolean(settings().dark), onPick: (i, cx) => this.accept(i, cx), scroll: this.menuScroll, rows: rowsShown });
+    if (!v) return null;
+    return h_flex().absolute().left(0).right(0).bottom(8).justify_center()
+      .child(v_flex().w_full().max_w(COLUMN).px(10).child(v));
   }
 
   // ---------- the field's attachments and « Citer » (#93) ----------
@@ -2400,12 +2705,25 @@ export default class Chat extends View {
     // #93: files dropped on the card join the message (their paths, absolute: never a copy); the ones
     // waiting show above the text (draftView); « + » opens the system's chooser.
     const drafts = this.draftView(t, cx);
+    // #81: a completed piece's wave (menu.js: three dither crests crossing the field in its category's
+    // hue, then a workflow's rail of its steps), under the text, in the field's box that clips: nothing
+    // around it moves. Gone once it ran, and never in reduced motion. The field's width: the card's.
+    const fx = this.wave;
+    const fieldW = Math.min(this.width, COLUMN) - 22;
+    const waves = fx ? wave(t, this.m, fx.id, fx.category, fieldW, { dark }) : [];
+    const railEl = fx?.rail ? rail(t, this.m, `${fx.id}-rail`, FLOW_STEPS.length, { dark }) : null;
+    if (fx && !waves.length && !railEl) this.wave = null;
     const card = v_flex().id("kc-card").w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
       .bg(dark ? ink(t, 0.03) : t.background).when(!dark, (el) => el.shadow_sm())
       .on_drop((e, cx) => this.attach(cx, e.paths, "drop"))
       .when(Boolean(drafts), (el) => el.child(drafts))
-      .child(div().id("kc-field").px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
-        .child(Textarea.new(this.composer).w_full().text_size(14).text_color(ink(t, 1))))
+      .child(div().id("kc-field").relative().overflow_hidden().px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
+        .children(waves)
+        .when(Boolean(railEl), (el) => el.child(railEl))
+        // A piece the field holds as a token (#81, CHIPS): its chip (categories.js pieceChip), as #93's above the text.
+        .child(Textarea.new(this.composer).w_full().text_size(14).text_color(ink(t, 1))
+          .token((ctx) => pieceChip(t, this.cpl.pieces.get(ctx.token.id) ?? { kind: "file", category: "file", label: ctx.token.label ?? ctx.token.text }, { dark })
+            .h(Math.min(22, ctx.line_height || 22)))))
       .child(h_flex().px(8).pb(10).gap(4).items_center()
         .child(this.iconBtn(t, "kc-attach", this.picking || this.pasting ? SPIN : I("plus"), tr("attach.pick"), (cx) => this.pick(cx), 26))
         .when(Boolean(model), (el) => el.child(toolPill(CLAUDE_ICON, [[model, 1], ...(effort ? [[effort, 0.5]] : [])])))
@@ -2414,6 +2732,7 @@ export default class Chat extends View {
         .child(send));
     const say = this.sending ? tr("composer.sending")
       : this.sendErr ? tr(`composer.err.${this.sendErr.why}`, { why: this.sendErr.message ?? "" })
+        : this.cpl.route ? this.cpl.route // #81: the route the /command at the head takes
         : this.handle.is_focused() ? tr("hint")
           : m === "queue" ? tr("composer.queue") : m === "blocked" ? tr("composer.held") : tr("composer.hint");
     const ctx = Number(this.line?.ctx_pct);
@@ -2854,7 +3173,11 @@ export default class Chat extends View {
       })
       .when(Boolean(bg), (el) => el.child(bg))
       .child(v_flex().absolute().top(0).left(0).right(0).bottom(0)
-        .child(enter(this.m, this.body(t, cx, tg, keyed), `kc-body-${want ?? "none"}`, { dy: 0 }).flex_1().min_h(0))
+        // #81: the completion menu, a passing popup over the transcript's bottom (menu.js, like bgMenu):
+        // in the transcript's own box, so it never covers the composer and moves nothing in it.
+        .child(div().relative().flex_1().min_h(0).flex().flex_col()
+          .child(enter(this.m, this.body(t, cx, tg, keyed), `kc-body-${want ?? "none"}`, { dy: 0 }).flex_1().min_h(0))
+          .when(writes, (el) => el.children([this.menuEl(t)].filter(Boolean))))
         .when(writes, (el) => el.child(this.composerView(t, tg, pr, cx))))
       .children(this.bgControls(t, pr) ?? []);
   }

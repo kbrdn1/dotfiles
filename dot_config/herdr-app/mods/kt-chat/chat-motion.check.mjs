@@ -7,7 +7,10 @@
 // - a fold just opened opens its items on their height (rows()), except the last turn while the bottom
 //   is followed; drawn again later, it lands as it is;
 // - the background panel comes in as a popup and fades out before it goes;
-// - reduced motion: none of it, no transition anywhere (fold, turn, panel).
+// - #81: the completion menu, a popup over the transcript (in and out on its opacity, never a height),
+//   a pick's wave under the text in the field's box, and the keys route's Enter only on a prompt that
+//   reads the command;
+// - reduced motion: none of it, no transition anywhere (fold, turn, panel, menu).
 import assert from "node:assert/strict";
 import { plugin } from "bun";
 import { readdirSync, readFileSync } from "node:fs";
@@ -48,11 +51,14 @@ const ui = {
   VirtualListScrollHandle: { new: () => ({ scroll_to_item() {}, scroll_to_bottom() {} }) },
   TextareaState: { new: () => ({ set_auto_grow() {}, on() {}, value: () => "", set_value() {}, replace() {}, focus() {} }) },
 };
+// hc and agents() go through these two, which a case may swap (#81's keys route).
+let hcFake = async () => ({});
+let agentsFake = () => [];
 const host = {
-  agents: () => [], panes: () => [], spaces: () => [], terminals: () => [], theme: () => ({}), settings: () => ({ dark: true, zoom: 1 }),
+  agents: () => agentsFake(), panes: () => [], spaces: () => [], terminals: () => [], theme: () => ({}), settings: () => ({ dark: true, zoom: 1 }),
   props: () => ({}), shared: () => undefined, layout: () => null, focused: () => null, keys: () => ({}),
   home: () => "/h", appHome: () => "/h/.config/herdr-app", checking: () => true, nextCommand: () => new Promise(() => {}),
-  exec: async () => ({ code: 0, stdout: "" }), hc: async () => ({}), readTextFile: async () => "", writeTextFile: async () => {},
+  exec: async () => ({ code: 0, stdout: "" }), hc: (a) => hcFake(a), readTextFile: async () => "", writeTextFile: async () => {},
 };
 const stub = (set, own, make) => Object.fromEntries([...set].map((n) => [n, n in own ? own[n] : make(n)]));
 plugin({
@@ -222,6 +228,135 @@ const press = (nodes, id, x) => callsOf(nodes.find((n) => callsOf(n, "id").some(
   x.stop_propagation = () => {};
   press(nodes, `kc-dx-${c.drafts[0].id}`, x);
   assert.deepEqual([c.drafts.map((p) => p.label), x.timers.length], [["devis.pdf"], 0], "gone at once, no timer");
+}
+
+// ── #81: the completion menu. A passing popup over the transcript's bottom (render() puts it in the
+// transcript's box, never in the composer): in and out on its opacity, ONE timer after it faded out;
+// nothing in it or in the composer moves on a height (the transcript would resize each frame) ──
+const field = (text) => {
+  const f = { text, wrote: [], value: () => f.text, selected_range: () => ({ start: f.text.length, end: f.text.length }), content: () => ({ text: f.text, tokens: [] }),
+    replace_range_with_token(r, tk) { f.wrote.push(["token", r, tk.text]); }, set_selected_range(r) { f.wrote.push(["select", r]); }, replace(s) { f.wrote.push(["replace", s]); },
+    focus() {}, set_value() {}, set_auto_grow() {}, on() {} };
+  return f;
+};
+// Kylian types: the field's text, then its change (main.js' handler: draft, then complete()).
+const typeIn = (c, text, x = cx()) => { c.composer.text = text; c.draft = text; return c.complete(x); };
+const completing = (c, text) => {
+  c.composer = field(text);
+  c.draft = text;
+  c.cpl = { catalog: { commands: [{ name: "me:goal", description: "Sprint", hint: null, kind: "command", category: "workflow" }], tools: [], files: [] },
+    at: Date.now(), loading: false, menu: null, last: null, gen: 0, dismissed: null, typedAt: null, route: null, pieces: new Map(), n: 0 };
+  c.menuScroll = { scroll_to_item() {} };
+  c.vh = 600;
+  c.wave = null;
+  return c;
+};
+const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some(([v]) => v === `kc-menu-${gen}`));
+{
+  const c = completing(chat(), "/go");
+  const x = cx();
+  assert.equal(c.complete(x), true, "the menu opens: one redraw");
+  const wrap = c.menuEl(T).__node;
+  assert.ok(callsOf(wrap, "absolute").length && callsOf(wrap, "bottom").at(-1)?.[0] === 8, "over the transcript's bottom, absolute: it moves nothing");
+  assert.deepEqual(callsOf(menuNode(c, 1), "opacity").at(-1), [0], "it fades in");
+  const nodes = flat(c.menuEl(T)).filter((n) => !callsOf(n, "id").some(([v]) => v === "kc-menu-ink"));
+  assert.ok(!transitions(nodes).includes("height"), "no height moves in it (the active row's fill keeps its ROW height)");
+  // Esc closes it (until another token), and it fades out: ONE timer lets it go.
+  assert.equal(c.menuKey("escape", x), true);
+  assert.equal(c.cpl.menu, null);
+  assert.deepEqual(callsOf(menuNode(c, 1), "opacity").at(-1), [0], "fading out, its place kept");
+  assert.ok(transitions([menuNode(c, 1)]).includes("opacity"));
+  assert.equal(x.timers.length, 1, "ONE one-shot timer");
+  x.timers[0][1](cx());
+  assert.equal(c.menuEl(T), null, "then it goes");
+  assert.equal(c.complete(cx()), false, "the same token again: Esc keeps it closed, no redraw");
+  assert.equal(typeIn(c, "/goal"), false, "typing on in that token: still closed");
+  typeIn(c, "");
+  typeIn(c, "/");
+  assert.ok(c.cpl.menu, "the field emptied, `/` again: the menu opens again (Esc closed one token, not `/` for good)");
+  assert.equal(c.cpl.gen, 2, "a new opening: it fades in anew");
+  // The composer, menu or not: no height moving in it.
+  const agent = { address: "t9", status: "idle", program: "claude" };
+  c.width = 700;
+  c.handle = { is_focused: () => false };
+  c.runner = null;
+  c.m = frame(c.motion, false);
+  assert.ok(!transitions(flat(c.composerView(T, { agent }, null, cx()))).includes("height"), "the composer: no height transition");
+}
+{
+  // A pick: the token's range becomes the command and a space (plain text while CHIPS waits for the
+  // capture slot), and its wave under the text, in the field's box that clips (a workflow: its rail
+  // too); still no height moving in the composer.
+  const c = completing(chat(), "/go");
+  const x = cx();
+  c.complete(x);
+  c.accept(0, x);
+  assert.deepEqual(c.composer.wrote, [["select", { start: 0, end: 3 }], ["replace", "/me:goal "]], "/go becomes « /me:goal »");
+  assert.deepEqual([c.wave.category, c.wave.rail], ["workflow", true], "a workflow: the wave, then its rail");
+  Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false) });
+  const nodes = flat(c.composerView(T, { agent: { address: "t9", status: "idle", program: "claude" } }, null, cx()));
+  const box = nodes.find((n) => callsOf(n, "id").some(([v]) => v === "kc-field"));
+  const kids = box.kids.map((k) => k.__node);
+  assert.deepEqual(kids.slice(0, 4).map((n) => callsOf(n, "id").at(-1)?.[0]), ["kc-wave-1-0", "kc-wave-1-1", "kc-wave-1-2", "kc-wave-1-rail"], "under the text: drawn first");
+  assert.equal(kids.at(-1).kind, "Textarea.new", "the text over them");
+  assert.ok(callsOf(box, "overflow_hidden").length && callsOf(box, "relative").length, "the field's box clips them");
+  assert.ok(!transitions(nodes).includes("height"), "no height moves");
+  // The pick's own change (the field now reads "/me:goal "): no second wave.
+  typeIn(c, "/me:goal ");
+  assert.equal(c.wave.id, "kc-wave-1", "one pick, one wave");
+}
+{
+  // A command typed by hand, then a space: its piece and its wave, once (typing on starts none).
+  const c = completing(chat(), "");
+  typeIn(c, "/me:goal");
+  assert.equal(c.wave, null, "no space yet");
+  assert.equal(typeIn(c, "/me:goal "), true, "a redraw for the wave");
+  assert.deepEqual([c.wave?.id, c.wave?.category], ["kc-wave-1", "workflow"]);
+  typeIn(c, "/me:goal sprint");
+  assert.equal(c.wave.id, "kc-wave-1", "typing on: the same wave");
+  assert.equal(c.cpl.route, "invoquée par l'agent", "the route line: a skill goes to the agent");
+}
+{
+  // Reduced motion: it shows and goes at once, no transition, no timer.
+  const c = completing(chat({ reduced: true }), "/go");
+  const x = cx();
+  c.complete(x);
+  assert.deepEqual(transitions(flat(c.menuEl(T))), [], "no fade, no glide");
+  c.closeMenu(x);
+  assert.deepEqual([c.menuEl(T), x.timers.length], [null, 0], "gone at once, no timer");
+}
+
+// ── #81: a built-in as keys (keysSend): Enter only once the prompt reads exactly the command ──
+{
+  const RULE = "─".repeat(20);
+  const screenOf = (p) => ["⏺ ok", RULE, `❯ ${p}`.trimEnd(), RULE, "  -- INSERT --"].join("\n");
+  const run = async ({ status = "idle", before = "", after = "/context" } = {}) => {
+    const calls = [];
+    let typed = false;
+    agentsFake = () => [{ address: "t9", status }];
+    hcFake = async (a) => {
+      calls.push(a.join(" "));
+      if (a[0] === "read") return { code: 0, stdout: screenOf(typed ? after : before) };
+      if (a[0] === "keys" && a[2] !== "enter") typed = true;
+      return { code: 0, stdout: "" };
+    };
+    const c = chat();
+    const x = cx();
+    x.timer.after = (_ms, fn) => fn(); // the screen's catch-up reads, at once
+    const res = await c.keysSend(x, "t9", { via: "keys", keys: [..."/context"] }, "/context");
+    return { res, calls, enter: calls.includes("keys t9 enter") };
+  };
+  let r = await run();
+  assert.deepEqual([r.res, r.enter], [{ ok: true }, true], "at rest, empty, typed exactly: Enter");
+  assert.deepEqual(r.calls, ["read t9", "keys t9 / c o n t e x t", "read t9", "keys t9 enter"]);
+  r = await run({ status: "working" });
+  assert.deepEqual([r.res.why, r.calls.length], ["keys-busy", 1], "working: nothing typed");
+  r = await run({ before: "un brouillon" });
+  assert.deepEqual([r.res.why, r.enter, r.calls.some((x) => x.startsWith("keys"))], ["keys-prompt", false, false], "a draft in the prompt: nothing typed");
+  r = await run({ after: "x/context" });
+  assert.deepEqual([r.res.why, r.enter], ["keys-typed", false], "the prompt doesn't read it: never Enter (typed, left there)");
+  hcFake = async () => ({});
+  agentsFake = () => [];
 }
 
 // ── Reduced motion: none of it ──────────────────────────────────────────────
