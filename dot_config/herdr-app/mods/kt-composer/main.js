@@ -1,5 +1,5 @@
-// The session status line under the thread (it was a composer: the terminal is the input, so this
-// only tells). The focused agent's model and effort, context fill as a ring, prompt-cache hit
+// The session status line under the thread's Chat face (#86: the terminal face shows the terminal
+// only; it was a composer: the terminal is the input, so this only tells). The focused agent's model and effort, context fill as a ring, prompt-cache hit
 // and what is left of its TTL, cost, duration, lines changed; the checkout or worktree and branch
 // with the PR, its CI and review from /me:report; the claude-flow step, todos and sub-agents; the
 // account quota with its reset, like Monocode's footer. Items drop by priority when the line is short.

@@ -52,6 +52,10 @@ assert.equal(chatShown(lay()), false, "thread-body shows main by default");
 assert.equal(chatShown(lay("chat", "inbox")), false, "a page covers the thread");
 assert.equal(chatShown({ id: "root", children: [] }), false, "another layout");
 assert.equal(chatShown({ id: "root", children: [{ id: "thread-panes", type: "block" }] }), false, "the panes' block of #86 lots 3-4: no face");
+// #86: the Chat face is a column (the Chat, then the status line kt-composer): still the child chat.
+const colLay = (body) => ({ id: "root", children: [{ id: "view", active: "thread", children: [{ id: "thread", children: [{ id: "thread-body", type: "stack",
+  active: body, children: [{ id: "main" }, { id: "chat", type: "column", children: [{ id: "chat-main" }, { id: "composer" }] }] }] }] }] });
+assert.deepEqual([chatShown(colLay("chat")), chatShown(colLay("main"))], [true, false], "the Chat face as a column");
 // ctrl-b space's stamp: taken once, and only with the face on screen (view.js writes it before the
 // switch: seen while still hidden, it waits for the face instead of being spent without the keyboard).
 assert.equal(takesFocus(1000, null, true), true, "a new stamp, the face shown: the keyboard");

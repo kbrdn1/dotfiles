@@ -1,14 +1,16 @@
 // bun view.check.mjs: view.js, the thread's two faces (#54, back with #86; ctrl-b space): the stack
 // thread-body on the tab's panes (main) or the Chat (chat). To the Chat: the stamp kt.chat.focus first
-// (kt-chat takes the keyboard and fades the face in), then the switch. Back to the panes: the keyboard to
-// the agent's pane, a shell focused or not. From a page: the thread again, on its Chat. Another layout,
-// or the panes' block of #86 lots 3-4: nothing. Fixtures are made up.
+// (kt-chat takes the keyboard), then the switch. Back to the panes: the keyboard to the agent's pane, a
+// shell focused or not. From a page: the thread again, on its Chat. Another layout, or the panes' block
+// of #86 lots 3-4: nothing. And the real layouts' shape (#86: the terminal face is the terminal only, the
+// status line lives on the Chat face). Fixtures are made up.
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { view, find } from "./view.js";
 
 const tree = (face, page) => ({ id: "root", children: [{ id: "view", type: "stack", ...(page ? { active: page } : {}), children: [
-  { id: "thread", children: [{ id: "thread-body", type: "stack", ...(face ? { active: face } : {}), children: [{ id: "main" }, { id: "chat" }] },
-    { id: "composer" }] }, { id: "inbox" }] }] });
+  { id: "thread", children: [{ id: "thread-body", type: "stack", ...(face ? { active: face } : {}), children: [{ id: "main" },
+    { id: "chat", type: "column", children: [{ id: "chat-main" }, { id: "composer" }] }] }] }, { id: "inbox" }] }] });
 const PANES = [
   { pane: "p-a", tab: "tab-1", terminal: "tA" }, // an agent
   { pane: "p-b", tab: "tab-1", terminal: "tB" }, // another agent, same tab
@@ -69,5 +71,24 @@ d = deps({ layout: () => ({ id: "root", children: [{ id: "view", children: [{ id
 assert.deepEqual([view("", d), d.calls], [null, []]);
 d = deps({ layout: () => ({ id: "root", children: [{ id: "thread-body", type: "block" }] }) });
 assert.deepEqual([view("", d), d.calls], [null, []]);
+
+// The real layouts (kbrdn-threads, and kbrdn-threads-glass where it is): the thread column holds the
+// stack only, so the terminal face is the tab's panes alone, the whole height (Kylian: « mode terminal
+// doit afficher que la fenêtre de terminal »); the Chat face is a column, the Chat then the status line
+// (kt-composer, 36 px, 4 px apart), the pixels it had under the stack before. view() switches it as ever.
+for (const name of ["kbrdn-threads", "kbrdn-threads-glass"]) {
+  const path = new URL(`../../layouts/${name}.json`, import.meta.url);
+  if (name !== "kbrdn-threads" && !existsSync(path)) continue;
+  const root = JSON.parse(readFileSync(path, "utf8"));
+  assert.deepEqual(find(root, "thread").children.map((c) => c.id), ["thread-body"], `${name}: the thread column is the stack only`);
+  const body = find(root, "thread-body");
+  const [main, chat] = body.children;
+  assert.deepEqual([body.type, main.id, main.type, main.content?.tab], ["stack", "main", "block", "active"], `${name}: main is the tab's panes`);
+  assert.deepEqual([chat.id, chat.type, chat.gap, chat.children.map((c) => [c.id, c.content?.mod, c.size?.px ?? null])],
+    ["chat", "column", 4, [["chat-main", "kt-chat", null], ["composer", "kt-composer", 36]]], `${name}: the Chat face, then its status line`);
+  d = deps({ layout: () => root });
+  view("", d);
+  assert.deepEqual(d.calls, [STAMP, TO("chat")], `${name}: ctrl-b space goes to the Chat column`);
+}
 
 console.log("view.check: ok");

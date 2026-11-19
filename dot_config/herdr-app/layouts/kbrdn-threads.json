@@ -88,14 +88,21 @@
                             }
                           }
                         },
-                        { "id": "chat", "type": "block", "content": { "mod": "kt-chat" } }
+                        {
+                          "id": "chat",
+                          "type": "column",
+                          "gap": 4,
+                          "children": [
+                            { "id": "chat-main", "type": "block", "content": { "mod": "kt-chat" } },
+                            {
+                              "id": "composer",
+                              "type": "block",
+                              "size": { "px": 36 },
+                              "content": { "mod": "kt-composer" }
+                            }
+                          ]
+                        }
                       ]
-                    },
-                    {
-                      "id": "composer",
-                      "type": "block",
-                      "size": { "px": 36 },
-                      "content": { "mod": "kt-composer" }
                     }
                   ]
                 },
