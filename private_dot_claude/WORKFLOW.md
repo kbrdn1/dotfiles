@@ -334,14 +334,14 @@ flowchart TD
 
 ⚠️ **Qui publie la release change selon le repo** — se tromper double-publie ou ne publie rien :
 
-| Knob | `gwm-cli` | `bijouterie-julian` |
-|---|---|---|
-| Fichiers de version | `Cargo.toml` + `Cargo.lock` | `config/version.php` (vérité) + `package.json` |
-| Fichier de version du changelog | `changelogs/X.Y.Z.md` (sans `v`) | `changelogs/vX.Y.Z.md` |
-| `dev` → `main` | PR (main protégée) | merge local (merge commit) |
-| Publication | **CI sur tag `v*`** (`release.yml`, `--notes-file`) | **manuelle** (`gh release create`) |
-| Gate | `cargo test` + CI | `make build` + tests **via Docker** (CI désactivée) |
-| Post-release | homebrew/scoop (CI), sync docs + ROADMAP | propagation preprod, Project board |
+| Knob | `gwm-cli` | `bijouterie-julian` | `dotfiles` |
+|---|---|---|---|
+| Fichiers de version | `Cargo.toml` + `Cargo.lock` | `config/version.php` (vérité) + `package.json` | aucun : version datée `vAAAA.MM.JJ` |
+| Fichier de version du changelog | `changelogs/X.Y.Z.md` (sans `v`) | `changelogs/vX.Y.Z.md` | `changelogs/AAAA.MM.JJ.md` (sans `v`) |
+| `dev` → `main` | PR (main protégée) | merge local (merge commit) | PR (main protégée, `enforce_admins`) |
+| Publication | **CI sur tag `v*`** (`release.yml`, `--notes-file`) | **manuelle** (`gh release create`) | **manuelle** (`gh release create`) |
+| Gate | `cargo test` + CI | `make build` + tests **via Docker** (CI désactivée) | checks des mods touchés + docs générées à jour |
+| Post-release | homebrew/scoop (CI), sync docs + ROADMAP | propagation preprod, Project board | rien : `install.sh` installe `main` |
 
 Invariants dans les deux cas : `CHANGELOG.md` racine = `[Unreleased]` seule + index `## Past releases` ; un fichier par version sous `changelogs/` ; titre de release = **`vX.Y.Z` seul** ; notes = `--notes-file changelogs/<version>.md` ; la release est un **snapshot** (corriger après coup → `gh release edit --notes-file`).
 

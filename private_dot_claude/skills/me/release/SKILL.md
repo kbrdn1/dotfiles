@@ -40,15 +40,17 @@ feature ──► dev ──► main ──► (preprod ──► prod)
 
 ### Knobs à détecter (rien n'est universel)
 
-| Knob | Où le lire | `gwm-cli` | `bijouterie-julian` |
-|---|---|---|---|
-| Fichier(s) de version | `Cargo.toml`, `package.json`, `config/version.php`, `pyproject.toml`… | `Cargo.toml` + `Cargo.lock` | `config/version.php` (vérité) + `package.json` (aligné) |
-| Nom du fichier de version | `ls changelogs/` | `changelogs/X.Y.Z.md` (sans `v`) | `changelogs/vX.Y.Z.md` |
-| Branches | `git branch -r`, `.gwm.toml` | `dev` → `main` | `jewely/dev` → `jewely/main` |
-| `main` protégée | `gh api repos/<o>/<r>/branches/<main>/protection` | **oui** → merge par PR | non |
-| Qui publie la release | `.github/workflows/*` sur tag `v*` | **la CI** (`release.yml`, `--notes-file changelogs/X.Y.Z.md`) | **manuel** (`gh release create`) |
-| Gate de vérif | `Makefile`, `justfile`, CI | `cargo test` + CI | `make build` + tests **via Docker** (CI désactivée) |
-| Post-release | — | homebrew-tap / scoop (CI), sync docs+ROADMAP | propagation preprod, Project board |
+| Knob | Où le lire | `gwm-cli` | `bijouterie-julian` | `dotfiles` |
+|---|---|---|---|---|
+| Fichier(s) de version | `Cargo.toml`, `package.json`, `config/version.php`, `pyproject.toml`… | `Cargo.toml` + `Cargo.lock` | `config/version.php` (vérité) + `package.json` (aligné) | **aucun** : version datée, pas de bump |
+| Nom du fichier de version | `ls changelogs/` | `changelogs/X.Y.Z.md` (sans `v`) | `changelogs/vX.Y.Z.md` | `changelogs/AAAA.MM.JJ.md` (sans `v`) |
+| Branches | `git branch -r`, `.gwm.toml` | `dev` → `main` | `jewely/dev` → `jewely/main` | `dev` → `main` (la source chezmoi reste sur `dev`) |
+| `main` protégée | `gh api repos/<o>/<r>/branches/<main>/protection` | **oui** → merge par PR | non | **oui** (`enforce_admins`) → merge par PR |
+| Qui publie la release | `.github/workflows/*` sur tag `v*` | **la CI** (`release.yml`, `--notes-file changelogs/X.Y.Z.md`) | **manuel** (`gh release create`) | **manuel** (`gh release create`, pas de CI) |
+| Gate de vérif | `Makefile`, `justfile`, CI | `cargo test` + CI | `make build` + tests **via Docker** (CI désactivée) | checks des mods touchés (`bun`), `KEYBINDINGS.md` et `CLAUDE-CODE.md` régénérés |
+| Post-release | — | homebrew-tap / scoop (CI), sync docs+ROADMAP | propagation preprod, Project board | rien : `install.sh` lit `main` |
+
+`dotfiles` : la version est la **date du jour**, `vAAAA.MM.JJ` (`vAAAA.MM.JJ.1` pour une deuxième le même jour). L'argument `patch` / `minor` / `major` ne s'y applique pas, et il n'y a pas de commit de bump : l'étape 1 se limite au changelog. Ouvrir la PR `dev` → `main` juste après ce commit, sinon un lot arrivé entre-temps part sans être listé.
 
 ⚠️ Se tromper sur « qui publie » **double-publie** ou ne publie rien. Vérifier le workflow avant de taper `gh release create`.
 
