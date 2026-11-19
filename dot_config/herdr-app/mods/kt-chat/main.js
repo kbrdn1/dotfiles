@@ -115,6 +115,7 @@ const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before th
 // The live tail: a delta read this often, only while the Chat shows and its agent works.
 const TICK = 750;
 const BRIDGE = 2000; // #84: the bridge file read again while the agent works or shows sub-agents
+const SUB_TRIES = 3; // #58: failed reads of a sub-agent's transcript in a row before it stops trying (until unfolded again)
 const STALE = 30000; // #81: the completions' catalog is read again when older, as the menu opens or the field takes focus
 const ASK_TTL = 300000; // #81: a kt-confirm « yes » later than this after its ask sends nothing
 // #81: a completed piece becomes a chip in the field (an InlineToken). Probed with herdr-app check
@@ -409,8 +410,9 @@ export default class Chat extends View {
     }
     this.line = line;
     if (line?.transcript_path) return line.transcript_path;
-    if (!line?.session_id) return null;
-    // A status line written before it published transcript_path: the session's file by its id.
+    // A status line written before it published transcript_path: the session's file by its id, a plain
+    // name only (letters, digits, dashes: a uuid), never a path that would leave the projects' folders.
+    if (!/^[A-Za-z0-9-]{1,128}$/.test(String(line?.session_id ?? ""))) return null;
     const r = await exec("/bin/sh", ["-c", 'ls -1 "$HOME"/.claude/projects/*/"$1".jsonl 2>/dev/null | head -1', "sh", line.session_id]).catch(() => null); // i18n: tech
     return r?.stdout?.trim() || null;
   }
@@ -2113,9 +2115,14 @@ export default class Chat extends View {
       const c = agentColor(t, a.color);
       const id = `r:${b.id}`;
       const open = this.open.has(id);
-      const run = a.id ? this.subRuns.get(a.id) : null;
-      if (open && a.id && !run && cx) this.readSub(cx, a.id);
+      let run = a.id ? this.subRuns.get(a.id) : null;
+      // Unfolded, or shown again (back in the window), after reads that failed: it tries again.
+      const again = Boolean(run && open && !run.shown && run.err);
+      if (again) run.fails = 0;
+      if (open && a.id && cx && (!run || again)) this.readSub(cx, a.id, Boolean(run?.state));
+      run = a.id ? this.subRuns.get(a.id) : null; // readSub() may have just put a new one
       if (run) run.shown = open;
+      if (open && a.id) this.subsNow?.add(a.id);
       const own = open ? this.ownOf(b) : null;
       const name = a.name || b.input?.name || b.input?.description || b.title || b.name;
       const sub = [b.input?.type ?? a.type, a.model, tr(`sub.${b.state ?? "running"}`)].filter(Boolean).join(" · ");
@@ -2161,9 +2168,10 @@ export default class Chat extends View {
   /**
    * #58: a sub-agent's own transcript (chat-model.js subPath: beside its session's), read when its line
    * unfolds: its last 2 turns within a small budget (its own lead's brief opens its turn). Again, from
-   * where it stopped, every BRIDGE ms while it runs and its line stays open (watchBridge()), until its
-   * .meta.json says finished. Missing or unreadable: its line keeps its report. A redraw only when
-   * something came.
+   * where it stopped, every BRIDGE ms while it runs and its line stays open and drawn (followSubs()),
+   * until its .meta.json says finished. Missing or unreadable: its line keeps its report, and after
+   * SUB_TRIES failed reads in a row it stops trying until unfolded again. A redraw only when something
+   * came.
    */
   readSub(cx, id, delta = false) {
     const p = subPath(this.state?.path, id);
@@ -2184,7 +2192,7 @@ export default class Chat extends View {
         } catch {
           // no meta yet: as before
         }
-        if (!out || out.error) next.err = true;
+        if (!out || out.error) next = { ...next, err: true, fails: (r.fails ?? 0) + 1 };
         else {
           const state = delta ? ingest(r.state, out) : ingest(null, out);
           const grew = !r.state || state.entries.length !== r.state.entries.length || done !== r.done;
@@ -2192,12 +2200,27 @@ export default class Chat extends View {
           next = { state, turns, fresh: subArrivals(r.turns, turns, id, r.fresh), busy: false, done, shown: r.shown, grew };
         }
       } catch {
-        next.err = true;
+        next = { ...next, err: true, fails: (r.fails ?? 0) + 1 };
       }
       if (this.subRuns.get(id) !== r) return; // another agent meanwhile (cleared)
+      next.shown = r.shown; // as the renders during the read left it (folded, out of the window)
       this.subRuns.set(id, next);
       if (!delta || next.grew || next.err) cx.notify();
     });
+  }
+
+  /**
+   * #58, watchBridge()'s timer: the sub-agents whose line is open and drawn, while they run, read on from
+   * where they stopped (not read yet: whole); not one that failed SUB_TRIES times in a row.
+   */
+  followSubs(cx) {
+    for (const [id, r] of this.subRuns) if (r.shown && !r.done && (r.fails ?? 0) < SUB_TRIES) this.readSub(cx, id, Boolean(r.state));
+  }
+
+  /** #58, after a render's turns (subsNow: the open lines drawn): a line not drawn (its turn out of the window) isn't followed. */
+  subsDrawn() {
+    for (const [id, r] of this.subRuns) if (!this.subsNow?.has(id)) r.shown = false;
+    this.subsNow = null;
   }
 
   // tools.rs:84-136: a milestone (compaction, interruption, a background task): an icon of 14 at ink
@@ -2820,9 +2843,11 @@ export default class Chat extends View {
     this.budget = { spans: CODE_SPANS, rows: CODE_ROWS, steps: ROW_BUDGET, fresh: true };
     this.drawnNow = new Map();
     this.heldNow = new Set();
+    this.subsNow = new Set();
     const turns = [];
     for (const i of win.nearFirst(from, to, this.focusTurn())) turns[i - from] = this.turn(t, cx, this.turns[i], i, keyed);
     this.budget = null;
+    this.subsDrawn();
     // A16: a press that moved the reader keeps its row where it was on screen, whatever the folds above
     // it are drawn as now (keepY(): an anchor at the view's new top, as the jump's).
     if (!anchor && this.reveal == null && this.keepRow) {
@@ -3123,8 +3148,7 @@ export default class Chat extends View {
         this.watchBridge(cx);
         if (this.bridgeTicker) this.readBridge(cx, target().agent?.address);
         // #58: a sub-agent's transcript open under its line, while it runs: what it wrote since.
-        // Not read yet (its file not there yet, a failed read): read whole again.
-        if (this.bridgeTicker) for (const [id, r] of this.subRuns) if (r.shown && !r.done) this.readSub(cx, id, Boolean(r.state));
+        if (this.bridgeTicker) this.followSubs(cx);
       });
     } else if (!on && this.bridgeTicker) {
       this.bridgeTicker.cancel();

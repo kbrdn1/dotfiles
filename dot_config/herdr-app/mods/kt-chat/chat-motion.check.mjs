@@ -54,6 +54,9 @@ const ui = {
 // hc, agents(), focused() and openOverlay() go through these, which a case may swap (#81's routes).
 let hcFake = async () => ({});
 let agentsFake = () => [];
+// exec and readTextFile too (a sub-agent's read, a session looked up by its id).
+let execFake = async () => ({ code: 0, stdout: "" });
+let readFake = async () => "";
 let focusedFake = () => null;
 let openOverlayFake = () => null;
 // checking() answers live.checking: true for the Chat (as herdr-app check), false where a timer is the point.
@@ -62,7 +65,7 @@ const host = {
   agents: () => agentsFake(), panes: () => [], spaces: () => [], terminals: () => [], theme: () => ({}), settings: () => ({ dark: true, zoom: 1 }),
   props: () => ({}), shared: () => undefined, layout: () => null, focused: () => focusedFake(), keys: () => ({}), openOverlay: (o) => openOverlayFake(o),
   home: () => "/h", appHome: () => "/h/.config/herdr-app", checking: () => live.checking, nextCommand: () => new Promise(() => {}),
-  exec: async () => ({ code: 0, stdout: "" }), hc: (a) => hcFake(a), readTextFile: async () => "", writeTextFile: async () => {},
+  exec: (...a) => execFake(...a), hc: (a) => hcFake(a), readTextFile: (p) => readFake(p), writeTextFile: async () => {},
 };
 const stub = (set, own, make) => Object.fromEntries([...set].map((n) => [n, n in own ? own[n] : make(n)]));
 plugin({
@@ -522,6 +525,65 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   c.open.delete("r:tu-9");
   drawn();
   assert.equal(c.subRuns.get("a1").shown, false);
+}
+
+// ── Cold review 2, point 9: a sub-agent whose transcript can't be read isn't read on forever ──
+{
+  const c = chat();
+  c.state = { ...c.state, path: "/p/s.jsonl" };
+  const b = { role: "tool", id: "tu-8", name: "Agent", kind: "agent", state: "running", input: { description: "absent" }, result: { agent: { id: "a8", name: "absent" } } };
+  const turn = { id: "tm", user: null, blocks: [], live: false, fold: { start: 0, end: 0 },
+    items: [{ type: "subagents", id: "sm", runs: [b] }, { type: "block", id: "ans3", block: { role: "prose", id: "ans3", text: "fin" } }] };
+  c.turns = [turn];
+  c.win = { from: 0, to: 1 };
+  c.open.add("f:tm");
+  c.open.add("r:tu-8");
+  let reads = 0;
+  execFake = async () => { reads++; return { code: 1, stdout: "" }; }; // its file isn't there
+  readFake = async () => { throw new Error("missing"); };
+  // A cx whose spawned tasks run, awaited.
+  const run = async (f) => { const x = cx(); const tasks = []; x.spawn = (g) => tasks.push(g(x)); f(x); await Promise.all(tasks); };
+  // A render as body() makes it: the open lines drawn noted, the others not followed after it.
+  const render = (drawIt = true) => run((x) => { c.subsNow = new Set(); if (drawIt) flat(c.turn(T, x, turn, 0, false)); c.subsDrawn(); });
+  const tick = async (n) => { for (let k = 0; k < n; k++) await run((x) => c.followSubs(x)); };
+  await render();
+  assert.deepEqual([reads, c.subRuns.get("a8").fails], [1, 1], "unfolded: one read, it fails");
+  await tick(6);
+  assert.equal(reads, 3, "the timer tries again, 3 failed reads in a row in all (SUB_TRIES), then stops");
+  // Folded, unfolded: it tries again, as many times.
+  c.open.delete("r:tu-8");
+  await render();
+  c.open.add("r:tu-8");
+  await render();
+  assert.deepEqual([reads, c.subRuns.get("a8").fails], [4, 1], "unfolded again: read again");
+  await tick(6);
+  assert.equal(reads, 6, "and again bounded");
+  // Open but not drawn (its turn out of the window): not followed.
+  c.subRuns.get("a8").fails = 0;
+  await render(false);
+  assert.equal(c.subRuns.get("a8").shown, false, "not drawn: shown no more");
+  await tick(3);
+  assert.equal(reads, 6, "not drawn: never read");
+  execFake = async () => ({ code: 0, stdout: "" });
+  readFake = async () => "";
+}
+
+// ── Cold review 2, point 12: a session looked up by its id only when the id is a plain name ──
+{
+  const c = chat();
+  const asked = [];
+  execFake = async (_cmd, args) => { asked.push(args.at(-1)); return { code: 0, stdout: "/h/.claude/projects/-w/s.jsonl\n" }; };
+  for (const id of ["../../x", "a*b", "a/b", "a b", "", "x".repeat(200)]) {
+    readFake = async () => JSON.stringify({ session_id: id });
+    assert.equal(await c.locate("tA"), null, `not a plain name, never put in the glob: ${JSON.stringify(id)}`);
+  }
+  assert.deepEqual(asked, [], "nothing looked up");
+  const uuid = "00000000-0000-4000-8000-000000000001";
+  readFake = async () => JSON.stringify({ session_id: uuid });
+  assert.equal(await c.locate("tA"), "/h/.claude/projects/-w/s.jsonl", "a uuid: its session found");
+  assert.deepEqual(asked, [uuid], "passed as the glob's $1");
+  execFake = async () => ({ code: 0, stdout: "" });
+  readFake = async () => "";
 }
 
 // ── Cold review, point 5: back on an agent, no ledge of its own fades from before its data is read ──
