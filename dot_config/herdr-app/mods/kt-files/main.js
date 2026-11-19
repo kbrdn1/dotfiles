@@ -19,6 +19,8 @@ import { spaces, panes, exec as hostExec, readTextFile as hostRead, settings, th
 import { ICON_MAP, catIcon } from "./icons.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
+// Copied byte for byte from mods/kt-keys/panel.js: in and out with the right panel (#73).
+import { panelIn } from "./panel.js";
 import { skeleton, readyFor } from "./skeleton.js";
 import { gitTopics, refreshOn } from "./bus.js";
 import { shouldRead } from "./reread.js";
@@ -362,7 +364,12 @@ export default class Files extends View {
     return out;
   }
 
+  // panel.js: the whole view glides in and out with the right panel (#73).
   render(cx) {
+    return panelIn(this.motion, this.draw(cx));
+  }
+
+  draw(cx) {
     // Another thread, space or worktree: read now, shown or back from hidden (never the previous checkout
     // until the 5 s tick); back on the tab at the same place, only past 10 s (reread.js); still without a
     // folder: now. this.loc moves only while shown: a hidden copy doesn't render.

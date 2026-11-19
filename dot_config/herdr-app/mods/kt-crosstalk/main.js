@@ -35,6 +35,8 @@ import { randomUUID } from "crypto";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
 import { filterRow, filterState } from "./filters.js";
 import { motionState, frame, enter, ink, rows as motionRows } from "./motion.js";
+// Copied byte for byte from mods/kt-keys/panel.js: in and out with the right panel (#73).
+import { panelIn } from "./panel.js";
 import { skeleton, readyFor } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the segments' counts and « N sur M » roll to their new digits.
 import { roll, rollText } from "./roll.js";
@@ -1012,7 +1014,12 @@ export default class Crosstalk extends View {
       .when(this.menu, (el) => el.child(menu));
   }
 
+  // panel.js: the whole view glides in and out with the right panel (#73).
   render(cx) {
+    return panelIn(this.motion, this.draw(cx));
+  }
+
+  draw(cx) {
     const vis = visible();
     if (vis && !checking() && (!this.shown || this.source() !== this.src)) this.read(cx);
     this.shown = vis;

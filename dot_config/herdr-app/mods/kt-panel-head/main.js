@@ -14,6 +14,8 @@ import { shortcut, tip } from "./shortcuts.js";
 // Copied byte for byte from mods/kt-keys/i18n.js (I18N.md).
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
+// Copied byte for byte from mods/kt-keys/panel.js: the panel's content glides in and out (#73).
+import { panelIn, togglePanel } from "./panel.js";
 
 const tr = makeT(strings);
 
@@ -62,8 +64,8 @@ export default class PanelHead extends View {
     const before = SURFACES.slice(0, at).map(([id]) => this.segW[id]);
     const placed = at >= 0 && this.segW[active] && before.every(Boolean);
     const left = placed ? before.reduce((s, w) => s + w + 2, 0) : 0;
-    // Inside the panel card (it paints the background): no rule.
-    return h_flex()
+    // Inside the panel card (it paints the background): no rule. panel.js: in and out with the panel (#73).
+    return panelIn(m, h_flex()
       .id("ph-root")
       .on_size_change((size, cx) => {
         if ((size.width >= WIDE) !== (this.width >= WIDE)) cx.notify();
@@ -121,10 +123,11 @@ export default class PanelHead extends View {
             .text_color(t.dim)
             .cursor_pointer()
             .hover((s) => s.bg(t.hover).text_color(t.foreground))
-            .tooltip(tip(tr("close"), shortcut(keys(), shared("layout"), "layout.toggle:panel")))
-            .on_click(() => run("layout.toggle", { id: "panel" }))
+            .tooltip(tip(tr("close"), shortcut(keys(), shared("layout"), "kt-head.panel-toggle", "layout.toggle:panel")))
+            // panel.js: the content goes, then the column (#73).
+            .on_click((_e, cx) => togglePanel(cx))
             .child(svg("mods/kt-threads/x.svg").size(14)),
         ),
-      );
+      ));
   }
 }

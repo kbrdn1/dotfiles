@@ -25,6 +25,8 @@ import { ICON_MAP } from "./icons.js";
 import { fileItems, palette, alpha, action, MONO, IMAGE, loadPreview, cleanPreviews, viewImages, colorize, cleanTokens } from "./diffview.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
+// Copied byte for byte from mods/kt-keys/panel.js: in and out with the right panel (#73).
+import { panelIn } from "./panel.js";
 import { skeleton, readyFor } from "./skeleton.js";
 import { gitTopics, refreshOn } from "./bus.js";
 import { makeT, date } from "./i18n.js";
@@ -558,7 +560,12 @@ export default class History extends View {
         .child(Scrollbar.vertical("hi-files").absolute().inset_0()));
   }
 
+  // panel.js: the whole view glides in and out with the right panel (#73).
   render(cx) {
+    return panelIn(this.motion, this.draw(cx));
+  }
+
+  draw(cx) {
     const vis = visible();
     // Another thread, space or worktree: read now, shown or back from hidden; back on the tab at the same
     // place, only past 10 s (reread.js). this.loc moves only while shown: a hidden copy doesn't render.

@@ -14,5 +14,6 @@
 | `i18n.js` | français et anglais | `I18N.md` |
 | `machines.js` | état des autres machines (`shared("kt.machines")`, publié par kt-threads), garde des `exec` et `readTextFile` distants | en-tête du fichier, `DATA-SYNC.md` |
 | `shortcuts.js` | le raccourci d'une action, lu dans `keys()` (jamais écrit en dur), et ses pictos de touches (`kbd()`) | `KEYMAP.md`, en-tête du fichier |
+| `panel.js` | l'ouverture et la fermeture animées du panneau de droite (le contenu glisse, la colonne ne se redimensionne qu'une fois), avec `motion.js` | `ANIMATIONS.md`, en-tête du fichier |
 
 Les `*.check.mjs` se lancent avec **Bun**, pas avec Node : `bun mods/kt-keys/<nom>.check.mjs`. Ils importent `bun` pour simuler `herdr` et `gpui-kit`, si bien que Node échoue sur un faux rouge.

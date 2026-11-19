@@ -50,6 +50,8 @@ import { Vim, keyOf, keysOf, step } from "./vim.js";
 // Where the issue, PR, checks and branch buttons and gi gI gp gP go (pure: links.check.mjs).
 import { target, checksOf, stepKind, stepUrl, inHerdr, toBrowser, toPage, toTab, gLink } from "./links.js";
 import { motionState, frame, enter, collapse, stagger } from "./motion.js";
+// Copied byte for byte from mods/kt-keys/panel.js: in and out with the right panel (#73).
+import { panelIn } from "./panel.js";
 import { skeleton, readyFor } from "./skeleton.js";
 import { refreshOn } from "./bus.js";
 // kt-threads' reads (threads-io.js with threads-model.js, pr-pick.js, thread-filter.js: byte-identical
@@ -1198,7 +1200,12 @@ export default class Flow extends View {
         .child(phase(1, 0.35))));
   }
 
+  // panel.js: the whole view glides in and out with the right panel (#73).
   render(cx) {
+    return panelIn(this.motion, this.draw(cx));
+  }
+
+  draw(cx) {
     const vis = visible();
     // The panel opens (and the last read is past 10 s, DATA-SYNC.md): look for the report and plans again.
     const stale = !this.shown && Date.now() - (this.readAt ?? 0) > 10e3;

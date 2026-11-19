@@ -56,6 +56,8 @@ import { Select, partition, lines } from "./select.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
+// Copied byte for byte from mods/kt-keys/panel.js: the panel view in and out with the right panel (#73).
+import { panelIn } from "./panel.js";
 import { skeleton, still } from "./skeleton.js";
 // kt-keys' roll.js (a byte-identical copy): the head's, the selection's and a worktree's ahead / behind
 // counts roll to their new digits.
@@ -1557,7 +1559,13 @@ export default class Worktrees extends View {
     return root.child(w && !w.is_main ? this.worktreeCard(t, sc.repo, d, w, cx, cur) : this.repoCard(t, sc.repo, d, d.rows.find((x) => x.is_main) ?? w, cx, cur));
   }
 
+  // panel.js: the panel view glides in and out with the right panel (#73); the Worktrees page doesn't move.
   render(cx) {
+    const view = this.draw(cx);
+    return this.panel ? panelIn(this.motion, view) : view;
+  }
+
+  draw(cx) {
     const t = theme();
     this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
     const vis = this.visible();

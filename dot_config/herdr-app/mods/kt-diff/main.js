@@ -26,6 +26,8 @@ import { ICON_MAP } from "./icons.js";
 import { fileItems, sectionHead, action, zed, firstLine, palette, alpha, MONO, IMAGE, loadPreview, cleanPreviews, colorize, cleanTokens } from "./diffview.js";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, enter } from "./motion.js";
+// Copied byte for byte from mods/kt-keys/panel.js: in and out with the right panel (#73).
+import { panelIn } from "./panel.js";
 import { skeleton, readyFor } from "./skeleton.js";
 import { bump, gitTopics, refreshOn } from "./bus.js";
 import { shouldRead } from "./reread.js";
@@ -566,7 +568,12 @@ export default class Changes extends View {
     }
   }
 
+  // panel.js: the whole view glides in and out with the right panel (#73).
   render(cx) {
+    return panelIn(this.motion, this.draw(cx));
+  }
+
+  draw(cx) {
     // Coming into view: look now, not at the next tick.
     const vis = visible();
     // Another thread, space or worktree: read now, shown or back from hidden; back on the tab at the same
