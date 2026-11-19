@@ -124,8 +124,8 @@ Herdr 2 runs around forty mods of mine, in
 by the `kbrdn-threads` layout. They are plain JavaScript modules on Herdr's GPUI kit,
 with no build step. Their pure logic is checked by `*.check.mjs` files run with Bun (and
 `*.test.mjs` with `bun test`), a syntax check covers every module (`kt-keys/parse.check.mjs`),
-and the modules several mods share are byte-identical copies, listed in `kt-mods/model.js`
-and held to that by `model.check.mjs`.
+and the modules several mods share are byte-identical copies of one reference, listed in
+`kt-mods/model.js` (the `kt-mods` console flags a copy that drifts).
 
 | Page or panel | Mod | What it shows |
 |---|---|---|
