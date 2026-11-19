@@ -7,7 +7,7 @@
 
 import { exec, readTextFile, writeTextFile, home, run, spaces, layout, notify } from "herdr";
 import { frontmatter } from "./frontmatter.js";
-import { githubSource } from "./github.js";
+import { githubSource, cloneArgv } from "./github.js";
 import { tilde } from "./form.js";
 import { bump } from "./bus.js";
 import { makeT } from "./i18n.js";
@@ -144,7 +144,7 @@ export const METHODS = [
         { id: "src", label: tr("src.label"), kind: "text", mono: true, placeholder: tr("src.placeholder"), help: tr("src.help") },
         { id: "name", label: tr("name.label"), kind: "text", placeholder: tr("githubName.placeholder"), help: tr("optional") }];
     },
-    async plan(v) {
+    async plan(v, ctx) {
       const src = githubSource(v.src);
       if (src.error) return { error: tr(`gh.${src.error}`) };
       const name = v.name.trim() || src.path.split("/").pop() || src.repo;
@@ -159,8 +159,10 @@ export const METHODS = [
       const tmp = mk.code === 0 ? mk.stdout.trim().replace(/\/+$/, "") : "";
       if (!/\/kt-skill\.[A-Za-z0-9]+$/.test(tmp)) return { error: tr("noTmp") };
       const cancel = () => sh("rm", ["-rf", tmp]);
-      const clone = ["git", "clone", "--depth", "1", ...(src.ref ? ["--branch", src.ref] : []), src.url];
-      const c = await sh(clone[0], [...clone.slice(1), `${tmp}/repo`], { timeout: 180e3 });
+      // Guarded git (github.js' cloneArgv: no prompt, no LFS, no file protocol, links as files, no
+      // hooks), through env: exec has no environment option; every value its own argument.
+      const clone = cloneArgv(src, `${tmp}/repo`);
+      const c = await sh("env", clone, { timeout: 180e3 });
       if (c.code !== 0) { await cancel(); return { error: tr("cloneFailed", { why: lastLine(c.stderr) }) }; }
       const inner = src.path ? `${tmp}/repo/${src.path}` : `${tmp}/repo`;
       // The folder, links resolved, must still be inside the clone.
@@ -169,11 +171,18 @@ export const METHODS = [
       const text = real.code === 0 && real.stdout.trim().startsWith(top.stdout.trim()) ? await readTextFile(`${inner}/SKILL.md`).catch(() => null) : null;
       if (text == null) { await cancel(); return { error: tr("noSkillMd", { path: `${src.owner}/${src.repo}${src.path ? `/${src.path}` : ""}` }) }; }
       const target = src.path ? `${dest}/${src.path}` : dest;
+      // The commit cloned, in the confirmation (issue #70): the bytes added are this commit's. Opened by
+      // Marketplaces, ctx.expect is the commit it inspected (a full sha); a move since then is said.
+      const head = (await sh("git", ["-C", `${tmp}/repo`, "rev-parse", "HEAD"])).stdout.trim();
+      const sha = /^[0-9a-f]{40}$/.test(head) ? head : null;
+      const expect = /^[0-9a-f]{40}$/.test(ctx?.expect ?? "") ? ctx.expect : null;
+      const moved = Boolean(sha && expect && sha !== expect);
       return {
-        shown: [tr("alreadyDone"), `${clone.join(" ")} ${shq(tilde(tmp))}/repo`, tr("atConfirm"),
+        shown: [tr("alreadyDone"), `env ${clone.slice(0, -1).join(" ")} ${shq(tilde(tmp))}/repo`, ...(sha ? [`HEAD ${sha}`] : []), tr("atConfirm"), // i18n: tech
           `mkdir -p ~/.agents/skills`, `mv ${shq(tilde(tmp))}/repo ${shq(tilde(dest))}`, `ln -s ${shq(tilde(target))} ${shq(tilde(link))}`].join("\n"),
         preview: preview(text), previewLabel: `${src.owner}/${src.repo}${src.path ? `/${src.path}` : ""}/SKILL.md · frontmatter`, label: tr("add"), // i18n: tech
-        note: tr("github.note"),
+        note: [moved ? tr("github.moved", { expect: expect.slice(0, 12), sha: sha.slice(0, 12) }) : null,
+          sha ? tr("github.head", { sha: sha.slice(0, 12) }) : null, tr("github.note")].filter(Boolean).join(" "),
         cancel,
         run: async () => {
           await sh("mkdir", ["-p", `${home()}/.agents/skills`, skillsDir()]);

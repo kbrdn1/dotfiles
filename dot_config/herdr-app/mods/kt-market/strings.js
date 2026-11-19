@@ -161,6 +161,8 @@ export default {
     "installTipMcp": "Ouvre le formulaire de la page MCP, pré-rempli sans aucun secret : tu tapes les valeurs, puis tu confirmes la commande.",
     "installNoteMcp": "Le formulaire de la page MCP s'ouvre avec le nom, la commande ou l'URL, et le nom des variables. Leurs valeurs, secrets compris, se tapent là-bas, masquées. Portée user, sur ce Mac.",
     "installVariant": "Installer celle-ci…",
+    "installTipSkill": "Ouvre « Depuis GitHub » de la page Skills, pré-rempli : il clone à part, montre le SKILL.md et le commit, puis te fait confirmer.",
+    "installNoteSkill": "La page Skills reclone le dépôt et montre son commit : s'il a bougé depuis cette inspection, elle le dit. Ajouté dans ~/.agents/skills, lié dans ~/.claude/skills, sur ce Mac.",
 
     "parts": "Ce qu'il apporte",
     "noParts": "Aucun composant trouvé.",
@@ -366,6 +368,8 @@ export default {
     "installTipMcp": "Opens the MCP page's form, filled in without any secret: you type the values, then confirm the command.",
     "installNoteMcp": "The MCP page's form opens with the name, the command or URL, and the variables' names. Their values, secrets included, are typed there, masked. User scope, on this Mac.",
     "installVariant": "Install this one…",
+    "installTipSkill": "Opens the Skills page's \"From GitHub\", filled in: it clones aside, shows the SKILL.md and the commit, then asks you to confirm.",
+    "installNoteSkill": "The Skills page clones the repository again and shows its commit: if it moved since this inspection, it says so. Added in ~/.agents/skills, linked in ~/.claude/skills, on this Mac.",
 
     "parts": "What it brings",
     "noParts": "No component found.",

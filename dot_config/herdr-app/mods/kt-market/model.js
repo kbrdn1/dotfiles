@@ -418,6 +418,17 @@ export function mcpForm(name, v) {
   return null;
 }
 
+/** What kt-skills' « Depuis GitHub » form gets for an inspected skill (issue #70 lot 5): the source and
+ *  the name, and the commit inspected (`expect`, a full sha: kt-skills says when the repo moved since).
+ *  null when kt-skills would refuse them (its github.js parts, its name rule): no Installer then. */
+export function skillForm(p, head) {
+  if (!p?.src || !p?.name) return null;
+  const parts = String(p.src).split("/");
+  if (parts.length < 2 || !parts.every((s) => /^[A-Za-z0-9_.-]+$/.test(s) && s !== "." && s !== "..") || !/^[A-Za-z0-9]/.test(parts[0])) return null;
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(p.name) || p.name.includes("..")) return null;
+  return { add: "github", prefill: { src: p.src, name: p.name }, expect: SHA.test(head ?? "") ? head : null };
+}
+
 /** The route's command lines and the files it writes, for the detail. Codes and commands only. */
 export function plan(it, extra = {}) {
   if (!it.route) return { route: null, why: it.why ?? "no-route", lines: [], writes: [] };
@@ -442,7 +453,7 @@ export function plan(it, extra = {}) {
     if (extra.skillPath == null) return { route: null, why: "no-skill-md", lines: [], writes: [] };
     const name = extra.skillPath ? extra.skillPath.split("/").pop() : it.repo.name;
     const src = `${it.repo.owner}/${it.repo.name}${extra.skillPath ? `/${extra.skillPath}` : ""}`;
-    return { route: it.route, why: null, src, lines: [`git clone --depth 1 https://github.com/${it.repo.owner}/${it.repo.name}.git <tmp>/repo`,
+    return { route: it.route, why: null, src, name, lines: [`git clone --depth 1 https://github.com/${it.repo.owner}/${it.repo.name}.git <tmp>/repo`,
       `mv <tmp>/repo ~/.agents/skills/${name}`, `ln -s ~/.agents/skills/${name}${extra.skillPath ? `/${extra.skillPath}` : ""} ~/.claude/skills/${name}`],
       writes: [`~/.agents/skills/${name}`, `~/.claude/skills/${name}`] };
   }

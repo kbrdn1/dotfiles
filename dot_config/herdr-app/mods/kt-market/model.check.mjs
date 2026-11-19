@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   clean, https, github, safeRel, hash, normalizeMarketplace, marketSource, mcpVariants, normalizeRegistry, normalizeSkillsSh,
   normalizeHerdr, normalizeLoop, levelOf, code, unpinnedRun, scanHerdr, scanSkill, pluginFlags, repoFlags, findSkill,
-  loopRecipe, plan, mcpForm, query, tokens, typeMatch, dedupe, LIVE, SOURCES, TYPES,
+  loopRecipe, plan, mcpForm, skillForm, query, tokens, typeMatch, dedupe, LIVE, SOURCES, TYPES,
 } from "./model.js";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -245,6 +245,15 @@ assert.deepEqual(splitArgs(mcpForm("odd", odd).prefill.cmd), ["uvx", "--from", "
 assert.deepEqual(splitArgs(f1.prefill.cmd), ["npx", ...m1.variants[0].config.args]);
 const sp = plan(s1, { skillPath: "skills/demo" });
 assert.equal(sp.src, "acme/skills/skills/demo");
+assert.equal(sp.name, "demo");
+// kt-skills' « Depuis GitHub » (lot 5): what its github.js and name rule accept, the inspected commit.
+assert.deepEqual(skillForm(sp, SHA), { add: "github", prefill: { src: "acme/skills/skills/demo", name: "demo" }, expect: SHA });
+assert.equal(skillForm(sp, "main").expect, null, "only a full sha is passed as the inspected commit");
+assert.equal(skillForm({ src: "acme/skills/my skill", name: "my skill" }, SHA), null, "a path kt-skills refuses: no Installer");
+assert.equal(skillForm({ src: "acme/skills/x", name: "-bad" }, SHA), null);
+assert.equal(skillForm({ src: "acme/skills/a/../b", name: "b" }, SHA), null);
+const { githubSource } = await import("../kt-skills/github.js");
+assert.equal(githubSource(skillForm(sp, SHA).prefill.src).path, "skills/demo", "kt-skills reads the source as written");
 assert.deepEqual(sp.writes, ["~/.agents/skills/demo", "~/.claude/skills/demo"]);
 assert.equal(plan(s1, { skillPath: null }).why, "no-skill-md");
 assert.deepEqual(plan(h1, { mods: ["demo-panel"] }).writes, ["~/.config/herdr-app/mods/demo-panel"]);

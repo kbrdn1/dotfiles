@@ -32,8 +32,8 @@ const TTL = { official: 0, known: 0, community: DAY, "herdr-dev": HOUR, aitmpl: 
 const LOCAL = ["official", "community", "known", "herdr-dev", "aitmpl"];
 const LIVE_TTL = DAY, DETAIL_TTL = 7 * DAY, GH_TTL = 7 * DAY;
 // The detail's shape: a cached one of another shape is inspected again (2: plan.addMarket; 3: an MCP's
-// plan as kt-mcp's form shows it, plan.form).
-const DETAIL_V = 3;
+// plan as kt-mcp's form shows it, plan.form; 4: a skill's plan.name).
+const DETAIL_V = 4;
 const UA = { "user-agent": "kt-market" };
 // A download's bounds: per file, in all, files.
 const FILE_MAX = 256 * 1024, TREE_MAX = 8 * 1024 * 1024, FILES_MAX = 400;

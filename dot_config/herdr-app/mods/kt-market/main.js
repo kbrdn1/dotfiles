@@ -13,8 +13,8 @@
 // rows; the list (60 a page); the detail beside it: what the index knows, then once inspected the exact
 // source and commit, the licence, what an install would run or write, the risks, the parts, the README.
 // Installer (issue #70): an inspected plugin opens kt-plugins' dialog on it (lot 3), an MCP server
-// kt-mcp's form filled with public values only (lot 4); kt-market itself runs nothing. The other types
-// show their plan only, for now.
+// kt-mcp's form filled with public values only (lot 4), a skill kt-skills' « Depuis GitHub » with the
+// inspected commit (lot 5); kt-market itself runs nothing. The other types show their plan only.
 // Keys (vim.js): the page opens typing in the filter (INSERT: ctrl-n/p ↓ ↑ move, enter opens the
 // detail, esc NORMAL). NORMAL: j/k gg/G ctrl-d/u (j past the last row: the next page; k before the
 // first: the previous page, then the filter), / the filter, tab / shift-tab the type, enter/o/l the
@@ -36,7 +36,7 @@ import { split } from "./tiers.js";
 import { rollText } from "./roll.js";
 import { docOf, mdState, view, tabs, target } from "./markdown.js";
 import { makeT, relative, compact } from "./i18n.js";
-import { TYPES, SOURCES, levelOf, code, mcpForm } from "./model.js";
+import { TYPES, SOURCES, levelOf, code, mcpForm, skillForm } from "./model.js";
 import strings from "./strings.js";
 
 const tr = makeT(strings);
@@ -285,6 +285,13 @@ export default class Market extends View {
       // kt-mcp's context: user scope only here (local and project belong to a project's folder).
       openOverlay({ mod: "kt-mcp", kind: "dialog", width: 1, height: 1, frame: "none", modal: true,
         props: { add: f.add, prefill: f.prefill, space: activeSpace()?.id ?? null, cwd: home(), project: false } });
+    } else if (x.type === "skill" && d.plan.route === "kt-skills") {
+      // A skill (lot 5): kt-skills' « Depuis GitHub », filled with its source and name; it clones aside,
+      // shows the SKILL.md and the commit cloned, says when it moved since this inspection (expect).
+      const f = skillForm(d.plan, d.head);
+      if (!f) return;
+      openOverlay({ mod: "kt-skills", kind: "dialog", width: 1, height: 1, frame: "none", modal: true,
+        props: { add: f.add, prefill: f.prefill, expect: f.expect } });
     }
   }
 
@@ -633,9 +640,11 @@ export default class Market extends View {
         .child(h_flex().child(this.chip(t, "ktmk-retry", tr("retry"), false, (cx) => this.inspect(cx, x, true))));
     }
     const p = d.plan;
-    // Lots 3 and 4: the plugins (kt-plugins) and the MCP servers (kt-mcp); the others show their plan only.
-    const installable = (x.type === "plugin" && p?.route === "kt-plugins") || (x.type === "mcp" && p?.route === "kt-mcp" && Boolean(mcpForm(x.name, d.variants?.[0])));
-    const note = x.type === "mcp" ? "installNoteMcp" : p?.addMarket ? "installCommunity" : "installNote";
+    // Lots 3 to 5: plugins (kt-plugins), MCP servers (kt-mcp), skills (kt-skills); the others show their plan.
+    const installable = (x.type === "plugin" && p?.route === "kt-plugins") || (x.type === "mcp" && p?.route === "kt-mcp" && Boolean(mcpForm(x.name, d.variants?.[0])))
+      || (x.type === "skill" && p?.route === "kt-skills" && Boolean(skillForm(p, d.head)));
+    const note = x.type === "mcp" ? "installNoteMcp" : x.type === "skill" ? "installNoteSkill" : p?.addMarket ? "installCommunity" : "installNote";
+    const tip = x.type === "mcp" ? "installTipMcp" : x.type === "skill" ? "installTipSkill" : "installTip";
     const lic = d.repoFacts?.license && d.repoFacts.license !== "NOASSERTION" ? d.repoFacts.license : null;
     const doc = d.readme?.text ? docOf(this.md, noImages(d.readme.text)) : null;
     this.docShown = Boolean(doc);
@@ -652,7 +661,7 @@ export default class Market extends View {
         .child(p?.route ? this.block(t, p.lines.length ? p.lines.join("\n") : tr("plan.noLines")) : this.block(t, tr(`why.${p?.why}`) || tr("why.no-route"), t.blocked))
         .when(Boolean(p?.writes?.length), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.writes", { list: p.writes.join(", ") }))))
         .when(installable, (el) => el.child(h_flex().pt(2).gap(10).items_center()
-          .child(this.chip(t, "ktmk-install", tr("install"), true, () => this.install(x, d), tr(x.type === "mcp" ? "installTipMcp" : "installTip")))
+          .child(this.chip(t, "ktmk-install", tr("install"), true, () => this.install(x, d), tr(tip)))
           .child(div().flex_1().min_w(0).text_size(11.5).line_height("17px").text_color(t.dim).child(tr(note)))))
         .when(!installable, (el) => el.child(div().text_size(11.5).text_color(t.dim).child(tr("plan.readOnly")))))
       .child(this.risks(t, d.flags ?? []))

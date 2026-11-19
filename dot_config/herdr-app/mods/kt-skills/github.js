@@ -22,3 +22,14 @@ export function githubSource(input) {
   if (parts.some((p) => p === "." || p === ".." || !PART.test(p))) return { error: "path" }; // i18n: tech
   return { owner, repo, ref, path: parts.join("/"), url: `https://github.com/${owner}/${repo}.git` };
 }
+
+// git on a repository nobody here wrote (issue #70, the same guards as kt-market's market.mjs): no
+// credential prompt, no LFS download, no local-file protocol, symlinks checked out as plain files (the
+// folder check then refuses a link leaving the clone), no hooks path, no fsmonitor.
+export const GIT_SAFE_ENV = ["GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1"];
+export const GIT_SAFE_CONFIG = ["-c", "protocol.file.allow=never", "-c", "core.symlinks=false", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
+
+/** The shallow clone of a githubSource() into `dest`, as argv for exec("env", …): the variables, then
+ *  git, its -c guards and its arguments, each its own argument (no shell). */
+export const cloneArgv = (src, dest) =>
+  [...GIT_SAFE_ENV, "git", ...GIT_SAFE_CONFIG, "clone", "--depth", "1", ...(src.ref ? ["--branch", src.ref] : []), src.url, dest];

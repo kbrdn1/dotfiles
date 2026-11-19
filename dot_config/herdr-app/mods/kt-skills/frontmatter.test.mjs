@@ -1,7 +1,7 @@
 // node mods/kt-skills/frontmatter.test.mjs: the shapes found in ~/.claude and ~/.agents skills.
 import assert from "node:assert/strict";
 import { frontmatter } from "./frontmatter.js";
-import { githubSource } from "./github.js";
+import { githubSource, cloneArgv } from "./github.js";
 
 const { meta, body } = frontmatter(`---
 name: "me:loop:x"
@@ -55,4 +55,9 @@ assert.equal(g("https://github.com/o/r/blob/v1/x/SKILL.md").path, "x");
 assert.equal(g("git@github.com:o/r.git").repo, "r");
 assert.equal(g("https://github.com/o/r.git").path, "");
 for (const bad of ["o/r/../etc", "o/r/./x", "../r", "o", "https://evil.com/o/r", "o/r/a b", "-o/r"]) assert.ok(g(bad).error, bad);
+// The clone of an untrusted repo: guarded git, argv only (issue #70).
+assert.deepEqual(cloneArgv(g("https://github.com/o/r/tree/v1/x"), "/tmp/kt-skill.abc/repo"), ["GIT_TERMINAL_PROMPT=0", "GIT_LFS_SKIP_SMUDGE=1", "git",
+  "-c", "protocol.file.allow=never", "-c", "core.symlinks=false", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+  "clone", "--depth", "1", "--branch", "v1", "https://github.com/o/r.git", "/tmp/kt-skill.abc/repo"]);
+assert.ok(!cloneArgv(g("o/r"), "/d").includes("--branch"), "no ref: the default branch");
 console.log("github: ok");
