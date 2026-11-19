@@ -8,7 +8,7 @@ import { agents, terminals, panes, focused, spaces, run, theme, shared, setShare
 import { ring } from "./ring.js";
 // Copied byte for byte from mods/kt-keys/motion.js (data/orchestrator/ANIMATIONS.md).
 import { motionState, frame, enter, collapse, rows as rowsOf } from "./motion.js";
-import { companion } from "./companion-logo.js";
+import { companion, variantFor } from "./companion-logo.js";
 import { makeT } from "./i18n.js";
 import strings from "./strings.js";
 
@@ -230,13 +230,17 @@ export default class Agents extends View {
     run("terminal.peek", { terminal: addr });
   }
 
-  // Live sub-agents of `addr`, depth first, each with the tree lines in front of it.
+  // Live sub-agents of `addr`, depth first, each with the tree lines in front of it and its coiffe (#71):
+  // siblings oldest first. `hc ls` gives no start time: hc numbers its terminals in base 36 as they start
+  // (t2z, then t30), observed, not documented.
   tree(all, addr, lead = []) {
     const kids = all.filter((k) => k.parent === addr && k.state === "live");
+    const n = (a) => parseInt(String(a).split("/").pop().slice(1), 36) || 0;
+    const kin = kids.map((k) => k.address).sort((a, b) => n(a) - n(b));
     return kids.flatMap((k, i) => {
       const last = i === kids.length - 1;
       return [
-        { t: k, lines: [...lead, last ? "└" : "├"] },
+        { t: k, lines: [...lead, last ? "└" : "├"], variant: variantFor(k.address, kin) },
         ...this.tree(all, k.address, [...lead, last ? "" : "│"]),
       ];
     });
@@ -249,7 +253,7 @@ export default class Agents extends View {
     // Its program's companion (companion-logo.js) at 20×16, the smallest size it draws cleanly: a bob
     // while working, "!" blocked, sparkles once done; one memo per address, so one-shots never replay.
     const pic = k.program ? companion({ program: k.program, state: st, id: `sub-c-${k.address}`, cx, size: 20, height: 16,
-      memo: (this.memos[k.address] ??= {}) }) : null;
+      variant: s.variant, memo: (this.memos[k.address] ??= {}) }) : null;
     const on = k.address === shown;
     const tree = treeLine(t);
     // A new sub-agent fades in on its branch (enter: once, when it first draws).

@@ -20,12 +20,14 @@
 // since: when the state began (ms) if known, else the memo's first sight of it. size: the tile's
 // width in css px (24 draws 24x20, 32 draws 32x32; height: o.height). memo: kept by the caller per
 // agent. cx: the render's cx. at: draw as of that time, with no timers (previews).
+// variant: a sub-agent's coiffe (#71, brand/companions out var/*), from variantFor(); a parent has none.
+// It sits on the glyph's head, top left, and bobs with it: the same tile told apart at a glance.
 import { div, image, svg } from "gpui-kit";
 import { settings, theme, shared } from "herdr";
 
 const ROOT = "brand/companions/out";
 // <data> written by src/build.py from index.json: do not edit by hand
-const DATA = {"accessory_grid":[10,10],"frame_ms":85,"timing":{"done_ms":440,"wave_ms":680,"sparkle_ms":510,"sleep_after_ms":600000},"accessories":{"read":{"frames":["acc/read-0","acc/read-1","acc/read-2"],"ms":255,"slot":"hand","mode":"loop","play":[0,1]},"edit":{"frames":["acc/edit-0","acc/edit-1","acc/edit-2"],"ms":170,"slot":"hand","mode":"loop","play":[0,1]},"bash":{"frames":["acc/bash-0","acc/bash-1"],"ms":425,"slot":"hand","mode":"loop","play":[0,1]},"web":{"frames":["acc/web-0","acc/web-1","acc/web-2","acc/web-3"],"ms":255,"slot":"hand","mode":"loop","play":[0,2]},"git":{"frames":["acc/git-0","acc/git-1","acc/git-2"],"ms":255,"slot":"hand","mode":"loop","play":[0,2]},"tests":{"frames":["acc/tests-0","acc/tests-1","acc/tests-2"],"ms":255,"slot":"hand","mode":"loop","play":[0,2]},"think":{"frames":["acc/think-0","acc/think-1","acc/think-2"],"ms":340,"slot":"head","mode":"loop","play":[0,2]},"zzz":{"frames":["acc/zzz-0","acc/zzz-1","acc/zzz-2"],"ms":595,"slot":"head","mode":"static","play":[2]},"bang":{"frames":["acc/bang-0","acc/bang-1"],"ms":340,"slot":"head","mode":"loop","play":[0,1]},"sparkle":{"frames":["acc/sparkle-0","acc/sparkle-1","acc/sparkle-2"],"ms":170,"slot":"head","mode":"loop","play":[1,2]},"agent-claude":{"frames":["acc/agent-claude-0","acc/agent-claude-1","acc/agent-claude-2"],"ms":255,"slot":"hand","mode":"loop","play":[1,2]},"agent-codex":{"frames":["acc/agent-codex-0","acc/agent-codex-1","acc/agent-codex-2"],"ms":255,"slot":"hand","mode":"loop","play":[1,2]}},"tools":{"Read":"read","Grep":"read","Glob":"read","Edit":"edit","MultiEdit":"edit","Write":"edit","NotebookEdit":"edit","Bash":"bash","WebFetch":"web","WebSearch":"web","Agent":"agent"},"tool_prefixes":{"mcp__tavily":"web","mcp__hyperbrowser":"web"},"bash_rules":[{"match":"^Run\\s+(git|gh|gwm)\\b","acc":"git"},{"match":"^Run\\s+.*\\b(test|tests|vitest|jest|pytest|phpunit|pest|playwright test|cargo (nextest|test)|go test|bun test|npm (run )?test|pnpm (run )?test|yarn test|make (test|check|ci))\\b","acc":"tests"}]};
+const DATA = {"accessory_grid":[10,10],"frame_ms":85,"timing":{"done_ms":440,"wave_ms":680,"sparkle_ms":510,"sleep_after_ms":600000},"accessories":{"read":{"frames":["acc/read-0","acc/read-1","acc/read-2"],"ms":255,"slot":"hand","mode":"loop","play":[0,1]},"edit":{"frames":["acc/edit-0","acc/edit-1","acc/edit-2"],"ms":170,"slot":"hand","mode":"loop","play":[0,1]},"bash":{"frames":["acc/bash-0","acc/bash-1"],"ms":425,"slot":"hand","mode":"loop","play":[0,1]},"web":{"frames":["acc/web-0","acc/web-1","acc/web-2","acc/web-3"],"ms":255,"slot":"hand","mode":"loop","play":[0,2]},"git":{"frames":["acc/git-0","acc/git-1","acc/git-2"],"ms":255,"slot":"hand","mode":"loop","play":[0,2]},"tests":{"frames":["acc/tests-0","acc/tests-1","acc/tests-2"],"ms":255,"slot":"hand","mode":"loop","play":[0,2]},"think":{"frames":["acc/think-0","acc/think-1","acc/think-2"],"ms":340,"slot":"head","mode":"loop","play":[0,2]},"zzz":{"frames":["acc/zzz-0","acc/zzz-1","acc/zzz-2"],"ms":595,"slot":"head","mode":"static","play":[2]},"bang":{"frames":["acc/bang-0","acc/bang-1"],"ms":340,"slot":"head","mode":"loop","play":[0,1]},"sparkle":{"frames":["acc/sparkle-0","acc/sparkle-1","acc/sparkle-2"],"ms":170,"slot":"head","mode":"loop","play":[1,2]},"agent-claude":{"frames":["acc/agent-claude-0","acc/agent-claude-1","acc/agent-claude-2"],"ms":255,"slot":"hand","mode":"loop","play":[1,2]},"agent-codex":{"frames":["acc/agent-codex-0","acc/agent-codex-1","acc/agent-codex-2"],"ms":255,"slot":"hand","mode":"loop","play":[1,2]}},"tools":{"Read":"read","Grep":"read","Glob":"read","Edit":"edit","MultiEdit":"edit","Write":"edit","NotebookEdit":"edit","Bash":"bash","WebFetch":"web","WebSearch":"web","Agent":"agent"},"tool_prefixes":{"mcp__tavily":"web","mcp__hyperbrowser":"web"},"bash_rules":[{"match":"^Run\\s+(git|gh|gwm)\\b","acc":"git"},{"match":"^Run\\s+.*\\b(test|tests|vitest|jest|pytest|phpunit|pest|playwright test|cargo (nextest|test)|go test|bun test|npm (run )?test|pnpm (run )?test|yarn test|make (test|check|ci))\\b","acc":"tests"}],"variants":{"grid":[9,7],"head":0.21,"list":["crown","cap","bow","sprout","wizard","beanie","halo","tophat","bird","flower"]}};
 // </data>
 
 const K = 1000; // the opacity ramps' steepness: a frame swap takes ms / 2001
@@ -42,6 +44,32 @@ export function badgeFor(action) {
     return rule ? rule.acc : "bash";
   }
   return DATA.tools[tool] ?? Object.entries(DATA.tool_prefixes).find(([p]) => tool.startsWith(p))?.[1] ?? null;
+}
+
+// FNV-1a, 32 bits: the same key gives the same coiffe in every mod, every run.
+function hash(s) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  return h;
+}
+
+/** A sub-agent's coiffe (#71): its key's hash picks one of the ten; if a sibling that started before it
+ *  already wears that one, the next free one. `key`: `${parent terminal}:${id}` for herdr-bridge's
+ *  sub-agents, the address for hc's. `siblings`: the parent's sub-agents' keys, oldest first (the
+ *  bridge keeps its last 8: when the oldest goes, one wearing its own hash's coiffe keeps it; only one
+ *  that had been pushed aside may change). */
+export function variantFor(key, siblings = []) {
+  if (key == null) return null;
+  const L = DATA.variants.list;
+  const taken = new Set();
+  for (const k of siblings.includes(key) ? siblings : [...siblings, key]) {
+    const h = hash(String(k));
+    let i = h % L.length;
+    for (let n = 1; n < L.length && taken.has(i); n++) i = (h + n) % L.length;
+    if (k === key) return L[i];
+    taken.add(i);
+  }
+  return null;
 }
 
 export function companion(o) {
@@ -74,9 +102,16 @@ export function companion(o) {
     : svg("mods/workspace-chrome/terminal.svg").size(g).text_color(t.muted);
   const top = Math.round((h - g) / 2);
   const bob = Math.max(1, Math.min(2, Math.round(h / 16 * 2) / 2));
+  // a sub-agent's coiffe: on the glyph's head (DATA.variants.head down it), top left, moving with it
+  const V = DATA.variants;
+  const [cw, ch] = V.grid.map((n) => (n * k) / dpr);
+  const hat = V.list.includes(o.variant)
+    ? image(src(`var/${o.variant}`)).absolute().left(-(1 + k / dpr)).top(Math.round(g * V.head) - ch + k / dpr).w(cw).h(ch)
+    : null;
   const icon = div().id(`${id}-icon`).absolute().left(Math.round((w - g) / 2)).top(top).w(g).h(g)
     .when(o.state === "working" && anim, (el) => el.loop("top", { from: top, to: top - bob, period: 900, easing: "ease-in-out" }))
-    .child(glyph);
+    .child(glyph)
+    .when(Boolean(hat), (el) => el.child(hat));
   const tileEl = div().absolute().left(0).top(0).w(w).h(h).rounded(Math.round(h * 0.3)).border(1).border_color("#00000033")
     .bg(p.tile ?? t.raised).child(icon);
 

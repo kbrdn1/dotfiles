@@ -36,7 +36,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { ring, ctxTokens } from "./ring.js";
 import { costLevel, quotaLevel, levelColor } from "./levels.js";
-import { companion } from "./companion-logo.js";
+import { companion, variantFor } from "./companion-logo.js";
 import { longLived } from "./pr-pick.js";
 import { filterOf, filtering, openFirst, moveInGroup } from "./thread-filter.js";
 // The threads' model (pure) and its reads, shared with kt-kanban: a thread's data comes from there.
@@ -732,9 +732,12 @@ export default class Threads extends View {
     const line = (key, last, faded, color, ...body) => enter(this.m, face(last, faded, color, body), `kt-br-${id}-${key}`, { dy: 0 });
     // Under rows() (detailed cards, below): the same branch without enter, rows() fades it in.
     const plain = (key, last, faded, color, ...body) => face(last, faded, color, body).id(`kt-br-${id}-${key}`);
+    // Each one's coiffe (#71): its siblings oldest first, the bridge's whole list (its last 8), not only the shown.
+    const kin = [...(this.live[agent?.terminal]?.agents ?? list)].sort((x, y) => startOf(x) - startOf(y)).map((s) => `${key}:${s.id}`);
     // An ending seen within 5 s sparkles (the memo dates it); an older one, seen on a reload, does not.
     const icon = (a) => companion({
       program: agent?.program, id: `kt-sa-${id}-${a.id}`, cx, size: 20, height: 16,
+      variant: variantFor(`${key}:${a.id}`, kin),
       state: isAlive(a) ? "working" : a.state === "done" ? "done" : a.state === "error" ? "error" : "idle",
       since: isAlive(a) ? startOf(a) : Date.now() - endOf(a) < 5000 ? undefined : endOf(a),
       memo: (this.memos[`${agent?.terminal ?? id}:${a.id}`] ??= {}),

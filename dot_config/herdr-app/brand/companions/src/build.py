@@ -21,6 +21,10 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, "out")
+APP = os.path.dirname(os.path.dirname(ROOT))  # ~/.config/herdr-app: icons/<key>.svg, mods/
+# companion-logo.js's source is kt-threads' copy (kt-mods' SHARED): its DATA is written there, then every
+# other copy (the mods', brand's) is made byte for byte from it
+LOGO = os.path.join(APP, "mods", "kt-threads", "companion-logo.js")
 W, H = 21, 16  # the body's canvas, art pixels: 21 x 1.5 css px fits a 32 px tile, 21 x 1 a 24 x 20 one
 AW, AH = 10, 10  # an accessory's canvas
 SCALES = [1, 2, 3, 4]  # device pixels per art pixel
@@ -547,17 +551,20 @@ def main():
     for acc in data["accessories"].values():
         acc.pop("about", None)
     logo_keys = ("accessory_grid", "frame_ms", "timing", "accessories", "tools", "tool_prefixes", "bash_rules")
-    for name, keys in (("companion.js", None), ("companion-logo.js", logo_keys)):
-        js = os.path.join(ROOT, name)
+    logo = {k: data[k] for k in logo_keys} | {"variants": {k: index["variants"][k] for k in ("grid", "head", "list")}}
+    for js, part in ((os.path.join(ROOT, "companion.js"), data), (LOGO, logo)):
         with open(js, encoding="utf-8") as f:
             src = f.read()
         head, rest = src.split("// <data>", 1)
         _old, tail = rest.split("// </data>", 1)
-        part = data if keys is None else {k: data[k] for k in keys}
         block = ("// <data> written by src/build.py from index.json: do not edit by hand\nconst DATA = "
                  + json.dumps(part, ensure_ascii=False, separators=(",", ":")) + ";\n")
         with open(js, "w", encoding="utf-8") as f:
             f.write(head + block + "// </data>" + tail)
+    mods = os.path.join(APP, "mods")
+    for copy in [os.path.join(ROOT, "companion-logo.js")] + [os.path.join(mods, m, "companion-logo.js") for m in sorted(os.listdir(mods))]:
+        if copy != LOGO and os.path.isfile(copy):
+            shutil.copyfile(LOGO, copy)
     review(images, index)
     review_variants()
     print(f"{len(images)} images x {len(SCALES)} scales x {len(OUTLINE)} themes -> {OUT}")
@@ -640,7 +647,6 @@ def review(images, index):
 
 
 # ── The variants' sheet (#71): each coiffe on the logo's tile as companion-logo.js draws it, at dpr 2
-APP = os.path.dirname(os.path.dirname(ROOT))  # ~/.config/herdr-app: icons/<key>.svg
 TILE = "#1c1d21"  # the tile Herdr's program table gives claude and codex
 SHEET = {  # the kbrdn-threads themes: the sidebar (chrome), text, t.background, the marks' colors
     "dark": {"bg": "#0f0f0f", "fg": "#d0d0d0", "card": "#191919", "error": "#e06060", "blocked": "#ffdf61"},
