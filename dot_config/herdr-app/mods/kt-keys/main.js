@@ -11,14 +11,17 @@
 // Words: strings.js (I18N.md); i18n.js is shared byte for byte, i18n.check.mjs and i18n-audit.mjs here.
 
 import { View, div } from "gpui-kit";
-import { v_flex, h_flex, ScrollHandle, Scrollbar } from "gpui-base";
+import { v_flex, h_flex, Scrollbar, v_virtual_list, VirtualListScrollHandle } from "gpui-base";
 import { keys, theme, props, closeOverlay, settings, nextCommand, checking, shared } from "herdr";
 import { Vim, keysOf, step } from "./vim.js";
 import { motionState, frame, ink, fade, sheet, leave, sharpen } from "./motion.js";
-import { makeT, setLang } from "./i18n.js";
+import { makeT, setLang, lang, format } from "./i18n.js";
 import strings from "./strings.js";
 // The keys' one word and their keycaps, shared with every mod that shows a key (shortcuts.js, KEYMAP.md).
 import { actionKey, kbd } from "./shortcuts.js";
+// The list as a virtual list's items and their heights (pure, helprows.check.mjs): « Tout » drawn whole went
+// past a mod call's budget.
+import { items as listItems } from "./helprows.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -220,12 +223,19 @@ const TABLE = {
     ["dd / x", "md.modsDelete", "kt-mods"],
   ],
 };
-const cell = (s) => (s && /^(r|sb|pg|pn|md)\.\w+$/.test(s) ? tr(s) : s);
+const cell = (s, t = tr) => (s && /^(r|sb|pg|pn|md)\.\w+$/.test(s) ? t(s) : s);
+// tr() with the language read once, for a pass over the whole table (tr reads it at every call); a key the
+// language lacks shows the French, as tr does.
+const trOnce = () => {
+  const l = lang();
+  return (key, vars) => format(strings[l]?.[key] ?? strings.fr?.[key] ?? "", vars, l);
+};
 
 export default class Keys extends View {
   init(_props, cx) {
     this.handle = cx.focus_handle();
-    this.scroll = ScrollHandle.new();
+    this.scroll = VirtualListScrollHandle.new();
+    this.listW = CARD - 28; // the rows' width (the list box's, measured), for their heights
     this.vim = new Vim({ field: true, insert: true });
     this.query = "";
     const g = GROUPS.indexOf(props()?.group);
@@ -257,32 +267,48 @@ export default class Keys extends View {
     leave(this.motion, cx, "kk", () => closeOverlay(props().overlay));
   }
 
-  globals() {
+  globals(t = tr) {
     const section = `layout:${shared("layout") ?? "kbrdn-threads"}`;
     const rows = [];
-    const all = keys();
+    const all = keys().map((b) => ({ ...b, k: actionKey(b.action) })); // once each: an object binding is JSON
     // The layout's Mac keys for the same action, after the ctrl-b one (KEYMAP.md: vim first, Mac second).
-    const mac = (k) => all.filter((x) => x.section === section && x.keys.startsWith("cmd-") && actionKey(x.action) === k).map((x) => x.keys);
+    const macs = new Map();
+    for (const x of all) if (x.section === section && x.keys.startsWith("cmd-")) macs.set(x.k, [...(macs.get(x.k) ?? []), x.keys]);
     for (const b of all) {
       if (b.section !== section || !b.keys.startsWith("ctrl-b ")) continue;
-      const k = actionKey(b.action);
+      const k = b.k;
       if (k === "tab.select") {
-        if (!rows.some((r) => r.k === "tab.select")) rows.push({ g: "global", k, keys: "ctrl-b 1…9", what: tr("g.tab.select") });
+        if (!rows.some((r) => r.k === "tab.select")) rows.push({ g: "global", k, keys: "ctrl-b 1…9", what: t("g.tab.select") });
         continue;
       }
-      rows.push({ g: "global", k, keys: [b.keys, ...mac(k)].join(" / "), what: ORDER.includes(k) ? tr(`g.${k}`) : b.action });
+      rows.push({ g: "global", k, keys: [b.keys, ...(macs.get(k) ?? [])].join(" / "), what: ORDER.includes(k) ? t(`g.${k}`) : b.action });
     }
     const at = (r) => (ORDER.includes(r.k) ? ORDER.indexOf(r.k) : ORDER.length);
     rows.sort((a, b) => at(a) - at(b));
     // Without the prefix (keys.json, both layout sections): they take ctrl-h / ctrl-l from the terminal.
-    rows.push({ g: "global", keys: "ctrl-h / ctrl-l", what: tr("g.panelLR") }); // i18n: tech
+    rows.push({ g: "global", keys: "ctrl-h / ctrl-l", what: t("g.panelLR") }); // i18n: tech
     // ⌘T, ⌘W, ⌘⇧W, ⌘B sit beside their actions above; the other Mac keys, as examples.
-    rows.push({ g: "global", keys: "cmd-p / cmd-1…9", what: tr("g.mac"), where: "Mac" }); // i18n: tech
+    rows.push({ g: "global", keys: "cmd-p / cmd-1…9", what: t("g.mac"), where: "Mac" }); // i18n: tech
     return rows;
   }
 
-  rows() {
-    const all = [...this.globals(), ...Object.entries(TABLE).flatMap(([g, list]) => list.map(([keys, what, where]) => ({ g, keys: cell(keys), what: cell(what), where: cell(where) })))];
+  // The rows shown and their list items (helprows.js), made again only when what they depend on moves: the
+  // group, the filter, the list's width, the language. A move of the cursor draws without rebuilding them.
+  // Made, they cost little JS but many calls to Herdr: tr() reads the language from shared state at each
+  // call (~500 shared() calls for « Tout »), so one pass reads it once (trOnce).
+  // ponytail: keys.json edited while the help is open shows at its next opening.
+  listed() {
+    const t = trOnce();
+    const sig = `${this.group}\u0000${this.query}\u0000${this.listW}\u0000${t("title")}`;
+    if (this.cache?.sig !== sig) {
+      const rows = this.rows(t);
+      this.cache = { sig, rows, L: listItems(rows, GROUPS[this.group] === "all", this.listW) };
+    }
+    return this.cache;
+  }
+
+  rows(t = tr) {
+    const all = [...this.globals(t), ...Object.entries(TABLE).flatMap(([g, list]) => list.map(([keys, what, where]) => ({ g, keys: cell(keys, t), what: cell(what, t), where: cell(where, t) })))];
     const group = GROUPS[this.group];
     const q = this.query.trim().toLowerCase();
     return all.filter((r) => (group === "all" || r.g === group) && (!q || `${r.keys} ${r.what} ${r.where ?? ""}`.toLowerCase().includes(q)));
@@ -317,7 +343,8 @@ export default class Keys extends View {
 
   render() {
     const t = theme();
-    const rows = (this.rowsShown = this.rows());
+    const { rows, L } = this.listed();
+    this.rowsShown = rows;
     this.cur = Math.min(this.cur, Math.max(0, rows.length - 1));
     const typing = this.vim.insert;
     const focused = this.handle.is_focused();
@@ -327,29 +354,30 @@ export default class Keys extends View {
     if (this.cur !== this.inkCur) { this.inkFrom = this.inkCur; this.inkCur = this.cur; } // the line the ink fades from
     const eyebrow = (text) => div().font_family(MONO).text_size(10.5).text_color(t.muted).child(text.toUpperCase());
     const dashed = () => div().flex_none().h(0).border_t(1).border_dashed().border_color(t.border);
-    // The list: a header per group (Tout), one 32 px line per key; the cursor line on the ink.
-    const items = [];
-    rows.forEach((r, i) => {
-      if (GROUPS[this.group] === "all" && rows[i - 1]?.g !== r.g)
-        items.push(h_flex().px(10).pt(i ? 12 : 4).pb(4).gap(10).items_center()
-          .child(eyebrow(groupName(r.g)).flex_none())
-          .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border)));
-      if (i === this.cur && this.reveal) { this.scroll.scroll_to_item(items.length); this.reveal = false; }
+    // The list: a header per group (Tout), a line per key (at least 32 px); the cursor line on the ink. A
+    // virtual list (helprows.js): only the lines on screen are drawn, placed by their estimated heights, a
+    // click through on_item_click (no handler inside its renderer), the cursor brought into view by its item.
+    if (this.reveal && rows.length) { this.scroll.scroll_to_item(L.itemOf[this.cur]); this.reveal = false; }
+    const head = (g, first) => h_flex().px(10).pt(first ? 4 : 12).pb(4).gap(10).items_center()
+      .child(eyebrow(groupName(g)).flex_none())
+      .child(div().flex_1().h(0).border_t(1).border_dashed().border_color(t.border));
+    const line = (r, i) => {
       const on = i === this.cur;
       // The cursor's ink: a layer under the line that fades from one line to the next (120 ms). Only on the
       // cursor's line and the one it left: 120 layers would weigh on every render.
-      items.push(h_flex().id(`kk-row-${i}`).relative().min_h(32).px(10).py(4).gap(12).items_center().rounded(12).border(1)
+      return h_flex().id(`kk-row-${i}`).relative().min_h(32).px(10).py(4).gap(12).items_center().rounded(12).border(1)
         .border_color(alpha(t.accent, "00"))
         .when(on || i === this.inkFrom, (el) => el.child(fade(m, div().id(`kk-row-ink-${i}`).absolute().top(-1).left(-1).right(-1).bottom(-1).rounded(12)
           .border(1).border_color(alpha(t.accent, "66")).bg(alpha(t.accent, "24")), on)))
-        .on_click((_e, cx) => { this.cur = i; cx.notify(); })
         // shortcuts.js' keycaps, wrapping in 230 px: Global's keys.json keys as everywhere, the table's vim keys
         // as written (g and G differ).
         .child(kbd(t, r.keys, { vim: r.g !== "global", h: 20 }).w(230).flex_wrap())
         .child(div().flex_1().min_w(0).text_size(12.5).text_color(on ? t.foreground : t.muted).child(r.what))
         .when(Boolean(r.where), (el) => el.child(div().flex_none().h(18).px(7).flex().items_center().rounded_full().border(1)
-          .border_color(alpha(t.accent, "4d")).bg(alpha(t.accent, "1a")).font_family(MONO).text_size(9.5).text_color(t.accent).child(r.where.toUpperCase()))));
-    });
+          .border_color(alpha(t.accent, "4d")).bg(alpha(t.accent, "1a")).font_family(MONO).text_size(9.5).text_color(t.accent).child(r.where.toUpperCase())));
+    };
+    const keyOfItem = (k) => (L.list[k].head ? `h:${L.list[k].head}` : `r:${L.list[k].row}`);
+    const drawItem = (e) => (e.head ? head(e.head, e.first) : line(rows[e.row], e.row));
     const listH = Math.max(160, (this.size?.height ?? 700) - 260);
     // Segments: the card's inner card (16) holds them 4 px in, so their box is 12 and theirs 9.
     // The ink: one pill gliding to the shown group (SegmentInk), once the segments before it are measured.
@@ -398,10 +426,15 @@ export default class Keys extends View {
           .child(div().font_family(MONO).text_size(11).text_color(t.dim).child(tr("count", { n: rows.length }))))
         .child(h_flex().gap(4).items_center().child(field).child(seg)))
       .child(v_flex().rounded(16).bg(t.surface).border(1).border_color(t.border)
-        // overflow_y_scroll + a Scrollbar of the same id: scroll_to_item does nothing on overflow_y_scrollbar.
-        .child(div().relative()
-          .child(v_flex().id("kk-list").max_h(listH).overflow_y_scroll().track_scroll(this.scroll).p(4).gap(2)
-            .children(items.length ? items : [div().p(16).text_size(13).text_color(t.dim).child(tr("empty"))]))
+        // A virtual list needs a definite height: its rows', up to listH. Its width, measured, sets their heights.
+        .child(div().id("kk-list-box").relative().p(4)
+          .when(rows.length > 0, (el) => el.h(Math.min(listH, L.sizes.reduce((s, h) => s + h, 0) + 8)))
+          .on_size_change((size, cx) => { const w = Math.round(size.width - 8); if (w !== this.listW) { this.listW = w; cx.notify(); } })
+          .child(rows.length
+            ? v_virtual_list("kk-list", L.list.length, L.sizes, keyOfItem, (range) => L.list.slice(range.start, range.end).map(drawItem))
+              .size_full().track_scroll(this.scroll)
+              .on_item_click((key, cx) => { if (key.startsWith("r:")) { this.cur = Number(key.slice(2)); cx.notify(); } })
+            : div().p(16).text_size(13).text_color(t.dim).child(tr("empty")))
           .child(Scrollbar.vertical("kk-list").absolute().inset_0()))
         .child(dashed())
         .child(h_flex().px(12).py(8).gap(12).items_center().text_size(11).text_color(t.dim)

@@ -447,6 +447,31 @@ await check("kt-notes", async () => {
   }
 });
 
+// ---------- kt-keys (the help, ctrl-b ?: a virtual list) ----------
+
+await check("kt-keys", async () => {
+  env.props = {};
+  const kk = await load("kt-keys");
+  kk.render();
+  assert.ok(kk.v.rowsShown.length > 50, "the help lists its keys");
+  kk.keys("escape"); // it opens typing in the filter: NORMAL
+  assert.ok(!kk.v.vim.insert, "esc: NORMAL");
+  kk.keys("j", "j");
+  assert.equal(kk.v.cur, 2, "j moves down the help");
+  kk.keys("k");
+  assert.equal(kk.v.cur, 1, "k moves up");
+  kk.keys("G");
+  assert.equal(kk.v.cur, kk.v.rowsShown.length - 1, "G");
+  // A click: through the virtual list's on_item_click (no handler inside its rows); an eyebrow does nothing.
+  let list = null;
+  walk(kk.render().root, (n) => { if (n.on.on_item_click) list = n; });
+  assert.ok(list, "the list takes its clicks");
+  list.on.on_item_click("r:5", context());
+  assert.equal(kk.v.cur, 5, "a click on a row takes the cursor");
+  list.on.on_item_click("h:global", context());
+  assert.equal(kk.v.cur, 5, "a click on an eyebrow moves nothing");
+});
+
 // ---------- kt-menu (the right-click menus) ----------
 
 await check("kt-menu", async () => {
