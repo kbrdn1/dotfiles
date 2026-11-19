@@ -61,6 +61,23 @@ export function newer(w, n) {
 }
 
 /**
+ * The order a render describes the window's turns in (A16): from `focus` (the turn the reader is at)
+ * outwards, the one below first at each distance (the view goes on downward from it). What a render
+ * may draw (code, steps, details) goes to them in this order. Following the bottom (focus: the last),
+ * the last turn first, then up.
+ */
+export function nearFirst(from, to, focus) {
+  if (to <= from) return [];
+  const f = Math.max(from, Math.min(to - 1, focus));
+  const out = [f];
+  for (let d = 1; out.length < to - from; d++) {
+    if (f + d < to) out.push(f + d);
+    if (f - d >= from) out.push(f - d);
+  }
+  return out;
+}
+
+/**
  * How many entries the live tail keeps (chat-model.js trim) when the window's first turn is `id` and
  * the reader isn't at the bottom: never the turns being read (a « Tours précédents » read while the
  * agent works would go at the next tick), else `keep`. `id` null: following the bottom, `keep`.

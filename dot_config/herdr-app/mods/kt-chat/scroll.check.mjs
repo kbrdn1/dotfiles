@@ -2,9 +2,11 @@
 // reach (events, a read landing late): the real Chat class, its host modules (gpui-kit, gpui-base,
 // herdr) stubbed from the names the mod's files import, each method called on a bare instance.
 // A1 a press on the scrollbar leaves the bottom; A2 the area shrinks or reflows, or the last row grows
-// at rest, under a view that follows: the bottom again; A3 « Tours précédents » lands on the state as
-// it is then; A7 the timeline lights what older / newer bring, nothing while the view is lost; A14 a
-// sideways swipe scrolls.
+// (at rest, or on its height: once more when it settles) under a view that follows: the bottom again,
+// and a row above it growing lets the bottom go; A3 « Tours précédents » lands on the state as it is
+// then; A7 the timeline lights what older / newer bring, nothing while the view is lost; A14 a sideways
+// swipe scrolls; A16 what a render draws of the folded work goes to the reader's turn first, an opened
+// fold past the budget held closed, and a press keeps its row where it is when folds above it change.
 import assert from "node:assert/strict";
 import { plugin } from "bun";
 import { readdirSync, readFileSync } from "node:fs";
@@ -51,14 +53,22 @@ function chat(entries = turn("B", 100, "lu d'abord"), { path = "/p", start = 100
   const c = Object.create(Chat.prototype);
   Object.assign(c, {
     turns: [], win: { from: 0, to: 0 }, hts: new Map(), marks: [], builtLive: true, follow: true, cur: -1, queued: [], olderBusy: false,
-    vh: 0, areaW: 0, pinned: false, top: 120, reveal: null, wheelAt: null, jump: null, tlId: null, tlAbove: false, tlLost: false, bgBtn: false,
+    vh: 0, areaW: 0, pinned: null, top: 120, reveal: null, wheelAt: null, jump: null, tlId: null, tlAbove: false, tlLost: false, bgBtn: false,
+    budget: null, shownSteps: new Map(), open: new Set(), settling: false,
+    drawn: new Map(), byState: new Map(), heldNow: new Set(), keepRow: null, pressAt: null, pressMoved: false,
   });
   c.state = ingest(null, out(path, start, end, true, entries));
   c.rebuild(true);
   c.win = { from: 0, to: c.turns.length };
   return c;
 }
-const ctx = () => { const cx = { notified: 0, spawn: (fn) => fn(cx), notify() { cx.notified++; } }; return cx; };
+// A context: its redraws counted, its one-shot timers kept to be fired by hand (cx.fire()).
+const ctx = () => {
+  const cx = { notified: 0, timers: [], spawn: (fn) => fn(cx), notify() { cx.notified++; } };
+  cx.timer = { after: (ms, fn) => cx.timers.push({ ms, fn }) };
+  cx.fire = () => { const due = cx.timers.splice(0); for (const x of due) x.fn(cx); return due.length; };
+  return cx;
+};
 const three = () => [...turn("A", 0, "premier"), ...turn("B", 10, "deuxième"), ...turn("C", 20, "troisième")];
 
 // ── A3: « Tours précédents » lands on the state as it is when the read comes back ──
@@ -146,17 +156,133 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
   c.measured("kc-turn-C", size(420), cx);
   assert.equal(c.reveal, "bottom", "the last row grew: the bottom again");
   assert.equal(cx.notified, 1);
+  // A motion on its height (rows(), collapse()): a size every frame. The render the reveal brings covers
+  // its first one; the frames after it don't each redraw: one timer brings the bottom once settled.
   c.reveal = null;
-  c.measured("kc-turn-C", size(500), cx, true);
-  assert.equal(c.reveal, null, "a render that brought the bottom itself (the live tail, a send) covers its rows");
-  c.measured("kc-turn-A", size(100), cx);
-  c.measured("kc-turn-A", size(200), cx);
-  assert.equal(c.reveal, null, "another row than the last: the view stays");
+  const pin = {};
+  c.measured("kc-turn-C", size(460), cx, pin);
+  assert.equal(c.reveal, null, "a render that brought the bottom itself (the live tail, a send) covers its first size");
+  c.measured("kc-turn-C", size(500), cx, pin);
+  c.measured("kc-turn-C", size(540), cx, pin);
+  assert.equal(c.reveal, null, "the frames of a motion don't each redraw");
+  assert.equal(cx.timers.length, 1, "one timer for the motion, however many frames");
+  assert.equal(cx.fire(), 1);
+  assert.equal(c.reveal, "bottom", "the motion settled: the bottom once more");
+  c.reveal = null;
   c.measured("kc-turn-C", size(380), cx);
   assert.equal(c.reveal, null, "the last row shorter: gpui keeps the bottom by itself");
-  c.follow = false;
+  c.measured("kc-turn-A", size(100), cx);
+  c.measured("kc-turn-A", size(200), cx, {});
+  assert.equal(c.follow, true, "a row above the last grows in a render that brought the bottom: covered");
+  c.measured("kc-turn-A", size(300), cx);
+  assert.equal(c.reveal, null, "a row above the last grows with nothing that brought the bottom (a fold opened up there)…");
+  assert.equal(c.follow, false, "…what was clicked stays where it is: the bottom isn't followed any more");
   c.measured("kc-turn-C", size(600), cx);
   assert.equal(c.reveal, null, "not following: the view stays where the reader is");
+  c.follow = true;
+  c.measured("kc-turn-C", size(700), cx);
+  c.follow = false;
+  c.reveal = null;
+  cx.fire();
+  assert.equal(c.reveal, null, "left the bottom before the motion settled: nothing more");
+}
+
+// ── A16: what a render draws of the folded work goes to the reader's turn first ──
+{
+  const c = chat([...turn("A", 0, "un"), ...turn("B", 10, "deux"), ...turn("C", 20, "trois"), ...turn("D", 30, "quatre")], { start: 0, end: 40 });
+  assert.equal(c.focusTurn(), 3, "following the bottom: the last turn");
+  c.follow = false;
+  c.cur = 1;
+  assert.equal(c.focusTurn(), 1, "else the cursor's");
+  const cx = ctx();
+  c.heldNow = new Set(["C"]);
+  c.pressTurn("kc-turn-C", {}, cx);
+  assert.equal(c.cur, 2, "a press in a turn makes it the cursor's");
+  assert.equal(c.foldAt?.id, "C", "its fold held closed opens as one opened (rows())");
+  assert.equal(cx.notified, 1, "a redraw to serve it first");
+  c.pressTurn("kc-turn-C", {}, cx);
+  assert.equal(cx.notified, 1, "pressed again: nothing changes");
+  c.budget = { steps: 10 };
+  assert.equal(c.take(6), 6);
+  assert.equal(c.take(6), 4, "what is left");
+  assert.equal(c.take(6), 0, "then nothing");
+  c.budget = null;
+  assert.equal(c.take(60), 60, "outside a render's turns: all of it");
+}
+{
+  // A fold (two phases of one call, their narration, the answer): drawn open while the budget holds it.
+  const tool = (id, o, tid) => ({ k: "assistant", o, uuid: id, mid: `m${id}`, at: o, model: "m", blocks: [{ t: "tool", id: tid, name: "Bash", kind: "execute", title: "ls", input: { command: "ls" } }] });
+  const res = (o, tid) => ({ k: "result", o, tool: tid, at: o, ok: true, text: "ok" });
+  const said = (id, o, text) => ({ k: "assistant", o, uuid: id, mid: `m${id}`, at: o, model: "m", blocks: [{ t: "text", text }] });
+  const c = chat([{ k: "user", o: 0, uuid: "F", at: 0, turn: true, text: "plie" }, tool("f1", 1, "x1"), res(2, "x1"), said("f2", 3, "je regarde"), tool("f3", 4, "x2"), res(5, "x2"), said("f4", 6, "voilà")], { start: 0, end: 7 });
+  const [f] = c.turns;
+  assert.deepEqual(f.fold, { start: 0, end: 2 });
+  assert.deepEqual(c.foldCost(f), { fixed: 2 + 5 + 2, rows: 2 }, "two headers, a prose block (fixed), a step each (rows)");
+  c.budget = { steps: 100, fresh: true };
+  assert.equal(c.holds(f), true);
+  assert.equal(c.budget.steps, 91, "drawn open: its headers and prose spent now, its steps as they are drawn");
+  c.budget = { steps: 10, fresh: false };
+  assert.equal(c.holds(f), false, "past the budget: held closed");
+  assert.equal(c.budget.steps, 10, "held: nothing spent");
+  c.budget = { steps: 3, fresh: true };
+  assert.equal(c.holds(f), true, "the reader's turn (the first served) is always drawn as opened");
+  assert.equal(c.take(2), 0, "its steps then cut to what is left");
+  c.budget = null;
+  assert.equal(c.holds(f), true, "outside a render: as opened");
+}
+// ── A16: « ce qu'on vient de cliquer ne bouge pas »: a press that moves the reader keeps its row on screen ──
+{
+  const setup = () => {
+    const c = chat(three(), { start: 0, end: 30 });
+    for (const [id, h] of [["kc-head", 40], ["kc-turn-A", 600], ["kc-turn-B", 300], ["kc-turn-C", 300], ["kc-working", 50]]) c.hts.set(id, h);
+    c.vh = 500;
+    c.follow = false;
+    c.cur = 2;
+    c.drawn = new Map([["A", "o"], ["B", "c"], ["C", "o"]]);
+    return c;
+  };
+  const rowHalf = (y) => ({ position: { x: 5, y: 400 }, local_position: { x: 5, y } });
+  const viewHalf = (y) => ({ position: { x: 5, y: 400 }, local_position: { x: 500, y }, bounds: { width: 1000, height: 500 } });
+  {
+    const c = setup(), cx = ctx();
+    // The press: in turn B, 40 px into it, 300 px down the view (B's top 660: the view's top 400).
+    c.pressTurn("kc-turn-B", rowHalf(40), cx);
+    c.areaPress(viewHalf(300), cx);
+    assert.equal(c.cur, 1);
+    assert.deepEqual({ id: c.keepRow.id, screen: c.keepRow.screen, top: c.keepRow.top }, { id: "kc-turn-B", screen: 260, top: 400 }, "B kept 260 px down the view");
+    // The next render: A, above B, now held closed (its closed height known: 400).
+    c.byState.set("kc-turn-A|c", 400);
+    const k = c.keepY(new Map([["A", "c"], ["B", "o"], ["C", "c"]]));
+    assert.equal(k.top, 200, "the view's top moves by what A lost (200), B stays 260 px down");
+    assert.equal(c.keepRow, null, "a known height: done in this render");
+  }
+  {
+    const c = setup(), cx = ctx();
+    c.pressTurn("kc-turn-B", rowHalf(40), cx);
+    c.areaPress(viewHalf(300), cx);
+    // A's closed height never measured: this render guesses (nothing moves), the size A reports corrects it.
+    assert.equal(c.keepY(new Map([["A", "c"], ["B", "o"], ["C", "c"]])), null);
+    assert.equal(c.keepRow.correct, true);
+    c.drawn = new Map([["A", "c"], ["B", "o"], ["C", "c"]]);
+    const n = cx.notified;
+    c.measured("kc-turn-A", { width: 800, height: 400 }, cx, null, "c");
+    assert.equal(cx.notified, n + 1, "A's new size asks a render more");
+    assert.equal(c.byState.get("kc-turn-A|c"), 400, "and is kept for the next time A is drawn closed");
+    assert.equal(c.keepY(c.drawn).top, 200, "corrected: B back where it was");
+    assert.equal(c.keepRow, null);
+  }
+  {
+    const c = setup(), cx = ctx();
+    c.follow = true;
+    c.pressTurn("kc-turn-B", rowHalf(40), cx);
+    c.areaPress(viewHalf(300), cx);
+    assert.equal(c.keepRow, null, "following the bottom, a press doesn't move the reader (the last turn stays first)");
+    c.follow = false;
+    c.cur = 1;
+    c.pressTurn("kc-turn-B", rowHalf(40), cx);
+    c.areaPress(viewHalf(300), cx);
+    assert.equal(c.keepRow, null, "a press in the reader's own turn moves nothing");
+  }
 }
 
 // ── A14: a sideways swipe moves the area (it scrolls y only), up leaves the bottom ──

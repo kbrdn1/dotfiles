@@ -108,6 +108,15 @@ const CODE_MAX = 400; // and at most, opened
 // then says how many are left, a click shows them).
 const CODE_SPANS = 600;
 const CODE_ROWS = 240;
+// A16: what one render may draw of the work it folds, in rows (a step, a detail line, a sub-agent: 1; a
+// phase's header: FOLD_HEAD; a prose block in a fold, a markdown view: PROSE_ROWS), the reader's turn
+// first (body()). Measured under herdr-app check on the busy fixture (30 calls a turn), the window at
+// CAP: all folds closed ~27 ms, 3 opened ~30 ms, 15 opened interrupted 5 times in 6 (#90's tree); a
+// step budget alone left 4 in 6 (a fold's headers and prose cost ~0.9 ms, steps or not). So past the
+// budget a fold the reader opened is drawn closed (held), and a click in its turn serves it first.
+const ROW_BUDGET = 190; // ~4 busy folds open
+const FOLD_HEAD = 2;
+const PROSE_ROWS = 5;
 const BG = "kt.chat.backgrounds"; // shared: { [project key]: chat-view.js bgSettings }
 const ATT_DIR = "data/kt-chat/att"; // #80: attachments' thumbnails and decoded images (chat-att.ts, swept there)
 const sizeText = (n) => (n >= 1048576 ? tr("size.mb", { n: num(n / 1048576, 1) }) : n >= 1024 ? tr("size.kb", { n: num(n / 1024, 1) }) : tr("size.b", { n }));
@@ -191,7 +200,17 @@ export default class Chat extends View {
     this.hts = new Map();
     this.vh = 0;
     this.areaW = 0; // the scroll area's width (design px): a reflow under a view that follows (areaSized)
-    this.pinned = false; // the render being described brings the bottom (body(): its rows' sizes are covered)
+    this.pinned = null; // the render being described brings the bottom: its token (body(), col(), measured())
+    // A16: each fold's state as last drawn ("o" open, "c" closed: turn id -> state), the heights a turn's
+    // row was measured at in each state (`${row}|${state}` -> design px), the folds held closed by the
+    // budget in the last render, the row a press asked to keep where it is on screen ({ id, screen, top,
+    // at, correct }: keepY()), the half of a press already in (pairPress()) and whether it moved the reader.
+    this.drawn = new Map();
+    this.byState = new Map();
+    this.heldNow = new Set();
+    this.keepRow = null;
+    this.pressAt = null;
+    this.pressMoved = false;
     this.tlId = null;
     this.tlAbove = false;
     this.tlLost = false; // the view moved where no event says (a press on the scrollbar): nothing lit
@@ -452,6 +471,7 @@ export default class Chat extends View {
     this.marks = markList(this.turns);
     const rows = new Set(this.turns.map((t) => `kc-turn-${t.id}`));
     for (const k of this.hts.keys()) if (k.startsWith("kc-turn-") && !rows.has(k)) this.hts.delete(k);
+    if (this.byState) for (const k of this.byState.keys()) if (!rows.has(k.slice(0, k.lastIndexOf("|")))) this.byState.delete(k);
     this.noteFresh(was, live);
   }
 
@@ -1052,20 +1072,53 @@ export default class Chat extends View {
   }
 
   /**
-   * A row's height (design px). A redraw when a jump waits for it, and (A2) when the last row grows
-   * under a view that follows the bottom by something no render brought the bottom for (a fold or
-   * « Afficher plus » opened at rest): the bottom again. A render that brings the bottom (`pinned`:
-   * the live tail, a send, the runner's band) covers its own rows' new sizes.
+   * A row's height (design px), and in which state its fold was drawn (`state`, A16: keepY()'s guess). A
+   * redraw when a jump waits for it, or a press's keep has a correction to make (keepY), and under a
+   * view that follows the bottom:
+   * - the last row grows (A2): the bottom again. `pin` (col()): the render that drew the row brought
+   *   the bottom itself (the live tail, a send, the runner's band), so the first size it makes is
+   *   covered. A growth past that first size, or one no render brought the bottom for (a fold or
+   *   « Afficher plus » opened at rest), is a motion on its height (rows(), collapse(): a new size every
+   *   frame for MS.open): the bottom now when nothing brought it, once more when it has settled
+   *   (settle(): one timer, never a render per frame);
+   * - a row above it grows with no render that brought the bottom (a fold opened higher up, its items
+   *   coming in on their height): what was clicked stays where it is, the bottom isn't followed any
+   *   more (« ce qu'on vient de cliquer ne bouge pas »; the « bas » button brings it back).
    */
-  measured(id, size, cx, pinned = false) {
+  measured(id, size, cx, pin = null, state = null) {
     const h = size.height / this.zoom();
+    if (state) this.byState?.set(`${id}|${state}`, h);
     const was = this.hts.get(id);
     if (Math.abs((was ?? -9) - h) < 0.5) return;
     this.hts.set(id, h);
-    if (this.follow && !pinned && was != null && h > was && id === this.lastRow()) {
+    if (this.keepRow?.correct) return cx.notify();
+    if (this.follow && was != null && h > was) {
+      if (id !== this.lastRow()) {
+        if (pin) return;
+        this.follow = false;
+        return cx.notify();
+      }
+      if (pin && !pin.seen) pin.seen = true;
+      else {
+        if (!pin) {
+          this.reveal = "bottom";
+          cx.notify();
+        }
+        this.settle(cx);
+      }
+    } else if (this.jump != null) cx.notify();
+  }
+
+  /** The bottom once more after a motion (MS.open, and a frame or so), if the view still follows it. */
+  settle(cx) {
+    if (this.settling) return;
+    this.settling = true;
+    cx.timer.after(MS.open + 60, (cx) => {
+      this.settling = false;
+      if (!this.follow) return;
       this.reveal = "bottom";
       cx.notify();
-    } else if (this.jump != null) cx.notify();
+    });
   }
 
   /** The scroll area's last row before its end mark, as body() draws them (geom()'s order). */
@@ -1149,6 +1202,7 @@ export default class Chat extends View {
     }
     // gpui scrolls whether or not the event pairs: unknown until it does (wheel() sets it back).
     this.top = null;
+    this.keepRow = null; // the reader scrolls: a press's keep no longer holds (keepY())
     this.wheel(cx, null, ev);
   }
 
@@ -1156,14 +1210,16 @@ export default class Chat extends View {
    * A press on the scrollbar (the area's right edge, SCROLLBAR_W) moves the view where no event says:
    * the bottom isn't followed any more (A1: else the next live tick pulls the view back down), the
    * view's top is unknown, and the timeline lights nothing until a wheel measures it again (A7). A
-   * press on the text, or on the background's button over the bar's top (bgControls), leaves them.
+   * press on the text, or on the background's button over the bar's top (bgControls), leaves them; on
+   * the text, it is the view's half of a press in a turn (pairPress(), A16).
    */
   areaPress(ev, cx) {
     if (!ev.local_position || !ev.bounds) return;
     const z = this.zoom(), { x, y } = ev.local_position, w = ev.bounds.width;
-    if (x <= w - SCROLLBAR_W * z) return;
+    if (x <= w - SCROLLBAR_W * z) return this.pairPress(null, ev);
     if (this.bgBtn && y >= 10 * z && y <= 36 * z && x >= w - 36 * z) return;
     this.top = null;
+    this.keepRow = null;
     const changed = this.follow || !this.tlLost;
     this.follow = false;
     this.tlLost = true;
@@ -1227,7 +1283,7 @@ export default class Chat extends View {
    * Wraps a row of the scroll area in the reading column: centred, COLUMN wide at most. The timeline
    * (#85) learns its height, and the pointer's place in it under a wheel event (wheel()).
    */
-  col(el, id) {
+  col(el, id, state = null) {
     let inner = v_flex().w_full().max_w(COLUMN).px(COLUMN_PAD).min_w(0).child(el);
     // A jump's glide (body()): the row's content moves, not the row, whose bounds (the scroll's size,
     // the heights, the wheel's maths) stay put. Drawn dy off under a new id (a first render never
@@ -1236,11 +1292,133 @@ export default class Chat extends View {
     const s = this.slide;
     if (s && !this.m.reduced)
       inner = inner.id(`${id}~g${s.gen}`).relative().top(s.ready ? 0 : s.dy).transition("top", { duration: MS.panel, easing: "ease-out" });
-    const pinned = this.pinned; // this render brings the bottom: the sizes it makes are covered (measured())
+    const pin = this.pinned; // this render brings the bottom: the first size it makes is covered (measured())
     return h_flex().id(id).w_full().flex_none().justify_center()
-      .on_size_change((size, cx) => this.measured(id, size, cx, pinned))
+      .on_size_change((size, cx) => this.measured(id, size, cx, pin, state))
       .on_scroll_wheel((ev, cx) => this.wheel(cx, id, ev))
+      // A16: a press in a turn makes it the reader's (the cursor): its folded work is served first.
+      .when(id.startsWith("kc-turn-"), (el) => el.on_mouse_down("left", (ev, cx) => this.pressTurn(id, ev, cx)))
       .child(inner);
+  }
+
+  /**
+   * A16: the turn pressed becomes the cursor's, which body() serves first (nearFirst); a fold of it held
+   * closed by the budget then opens as one the reader opens (foldAt: rows()). The press's row half
+   * (pairPress()): where that row is on screen, so a fold above it that this changes doesn't move it.
+   */
+  pressTurn(id, ev, cx) {
+    const i = this.turns.findIndex((t) => `kc-turn-${t.id}` === id);
+    this.pressMoved = i >= 0 && i !== this.cur && !this.follow;
+    if (i >= 0 && i !== this.cur) {
+      this.cur = i;
+      const t = this.turns[i];
+      if (this.heldNow?.has(t.id)) this.foldAt = { id: t.id, at: Date.now() };
+      cx.notify();
+    }
+    this.pairPress(id, ev);
+  }
+
+  /**
+   * A press reaches the turn's row (`row`) and the scroll area (`row` null), in an order the host
+   * chooses (timeline.js pairWheel, a delta of 0): once both are in, where the row is on screen. When
+   * the press moved the reader, that row is kept there (keepRow: keepY() moves the view's top by what
+   * the folds above it change in the next render).
+   */
+  pairPress(row, ev) {
+    if (!ev?.local_position || !ev.position) return;
+    const z = this.zoom();
+    const { keep, pair } = pairWheel(this.pressAt, { row, px: ev.position.x, py: ev.position.y, y: ev.local_position.y / z, dy: 0 });
+    this.pressAt = keep;
+    if (!pair || !this.pressMoved) return;
+    this.pressMoved = false;
+    const g = this.geom();
+    if (!g.known || !g.at.has(pair.id)) return;
+    const at = g.at.get(pair.id);
+    const top = Math.max(0, at + pair.inRow - pair.inView);
+    this.top = top;
+    this.keepRow = { id: pair.id, screen: at - top, top, at: Date.now(), correct: false };
+  }
+
+  /**
+   * « Ce qu'on vient de cliquer ne bouge pas » (A16): a press that made another turn the reader's may
+   * draw a fold above it open or held closed in this render (`drawnNow`: turn id -> "o" | "c"). The view's
+   * top then moves by what that changes above the pressed row, so the row stays where it was on screen.
+   * A changed row's height: the one measured the last time it was drawn that way (byState), else its
+   * current one (a guess: measured() asks a render more to correct it). Answers { top, h } (the anchor:
+   * at the view's new top, a view tall, never past the end) or null when nothing has to move.
+   */
+  keepY(drawnNow) {
+    const k = this.keepRow;
+    if (!k || Date.now() - k.at > 1000) return (this.keepRow = null);
+    const turns = this.turns.slice(this.first(), this.end());
+    const tail = this.end() < this.turns.length ? ["kc-later"] : this.builtLive ? ["kc-working"] : [];
+    const rows = [["kc-head", null], ...turns.map((t) => [`kc-turn-${t.id}`, t.id]), ...tail.map((r) => [r, null])];
+    let y = TOP_INSET, rowAt = null, guess = false;
+    for (const [id, tid] of rows) {
+      if (id === k.id) rowAt = y;
+      let h = this.hts.get(id);
+      const now = tid != null ? drawnNow.get(tid) : undefined, was = tid != null ? this.drawn.get(tid) : undefined;
+      if (rowAt == null && now !== undefined && was !== undefined && now !== was) {
+        const p = this.byState.get(`${id}|${now}`);
+        if (p != null) h = p;
+        else guess = true;
+      }
+      if (h == null) return (this.keepRow = null);
+      y += h;
+    }
+    if (rowAt == null) return (this.keepRow = null);
+    const top = Math.max(0, rowAt - k.screen);
+    this.keepRow = guess ? { ...k, top, correct: true } : null;
+    if (Math.abs(top - k.top) < 0.5) return null;
+    return { top, h: anchorH({ y: top, end: y + 1, vh: this.vh }) };
+  }
+
+  /** A16: the turn a render serves first: the last while following the bottom, else the cursor's. */
+  focusTurn() {
+    return this.follow || this.cur < 0 ? this.turns.length - 1 : this.cur;
+  }
+
+  /**
+   * A16: rows of steps, detail lines and sub-agents one render may still draw (ROW_BUDGET, handed out in
+   * body() from the reader's turn outwards): what is asked for, or what is left. With no render's budget
+   * (outside body()), all of it.
+   */
+  take(want) {
+    const b = this.budget;
+    if (b?.steps == null) return want;
+    const k = Math.max(0, Math.min(want, b.steps));
+    b.steps -= k;
+    return k;
+  }
+
+  /**
+   * A16: whether a fold the reader opened is drawn open in this render. Its cost (foldCost) must fit in
+   * what the budget has left; the first turn a render serves (the reader's: body()) is always drawn as
+   * opened (its steps and details still cut to the budget). Drawn open, its headers and prose are spent
+   * here, its steps and sub-agents as they are drawn (take()).
+   */
+  holds(turn) {
+    const b = this.budget;
+    if (b?.steps == null) return true;
+    const { fixed, rows } = this.foldCost(turn);
+    if (!b.fresh && b.steps < fixed + rows) return false;
+    b.steps -= fixed;
+    return true;
+  }
+
+  /** A16: a fold's cost in rows: its phases' headers and prose (fixed), its shown steps and sub-agents (rows). */
+  foldCost(turn) {
+    const f = turn.fold;
+    let fixed = 0, rows = 0;
+    for (let n = f.start; n <= f.end; n++) {
+      const it = turn.items[n];
+      if (it.type === "activity") {
+        fixed += FOLD_HEAD;
+        rows += Math.min(it.steps.length, this.shownSteps.get(it.id) ?? STEPS);
+      } else if (it.type === "subagents") rows += it.runs.length;
+      else if (it.type === "block") fixed += PROSE_ROWS;
+    }
+    return { fixed, rows };
   }
 
   setHover(cx, id, on) {
@@ -1276,12 +1454,16 @@ export default class Chat extends View {
     return div().text_size(12).line_height("16px").text_color(ink(t, a)).child(text);
   }
 
-  // A detail box's text: one div per line (a line wraps), the last LINES of them, mono 12/20.
+  // A detail box's text: one div per line (a line wraps), the last LINES of them, mono 12/20. A16: as
+  // many as the render's budget leaves (take()); fewer, it says how many there are: a press in the
+  // turn serves it first (pressTurn), and they come.
   mono(t, text, color) {
     const all = lines(text);
-    const shown = all.length > LINES ? all.slice(-LINES) : all;
-    return v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px").text_color(color ?? ink(t, 0.6))
-      .children(shown.map((l) => div().min_w(0).child(l || " ")));
+    const want = Math.min(all.length, LINES);
+    const k = this.take(want);
+    const rows = v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px").text_color(color ?? ink(t, 0.6))
+      .children(all.slice(all.length - k).map((l) => div().min_w(0).child(l || " ")));
+    return k < want ? v_flex().min_w(0).child(this.label(t, tr("code.more", { n: all.length }), 0.45)).child(rows) : rows;
   }
 
   // tab_tile.rs:465-469: a 22×18 tile, radius 5, its glyph white at 12 px.
@@ -1315,13 +1497,14 @@ export default class Chat extends View {
       if (r.create) out.push(this.label(t, tr("detail.created", { n: r.lines ?? 0 })));
       const rows = [];
       for (const h of r.diff) for (const l of h.lines) rows.push(l);
-      if (rows.length) {
-        out.push(v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px").children(rows.slice(0, LINES * 2).map((l) => {
+      const drawn = this.take(Math.min(rows.length, LINES * 2)); // A16: what the render's budget leaves
+      if (drawn) {
+        out.push(v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px").children(rows.slice(0, drawn).map((l) => {
           const c = l[0] === "+" ? t.ansi2 : l[0] === "-" ? ERR : null;
           return div().min_w(0).px(4).rounded(3).text_color(c ?? ink(t, 0.6)).when(Boolean(c), (el) => el.bg(alpha(c, "1a"))).child(l || " ");
         })));
       }
-      if (r.diff.some((h) => h.cut) || rows.length > LINES * 2) out.push(this.label(t, tr("detail.diffCut")));
+      if (r.diff.some((h) => h.cut) || rows.length > drawn) out.push(this.label(t, tr("detail.diffCut")));
     } else if (b.kind === "read" && r?.file) {
       out.push(this.label(t, r.file.image ? tr("detail.image") : tr("detail.lines", { a: r.file.start ?? 1, b: (r.file.start ?? 1) + Math.max(0, (r.file.lines ?? 1) - 1), n: r.file.total ?? r.file.lines ?? 0 })));
     } else {
@@ -1381,8 +1564,11 @@ export default class Chat extends View {
   activity(t, item, live) {
     const c = item.tally ?? tally(item.steps);
     const n = Math.min(item.steps.length, this.shownSteps.get(item.id) ?? STEPS);
-    const hidden = item.steps.length - n;
-    const steps = hidden ? item.steps.slice(-n) : item.steps;
+    // A16: the last n steps asked for, as many as the render's budget leaves; the rest wait under
+    // « N étapes de plus » (a press in the turn serves it first: pressTurn).
+    const drawn = this.take(n);
+    const hidden = item.steps.length - drawn;
+    const steps = item.steps.slice(item.steps.length - drawn);
     const more = (id, icon, text, to) => h_flex().id(id).py(2).gap(6).items_center().cursor_pointer()
       .text_size(12).text_color(ink(t, 0.45)).hover((s) => s.text_color(ink(t, 0.8)))
       .on_click((_e, cx) => { this.shownSteps.set(item.id, to); cx.notify(); })
@@ -1416,6 +1602,7 @@ export default class Chat extends View {
   // transcript/tasks.rs:358-549: a sub-agent's row, py 4 px 6, radius 6, a 0.08 ground when hovered or
   // open: its mark in its color, its name at ink 0.75, model and state at 12 ink 0.4, a chevron.
   subagents(t, item) {
+    this.take(item.runs.length); // A16: their rows count, always drawn (an opened report's lines: mono())
     return v_flex().min_w(0).children(item.runs.map((b) => {
       const a = b.result?.agent ?? {};
       const c = agentColor(t, a.color);
@@ -1615,8 +1802,10 @@ export default class Chat extends View {
   }
 
   // transcript.rs:4891-5005: « Opus 5.5 a travaillé 3m 12s », 14/20 at ink 0.5 (0.8 hovered), pt 12,
-  // pb 4, gap 8, after the provider's tile; hovered or open, the tile shows the chevron.
-  workedLine(t, turn, opened, kids = false) {
+  // pb 4, gap 8, after the provider's tile; hovered or open, the tile shows the chevron. A16 `held`:
+  // opened, but drawn closed past the render's budget: a click doesn't close it, the press in its turn
+  // (pressTurn) serves it first and it opens as one opened (foldAt: rows()).
+  workedLine(t, turn, opened, kids = false, held = false) {
     const hov = this.hover === `w:${turn.id}`;
     const model = modelName(turn.model);
     const d = turn.ms ? workedFor(turn.ms) : null;
@@ -1627,7 +1816,7 @@ export default class Chat extends View {
       .when(kids, (el) => el.child(stem(treeLine(t), { top: 31 })))
       .tooltip(turn.tally ? tallyText(turn.tally, tr) : text)
       .on_hover((h, cx) => this.setHover(cx, `w:${turn.id}`, h))
-      .on_click((_e, cx) => { this.toggle(`f:${turn.id}`); this.foldAt = { id: turn.id, at: Date.now() }; cx.notify(); })
+      .on_click((_e, cx) => { if (!held) this.toggle(`f:${turn.id}`); this.foldAt = { id: turn.id, at: Date.now() }; cx.notify(); })
       .child(this.tile(t, TILE.claude, hov || opened ? I(opened ? "chevron-down" : "chevron-right") : CLAUDE_ICON))
       .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("20px").text_color(ink(t, hov ? 0.8 : 0.5)).child(text));
   }
@@ -1802,7 +1991,13 @@ export default class Chat extends View {
     const op = this.opener(t, turn, cx);
     if (op) out.push(op);
     const f = turn.fold;
-    const opened = f && this.open.has(`f:${turn.id}`);
+    // A16: an opened fold past the render's budget is drawn closed (held: no motion, rows() at rest); the
+    // reader's turn always holds. What each fold is drawn as goes to keepY() (drawnNow).
+    const asked = Boolean(f) && this.open.has(`f:${turn.id}`);
+    const opened = asked && this.holds(turn);
+    if (this.budget) this.budget.fresh = false;
+    if (asked && !opened) this.heldNow?.add(turn.id);
+    if (f) this.drawnNow?.set(turn.id, opened ? "o" : "c");
     // #90: the fold as a tree (chat-model.js foldTree): its items hang under the header on its branches
     // (tree.js hang), the bend at their first line's middle (a step's or a tile's row 28, a prose block's
     // first line under its margin); inside a closed fold only the sub-agents (Monocode pins them outside).
@@ -1836,7 +2031,7 @@ export default class Chat extends View {
     }) : [];
     turn.items.forEach((it, n) => {
       if (f && n === f.start) {
-        out.push(this.workedLine(t, turn, opened, kids.length > 0));
+        out.push(this.workedLine(t, turn, opened, kids.length > 0, asked && !opened));
         if (kids.length) out.push(v_flex().min_w(0).children(kids));
       }
       if (inFold(n)) return;
@@ -1850,7 +2045,7 @@ export default class Chat extends View {
       // The keyboard's turn: a short 2 × 16 accent tick in the column's margin, at its top (a mark as
       // tall as the turn ran through a long turn like a rule). Outside the turn's clipping box.
       .when(here, (el) => el.child(div().absolute().left(-14).top(8).w(2).h(16).rounded_full().bg(t.accent)))
-      .child(this.landing(v_flex().w_full().min_w(0).children(out), turn.id, `t-${turn.id}`)), `kc-turn-${turn.id}`);
+      .child(this.landing(v_flex().w_full().min_w(0).children(out), turn.id, `t-${turn.id}`)), `kc-turn-${turn.id}`, f ? (opened ? "o" : "c") : null);
   }
 
   head(t) {
@@ -1925,7 +2120,7 @@ export default class Chat extends View {
     // The window (#59): [from, to), CAP turns at most, « Tours suivants » under it when it stops
     // before the end (the live turn and its « travaille… » row are then below too).
     const from = this.first(), to = this.end();
-    this.pinned = this.reveal === "bottom"; // the rows described below: their sizes are this reveal's (col())
+    this.pinned = this.reveal === "bottom" ? {} : null; // the rows described below: their first sizes are this reveal's (col())
     // The timeline's jump (#85), once the rows above its turn are measured: an anchor at the turn's top,
     // a view tall (never past the end), after the end mark (the turns' child indices stay): the
     // smallest scroll that reveals it puts its top at the view's top, from above as from below. Worked
@@ -1948,12 +2143,26 @@ export default class Chat extends View {
         this.glideFrom = null;
       }
     }
-    // The code budget goes to the latest turns first: they are described last to first.
-    this.budget = { spans: CODE_SPANS, rows: CODE_ROWS };
+    // What one render may draw (code, A16's folded work) goes to the reader's turn first, then outwards
+    // (turn-window.js nearFirst): following the bottom, the last turn first, then up.
+    this.budget = { spans: CODE_SPANS, rows: CODE_ROWS, steps: ROW_BUDGET, fresh: true };
+    this.drawnNow = new Map();
+    this.heldNow = new Set();
     const turns = [];
-    for (let i = to - 1; i >= from; i--) turns.push(this.turn(t, cx, this.turns[i], i, keyed));
+    for (const i of win.nearFirst(from, to, this.focusTurn())) turns[i - from] = this.turn(t, cx, this.turns[i], i, keyed);
     this.budget = null;
-    const children = [this.head(t), ...turns.reverse()];
+    // A16: a press that moved the reader keeps its row where it was on screen, whatever the folds above
+    // it are drawn as now (keepY(): an anchor at the view's new top, as the jump's).
+    if (!anchor && this.reveal == null && this.keepRow) {
+      const k = this.keepY(this.drawnNow);
+      if (k) {
+        this.top = k.top;
+        anchor = div().absolute().left(0).top(k.top).w(1).h(k.h);
+      }
+    }
+    this.drawn = this.drawnNow;
+    this.drawnNow = null;
+    const children = [this.head(t), ...turns];
     if (to < this.turns.length) children.push(this.later(t, this.turns.length - to));
     else if (this.builtLive) children.push(this.working(t));
     // The 1 px end mark: revealing it shows the bottom of a last turn taller than the view.

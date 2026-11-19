@@ -2,7 +2,7 @@
 // Chat draws: never more than CAP, whatever the cursor, a jump, « Tours précédents » / « Tours
 // suivants » or the live tail do. Ids are made up.
 import assert from "node:assert/strict";
-import { SHOW, CAP, bottom, reach, at, older, newer, remap, keepFor } from "./turn-window.js";
+import { SHOW, CAP, bottom, reach, at, older, newer, remap, keepFor, nearFirst } from "./turn-window.js";
 import { childOf } from "./chat-view.js";
 import { trim } from "./chat-model.js";
 
@@ -89,5 +89,13 @@ assert.deepEqual(kept(trim(state, keepFor(entries, "t5", 1200)))[0], "t5", "the 
 assert.equal(keepFor(entries, "t30", 1200), 1200, "a window below KEEP: KEEP");
 assert.equal(keepFor(entries, "head-0", 1200), 2000, "the read's opening part: everything");
 assert.equal(keepFor(entries, "gone", 1200), 1200, "an id not found: KEEP");
+
+// ── A16: the order a render describes its turns in (what it may draw goes to them first) ──
+assert.deepEqual(nearFirst(10, 15, 14), [14, 13, 12, 11, 10], "following the bottom: the last first, then up (the code budget's order before)");
+assert.deepEqual(nearFirst(10, 15, 12), [12, 13, 11, 14, 10], "the reader's turn, then outwards, the one below first");
+assert.deepEqual(nearFirst(10, 15, 3), [10, 11, 12, 13, 14], "a cursor before the window: its first turn");
+assert.deepEqual(nearFirst(10, 15, 99), [14, 13, 12, 11, 10]);
+assert.deepEqual(nearFirst(4, 4, 4), []);
+for (let f = 0; f < 6; f++) assert.deepEqual([...nearFirst(0, 6, f)].sort((a, b) => a - b), [0, 1, 2, 3, 4, 5], "every turn once");
 
 console.log("turn-window.check: ok");
