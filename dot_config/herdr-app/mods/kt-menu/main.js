@@ -124,7 +124,8 @@ function menuIcon(command) {
 // The key bound to an item (shortcuts.js): the command this layout binds for the same thing (the closes and
 // the worktrees go through kt-head, as here), else the command with its first argument (`pane.split:right`),
 // else the command.
-const SAME = { "tab.close": "kt-head.close-tab", "pane.close": "kt-head.close-pane", "worktree:new": "kt-head.worktree", "worktree:open": "layout.select:gwm" };
+const SAME = { "tab.close": "kt-head.close-tab", "pane.close": "kt-head.close-pane", "worktree:new": "kt-head.worktree", "worktree:open": "layout.select:gwm",
+  "tab.rename": "kt-head.rename:tab", "space.rename": "kt-head.rename:space" };
 const keyOf = (name, args) => shortcut(keys(), shared("layout"),
   [SAME[name], SAME[`${name}:${args?.action}`], `${name}:${args && Object.values(args)[0]}`, name].filter(Boolean));
 
@@ -171,7 +172,7 @@ export default class Menu extends View {
       notify({ title: tr("copied"), body: it[2].text, level: "success", timeout: 2000 });
       return this.dismiss(cx);
     }
-    // An item opening another dialog (kt-new, kt-confirm, Herdr's rename prompt, the keys) closes the menu
+    // An item opening another dialog (kt-new, kt-confirm, kt-prompt, the keys) closes the menu
     // first, at once, as before: that dialog comes in on its own and takes the keyboard last. The rest
     // runs, then the menu leaves.
     const opens = (it[1] === "worktree" && it[2].action === "new") || ["tab.close", "pane.close", "space.close"].includes(it[1])
@@ -186,6 +187,9 @@ export default class Menu extends View {
     } else if (it[1] === "tab.close") openOverlay({ mod: "kt-confirm", ...full, props: { thread: it[2].id } });
     else if (it[1] === "pane.close") openOverlay({ mod: "kt-confirm", ...full, props: { pane: it[2].pane } });
     else if (it[1] === "space.close") openOverlay({ mod: "kt-confirm", ...full, props: { space: it[2].id } });
+    // A rename asks the name in kt-prompt: tab.rename / space.rename never go out bare (Herdr's own prompt).
+    else if (it[1] === "tab.rename") openOverlay({ mod: "kt-prompt", ...full, props: { rename: { tab: it[2].id } } });
+    else if (it[1] === "space.rename") openOverlay({ mod: "kt-prompt", ...full, props: { rename: { space: it[2].id } } });
     else run(it[1], it[2]);
     if (!opens) this.dismiss(cx);
   }

@@ -12,6 +12,8 @@ mock.module("gpui-base", () => ({ v_flex: chain, h_flex: chain }));
 let props = {};
 const toasts = [];
 const files = {};
+const ran = [];
+const opened = [];
 const world = {
   spaces: [{ id: "s1", folder: "/fake/proj", machine: null, tabs: [{ id: "c1", name: "1", named: false }, { id: "c2", name: "fix", named: true }] }],
   panes: [
@@ -20,7 +22,7 @@ const world = {
   ],
 };
 mock.module("herdr", () => ({
-  run() {}, props: () => props, closeOverlay() {}, openOverlay() {}, theme: () => new Proxy({}, { get: () => "#000000" }),
+  run: (name, args) => ran.push([name, args]), props: () => props, closeOverlay() {}, openOverlay: (o) => opened.push(o), theme: () => new Proxy({}, { get: () => "#000000" }),
   keys: () => [], terminals: () => [], spaces: () => world.spaces, panes: () => world.panes, exec: async () => ({ code: 1 }),
   shared: () => null, notify: (n) => toasts.push(n), home: () => "/fake/home",
   readTextFile: async (p) => files[p] ?? null,
@@ -73,8 +75,17 @@ test("a Claude thread whose statusline is missing: no session copy", async () =>
 test("each row's key: the layout's command for the same thing first (Close is kt-head's), then the command", async () => {
   asked = [];
   await open({ id: "c1", space: "s1" });
-  expect(asked[0]).toEqual(["tab.rename:c1", "tab.rename"]);
+  expect(asked[0]).toEqual(["kt-head.rename:tab", "tab.rename:c1", "tab.rename"]);
   expect(asked[1]).toEqual(["tab.new:s1", "tab.new"]);
   expect(asked.at(-1)).toEqual(["kt-head.close-tab", "tab.close:c1", "tab.close"]);
   expect(asked.length).toBe(seen.length);
+});
+
+test("Renommer asks the name in kt-prompt: tab.rename never goes out bare (Herdr's own prompt)", async () => {
+  ran.length = 0;
+  opened.length = 0;
+  const m = await open({ id: "c1", space: "s1" });
+  m.choose(0, { write_to_clipboard() {}, notify() {} });
+  expect(opened.map((o) => [o.mod, o.props])).toEqual([["kt-prompt", { rename: { tab: "c1" } }]]);
+  expect(ran.filter(([name]) => name === "tab.rename")).toEqual([]);
 });

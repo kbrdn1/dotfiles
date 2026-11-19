@@ -32,8 +32,8 @@ const groupName = (id) => tr(`group.${id}`);
 // Global: the ctrl-b actions in the order shown (keys.json's action, `command:arg` for an object
 // binding); what each does is strings.js' `g.<action>`.
 const ORDER = ["pane.go:left", "pane.go:right", "pane.go:down", "pane.go:up", "pane.split:right", "pane.split:down", "pane.zoom",
-  "kt-head.close-pane", "mod.open:kt-new", "tab.next", "tab.prev", "tab.select", "tab.rename", "kt-head.close-tab", "space.new",
-  "space.next", "space.prev", "space.rename", "kt-head.picker:2", "kt-head.picker:0", "kt-head.worktree", "agent.next", "agent.prev",
+  "kt-head.close-pane", "mod.open:kt-new", "tab.next", "tab.prev", "tab.select", "kt-head.rename:tab", "kt-head.close-tab", "space.new",
+  "space.next", "space.prev", "kt-head.rename:space", "kt-head.picker:2", "kt-head.picker:0", "kt-head.worktree", "agent.next", "agent.prev",
   "kt-head.attention", "layout.select:thread", "layout.select:hub", "layout.select:inbox", "layout.select:kanban", "layout.select:skills", "layout.select:mcp", "layout.select:plugins",
   "layout.select:market", "layout.select:workflow", "layout.select:gwm", "layout.select:notes", "kt-head.side-toggle", "kt-head.panel-toggle", "kt-head.panel:files",
   "kt-head.panel:diff", "kt-head.panel:history", "kt-head.panel:flow", "kt-head.panel:crosstalk", "mod.open:kt-keys", "mod.open:kt-mods", "mod.open:kt-machines",

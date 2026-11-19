@@ -95,12 +95,12 @@
     "ctrl-b 7": "tab.select:7",
     "ctrl-b 8": "tab.select:8",
     "ctrl-b 9": "tab.select:9",
-    "ctrl-b shift-t": "tab.rename",
+    "ctrl-b shift-t": "kt-head.rename:tab",
     "ctrl-b shift-x": "kt-head.close-tab",
     "ctrl-b shift-c": "space.new",
     "ctrl-b shift-n": "space.next",
     "ctrl-b shift-b": "space.prev",
-    "ctrl-b shift-w": "space.rename",
+    "ctrl-b shift-w": "kt-head.rename:space",
     "ctrl-b w": "kt-head.picker:2",
     "ctrl-b g": "kt-head.picker:0",
     "ctrl-b shift-g": "kt-head.worktree",
@@ -136,7 +136,9 @@
     "cmd-p": { "command": "mod.open", "args": { "name": "kt-picker" } },
     "cmd-w": "kt-head.close-tab",
     "cmd-shift-w": "kt-head.close-pane",
-    "cmd-b": "kt-head.side-toggle"
+    "cmd-b": "kt-head.side-toggle",
+    "f2": "kt-head.rename:tab",
+    "shift-f2": "kt-head.rename:space"
   },
   "layout:kbrdn-threads-glass": {
     "ctrl-b h": "pane.go:left",
@@ -161,12 +163,12 @@
     "ctrl-b 7": "tab.select:7",
     "ctrl-b 8": "tab.select:8",
     "ctrl-b 9": "tab.select:9",
-    "ctrl-b shift-t": "tab.rename",
+    "ctrl-b shift-t": "kt-head.rename:tab",
     "ctrl-b shift-x": "kt-head.close-tab",
     "ctrl-b shift-c": "space.new",
     "ctrl-b shift-n": "space.next",
     "ctrl-b shift-b": "space.prev",
-    "ctrl-b shift-w": "space.rename",
+    "ctrl-b shift-w": "kt-head.rename:space",
     "ctrl-b w": "kt-head.picker:2",
     "ctrl-b g": "kt-head.picker:0",
     "ctrl-b shift-g": "kt-head.worktree",
@@ -202,7 +204,9 @@
     "cmd-p": { "command": "mod.open", "args": { "name": "kt-picker" } },
     "cmd-w": "kt-head.close-tab",
     "cmd-shift-w": "kt-head.close-pane",
-    "cmd-b": "kt-head.side-toggle"
+    "cmd-b": "kt-head.side-toggle",
+    "f2": "kt-head.rename:tab",
+    "shift-f2": "kt-head.rename:space"
   },
   "mod:kt-picker": {
     "cmd-1": "kt-picker.filter:1",

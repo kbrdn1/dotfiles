@@ -170,10 +170,16 @@ const keyOf = (...actions) => shortcut(keys(), shared("layout"), ...actions);
 // panel copy only (`kt-gwm.focus` would reach its page copy too).
 const PANEL_FOCUS = { files: "kt-files.focus", diff: "kt-diff.focus", history: "kt-history.focus", flow: "kt-flow.focus", crosstalk: "kt-crosstalk.focus", "gwm-panel": "kt-gwm.panel-focus" };
 // `panel-toggle` (ctrl-b p) and `panel:<surface>` open and close the right panel through panel.js (#73),
-// `side-toggle` (ctrl-b shift-v) the left sidebar.
+// `side-toggle` (ctrl-b shift-v) the left sidebar. `rename:tab` / `rename:space` (ctrl-b shift-t / f2,
+// ctrl-b shift-w / shift-f2) ask the shown thread's or project's name in kt-prompt, never Herdr's own prompt.
 function route(c, cx) {
   const [name, arg] = [c.split(":")[0], c.slice(c.indexOf(":") + 1)];
   if (name === "view") face(c.includes(":") ? arg : "");
+  else if (name === "rename") {
+    const s = spaces().find((x) => x.active);
+    const id = arg === "space" ? s?.id : s?.tabs.find((x) => x.active)?.id;
+    if (id) openOverlay({ mod: "kt-prompt", kind: "dialog", width: 1, height: 1, frame: "none", props: { rename: { [arg === "space" ? "space" : "tab"]: id } } });
+  }
   else if (name === "panel-toggle") togglePanel(cx);
   else if (name === "side-toggle") toggleColumn("side", cx);
   else if (name === "panel") {
