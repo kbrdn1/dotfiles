@@ -35,7 +35,10 @@ function branchGraphSvg(data: Array<{ label: string; color: string; fill?: boole
 function logoHtml(t: Theme, size: number): string {
   const src = (t.name === "light" && cfg.logoLight ? cfg.logoLight : cfg.logo) as string | undefined;
   if (!src) return "";
-  const markup = src.trimStart().startsWith("<") ? src : readFileSync(src, "utf8");
+  const raw = src.trimStart().startsWith("<") ? src : readFileSync(src, "utf8");
+  // Le SVG remplit sa boîte : ses attributs width/height (24 sur un logo d'icône) le laisseraient à
+  // cette taille au milieu, quel que soit `size`. Le style CSS l'emporte sur ces attributs.
+  const markup = raw.replace(/<svg\b/, '<svg style="width:100%;height:100%"');
   return `<div style="flex-shrink:0;width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;">${markup}</div>`;
 }
 
