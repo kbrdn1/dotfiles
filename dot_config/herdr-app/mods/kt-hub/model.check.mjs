@@ -127,4 +127,29 @@ assert.equal(M.planLimits(file, null, 2e6).seven.stale, true, "reset since it wa
 assert.deepEqual(M.planLimits('{"five_hour":{"used_percentage":7,"resets_at":50},"updated_at":10}', null, 0).five, { used: 7, resets: 5e4, at: 1e4, stale: false });
 assert.equal(M.planLimits("{", {}, 0), null);
 
+// #88: withFormer, a renamed project's former folders folded into its own (made-up folders).
+{
+  const sum = { at: 5, projects: {
+    "/p/new": { name: "new", kind: "repo", slug: "o/new", last: 20, days: { "2026-11-19": [1, 100, 2, 0] }, heat: { 2026: [[322, 1]] } },
+    "/p/old": { name: "old", kind: "registry", slug: "o/old", last: 30, days: { "2026-11-03": [2, 50, 1, 1, { "me:merge": 2 }], "2026-11-19": [1, 10, 0, 0, { "me:merge": 1 }] }, heat: { 2026: [[306, 2], [322, 1]] } },
+    "/older/old": { name: "old", kind: "registry", last: 1, days: { "2026-01-02": [1, 5, 0, 0] }, heat: { 2026: [[1, 1]] } },
+    "/p/other": { name: "other", kind: "repo", last: 9, days: {}, heat: {} },
+  } };
+  const reg = [{ id: "x", name: "new", folder: "/p/new/", machine: null, formerly: ["/p/old", "/older/old"] }, { id: "y", name: "far", folder: "/p/old", machine: "vps", formerly: [] }];
+  const frozen = structuredClone(sum);
+  const f = M.withFormer(sum, reg);
+  assert.deepEqual(Object.keys(f.projects).sort(), ["/p/new", "/p/other"], "the former folders folded away, the rest kept");
+  const p = f.projects["/p/new"];
+  assert.deepEqual(p.days["2026-11-19"], [2, 110, 2, 0, { "me:merge": 1 }], "a day both had: summed, launches too");
+  assert.deepEqual(p.days["2026-11-03"], [2, 50, 1, 1, { "me:merge": 2 }], "a day only the old folder had");
+  assert.deepEqual(p.days["2026-01-02"], [1, 5, 0, 0], "and the older folder's");
+  assert.deepEqual(p.heat[2026], [[1, 1], [306, 2], [322, 2]], "heat summed by day, in order");
+  assert.deepEqual([p.name, p.slug, p.last, f.at], ["new", "o/new", 30, 5], "its own fields, the latest last, the summary's own");
+  assert.deepEqual(sum, frozen, "the summary given is left as is");
+  assert.equal(M.withFormer(sum, [{ folder: "/p/new", formerly: [] }]), sum, "nothing to fold: the same summary");
+  const alone = M.withFormer({ projects: { "/p/old": sum.projects["/p/old"] } }, reg);
+  assert.deepEqual(Object.keys(alone.projects), ["/p/new"], "no activity under the new folder: the old one's, under the new key");
+  assert.deepEqual(M.projectIndex(f.projects, reg).get("/p/new").name, "new");
+}
+
 console.log("model.check: ok");

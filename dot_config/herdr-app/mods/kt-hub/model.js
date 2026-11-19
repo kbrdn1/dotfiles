@@ -83,6 +83,44 @@ export function ranked(days, w, field) {
 // The registry (kt.projects) of this computer, by folder.
 const registryMap = (registry) => new Map((registry ?? []).filter((r) => r && !r.machine && r.folder).map((r) => [r.folder.replace(/\/+$/, ""), r]));
 
+// Two days of a project: [sessions, agent seconds, prompts, PRs, { launches }], summed.
+const addDay = (a = [], b = []) => {
+  const n = [0, 1, 2, 3].map((k) => (a[k] ?? 0) + (b[k] ?? 0));
+  const l = { ...(a[4] ?? {}) };
+  for (const [name, c] of Object.entries(b[4] ?? {})) l[name] = (l[name] ?? 0) + c;
+  return Object.keys(l).length ? [...n, l] : n;
+};
+// Two years of `heat` pairs ([day index, sessions]), summed by day.
+const addHeat = (a = [], b = []) => {
+  const m = new Map(a.map(([i, n]) => [i, n]));
+  for (const [i, n] of b) m.set(i, (m.get(i) ?? 0) + n);
+  return [...m].sort((x, y) => x[0] - y[0]);
+};
+
+/** #88: the summary with each former folder of a registry entry (kt.projects' `formerly`: k-hub, now
+ * kbrdn-hub) folded into the entry's folder: days and heat summed, its last the latest; the entry's own
+ * fields kept when it has some activity, else the former's. The same summary when there's nothing to fold;
+ * never changed in place. Once per summary and registry. */
+export function withFormer(summary, registry) {
+  const projects = summary?.projects;
+  const into = new Map();
+  for (const [folder, e] of registryMap(registry)) for (const f of e.formerly ?? []) into.set(String(f).replace(/\/+$/, ""), folder);
+  if (!projects || !Object.keys(projects).some((k) => into.has(k))) return summary;
+  const out = Object.fromEntries(Object.entries(projects).filter(([k]) => !into.has(k)));
+  for (const [k, p] of Object.entries(projects)) {
+    const to = into.get(k);
+    if (!to) continue;
+    const q = out[to];
+    if (!q) { out[to] = p; continue; }
+    const days = { ...(q.days ?? {}) };
+    for (const [d, v] of Object.entries(p.days ?? {})) days[d] = addDay(days[d], v);
+    const heat = { ...(q.heat ?? {}) };
+    for (const [y, v] of Object.entries(p.heat ?? {})) heat[y] = addHeat(heat[y], v);
+    out[to] = { ...q, days, heat, last: Math.max(q.last ?? 0, p.last ?? 0) };
+  }
+  return { ...summary, projects: out };
+}
+
 /** #89: every project of the summary by its key: its kind, its name (the registry's, else its own), its
  * registry entry (color, logos, archived). */
 export function projectIndex(projects, registry) {

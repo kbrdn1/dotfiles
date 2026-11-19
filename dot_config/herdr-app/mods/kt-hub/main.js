@@ -29,7 +29,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import * as fs from "fs/promises";
 import { exec, readTextFile, writeTextFile, theme, spaces, agents, run, layout, home, appHome, checking, nextCommand, openOverlay, shared, setShared, settings, panes } from "herdr";
-import { week, ranked, year, years, now, byMachine, delta, localDay, dayShift, familyOf, projectIndex, period, spent, spentDelta, stacks, periodCounts, planLimits } from "./model.js";
+import { week, ranked, year, years, now, byMachine, delta, localDay, dayShift, familyOf, projectIndex, period, spent, spentDelta, stacks, periodCounts, planLimits, withFormer } from "./model.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the other machines and their state (#66).
 import { machineList, machineTag, stateOf, stateWord, guard, loginOf, REMOTE_TIMEOUT } from "./machines.js";
 // Machines (Kylian's request of 2026-11-19): CPU, memory and disk of this Mac and of main-vps.
@@ -133,7 +133,8 @@ export default class Hub extends View {
     this.vim = new Vim({ field: false });
     this.motion = motionState();
     this.scroll = ScrollHandle.new();
-    this.sum = null; // summary.json
+    this.raw = null; // summary.json
+    this.sum = null; // the same, a renamed project's former folders folded into it (derive, model.js withFormer)
     this.d = null; // what model.js derived from it
     this.readError = null;
     this.running = false;
@@ -224,7 +225,7 @@ export default class Hub extends View {
       const base = `${appHome()}/data/kt-hub`;
       const [text, errText] = await Promise.all([readTextFile(`${base}/summary.json`).catch(() => null), readTextFile(`${base}/error.json`).catch(() => null)]);
       const s = parse(text);
-      if (s?.v === 1) { this.sum = s; this.readError = null; this.derive(); }
+      if (s?.v === 1) { this.raw = s; this.readError = null; this.derive(); }
       else if (text != null) this.readError = "summary.json";
       const e = parse(errText);
       this.err = e?.at && e.at > (this.sum?.at ?? 0) ? e : null;
@@ -233,14 +234,15 @@ export default class Hub extends View {
   }
 
   derive() {
-    const s = this.sum;
+    const reg = shared("kt.projects");
+    // #88: a renamed project's former folders (the registry's `formerly`: k-hub, now kbrdn-hub) count as its own.
+    const s = this.sum = withFormer(this.raw, reg);
     const today = localDay(Date.now());
     const w = week(s.days, today);
     const ys = years(s);
     if (!ys.includes(this.year)) this.year = ys.at(-1) ?? null;
     this.heat.clear();
     this.pHeat.clear();
-    const reg = shared("kt.projects");
     this.regKey = JSON.stringify(reg ?? null);
     // #76: the flows of the last two weeks, week by week (their commits' times) and by workflow.
     const flows = (s.flows ?? []).filter((f) => (f.seen ?? 0) >= Date.now() - RECENT_MS);
