@@ -33,7 +33,7 @@ const node = (kind) => {
       if (k === "__node") return n;
       if (k === "then") return undefined;
       return (...a) => {
-        if (k === "child") { if (a[0] != null && typeof a[0] === "object" || typeof a[0] === "function") n.kids.push(a[0]); }
+        if (k === "child") { if (a[0] != null && typeof a[0] === "object" || typeof a[0] === "function") n.kids.push(a[0]); else n.calls.push(["text", a]); }
         else if (k === "children") n.kids.push(...(a[0] ?? []).filter((x) => x != null));
         else if (k === "when") return a[0] ? a[1](p) : p;
         else n.calls.push([k, a]);
@@ -418,6 +418,80 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   // The pick's own change (the field now reads "/me:goal "): no second wave.
   typeIn(c, "/me:goal ");
   assert.equal(c.wave.id, "kc-wave-1", "one pick, one wave");
+}
+{
+  // #93, Cmd+V in the field: the composer's card carries the binding's context and takes its action
+  // (pasteKey, ahead of the field's own paste). A Finder copy (its names as text, joined by \r: probed)
+  // joins its files and types nothing; a text goes in as typed; no text at all: paste()'s way.
+  const c = completing(chat(), "");
+  Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false) });
+  const card = flat(c.composerView(T, { agent: { address: "t9", status: "idle", program: "claude" } }, null, cx())).find((n) => callsOf(n, "id").some(([v]) => v === "kc-card"));
+  assert.deepEqual([callsOf(card, "key_context"), callsOf(card, "on_action").map(([a]) => a)], [[["KtComposer"]], ["kt_chat_paste"]], "the card: its context, the action");
+  const did = [];
+  c.attach = (_cx, paths, source) => did.push(["att", paths, source]);
+  c.paste = () => did.push(["paste"]);
+  const run = async (text, stdout) => {
+    const asked = [];
+    execFake = async (cmd, args) => { asked.push(args.at(-1)); return { code: 0, stdout }; };
+    let task = null;
+    const read = typeof text === "function" ? text : () => text;
+    const x = { ...cx(), read_from_clipboard: read, spawn: (fn) => { task = fn(x); } };
+    c.pasteKey(x);
+    await task;
+    return asked;
+  };
+  live.checking = false;
+  // gpui gives a Finder copy as its paths (Kylian's capture): the files are read, joined, nothing typed.
+  assert.deepEqual(await run("/p/a b.pdf/p/c.csv", "files\n/p/a b.pdf\n/p/c.csv\n"), ["files"], "the files only are read");
+  // A text that can't hold files: in at once, no osascript (the 60 to 120 ms stay out of a plain paste).
+  assert.deepEqual(await run("un\r\ndeux", "files\n/p/never.pdf\n"), [], "a plain text: nothing read");
+  // A text starting with « / » with no file behind it (a path typed somewhere): read, then typed.
+  assert.deepEqual(await run("/tmp/build.log", "none\n"), ["files"]);
+  assert.deepEqual(await run(undefined, ""), [], "no text: nothing read here");
+  // The host refusing the read: the files are still asked for; none, it says so and types nothing.
+  assert.deepEqual(await run(() => { throw new Error("not granted"); }, "none\n"), ["files"]);
+  live.checking = true;
+  execFake = async () => ({ code: 0, stdout: "" });
+  assert.deepEqual([...did, ...c.composer.wrote], [["att", ["/p/a b.pdf", "/p/c.csv"], "paste"], ["paste"], ["replace", "un\ndeux"], ["replace", "/tmp/build.log"]],
+    "files joined (nothing typed), no text: paste(), the texts typed");
+  assert.deepEqual(c.sendErr, { why: "paste" }, "an unreadable clipboard says so");
+}
+// Cmd+C on a card under the pointer (the keyboard on the Chat): the piece copied as a file, its card says
+// « Copié » for a moment (ONE one-shot timer). The pointer on no card: the key goes on.
+{
+  const c = chat();
+  c.width = 900;
+  c.drafts = add([], ["/d/Devis client.pdf", "/d/b.md"], "drop").list;
+  c.press = () => false; // the Chat's own keys: none of them here
+  const id = `kc-pc-${c.drafts[0].id}`;
+  const nodes = flat(c.draftView(T, cx()));
+  const card = nodes.find((n) => callsOf(n, "id").some(([v]) => v === id));
+  const hx = cx();
+  callsOf(card, "on_hover").at(-1)[0](true, hx);
+  assert.deepEqual([c.pieceHover, c.hoverPiece?.name, hx.notified], [id, "Devis client.pdf", 1], "hovered: kept, the field's card drawn again (its ×)");
+  const asked = [];
+  execFake = async (cmd, args) => { asked.push([cmd, args.slice(-1)]); return { code: 0, stdout: "ok\n" }; };
+  let task = null;
+  const kx = { ...cx(), stop_propagation() { kx.stopped = true; }, spawn: (fn) => { task = fn(kx); } };
+  live.checking = false;
+  c.key({ keystroke: "cmd-c", key: "c", modifiers: { platform: true } }, kx);
+  await task;
+  live.checking = true;
+  execFake = async () => ({ code: 0, stdout: "" });
+  assert.deepEqual(asked, [["/usr/bin/osascript", ["/d/Devis client.pdf"]]], "the file itself, by argv");
+  assert.equal(kx.stopped, true, "the key stops there");
+  assert.equal(c.copied, id);
+  const copied = flat({ __node: flat(c.draftView(T, cx())).find((n) => callsOf(n, "id").some(([v]) => v === id)) });
+  assert.ok(copied.some((n) => callsOf(n, "text").some(([s]) => s === "Fichier copié")), "its card says so");
+  assert.equal(kx.timers.length, 1, "ONE one-shot timer");
+  kx.timers[0][1](cx());
+  assert.equal(c.copied, null, "then it goes");
+  // Leaving the card: Cmd+C no longer copies, the key goes on to press() (not the Chat's: it goes on).
+  callsOf(card, "on_hover").at(-1)[0](false, cx());
+  const k2 = { ...cx(), stop_propagation() { k2.stopped = true; } };
+  c.press = () => { k2.pressed = true; return false; };
+  c.key({ keystroke: "cmd-c", key: "c", modifiers: { platform: true } }, k2);
+  assert.deepEqual([c.hoverPiece, k2.pressed, k2.stopped], [null, true, undefined], "no card: not ours");
 }
 {
   // A command typed by hand, then a space: its piece and its wave, once (typing on starts none).

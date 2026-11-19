@@ -1,7 +1,7 @@
 // bun attach.check.mjs: the Chat's draft attachments (#93), with made-up paths: the list, what goes to
 // the agent, the paste and chooser commands, « Citer ».
 import assert from "node:assert/strict";
-import { DRAFT_MAX, PASTE_KEPT, add, draftItem, isPasteName, mentionText, mentionsOf, pasteArgs, pasteName, pasteSweep, pasted, pickArgs, picked, plainOf, promptOf, quoteOf, remove } from "./attach.js";
+import { DRAFT_MAX, PASTE_KEPT, add, copyArgs, draftItem, isPasteName, mayHoldFiles, mentionText, mentionsOf, pasteArgs, pasteChoice, pasteName, pasteSweep, pasted, pickArgs, picked, plainOf, promptOf, quoteOf, remove } from "./attach.js";
 
 // A piece (the shape #81 shares): what shows, exactly what goes, its att-model kind for the viewer.
 assert.deepEqual(draftItem("/p/cap.png", "drop"), {
@@ -40,6 +40,31 @@ const pa = pasteArgs(out);
 assert.deepEqual([pa[0], pa[1], pa[2], pa.at(-1)], ["-l", "JavaScript", "-e", out]);
 assert.ok(pa[3].indexOf("NSURL") < pa[3].indexOf("NSPasteboardTypePNG"), "files before the image (a file copied carries its icon)");
 assert.ok(pa[3].includes("NSPasteboardTypeTIFF"), "TIFF converted");
+// Cmd+V with text (pasteKey): the files only, never the image (a text copied with one stays text).
+const fo = pasteArgs("", true);
+assert.deepEqual(fo.slice(-2), ["", "files"]);
+assert.equal(pasteArgs(out).length, 5, "the paste with no text: no « files »");
+assert.ok(pa[3].indexOf('argv[1] === "files"') > pa[3].indexOf("files.length") && pa[3].indexOf('argv[1] === "files"') < pa[3].indexOf("NSPasteboardTypePNG"), "after the files, before the image");
+// What a Cmd+V does: a Finder copy (6 files, their names as text, joined by \r: probed) joins the files,
+// never types the text; a text alone goes in, its line ends as the field's; nothing to read: as typed;
+// no text: the paste with no text.
+const finder = { files: ["/p/a b.pdf", "/p/c.csv"] };
+assert.deepEqual(pasteChoice("a b.pdf\rc.csv", finder), { files: ["/p/a b.pdf", "/p/c.csv"] });
+assert.deepEqual(pasteChoice("/p/a b.pdf/p/c.csv", finder), { files: ["/p/a b.pdf", "/p/c.csv"] }, "whatever the text says");
+assert.deepEqual(pasteChoice("un\r\ndeux\rtrois", { none: true }), { text: "un\ndeux\ntrois" });
+assert.deepEqual(pasteChoice("garde-le", { failed: true }), { text: "garde-le" }, "the read failing never loses a text");
+assert.deepEqual(pasteChoice("", { none: true }), { other: true });
+assert.deepEqual(pasteChoice(undefined, null), { other: true });
+// Only a text that may come with files waits for their read: gpui gives a copied file as its path.
+assert.ok(mayHoldFiles("/p/a b.pdf/p/c.csv") && mayHoldFiles("/tmp/build.log"));
+assert.ok(!mayHoldFiles("bonjour") && !mayHoldFiles("a b.pdf\rc.csv") && !mayHoldFiles(" /p/x") && !mayHoldFiles(undefined));
+// A piece copied as a file: its URL alone, on a private pasteboard here (never Kylian's), read back.
+assert.deepEqual(copyArgs("/p/x.pdf").slice(-1), ["/p/x.pdf"]);
+const board = `kt-chat-check-${process.pid}`;
+const wrote = Bun.spawnSync(["/usr/bin/osascript", ...copyArgs("/tmp/un fichier.pdf", board)]);
+const READ = 'function run(a) { ObjC.import("AppKit"); const pb = $.NSPasteboard.pasteboardWithName(a[0]); const u = pb.readObjectsForClassesOptions($([$.NSURL]), $({})); const p = []; for (let i = 0; u && !u.isNil() && i < u.count; i++) { const x = u.objectAtIndex(i); if (x.isFileURL) p.push(x.path.js); } pb.releaseGlobally; return JSON.stringify(p); }';
+const back = Bun.spawnSync(["/usr/bin/osascript", "-l", "JavaScript", "-e", READ, board]);
+assert.deepEqual([String(wrote.stdout).trim(), JSON.parse(String(back.stdout))], ["ok", ["/tmp/un fichier.pdf"]], "the file's URL, and only it");
 assert.equal(pasteName(1795000000000.7), "paste-1795000000000.png");
 assert.ok(isPasteName(pasteName(1795000000000)));
 assert.ok(!isPasteName("th-0a1b2c3d.png") && !isPasteName("paste-x.png") && !isPasteName("../paste-1795000000000.png"));

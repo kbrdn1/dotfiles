@@ -89,14 +89,40 @@ export function promptOf(text, pieces) {
   return body ? `${body}\n\n${refs.join(" ")}` : refs.join(" ");
 }
 
-// A paste the field found no text in (Textarea's « paste_other »), read with osascript -l JavaScript:
-// files copied in the Finder first (they carry their icon as an image too), else the clipboard's
-// image written as a PNG at argv[0] (PNG data as is, TIFF converted). It says "files" then one path
-// per line, "image", "none" or "failed".
+// A paste, read with osascript -l JavaScript: files copied in the Finder first (they carry their icon as
+// an image too), else the clipboard's image written as a PNG at argv[0] (PNG data as is, TIFF converted);
+// argv[1] "files": the files only (a Cmd+V with text: an image with it stays text's). It says "files"
+// then one path per line, "image", "none" or "failed".
 // i18n: tech
-export const PASTE_JXA = 'function run(argv) { ObjC.import("AppKit"); const pb = $.NSPasteboard.generalPasteboard; const urls = pb.readObjectsForClassesOptions($([$.NSURL]), $({})); const files = []; if (urls && !urls.isNil()) for (let i = 0; i < urls.count; i++) { const u = urls.objectAtIndex(i); if (u.isFileURL) files.push(u.path.js); } if (files.length) return ["files", ...files].join("\\n"); let d = pb.dataForType($.NSPasteboardTypePNG); if (d.isNil()) { const t = pb.dataForType($.NSPasteboardTypeTIFF); if (t.isNil()) return "none"; d = $.NSBitmapImageRep.imageRepWithData(t).representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({})); } return d.writeToFileAtomically(argv[0], true) ? "image" : "failed"; }';
-/** osascript's argv for a paste, an image written at `out` (an absolute path). */
-export const pasteArgs = (out) => ["-l", "JavaScript", "-e", PASTE_JXA, out];
+export const PASTE_JXA = 'function run(argv) { ObjC.import("AppKit"); const pb = $.NSPasteboard.generalPasteboard; const urls = pb.readObjectsForClassesOptions($([$.NSURL]), $({})); const files = []; if (urls && !urls.isNil()) for (let i = 0; i < urls.count; i++) { const u = urls.objectAtIndex(i); if (u.isFileURL) files.push(u.path.js); } if (files.length) return ["files", ...files].join("\\n"); if (argv[1] === "files") return "none"; let d = pb.dataForType($.NSPasteboardTypePNG); if (d.isNil()) { const t = pb.dataForType($.NSPasteboardTypeTIFF); if (t.isNil()) return "none"; d = $.NSBitmapImageRep.imageRepWithData(t).representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({})); } return d.writeToFileAtomically(argv[0], true) ? "image" : "failed"; }';
+/** osascript's argv for a paste, an image written at `out` (an absolute path); `filesOnly`: the files or nothing. */
+export const pasteArgs = (out, filesOnly = false) => ["-l", "JavaScript", "-e", PASTE_JXA, out, ...(filesOnly ? ["files"] : [])];
+/**
+ * What a Cmd+V in the field does (main.js pasteKey, ahead of the field's own paste): the clipboard's files
+ * join the message whatever text comes with them (a Finder copy carries their names, and the field would
+ * type their paths glued together); else its text goes in as typed (\r\n and \r as \n); no text at all,
+ * the paste with no text (paste(): files, else the image). The read failing never loses a text.
+ */
+export function pasteChoice(text, said) {
+  if (said?.files?.length) return { files: said.files };
+  if (text == null || text === "") return { other: true };
+  return { text: String(text).replace(/\r\n?/g, "\n") };
+}
+/**
+ * Whether a clipboard's text may come with files, so their read (60 to 120 ms of osascript, measured) is
+ * worth it: gpui gives a copied file as its absolute path (Kylian's capture, 2026-11-19: the field typed
+ * the Finder's files as their paths), so a text that doesn't start with « / » holds none and goes in at once.
+ */
+export const mayHoldFiles = (text) => String(text ?? "").startsWith("/");
+
+// A piece copied as a file (Cmd+V of it in the Finder copies the file, a chat or a mail attaches it, the
+// Chat's own field joins it): its file URL alone on the pasteboard, argv[0] its absolute path; argv[1] a
+// pasteboard's name, the general one when absent (the check writes a private one, never Kylian's). It says
+// "ok" or "failed".
+// i18n: tech
+export const COPY_JXA = 'function run(argv) { ObjC.import("AppKit"); const pb = argv[1] ? $.NSPasteboard.pasteboardWithName(argv[1]) : $.NSPasteboard.generalPasteboard; pb.clearContents; return pb.writeObjects($([$.NSURL.fileURLWithPath(argv[0])])) ? "ok" : "failed"; }';
+/** osascript's argv to copy the file at `path` (absolute) as itself. */
+export const copyArgs = (path, board = null) => ["-l", "JavaScript", "-e", COPY_JXA, path, ...(board ? [board] : [])];
 /** A pasted image's file name, and whether a name is one (the sweep touches nothing else). */
 export const pasteName = (now) => `paste-${Math.floor(now)}.png`;
 export const isPasteName = (name) => /^paste-\d{10,16}\.png$/.test(String(name));

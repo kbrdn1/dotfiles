@@ -68,7 +68,7 @@ import { attachmentsOf, photoSize, extOf, familyOf, tileOf, CARD, colsFor, gridW
 // #93: a turn's assets (its tools' images and files, the files its answer cites: assets.js), and the
 // field's attachments (a drop, a paste, a picked file) and « Citer » (attach.js).
 import { turnAssets } from "./assets.js";
-import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
+import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteChoice, mayHoldFiles, copyArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
 // kt-keys' categories.js (a byte-identical copy, with workflows.js): the pieces' one chip (#81 and #93).
 import { pieceChip, classify } from "./categories.js";
 // #81: the field's completions (/ # @): completer.js' menu over kt-keys' complete.js (byte-identical
@@ -385,12 +385,20 @@ export default class Chat extends View {
     // #93: the files waiting above the field (attach.js), a paste or a chooser running (a turn's assets are
     // worked out in rebuild(), on the turn).
     this.drafts = [];
-    this.pieceHover = null; // the field's card under the pointer: its × shows (pieceCard), apart from this.hover
+    this.pieceHover = null; // the card under the pointer (pieceCard): the field's shows its ×; apart from this.hover
+    this.hoverPiece = null; // and its piece, which Cmd+C copies as a file (key(), copyPiece)
     this.pasting = false;
     this.picking = false;
     // A paste the field found no text in: the Finder's files, else the clipboard's image (attach.js).
     this.composer.on("paste_other", (_e, cx) => this.paste(cx));
+    this.keyPasting = false;
     if (checking()) return;
+    // Cmd+V in the field is ours (pasteKey), ahead of the field's own: bound on the field's key context
+    // (Input) under the composer's card only (KtComposer, composerView), so no other field changes. Probed
+    // on 2026-11-19: this binding wins and the field pastes nothing. The keymap is the app's: a reload binds
+    // the same again, which changes nothing.
+    // i18n: tech
+    cx.bind_keys([{ keystroke: "cmd-v", action: "kt_chat_paste", context: "KtComposer > Input" }]);
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -765,6 +773,13 @@ export default class Chat extends View {
   // ---------- keys ----------
 
   key(e, cx) {
+    // #93: Cmd+C with the pointer on a piece's card copies the piece as a file (the field, when it has the
+    // keyboard, copies its text: this key never comes here then).
+    if (e?.keystroke === "cmd-c" && this.hoverPiece) {
+      this.copyPiece(cx, this.pieceHover, this.hoverPiece);
+      cx.stop_propagation();
+      return;
+    }
     if (!this.press(e, cx)) return; // not ours: ctrl-b, cmd-* and the app's keys go on
     cx.stop_propagation();
     cx.notify();
@@ -907,6 +922,7 @@ export default class Chat extends View {
       const went = new Set(atts.map((x) => x.id));
       this.drafts = this.drafts.filter((x) => !went.has(x.id));
       if (!this.drafts.length) this.open.delete("p:drafts"); // the next pieces start on two rows again
+      if (this.pieceHover?.startsWith("kc-pc-d:")) this.pieceHover = this.hoverPiece = null; // the field's cards went: no Cmd+C on one
       this.follow = true;
       this.jump = null;
       this.win = win.bottom(this.turns.length);
@@ -1177,6 +1193,72 @@ export default class Chat extends View {
     });
   }
 
+  /**
+   * Cmd+V in the field (kt_chat_paste, bound in init ahead of the field's own paste). The Finder's copied
+   * files join the message as a drop does, their names or paths never typed; any other text goes in as the
+   * field would put it (one undo step); no text at all goes paste()'s way (files, else the image). Only a
+   * text that may come with files (mayHoldFiles: gpui gives a copied file as its path) waits for the read
+   * of the clipboard's files (osascript, 60 to 120 ms measured); any other text goes in at once. The
+   * field's own paste stays for its menu (Edit > Paste: a Finder copy's paths typed there, as before).
+   */
+  pasteKey(cx) {
+    let text = null;
+    let unread = false; // the host refusing the read: the files are still asked for, and nothing is typed
+    try {
+      text = cx.read_from_clipboard(); // now: a task's cx is another, this one goes at the first await
+    } catch {
+      unread = true;
+    }
+    if (!unread && pasteChoice(text, null).other) return this.paste(cx);
+    const put = (cx, c) => {
+      if (c.files) return this.attach(cx, c.files, "paste");
+      if (unread) this.sendErr = { why: "paste" };
+      else {
+        this.composer.replace(c.text);
+        this.draft = this.composer.value();
+      }
+      cx.notify();
+    };
+    if (!unread && !mayHoldFiles(text)) return put(cx, pasteChoice(text, null));
+    if (checking() || this.keyPasting) return;
+    this.keyPasting = true;
+    cx.spawn(async (cx) => {
+      const said = pasted(await exec("/usr/bin/osascript", pasteArgs("", true), { timeout: 15000 }).catch((e) => e));
+      this.keyPasting = false;
+      put(cx, pasteChoice(unread ? null : text, said));
+    });
+  }
+
+  /**
+   * Cmd+C on a card under the pointer (key(): the keyboard on the Chat, not in the field, where Cmd+C copies
+   * its text): the piece as a file on the clipboard (COPY_JXA, its URL alone), so the Finder pastes the
+   * file, a chat or a mail attaches it, the field joins it. An image the transcript holds without a file is
+   * decoded first (chat-att --full, into the bounded cache: one pasted long after may be gone). The card
+   * says « Copié » for a moment (copy()'s one-shot timer). A remote agent's file isn't here: nothing.
+   */
+  copyPiece(cx, id, a) {
+    if (checking()) return;
+    if (!this.localFiles()) return notify({ title: tr("pieces.copyFailed"), body: a.name, level: "warning", timeout: 4000 });
+    cx.spawn(async (cx) => {
+      let path = a.abs?.startsWith("/") ? a.abs : null;
+      if (!path && a.ref) {
+        const argv = this.attArgv(a, true);
+        const r = argv ? await exec(argv[0], argv.slice(1), { timeout: 30000 }).catch(() => null) : null;
+        try { const j = JSON.parse(r?.stdout ?? ""); if (j?.full) path = `${appHome()}/${ATT_DIR}/${j.full}`; } catch { /* said below */ }
+      }
+      const r = path ? await exec("/usr/bin/osascript", copyArgs(path), { timeout: 15000 }).catch(() => null) : null;
+      if (r?.code === 0 && r.stdout.trim() === "ok") {
+        this.copied = id;
+        cx.timer.after(1500, (cx) => {
+          if (this.copied !== id) return;
+          this.copied = null;
+          cx.notify();
+        });
+      } else notify({ title: tr("pieces.copyFailed"), body: a.name, level: "warning", timeout: 4000 });
+      cx.notify();
+    });
+  }
+
   /** The system's file chooser (osascript), in a task of its own: it waits for Kylian, nothing waits on it. */
   pick(cx) {
     if (checking() || this.picking) return;
@@ -1213,7 +1295,10 @@ export default class Chat extends View {
     const asAtt = (x) => ({ id: x.id, key: x.path, abs: x.path, name: x.label, ...x.doc }); // the viewer's and the thumbnail's
     const atts = this.drafts.map(asAtt);
     const out = (p) => `kc-dr~${p.id}`;
-    const x = (p) => this.iconBtn(t, `kc-dx-${p.id}`, I("x"), tr("attach.remove"), (cx) => this.goOut(cx, out(p), () => { this.drafts = dropDraft(this.drafts, p.id); }), 18);
+    const x = (p) => this.iconBtn(t, `kc-dx-${p.id}`, I("x"), tr("attach.remove"), (cx) => this.goOut(cx, out(p), () => {
+      this.drafts = dropDraft(this.drafts, p.id);
+      if (this.pieceHover === `kc-pc-${p.id}`) this.pieceHover = this.hoverPiece = null; // gone under the pointer: no Cmd+C on it
+    }), 18);
     // enter() gives the motion's id to a box around the card: the card keeps its own id and handlers.
     const pop = (p, el) => div().flex_none().overflow_hidden().child(this.out(enter(this.m, div().child(el), `kc-dr-${p.id}`, { dy: DY.row }), out(p)));
     const w = Math.min(this.width || COLUMN, COLUMN) - 42; // the card's inside: composerView's px 10 and border 1, this row's px 10
@@ -1266,19 +1351,26 @@ export default class Chat extends View {
           .child(dir || !ext ? svg(I(dir ? "folder" : "file")).size(16).text_color(ink(t, 0.85))
             : div().text_size(9.5).font_bold().text_color(ink(t, 0.9)).child(ext.toUpperCase().slice(0, 5)))));
     const hov = Boolean(x) && this.pieceHover === id;
+    const said = this.copied === id ? tr("pieces.copied") : meta;
     return h_flex().id(id).relative().w(CARD.w).h(CARD.h).flex_none().gap(10).pl(5).pr(10).items_center().rounded(10)
       .bg(ink(t, 0.06)).border(1).border_color(ink(t, 0.08)).cursor_pointer().hover((s) => s.bg(ink(t, 0.1)))
+      .tooltip(tr("pieces.tip"))
       .on_click((_e, cx) => this.openAtts(cx, atts, i))
-      .when(Boolean(x), (el) => el.on_hover((on, cx) => {
+      // The card under the pointer: Cmd+C copies its piece (key(), copyPiece); the field's shows its ×, so
+      // only that one is drawn again when the pointer comes or goes.
+      .on_hover((on, cx) => {
         const next = on ? id : this.pieceHover === id ? null : this.pieceHover;
-        if (next !== this.pieceHover) { this.pieceHover = next; cx.notify(); }
-      }))
+        if (next === this.pieceHover) return;
+        this.pieceHover = next;
+        this.hoverPiece = next ? a : null;
+        if (x) cx.notify();
+      })
       .when(drag && Boolean(a.abs?.startsWith("/")), (el) => el.drag_paths([a.abs]))
       .child(square)
       .child(v_flex().flex_1().min_w(0)
         .child(div().min_w(0).overflow_hidden().whitespace_nowrap().text_ellipsis_middle().text_size(12.5).line_height("16px").text_color(ink(t, 1))
           .child(isPasteName(a.name) ? tr("att.pasted") : a.name))
-        .when(Boolean(meta), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("14px").text_color(ink(t, 0.5)).child(meta))))
+        .when(Boolean(said), (el) => el.child(div().min_w(0).truncate().text_size(11).line_height("14px").text_color(ink(t, 0.5)).child(said))))
       .when(hov, (el) => el.child(div().absolute().top(5).right(5).rounded(6).bg(alpha(t.background, "cc")).child(x)));
   }
 
@@ -3444,6 +3536,8 @@ export default class Chat extends View {
     if (fx && !waves.length && !railEl) this.wave = null;
     const card = v_flex().id("kc-card").w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
       .bg(dark ? ink(t, 0.03) : t.background).when(!dark, (el) => el.shadow_sm())
+      // Cmd+V in the field comes here first (init's binding, « KtComposer > Input »): pasteKey.
+      .key_context("KtComposer").on_action("kt_chat_paste", (_e, cx) => this.pasteKey(cx))
       .when(Boolean(drafts), (el) => el.child(drafts))
       .child(div().id("kc-field").relative().overflow_hidden().px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
         .children(waves)
