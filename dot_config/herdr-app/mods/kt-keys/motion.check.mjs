@@ -343,4 +343,26 @@ assert.equal(M.collapse(M.frame(F, false), "fold", false, el()), null, "an eleme
 assert.equal(M.collapse(M.frame(F, false), "fold2", false, build), null, "never measured: nothing to fold");
 assert.equal(M.collapse(M.frame(M.motionState(), true), "fold", false, build), null, "reduced: shut at once");
 
+// sweep(): at `from`, opaque; its first layout sends it to `to` and fades it (left after `delay`,
+// opacity after `fadeDelay`, ease-in); gone at the first render past its life, without a timer.
+const W = M.motionState();
+let w = M.sweep(M.frame(W, false), "wave-1", el(), { from: -24, to: 300, ms: 240, delay: 40, fade: 120, fadeDelay: 80 });
+assert.deepEqual([w.props.left, w.props.opacity, w.props.absolute], [[-24], [1], []]);
+assert.deepEqual(w.tr.sort(), ["left", "opacity"]);
+assert.deepEqual(w.trp.left, { duration: 240, delay: 40, easing: "ease-out" });
+assert.deepEqual(w.trp.opacity, { duration: 120, delay: 80, easing: "ease-in" });
+const n0 = notified;
+w.on.on_size_change({ width: 24, height: 40 }, cx);
+w.on.on_size_change({ width: 24, height: 40 }, cx);
+assert.equal(notified, n0 + 1, "its first layout redraws, once");
+w = M.sweep(M.frame(W, false), "wave-1", el(), { from: -24, to: 300, ms: 240, delay: 40, fade: 120, fadeDelay: 80 });
+assert.deepEqual([w.props.left, w.props.opacity], [[300], [0]], "sent across, fading");
+W.st.set("wave-1", Date.now() - 400); // its life (40 + 240 + 40) is over
+assert.equal(M.sweep(M.frame(W, false), "wave-1", el(), { from: -24, to: 300, ms: 240, delay: 40 }), null, "gone, no timer");
+assert.notEqual(M.sweep(M.frame(W, false), "wave-2", el(), { from: -24, to: 300 }), null, "a new wave, a new id");
+M.frame(W, false); M.frame(W, false);
+assert.equal(W.st.has("wave-1"), false, "frame() forgets it once it isn't drawn");
+assert.equal(M.sweep(M.frame(M.motionState(), true), "wave-1", el(), { from: -24, to: 300 }), null, "reduced: nothing drawn");
+assert.deepEqual(M.sweep(M.frame(M.motionState(), false), "rail", el(), { from: 8, to: 8, ms: 0, fade: 180, fadeDelay: 300 }).props.left, [8], "from === to: it only fades");
+
 console.log("motion.js: ok");

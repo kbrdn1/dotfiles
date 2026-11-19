@@ -18,6 +18,7 @@
 //           ink(m, div().id("seg-ink")…)                 // an indicator gliding to its new left/top/width/height
 //           fade(m, div().id("row-hover")…, hovered)     // a layer coming and going: hover fill, focus ring
 //           pulse(m, el, loading)                         // a skeleton breathing, while it loads only
+//           sweep(m, "kc-wave-" + n, layer, { from, to }) // a one-shot layer crossing (left) and fading out
 
 import { div } from "gpui-kit";
 
@@ -271,6 +272,28 @@ export function sharpen(m, id, make, { dy = 0, ms = MS.open } = {}) {
     all.set(id, Date.now());
     cx.notify();
   });
+}
+
+// A one-shot layer (#81: the dither wave in kt-chat's field, the workflow's rail): drawn at `from` and
+// opaque, its first layout (the enter() cue, one more render) sends it to `to` (left, `ms` after
+// `delay`) while it fades out (`fade` after `fadeDelay`, ease-in). It is gone at the first render past
+// its life, like sharpen()'s copies: no timer. A new wave is a new id. `el` is absolute in a relative
+// parent that clips, with no id of its own; from === to only fades. Reduced motion: null, nothing drawn.
+export function sweep(m, id, el, { from = 0, to = 0, ms = MS.panel, delay = 0, fade = MS.open, fadeDelay = 0 } = {}) {
+  if (m.reduced) return null;
+  const all = (m.st ??= new Map());
+  m.used.set(id, m.gen);
+  const at = all.get(id);
+  if (at !== undefined && Date.now() - at > Math.max(delay + ms, fadeDelay + fade) + 40) return null;
+  const on = m.shown.has(id);
+  return el.id(id).absolute().left(on ? to : from).opacity(on ? 0 : 1)
+    .transition("left", policy(ms, delay)).transition("opacity", policy(fade, fadeDelay, "ease-in"))
+    .on_size_change((_size, cx) => {
+      if (m.shown.has(id)) return;
+      m.shown.add(id);
+      all.set(id, Date.now());
+      cx.notify();
+    });
 }
 
 // An indicator gliding to its new place (SegmentInk.vue, .ink): it lands at once the first time, then
