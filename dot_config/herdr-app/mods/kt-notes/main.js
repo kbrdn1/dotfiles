@@ -301,7 +301,7 @@ export default class Notes extends View {
     const logo = logoOf(e);
     if (logo) return div().size(size).flex_none().rounded(r).overflow_hidden().child(image(logo).size(size));
     return projTile(this.tiles, { color: this.colorOf(t, e), size,
-      letter: div().text_size(Math.round(size * 0.55)).font_semibold().text_color(LETTER).child([...(e?.name ?? name ?? "?")][0].toUpperCase()) });
+      letter: div().text_size(Math.round(size * 0.55)).font_semibold().text_color(LETTER).child([...(e?.name || name || "?")][0].toUpperCase()) }); // || : an empty name too
   }
 
   // ---------- rows ----------
