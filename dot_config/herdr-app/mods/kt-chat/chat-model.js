@@ -409,6 +409,18 @@ export function fold(list) {
   return { start, end };
 }
 
+/**
+ * The fold as a tree (#90): the items that hang under its « … a travaillé » (opened, all of them;
+ * closed, only the sub-agents, which Monocode keeps), the last of them (its branch ends the trunk), and
+ * whether the header starts a trunk (it has children shown). null when nothing folds.
+ */
+export function foldTree(list, f, opened) {
+  if (!f) return null;
+  const kids = [];
+  for (let n = f.start; n <= f.end; n++) if (opened || list[n]?.type === "subagents") kids.push(n);
+  return { kids, last: kids.length ? kids[kids.length - 1] : -1, stem: kids.length > 0 };
+}
+
 /** Every step inside a fold (sub-agents keep their own rows, outside the count). */
 export function foldedSteps(list, f) {
   return list.slice(f.start, f.end + 1).flatMap((it) => (it.type === "activity" ? it.steps : it.type === "block" ? [it.block] : []));

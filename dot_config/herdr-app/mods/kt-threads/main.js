@@ -113,21 +113,9 @@ const AGENT_PAGE = { workflow: ["workflow", "Workflow"], skills: ["sparkles", "S
   automation: ["refresh-cw", null], market: ["store", "Marketplaces"] };
 const pageName = (p) => AGENT_PAGE[p][1] ?? tr(p);
 
-// One branch of a tree (kbrdn.dev's Parcours), the sub-agents' and the navigation's Agents group's: the
-// column drawn before a row's content, 2x wide. Its piece of trunk runs over the row's whole height `h`
-// (to the bend only, on the `last`), and a ╰ bends off it 8 px above the middle, rounded, to the column's
-// right edge. `color`: the bend and the piece leading to it; `rest`: the trunk going on below. `reach`:
-// px the pieces reach past the row's edges, so they still meet across bordered rows.
-function twig(t, { h, x, last, color, rest, reach = 0 }) {
-  const mid = h / 2;
-  return div().w(2 * x).h_full().flex_none().relative()
-    .child(div().absolute().top(-reach).left(x).h(mid - 8 + reach).border_l(1).border_color(color))
-    .when(!last, (el) => el.child(div().absolute().top(mid - 4).bottom(-reach).left(x).border_l(1).border_color(rest)))
-    .child(div().absolute().top(mid - 8).left(x).w(x).h(9).border_l(1).border_b(1).rounded_bl(8).border_color(color));
-}
-// The tree's lines at rest, Parcours' --control-border (neutral-300 light, white at .14 dark): the
-// foreground made translucent, so they read at a glance without shouting, glass mode included.
-const treeLine = (t) => alpha(t.foreground, settings().dark ? "38" : "4d");
+// One branch of a tree (kbrdn.dev's Parcours), the sub-agents' and the navigation's Agents group's, and
+// the tree's lines at rest: tree.js, the reference of the module kt-chat shares (#90, kt-mods SHARED).
+import { twig, treeLine } from "./tree.js";
 
 const MONO = "Monaspace Krypton";
 // PR state -> icon and theme color name.

@@ -3,7 +3,7 @@
 // turns, items, fold, tally, queue, ingest) on chat-fixture.jsonl, an invented session.
 import assert from "node:assert/strict";
 import { index, startsTurn, strip, normalize } from "./chat-index.ts";
-import { build, classify, fold, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
+import { build, classify, fold, foldTree, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
 
 const all = new Uint8Array(await Bun.file(new URL("./chat-fixture.jsonl", import.meta.url)).arrayBuffer());
 const run = (from = 0, to = all.length, opts = {}) => index(all.subarray(from, to), { from, size: all.length, path: "/f.jsonl", home: "/w", ...opts });
@@ -205,6 +205,15 @@ assert.deepEqual(fold([p("q"), a("1"), p("r"), a("2"), p("ans")]), { start: 0, e
 assert.deepEqual(fold([a("1"), n("e"), a("2"), p("ans")]), { start: 2, end: 2 });
 assert.equal(fold([a("1"), a("2")]), null, "no answer yet, nothing folds");
 assert.equal(fold([p("ans")]), null);
+// foldTree() (#90): who hangs under « … a travaillé ».
+const sa = (id) => ({ type: "subagents", id, runs: [] });
+const work = [p("q"), a("1"), sa("s"), p("r"), a("2"), p("ans")];
+const wf = fold(work);
+assert.deepEqual(wf, { start: 0, end: 4 });
+assert.deepEqual(foldTree(work, wf, true), { kids: [0, 1, 2, 3, 4], last: 4, stem: true }, "opened: every item of the fold, the last ends the trunk");
+assert.deepEqual(foldTree(work, wf, false), { kids: [2], last: 2, stem: true }, "closed: only the sub-agents it keeps, which are then the last");
+assert.deepEqual(foldTree([a("1"), p("ans")], fold([a("1"), p("ans")]), false), { kids: [], last: -1, stem: false }, "closed, no sub-agent: the header alone, no trunk");
+assert.equal(foldTree([p("ans")], null, true), null, "nothing folds");
 // items(): empty prose is dropped; a failed sub-agent keeps its row even settled.
 const failed = { role: "tool", id: "x", kind: "agent", state: "error" };
 assert.deepEqual(items([{ role: "prose", id: "e", text: "  " }, failed]).map((i) => i.type), ["subagents"]);

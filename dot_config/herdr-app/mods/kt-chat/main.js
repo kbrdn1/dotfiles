@@ -54,7 +54,7 @@ import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
 import { view } from "./view.js";
-import { ingest, prepend, build, tally, foldedSteps, trim, pendingQueue } from "./chat-model.js";
+import { ingest, prepend, build, tally, foldedSteps, foldTree, trim, pendingQueue } from "./chat-model.js";
 import {
   pickTarget, tallyText, childOf, chatShown, liveStep,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
@@ -69,7 +69,7 @@ import { motionState, frame, enter, collapse, MS } from "./motion.js";
 // drawn as the sidebar draws its sub-agents: kt-threads' branches (tree.js) and companions
 // (companion-logo.js, a byte-identical copy).
 import { tasksLedge, agentsLedge, shownAgents, agentAge, isAlive, startOf, endOf, FADE, say as sayTask, runOf, watching } from "./shelf.js";
-import { twig, treeLine } from "./tree.js";
+import { twig, treeLine, hang, stem } from "./tree.js";
 import { companion, variantFor } from "./companion-logo.js";
 // The context as the composer's status line says it (kt-composer): kt-threads' ring and its threshold
 // colors (ring.js, levels.js), the percent rolling (roll.js); byte-identical copies.
@@ -1288,22 +1288,30 @@ export default class Chat extends View {
       .text_size(12).text_color(ink(t, 0.45)).hover((s) => s.text_color(ink(t, 0.8)))
       .on_click((_e, cx) => { this.shownSteps.set(item.id, to); cx.notify(); })
       .child(svg(I(icon)).size(12)).child(text);
-    const rows = v_flex().min_w(0)
-      .when(hidden > 0, (el) => el.child(more(`kc-more-${item.id}`, "chevron-up", tr("steps.more", { n: hidden }), n + MORE)))
-      .when(n > STEPS, (el) => el.child(more(`kc-less-${item.id}`, "chevron-down", tr("steps.less"), STEPS)))
-      .children(steps.map((b) => this.step(t, b)));
-    if (!c.order.length && !c.notes) return rows; // thinking only
+    // Its rows: [element, its first line's height (the bend at its middle), its branch's color].
+    const kids = [
+      ...(hidden > 0 ? [[more(`kc-more-${item.id}`, "chevron-up", tr("steps.more", { n: hidden }), n + MORE), 20, null]] : []),
+      ...(n > STEPS ? [[more(`kc-less-${item.id}`, "chevron-down", tr("steps.less"), STEPS), 20, null]] : []),
+      ...steps.map((b) => [this.step(t, b), 28, this.branchColor(t, b.state)]),
+    ];
+    if (!c.order.length && !c.notes) return v_flex().min_w(0).children(kids.map(([el]) => el)); // thinking only: its rows, on the fold's branch
     const running = live && item.steps.some((b) => b.state === "running");
     const words = tallyText(c, tr);
+    const rest = treeLine(t);
+    // #90: its steps on kt-threads' branches (tree.js), the trunk from under its tile (18 in a 28 px row: 23 down).
     return v_flex().min_w(0)
-      .child(h_flex().py(4).gap(8).items_center().min_w(0)
+      .child(h_flex().relative().py(4).gap(8).items_center().min_w(0)
         .child(this.tile(t, TILE[c.kind] ?? null, TILE_ICON[c.kind] ?? OWN("wrench"), running))
         .child(div().flex_1().min_w(0).truncate().text_size(14).line_height("20px").text_color(ink(t, 0.5))
           .when(running, (el) => el.loop("opacity", { from: 0.55, to: 1, period: 1600 }))
-          .child(words || " ")))
-      .child(div().relative().pl(30).min_w(0)
-        .child(div().absolute().left(10).top(0).bottom(6).w(1).bg(ink(t, 0.14)))
-        .child(rows));
+          .child(words || " "))
+        .child(stem(rest, { top: 23 })))
+      .children(kids.map(([el, h, color], k) => hang(t, el, { h, last: k === kids.length - 1, color, rest })));
+  }
+
+  /** A branch's color by its step's state (kt-threads' sub-agents): a running one's, a failed one's, else at rest (null). */
+  branchColor(t, state) {
+    return state === "running" ? alpha(t.working, "99") : state === "error" ? alpha(t.ansi1, "80") : null;
   }
 
   // transcript/tasks.rs:358-549: a sub-agent's row, py 4 px 6, radius 6, a 0.08 ground when hovered or
@@ -1509,12 +1517,15 @@ export default class Chat extends View {
 
   // transcript.rs:4891-5005: « Opus 5.5 a travaillé 3m 12s », 14/20 at ink 0.5 (0.8 hovered), pt 12,
   // pb 4, gap 8, after the provider's tile; hovered or open, the tile shows the chevron.
-  workedLine(t, turn, opened) {
+  workedLine(t, turn, opened, kids = false) {
     const hov = this.hover === `w:${turn.id}`;
     const model = modelName(turn.model);
     const d = turn.ms ? workedFor(turn.ms) : null;
     const text = d ? (model ? tr("worked", { model, d }) : tr("workedNoModel", { d })) : model ? tr("workedPlain", { model }) : tr("workedNone");
-    return h_flex().id(`kc-fold-${turn.id}`).pt(12).pb(4).gap(8).items_center().min_w(0).cursor_pointer()
+    // #90: with children shown (opened, or its sub-agents kept), the trunk leaves from under its tile
+    // (18 in its 20 px line under pt 12: 31 down).
+    return h_flex().id(`kc-fold-${turn.id}`).relative().pt(12).pb(4).gap(8).items_center().min_w(0).cursor_pointer()
+      .when(kids, (el) => el.child(stem(treeLine(t), { top: 31 })))
       .tooltip(turn.tally ? tallyText(turn.tally, tr) : text)
       .on_hover((h, cx) => this.setHover(cx, `w:${turn.id}`, h))
       .on_click((_e, cx) => { this.toggle(`f:${turn.id}`); cx.notify(); })
@@ -1694,13 +1705,26 @@ export default class Chat extends View {
     const f = turn.fold;
     const opened = f && this.open.has(`f:${turn.id}`);
     let top = 12; // the first prose block of the message
+    // #90: the fold as a tree (chat-model.js foldTree): its items hang under the header on its branches
+    // (tree.js hang), the bend at their first line's middle (a step's or a tile's row 28, a prose block's
+    // first line under its margin); inside a closed fold only the sub-agents (Monocode pins them outside).
+    const tree = foldTree(turn.items, f, opened);
+    const rest = treeLine(t);
+    const kids = [];
     turn.items.forEach((it, n) => {
-      if (f && n === f.start) out.push(this.workedLine(t, turn, opened));
-      // Inside a closed fold only the sub-agents keep their rows (Monocode pins them outside it).
-      if (f && !opened && n >= f.start && n <= f.end && it.type !== "subagents") return;
-      const el = this.item(t, cx, it, { live: turn.live, top: f && n === f.end + 1 ? 4 : top });
-      if (it.type === "block" && it.block.role === "prose") top = 16;
-      if (el) out.push(el);
+      if (f && n === f.start) out.push(this.workedLine(t, turn, opened, tree.stem));
+      const inFold = Boolean(f) && n >= f.start && n <= f.end;
+      if (!inFold || tree.kids.includes(n)) {
+        const at = f && n === f.end + 1 ? 4 : top;
+        const el = this.item(t, cx, it, { live: turn.live, top: at });
+        const prose = it.type === "block" && it.block.role === "prose";
+        if (prose) top = 16;
+        if (el && inFold) {
+          const running = it.type === "activity" && turn.live && it.steps.some((b) => b.state === "running");
+          kids.push(hang(t, el, { h: prose ? 2 * (at + 12) : 28, last: n === tree.last, color: running ? this.branchColor(t, "running") : null, rest }));
+        } else if (el) out.push(el);
+      }
+      if (f && n === f.end && kids.length) out.push(v_flex().min_w(0).children(kids));
     });
     if (!turn.live && answerOf(turn)) out.push(this.actions(t, turn));
     const here = keyed && i === (this.cur < 0 ? this.turns.length - 1 : this.cur);
