@@ -17,6 +17,7 @@
 //                              keys: kt.inbox.open, kt.history.open, kt.files.open, kt.gwm.open)
 //   githubUrl(r)               its page on GitHub (an issue or a PR, a commit), else null
 //   refsState() / ensure(…)    the facts per cwd, asked in ONE task per render for what's missing
+//   chipsOf(st, key, …)        a finished answer's chips, memoized per turn and facts' version
 
 export const SCHEME = "herdr-ref:";
 const SHA = /^[0-9a-f]{7,40}$/;
@@ -29,8 +30,9 @@ export function githubRepo(url) {
   const m = String(url ?? "").trim().match(/^(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?github\.com(?::\d+)?[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i);
   return m ? `${m[1]}/${m[2]}` : null;
 }
-/** Home's guard (kt-hub recent.js): a GitHub repo, the only kind an issue number means something in. */
-export const onGitHub = (repo) => /^[\w.-]+\/[\w.-]+$/.test(String(repo ?? ""));
+/** Home's guard (kt-hub recent.js): a GitHub repo, the only kind an issue number means something in. A
+ *  name of dots only (`.`, `..`) isn't one: it would walk `gh api repos/…` or a github.com link up. */
+export const onGitHub = (repo) => /^[\w.-]+\/[\w.-]+$/.test(String(repo ?? "")) && !String(repo).split("/").some((s) => /^\.+$/.test(s));
 
 // ---------- scan ----------
 
@@ -159,7 +161,7 @@ export function parseRef(url) {
   try { v = decodeURIComponent(m[2]); } catch { return null; }
   if (m[1] === "issue") {
     const i = v.match(/^([\w.-]+\/[\w.-]+)#(\d+)$/);
-    return i ? { kind: "issue", repo: i[1], number: Number(i[2]) } : null;
+    return i && onGitHub(i[1]) ? { kind: "issue", repo: i[1], number: Number(i[2]) } : null;
   }
   if (m[1] === "commit") {
     if (!SHA.test(v)) return null;
@@ -221,7 +223,7 @@ export const kindFrom = (stdout) => (/^\s*(null)?\s*$/.test(String(stdout ?? "")
 
 // ---------- the facts, asked once per render ----------
 
-export const refsState = () => ({ facts: new Map(), queue: [], busy: false, v: 0 });
+export const refsState = () => ({ facts: new Map(), queue: [], busy: false, v: 0, chips: new Map() });
 
 const blank = (cwd) => ({ cwd, root: undefined, home: null, slug: null, shas: {}, branches: null, worktrees: null, files: new Set(), asked: new Set() });
 
@@ -311,4 +313,28 @@ export function refsOf(st, cwd, text, home) {
   const cands = scan(text);
   const f = cwd ? st.facts.get(cwd) ?? { ...blank(cwd), home } : null;
   return [cands, cands.map((c) => resolve(c, f && f.root !== undefined ? f : null))];
+}
+
+/**
+ * A finished answer's chips: its references once each, in order, `max` at most, a file already among
+ * `assets` (#93's, by `abs`) left out. Memoized per `key` (the turn) while its text, assets, cwd and the
+ * facts' version are the same: a render reads them, it doesn't rescan the answer. On a miss, `ask(cands)`
+ * (ensure) for what the facts lack. { cands, list }.
+ */
+export function chipsOf(st, key, cwd, text, assets, home, max, ask) {
+  const hit = st.chips.get(key);
+  if (hit && hit.v === st.v && hit.cwd === cwd && hit.text === text && hit.assets === assets) return hit;
+  const [cands, rs] = refsOf(st, cwd, text, home);
+  if (cands.length) ask?.(cands);
+  const abs = new Set((assets ?? []).map((a) => a.abs).filter(Boolean));
+  const seen = new Set(), list = [];
+  for (const r of rs) {
+    if (!r || list.length >= max || seen.has(refKey(r)) || (r.kind === "file" && abs.has(r.path))) continue;
+    seen.add(refKey(r));
+    list.push(r);
+  }
+  const out = { v: st.v, cwd, text, assets, cands, list };
+  if (st.chips.size > 400) st.chips.delete(st.chips.keys().next().value);
+  st.chips.set(key, out);
+  return out;
 }

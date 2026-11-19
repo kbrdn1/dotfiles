@@ -64,7 +64,7 @@ import {
 } from "./chat-view.js";
 import { docOf, mdState, colorsOf, langFor, target as linkTarget } from "./markdown.js";
 // #82: the references in the transcript (refs.js), opened in Herdr; a panel tab shown first (panel.js).
-import { refsState, ensure as ensureRefs, refsOf, linkify, parseRef, plan as refPlan, githubUrl, labelOf, refKey, kindFrom } from "./refs.js";
+import { refsState, ensure as ensureRefs, refsOf, linkify, parseRef, plan as refPlan, githubUrl, labelOf, chipsOf, kindFrom } from "./refs.js";
 import { showColumn } from "./panel.js";
 import { attachmentsOf, photoSize } from "./att-model.js";
 // #93: a turn's assets (its tools' images and files, the files its answer cites: assets.js), and the
@@ -2438,22 +2438,15 @@ export default class Chat extends View {
   // #82: under an answer, a chip per reference it names (once each, in order, MAX_REFS at most): its
   // kind's icon and its label, a click to its Herdr view, and GitHub's page as a second button when it
   // has one (an issue or a PR, a commit). Its own row, between #93's assets and the answer's actions:
-  // nothing overlaps; a file already among the assets (the same path) isn't a second chip. Fades in once
-  // when its first chip is known (motion.js enter).
+  // nothing overlaps; a file already among the assets (the same path) isn't a second chip. Read from
+  // refs.js chipsOf, memoized per turn and facts' version: a render doesn't rescan the answer. Fades in
+  // once when its first chip is known (motion.js enter).
   refChips(t, cx, turn) {
     const cwd = this.refsCwd();
     const text = answerOf(turn);
     if (!cwd || !text) return null;
-    const [cands, rs] = refsOf(this.refs, cwd, text, home());
-    if (cands.length) ensureRefs(this.refs, cx, cwd, cands, { exec, checking, home });
-    const assets = new Set((turn.assets ?? []).map((a) => a.abs).filter(Boolean));
-    const seen = new Set();
-    const list = [];
-    for (const r of rs) {
-      if (!r || seen.has(refKey(r)) || list.length >= MAX_REFS || (r.kind === "file" && assets.has(r.path))) continue;
-      seen.add(refKey(r));
-      list.push(r);
-    }
+    const { list } = chipsOf(this.refs, turn.id, cwd, text, turn.assets, home(), MAX_REFS,
+      (cands) => ensureRefs(this.refs, cx, cwd, cands, { exec, checking, home }));
     if (!list.length) return null;
     const chip = (r, i) => {
       const gh = githubUrl(r);

@@ -4,7 +4,7 @@
 // and back, where a click goes, GitHub's page, and the facts asked in one task per render (fake exec).
 import assert from "node:assert/strict";
 import { scan, resolve, linkify, refUrl, parseRef, plan, githubUrl, githubRepo, onGitHub, labelOf, kindFrom, absOf,
-  refsState, ensure, refsOf, factsFor, missing } from "./refs.js";
+  refsState, ensure, refsOf, factsFor, missing, chipsOf } from "./refs.js";
 
 const kinds = (text) => scan(text).map((c) => [c.raw, c.kinds.map((k) => k.kind).join("|")]);
 
@@ -107,6 +107,11 @@ assert.deepEqual([labelOf({ kind: "file", path: "/r/m/a.js", line: 3 }), labelOf
 assert.equal(githubRepo("git@github.com:kbrdn1/dotfiles.git"), "kbrdn1/dotfiles");
 assert.equal(githubRepo("https://gitlab.com/a/b"), null);
 assert.ok(onGitHub("a/b") && !onGitHub("kalima"));
+// A name of dots only isn't a repo: no `gh api repos/../..`, no github.com/../ link (written, linked or by URL).
+for (const r of ["x/..", "../..", "./x", "x/."]) assert.equal(onGitHub(r), false, `${r}: dots only`);
+assert.ok(onGitHub("o/.github") && onGitHub("o/socket.io") && onGitHub("o.x/r"), "a dot inside a name is one");
+assert.equal(parseRef(`herdr-ref:issue/${encodeURIComponent("x/..#3")}`), null, "a link written by hand");
+assert.deepEqual(res("x/..#3, ../..#4 et https://github.com/x/../issues/5"), [null, null, null], "written in the prose: text");
 
 // ---------- the facts: one task per render, one call a kind ----------
 const calls = [];
@@ -156,5 +161,19 @@ assert.deepEqual(refsOf(st2, "/tmp/x", "#82 kbrdn1/dotfiles#3 a860227", H)[1].ma
 tasks.length = 0;
 ensure(refsState(), cx, R, cands, { ...io, checking: () => true });
 assert.equal(tasks.length, 0, "nothing while checking");
+
+// ---------- the chips under an answer: memoized per turn and facts' version ----------
+let asks = 0;
+const ask = () => asks++;
+const chipText = "#82, a860227, `dev`, `README.md`, #82 et 1234abc";
+const turnAssets = [{ abs: `${R}/README.md` }];
+const c1 = chipsOf(st, "turn-1", R, chipText, turnAssets, H, 8, ask);
+assert.deepEqual(c1.list.map((r) => r.kind), ["issue", "commit", "branch"], "once each; a file among #93's assets isn't a chip");
+assert.equal(chipsOf(st, "turn-1", R, chipText, turnAssets, H, 8, ask), c1, "the next render reads them: no rescan");
+assert.equal(asks, 1, "the facts asked on the miss only");
+st.v++;
+assert.notEqual(chipsOf(st, "turn-1", R, chipText, turnAssets, H, 8, ask), c1, "new facts: read again");
+assert.equal(asks, 2);
+assert.deepEqual(chipsOf(st, "turn-2", R, chipText, null, H, 2, ask).list.map((r) => r.kind), ["issue", "commit"], "max at most");
 
 console.log("refs: ok");
