@@ -53,6 +53,8 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle } from "gpui-base";
 import { exec, theme, spaces, panes, focused, run, layout, openOverlay, notify, nextCommand, props, shared, setShared, home, knownAgents, watchFolder, checking, settings } from "herdr";
 import { Select, partition, lines } from "./select.js";
+// #82: the page opened on a card by another mod (shared "kt.gwm.open"), open.js deciding.
+import { openRequest, matchStop } from "./open.js";
 import { filterRow, filterState } from "./filters.js";
 import { dither, iconBtn, bandRow, moreMenu } from "./band.js";
 import { motionState, frame, enter, pulse, sharpen, rows as rowsOf } from "./motion.js";
@@ -228,6 +230,8 @@ export default class Worktrees extends View {
     this.panelW = 0; // the panel card's
     this.more = false; // the head's ⋯ menu
     this.removeSeen = 0; // the last shared "kt-gwm.remove" request handled (its `at`)
+    this.want = null; // a card another mod asked to see (openAsked, #82): { path, branch }, until listed
+    this.openSeen = null; // that request's `at`: each read once
     this.wf = null; // the page's state filter (WSTATES key), null: every worktree
     this.wfRow = filterState();
     this.programs = {};
@@ -415,8 +419,49 @@ export default class Worktrees extends View {
       const sig = (d) => JSON.stringify([d.rows.map(({ age_seconds, ...w }) => w), d.source, d.error, d.pins]);
       const prev = this.data[repo.common];
       this.data[repo.common] = next;
+      // A card asked for (openAsked): the rows it waited for are here.
+      if (this.want) this.applyWant(cx, true);
       if (loud || !prev || sig(prev) !== sig(next)) cx.notify();
     });
+  }
+
+  // shared "kt.gwm.open" (#82, the Chat's references: { path?, branch?, at }, kt-inbox's
+  // "kt.inbox.open" pattern), on the page only: that worktree's card SHOWN, the cursor on it brought
+  // into view, the filters that hide it cleared, the agent fold opened for an agent's one. It acts on
+  // nothing: no sync, no remove (open.check.mjs proves neither is reached from here). Not listed yet:
+  // kept until the rows come; listed and absent: said, dropped. Read once and cleared; older than 30 s,
+  // only cleared.
+  openAsked(cx) {
+    const req = shared("kt.gwm.open");
+    if (this.panel || !req || this.openSeen === req.at) return;
+    this.openSeen = req.at;
+    // Not during render: setShared redraws every mod.
+    cx.spawn(async (cx) => {
+      setShared("kt.gwm.open", null);
+      const want = openRequest(req, Date.now());
+      if (!want) return;
+      this.want = want;
+      this.applyWant(cx, Object.keys(this.data).length > 0);
+      cx.notify();
+    });
+  }
+
+  applyWant(cx, listed) {
+    const s = matchStop(this.stops(true), this.want);
+    if (!s && !listed) return;
+    const want = this.want;
+    this.want = null;
+    if (!s) {
+      notify({ title: tr("open.notListed"), body: want.branch ?? want.path, level: "warning", timeout: 5000 });
+      return;
+    }
+    if (!this.matches(s.w)) { this.query = ""; this.wf = null; }
+    if (isAgent(s.w)) this.agentOpen.add(s.repo.common);
+    this.cur = s.id;
+    // The keyboard here (NORMAL), so the cursor shows on the card: focusIn keeps a cursor it finds.
+    this.focusIn();
+    this.reveal = true;
+    cx.notify();
   }
 
   refresh(cx, force) {
@@ -1601,6 +1646,7 @@ export default class Worktrees extends View {
     const sc = live ? this.scope(cx) : { kind: "wait" };
     this.sc = sc; // what the keys' cursor walks (stops())
     this.keyed = this.handle.is_focused();
+    if (vis && live) this.openAsked(cx);
     if (vis && live && this.ready) {
       const key = sc.kind === "repo" ? `r:${sc.repo.common}` : sc.kind === "workspace" ? `w:${sc.repos.map((r) => r.common).join("|")}` : sc.kind;
       if (key !== this.scopeKey || !this.shown) {

@@ -67,6 +67,8 @@ export default {
     "mark.locked": "verrouillé",
     "mark.orphan": "orphelin",
     pathCopied: "Chemin copié",
+    // #82: a worktree or a branch another mod asked to see (open.js).
+    "open.notListed": "Aucun worktree de ce dépôt pour cette branche ou ce chemin.",
     copy: "Copier",
     main: "principal",
     note: "note",
@@ -193,6 +195,8 @@ export default {
     "mark.locked": "locked",
     "mark.orphan": "orphaned",
     pathCopied: "Path copied",
+    // #82: a worktree or a branch another mod asked to see (open.js).
+    "open.notListed": "No worktree of this repo for that branch or path.",
     copy: "Copy",
     main: "main",
     note: "note",
