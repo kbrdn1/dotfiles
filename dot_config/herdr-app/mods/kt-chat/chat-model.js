@@ -337,12 +337,97 @@ export function build(entries, opts = {}) {
       cur.blocks.push({ role: "note", id: e.uuid ?? `u${e.o}`, text: e.text, from: e.from ?? null, groups: e.groups ?? null, at: e.at });
     }
   }
+  // buildInc(): a result written in a later turn for one of these turns' tools, after their own lines.
+  for (const r of opts.results ?? []) {
+    const tool = tools.get(r.tool);
+    if (tool) tool.result = r;
+  }
   turns.forEach((turn, n) => {
     turn.live = live && n === turns.length - 1;
     for (const b of turn.blocks) if (b.role === "tool") b.state = toolState(b, turn.live);
     turn.items = items(turn.blocks, !turn.live);
     turn.fold = fold(turn.items);
   });
+  return turns;
+}
+
+/**
+ * build(), one turn at a time (#59, the infinite scroll's lot 1): what a live tick, a read in front or
+ * a trim changes is a few turns; the others are the same entry objects as at the last call (ingest,
+ * prepend and trim keep them), so they are the same turn objects. Equal to build(entries, { live })
+ * (chat-model.check.mjs). `cache`: a Map the caller keeps between calls, refilled each time.
+ *
+ * A turn is its entries from its opener to the next one (the first: what comes before any opener).
+ * Three things cross turns in build(), all handled here: a line written twice counts in the turn where
+ * it first is (its later copies are left out of their turn); a tool's result written in a later turn
+ * goes to the tool's turn (after its own entries, as build() applies them in order); an assistant
+ * message whose lines span two turns (never seen): then build() itself, whole.
+ */
+export function buildInc(entries, { live = false, cache = new Map() } = {}) {
+  const starts = [];
+  for (let i = 0; i < entries.length; i++) if (entries[i].k === "user" && entries[i].turn) starts.push(i);
+  if (starts[0] !== 0 && entries.length) starts.unshift(0);
+  const segs = starts.length;
+  // One pass over every entry, in order: where each line first is, which turn each tool is in when a
+  // result for it comes, the messages' turns.
+  const firstSeg = new Map();
+  const midSeg = new Map();
+  const toolSeg = new Map();
+  const dups = new Array(segs).fill(0);
+  const outside = Array.from({ length: segs }, () => []);
+  for (let s = 0, i = 0; s < segs; s++) {
+    const end = s + 1 < segs ? starts[s + 1] : entries.length;
+    for (; i < end; i++) {
+      const e = entries[i];
+      if (e.uuid && e.k !== "result") {
+        const key = e.k + e.uuid;
+        const at = firstSeg.get(key);
+        if (at === undefined) firstSeg.set(key, s);
+        else if (at < s) {
+          dups[s]++;
+          continue;
+        } else continue; // a copy in its own turn: merge() leaves it out there
+      }
+      if (e.k === "assistant") {
+        if (e.mid) {
+          const m = midSeg.get(e.mid);
+          if (m === undefined) midSeg.set(e.mid, s);
+          else if (m !== s) {
+            cache.clear();
+            return build(entries, { live });
+          }
+        }
+        for (const b of e.blocks ?? []) if (b.t === "tool") toolSeg.set(b.id, s);
+      } else if (e.k === "result") {
+        const owner = toolSeg.get(e.tool);
+        if (owner !== undefined && owner !== s) outside[owner].push(e);
+      }
+    }
+  }
+  const was = new Map(cache);
+  cache.clear();
+  const turns = [];
+  for (let s = 0; s < segs; s++) {
+    const a = starts[s], b = s + 1 < segs ? starts[s + 1] : entries.length;
+    const isLive = live && s === segs - 1;
+    const res = outside[s];
+    const key = entries[a];
+    const sig = { n: b - a, last: entries[b - 1], live: isLive, dups: dups[s], res: res.length, lastRes: res[res.length - 1] ?? null };
+    const hit = was.get(key);
+    let built;
+    if (hit && hit.n === sig.n && hit.last === sig.last && hit.live === sig.live && hit.dups === sig.dups && hit.res === sig.res && hit.lastRes === sig.lastRes) built = hit.turns;
+    else {
+      const own = [];
+      for (let i = a; i < b; i++) {
+        const e = entries[i];
+        if (dups[s] && e.uuid && e.k !== "result" && firstSeg.get(e.k + e.uuid) < s) continue;
+        own.push(e);
+      }
+      built = build(own, { live: isLive, results: res });
+    }
+    cache.set(key, { ...sig, turns: built });
+    turns.push(...built);
+  }
   return turns;
 }
 

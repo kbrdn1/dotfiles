@@ -3,7 +3,7 @@
 // turns, items, fold, tally, queue, ingest) on chat-fixture.jsonl, an invented session.
 import assert from "node:assert/strict";
 import { index, startsTurn, strip, normalize } from "./chat-index.ts";
-import { arrivals, build, classify, fold, foldTree, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
+import { arrivals, build, buildInc, classify, fold, foldTree, foldedSteps, ingest, items, merge, pendingQueue, prepend, tally, toolKind, toolTitle, trim } from "./chat-model.js";
 
 const all = new Uint8Array(await Bun.file(new URL("./chat-fixture.jsonl", import.meta.url)).arrayBuffer());
 const run = (from = 0, to = all.length, opts = {}) => index(all.subarray(from, to), { from, size: all.length, path: "/f.jsonl", home: "/w", ...opts });
@@ -326,5 +326,65 @@ assert.deepEqual([queuedTask.kind, queuedTask.status, queuedTask.task, queuedTas
 // System reminders go; a message of nothing else is hidden.
 assert.deepEqual(classify("<system-reminder>\nrappel\n</system-reminder>"), { kind: "system", text: "" });
 assert.deepEqual(classify("Fais-le\n<system-reminder>rappel</system-reminder>"), { kind: "human", text: "Fais-le" });
+
+// ── buildInc(): build() turn by turn (the infinite scroll's lot 1) ─────────
+// Equal to build() whatever the cache saw before, and the turns its lines didn't touch are the same objects.
+const same = (entries, live, cache) => {
+  const got = buildInc(entries, { live, cache });
+  assert.equal(JSON.stringify(got), JSON.stringify(build(entries, { live })), `buildInc = build (${entries.length} entries, live ${live})`);
+  return got;
+};
+{
+  // The live tail: the read grows a line at a time, live, then settles.
+  const cache = new Map();
+  let prev = [];
+  for (let n = 1; n <= full.entries.length; n++) {
+    const got = same(full.entries.slice(0, n), true, cache);
+    for (let k = 0; k < Math.min(got.length, prev.length) - 1; k++) assert.equal(got[k], prev[k], `turn ${k} kept as it was when line ${n} came`);
+    prev = got;
+  }
+  const settled = same(full.entries, false, cache);
+  assert.notEqual(settled[settled.length - 1], prev[prev.length - 1], "the live turn settling is built again");
+  assert.equal(settled[0], prev[0], "the others are not");
+}
+{
+  // « Tours précédents » (the older ones in front), a trim (the oldest go, or a cut inside a turn), another session.
+  const cache = new Map();
+  const at = full.entries.findIndex((e) => e.uuid === "u-20");
+  const tail = same(full.entries.slice(at), false, cache);
+  const whole = same(full.entries, false, cache);
+  assert.equal(whole[whole.length - 1], tail[tail.length - 1], "the turns already read are kept when older ones come in front");
+  for (let m = 1; m < full.entries.length; m += 3) same(full.entries.slice(m), false, cache);
+  same(full.entries.slice(0, 7), true, new Map());
+  same([], true, cache);
+}
+{
+  // What crosses turns: a line written again in a later turn, a result written in a later turn, a message
+  // whose lines span two turns (then build(), whole).
+  const u = (id, o) => ({ k: "user", o, uuid: id, at: o, turn: true, text: `message ${id}` });
+  const tool = (id, o, mid, tid) => ({ k: "assistant", o, uuid: id, mid, at: o, model: "m", blocks: [{ t: "tool", id: tid, name: "Bash", kind: "execute", title: "ls", input: { command: "ls" } }] });
+  const said = (id, o, mid, text) => ({ k: "assistant", o, uuid: id, mid, at: o, model: "m", blocks: [{ t: "text", text }] });
+  const res = (o, tid, text) => ({ k: "result", o, tool: tid, at: o, ok: true, text });
+  const base = [u("A", 0), tool("a1", 1, "ma1", "x1"), said("a2", 2, "ma2", "fini"), u("B", 3), said("b1", 4, "mb1", "suite")];
+  const cache = new Map();
+  same(base, true, cache);
+  const late = [...base, res(5, "x1", "le résultat arrive après")];
+  const withLate = same(late, true, cache);
+  assert.equal(withLate[0].blocks.find((b) => b.id === "x1").result.text, "le résultat arrive après", "a later result reaches its tool's turn");
+  const again = same([...late, { ...base[2] }, said("b2", 7, "mb2", "et encore")], true, cache);
+  assert.equal(again[1].blocks.filter((b) => b.role === "prose").length, 2, "a line written again in a later turn counts in the first one only");
+  same([...base, said("b3", 8, "ma2", "le message de A, continué")], true, cache);
+  same([res(0, "x1", "un résultat sans son outil"), ...base], false, new Map());
+}
+{
+  // Random reads, ticks and trims on one cache.
+  let seed = 7;
+  const rnd = (n) => (seed = (seed * 1103515245 + 12345) % 2147483648) % n;
+  const cache = new Map();
+  for (let k = 0; k < 300; k++) {
+    const a = rnd(full.entries.length), b = a + rnd(full.entries.length - a + 1);
+    same(full.entries.slice(a, b), rnd(2) === 1, cache);
+  }
+}
 
 console.log("chat-model ok");

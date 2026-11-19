@@ -54,7 +54,7 @@ import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
 import { view } from "./view.js";
-import { ingest, prepend, build, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue } from "./chat-model.js";
+import { ingest, prepend, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue } from "./chat-model.js";
 import {
   pickTarget, tallyText, childOf, chatShown, liveStep,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
@@ -172,6 +172,7 @@ export default class Chat extends View {
   init(_props, cx) {
     this.state = null; // chat-model's state (ingest / prepend)
     this.turns = [];
+    this.built = new Map(); // buildInc's turns of the last build, by their first entry (chat-model.js)
     this.builtLive = false;
     this.queued = []; // pendingQueue() of a live turn
     this.ticker = null; // the live tail's timer, only while the face shows and the agent works
@@ -458,12 +459,17 @@ export default class Chat extends View {
   rebuild(live, follow = this.follow) {
     const was = this.turns.map((t) => t.id);
     this.builtLive = live;
-    this.turns = this.state ? build(this.state.entries, { live }) : [];
+    // Turn by turn (chat-model.js buildInc): a live tick builds the turns its lines touch, not the
+    // whole read (A4: ~15 ms per 1000 entries, every tick, when the reader had gone far back).
+    this.turns = this.state ? buildInc(this.state.entries, { live, cache: this.built }) : [];
     this.win = win.remap(this.win, was, this.turns.map((t) => t.id), follow);
     // Messages typed while it works, not taken yet: their « en file » bubbles under the live turn.
     this.queued = live && this.state ? pendingQueue(this.state.entries) : [];
-    // The counts, once per build rather than on every render: the fold's, each phase's.
+    // The counts, once per turn built rather than on every render: the fold's, each phase's (a turn
+    // buildInc kept has its own already).
     for (const turn of this.turns) {
+      if (turn.counted) continue;
+      turn.counted = true;
       turn.tally = turn.fold ? tally(foldedSteps(turn.items, turn.fold)) : null;
       for (const it of turn.items) if (it.type === "activity") it.tally = tally(it.steps);
     }
