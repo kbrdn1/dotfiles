@@ -207,7 +207,7 @@ export function build(entries, opts = {}) {
   const turns = [];
   let cur = null;
   const open = (user) => {
-    cur = { id: user?.uuid ?? `head-${user?.o ?? 0}`, user, files: [], blocks: [], ms: null };
+    cur = { id: user?.uuid ?? `head-${user?.o ?? 0}`, user, files: [], blocks: [], ms: null, model: null };
     turns.push(cur);
   };
   for (const e of merged) {
@@ -219,6 +219,8 @@ export function build(entries, opts = {}) {
     if (!cur) open(null);
     if (e.k === "file") cur.files.push(e.path);
     else if (e.k === "assistant") {
+      // The model that answered (Monocode's « Opus 5.5 worked for 3m »): the turn's first real one.
+      if (!cur.model && e.model && !String(e.model).startsWith("<")) cur.model = e.model;
       e.blocks.forEach((b, n) => {
         if (b.t === "text") cur.blocks.push({ role: "prose", id: `${e.uuid}:${n}`, text: b.text, at: e.at });
         else if (b.t === "thinking") cur.blocks.push({ role: "thinking", id: `${e.uuid}:${n}`, ms: b.ms ?? null, text: b.text ?? "" });

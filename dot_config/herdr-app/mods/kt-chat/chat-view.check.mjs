@@ -2,7 +2,7 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep } from "./chat-view.js";
+import { pickTarget, tallyText, firstShown, childOf, shownAfterRead, chatShown, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink } from "./chat-view.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
 const claude = (address, tab) => ({ address, tab, program: { key: "claude", name: "Claude Code" }, app: "claude-code" });
@@ -86,5 +86,71 @@ assert.deepEqual(at({ wasShown: false }), { delta: true, tick: false }, "back on
 assert.deepEqual(at({ lastStatus: undefined }), { delta: false, tick: false }, "the first render: no status change yet");
 assert.deepEqual(at({ hasState: false, status: "working", lastStatus: "idle" }), { delta: false, tick: true }, "nothing read yet: the full read comes first");
 assert.deepEqual(at({ fixed: "/f.jsonl", status: "working", lastStatus: "working" }), { delta: false, tick: false }, "a fixed file has no agent to follow");
+
+// ── Monocode's words (#75) ──────────────────────────────────────────────────
+assert.equal(modelName("claude-opus-5-5"), "Opus 5.5");
+assert.equal(modelName("claude-sonnet-4-5-20250929"), "Sonnet 4.5");
+assert.equal(modelName("claude-haiku-5-5"), "Haiku 5.5");
+assert.equal(modelName("claude-fable-5-2"), "Fable 5.2");
+assert.equal(modelName("<synthetic>"), "");
+assert.equal(modelName(null), "");
+assert.equal(modelName("gpt-x"), "gpt-x");
+assert.equal(workedFor(400), "1s");
+assert.equal(workedFor(42000), "42s");
+assert.equal(workedFor(180000), "3m");
+assert.equal(workedFor(192400), "3m 12s");
+assert.equal(ink({ foreground: "#ebebeb" }, 0.1), "#ebebeb1a");
+assert.equal(ink({ foreground: "#2e2e2eff" }, 1), "#2e2e2eff");
+assert.equal(ink({ foreground: "#ebebeb" }, 0.78), "#ebebebc7");
+
+// ── The project's background (#57) ──────────────────────────────────────────
+const reg = [
+  { id: "a", folder: "/w/proj", machine: null },
+  { id: "b", folder: "/w/proj/sub", machine: null },
+  { id: "c", folder: "/w/remote", machine: "vps" },
+];
+assert.equal(projectOf(reg, "/w/proj/src", null).id, "a");
+assert.equal(projectOf(reg, "/w/proj/sub/x", null).id, "b", "the longest folder wins");
+assert.equal(projectOf(reg, "/w/projet", null), null, "a prefix of a name is not a folder");
+assert.equal(projectOf(reg, "/wt/proj-feat", "/w/proj").id, "a", "a worktree: by its repo's main checkout");
+assert.equal(projectOf(reg, "/w/remote/x", null), null, "another machine's project");
+assert.equal(projectOf(null, "/w/proj", null), null);
+
+assert.equal(bgSettings(null), null);
+assert.deepEqual(bgSettings({ src: "/d/src-1.png", w: 10, h: 20 }), { src: "/d/src-1.png", w: 10, h: 20, cell: 2, color: "photo", opacity: 0.24, scope: "all" }, "Kylian's defaults: 2 px cells, the photo's color");
+assert.deepEqual(bgSettings({ src: "s", cell: 6, color: "project", opacity: 0.9, scope: "empty" }), { src: "s", w: null, h: null, cell: 6, color: "project", opacity: 0.65, scope: "empty" });
+assert.equal(bgSettings({ src: "s", cell: 3, opacity: 0.01 }).cell, 2);
+assert.equal(bgSettings({ src: "s", opacity: 0.01 }).opacity, 0.05);
+
+assert.equal(fadeAt(0), 1);
+assert.equal(fadeAt(0.18), 1);
+assert.equal(fadeAt(0.72), 0);
+assert.equal(fadeAt(0.9), 0);
+assert.ok(Math.abs(fadeAt(0.25) - 0.805) < 0.001, "halfway between 0.18 (1) and 0.32 (0.61)");
+assert.ok(fadeAt(0.3, true) > fadeAt(0.3, false), "an empty conversation fades later");
+
+// Cover at a whole scale: an image smaller than the view is drawn ×2, never ×1.5.
+const one = [[0, 0, 600, 400]];
+let ls = bgLayers({ w: 600, h: 400, iw: 400, ih: 300, windows: one, opacity: 0.24 });
+assert.ok(ls.every((l) => l.iw === 800 && l.ih === 600), "×2");
+assert.equal(ls[0].ix, -100, "centred across, on an even px");
+assert.ok(ls.every((l) => l.iy === -l.y), "from the top");
+// A bigger image: ×1, cropped.
+ls = bgLayers({ w: 600, h: 400, iw: 2048, ih: 1365, windows: one, opacity: 0.24 });
+assert.ok(ls.every((l) => l.iw === 2048 && l.ih === 1365));
+assert.equal(ls[0].ix, Math.floor((600 - 2048) / 4) * 2);
+// The steps follow the fade: full at the top (one merged window), lower further down, none past 72 %.
+assert.equal(ls[0].y, 0);
+assert.equal(ls[0].o, 0.24);
+assert.ok(ls[0].h >= 64, "the full part above 18 % is one window");
+for (let i = 1; i < ls.length; i++) assert.ok(ls[i].o <= ls[i - 1].o, "never brighter further down");
+assert.ok(ls.every((l) => l.y + l.h <= Math.ceil(0.72 * 400 / 16) * 16), "nothing past the fade");
+assert.ok(ls.length <= 24, `a handful of quads (${ls.length})`);
+// Windows (the rounded corners) keep their own columns; the image stays continuous across them.
+const corners = [[6, 0, 588, 2], [2, 2, 596, 4], [0, 6, 600, 394]];
+ls = bgLayers({ w: 600, h: 400, iw: 2048, ih: 1365, windows: corners, opacity: 0.2 });
+assert.deepEqual(ls.slice(0, 2).map((l) => [l.x, l.w, l.ix]), [[6, 588, -730], [2, 596, -726]]);
+assert.ok(ls.every((l) => l.x + l.ix === -724), "the same image place in every window");
+assert.deepEqual(bgLayers({ w: 0, h: 400, iw: 10, ih: 10, windows: one, opacity: 1 }), []);
 
 console.log("chat-view ok");

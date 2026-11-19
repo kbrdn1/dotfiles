@@ -84,3 +84,103 @@ export const childOf = (at, first) => 1 + at - first;
  * were drawn): those, plus up to `step` of the new.
  */
 export const shownAfterRead = (before, added, step) => before + Math.min(step, Math.max(0, added));
+
+// ── Monocode's words (#75) ──────────────────────────────────────────────────
+
+/**
+ * A Claude model id as a name: "claude-opus-5-5" → "Opus 5.5", "claude-sonnet-4-5-20250929" →
+ * "Sonnet 4.5" (the date dropped); anything else as it is; "" for none or "<synthetic>".
+ */
+export function modelName(id) {
+  const s = String(id ?? "").trim();
+  if (!s || s.startsWith("<")) return "";
+  const m = s.match(/^claude-([a-z]+)((?:-\d{1,2})*)(?:-\d{8})?$/i);
+  if (!m) return s;
+  const family = m[1][0].toUpperCase() + m[1].slice(1);
+  const version = m[2].split("-").filter(Boolean).join(".");
+  return version ? `${family} ${version}` : family;
+}
+
+/** Monocode's « worked for » duration: « 42s », « 3m », « 3m 12s » (rounded to the second, 1 s at least). */
+export function workedFor(ms) {
+  const s = Math.max(1, Math.round((ms ?? 0) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
+}
+
+/** Monocode's `content(a)` token: the theme's ink (foreground) at alpha `a`, as #rrggbbaa. */
+export const ink = (t, a) => `${String(t.foreground).slice(0, 7)}${Math.round(Math.min(1, Math.max(0, a)) * 255).toString(16).padStart(2, "0")}`;
+
+// ── The project's background (#57) ──────────────────────────────────────────
+
+/**
+ * The registry project (shared kt.projects) a session's folder belongs to: the longest folder that is
+ * `cwd` or holds it, else the one whose folder is the repo's main checkout `root` (a worktree lives
+ * elsewhere). This computer's projects only. null when none.
+ */
+export function projectOf(entries, cwd, root) {
+  const mine = (entries ?? []).filter((e) => !e.machine && e.folder);
+  const under = (dir) => mine.filter((e) => dir && (dir === e.folder || dir.startsWith(e.folder + "/"))).sort((a, b) => b.folder.length - a.folder.length)[0];
+  return under(cwd) ?? under(root) ?? null;
+}
+
+export const OPACITY = { min: 0.05, max: 0.65, step: 0.04, dflt: 0.24 };
+export const CELL_SIZES = [2, 4, 6];
+
+/** A project's settings, as stored (shared kt.chat.backgrounds[id]), with the defaults and bounds. */
+export function bgSettings(raw) {
+  if (!raw?.src) return null;
+  const o = Number(raw.opacity);
+  return {
+    src: raw.src, w: raw.w ?? null, h: raw.h ?? null,
+    cell: CELL_SIZES.includes(raw.cell) ? raw.cell : 2,
+    color: raw.color === "project" ? "project" : "photo",
+    opacity: Number.isFinite(o) ? Math.min(OPACITY.max, Math.max(OPACITY.min, Math.round(o * 100) / 100)) : OPACITY.dflt,
+    scope: raw.scope === "empty" ? "empty" : "all",
+  };
+}
+
+// Monocode's background_fade (crates/monocode-core/src/project_appearance.rs), for a conversation
+// and for an empty one: 1 at the top, gone by 72 % of the view's height.
+const FADE = {
+  session: [[0, 1], [0.18, 1], [0.32, 0.61], [0.47, 0.32], [0.62, 0.11], [0.72, 0]],
+  empty: [[0, 1], [0.19, 1], [0.3, 0.79], [0.42, 0.5], [0.54, 0.2], [0.64, 0.05], [0.72, 0]],
+};
+export function fadeAt(y, empty = false) {
+  const stops = empty ? FADE.empty : FADE.session;
+  for (let i = 1; i < stops.length; i++) {
+    const [a, va] = stops[i - 1], [b, vb] = stops[i];
+    if (y <= b) return va + (vb - va) * Math.min(1, Math.max(0, (y - a) / (b - a)));
+  }
+  return 0;
+}
+
+/**
+ * The background's layers in a w × h view: the image covers it at a WHOLE scale (cells stay sharp:
+ * 1 image px = 1, 2, 3… logical px), centred across, from the top, cropped by the view; it shows
+ * through `windows` (dither.js bandWindows: nothing crosses the rounded corners), each cut in steps of
+ * `band` px whose opacity follows the fade (the fade belongs to the view, not to the texture).
+ * [{ x, y, w, h, o, ix, iy, iw, ih }]: a window, its opacity, the image's place and size in it.
+ */
+export function bgLayers({ w, h, iw, ih, windows, opacity, empty = false, band = 16 }) {
+  if (!(w > 0 && h > 0 && iw > 0 && ih > 0)) return [];
+  const s = Math.max(1, Math.ceil(Math.max(w / iw, h / ih)));
+  const dw = iw * s, dh = ih * s;
+  const ox = Math.floor((w - dw) / 4) * 2; // centred, on an even px
+  const out = [];
+  for (const [x, y, ww, hh] of windows) {
+    for (let y0 = y; y0 < y + hh;) {
+      const y1 = Math.min(y + hh, (Math.floor(y0 / band) + 1) * band);
+      const o = Math.round(opacity * fadeAt((y0 + y1) / 2 / h, empty) * 1000) / 1000;
+      const last = out[out.length - 1];
+      if (o >= 0.005) {
+        // Steps of the same opacity, one above the other in the same columns, are one window.
+        if (last && last.o === o && last.x === x && last.w === ww && last.y + last.h === y0) last.h += y1 - y0;
+        else out.push({ x, y: y0, w: ww, h: y1 - y0, o, ix: ox - x, iy: -y0, iw: dw, ih: dh });
+      }
+      y0 = y1;
+    }
+  }
+  return out;
+}

@@ -140,8 +140,9 @@ const turns = build(full.entries);
 assert.equal(turns.length, 6);
 const [t1, t2, t3, t4, t5, t6] = turns;
 
-// Turn 1: pairing, items, fold, tally, duration.
+// Turn 1: pairing, items, fold, tally, duration, the model that answered.
 assert.equal(t1.ms, 65000);
+assert.equal(t1.model, "model-x");
 assert.deepEqual(t1.files, ["src/thé.js"]);
 const read = t1.blocks.find((b) => b.id === "t1");
 assert.equal(read.result.file.lines, 3);
