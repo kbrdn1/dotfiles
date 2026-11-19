@@ -6,13 +6,19 @@ export default {
     "sub.open": { one: "{n} ouvert", other: "{n} ouverts" },
     "sub.closed": { one: "{n} fermé", other: "{n} fermés" },
     "remove.title": "Retirer « {name} » ?",
-    "remove.detail": "Herdr l'oublie : il ne sera plus listé ni rouvert d'un clic. Aucun fichier du projet n'est supprimé.",
+    "remove.detail": "Herdr l'oublie : il ne sera plus listé ni rouvert d'un clic. Aucun de ses spaces n'est ouvert, rien n'est fermé. Aucun fichier du projet n'est supprimé.",
     "remove.label": "Retirer",
     "open.title": "« {name} » est ouvert",
     "open.detail": {
-      one: "Pour le retirer du registre, il faut d'abord fermer son space (sinon il y reviendrait de lui-même). Aucun fichier du projet n'est supprimé.",
-      other: "Pour le retirer du registre, il faut d'abord fermer ses {n} spaces (sinon il y reviendrait de lui-même). Aucun fichier du projet n'est supprimé.",
+      one: "Pour le retirer du registre, il faut d'abord fermer son space (sinon il y reviendrait de lui-même) : ses terminaux et les agents qui y tournent seront fermés. Aucun fichier du projet n'est supprimé.",
+      other: "Pour le retirer du registre, il faut d'abord fermer ses {n} spaces (sinon il y reviendrait de lui-même) : leurs terminaux et les agents qui y tournent seront fermés. Aucun fichier du projet n'est supprimé.",
     },
+    "fact.spaces": "spaces",
+    "fact.terminals": "terminaux",
+    "fact.agents": "agents",
+    "fact.busy": { one: "{n} travaille encore", other: "{n} travaillent encore" },
+    "fact.idle": "aucun au travail",
+    "busy.warning": { one: "{n} agent tourne dans ce projet : fermer l'interrompt en plein travail.", other: "{n} agents tournent dans ce projet : fermer les interrompt en plein travail." },
     "open.label": { one: "Fermer le space…", other: "Fermer les spaces…" },
     "close.title": { one: "Fermer le space « {name} » ?", other: "Fermer les {n} spaces de « {name} » ?" },
     "close.detail": {
@@ -61,8 +67,8 @@ export default {
     deleteButton: "Supprimer de force…",
     footArchived: "Archivé : hors de la sidebar et du sélecteur, avec ses métriques et ses réglages gardés.",
     "archive.open": {
-      one: "Pour l'archiver, il faut d'abord fermer son space (sinon il reviendrait de lui-même). Ses métriques, son fond et ses réglages sont gardés.",
-      other: "Pour l'archiver, il faut d'abord fermer ses {n} spaces (sinon il reviendrait de lui-même). Ses métriques, son fond et ses réglages sont gardés.",
+      one: "Pour l'archiver, il faut d'abord fermer son space (sinon il reviendrait de lui-même) : ses terminaux et les agents qui y tournent seront fermés. Ses métriques, son fond et ses réglages sont gardés.",
+      other: "Pour l'archiver, il faut d'abord fermer ses {n} spaces (sinon il reviendrait de lui-même) : leurs terminaux et les agents qui y tournent seront fermés. Ses métriques, son fond et ses réglages sont gardés.",
     },
     "archive.close": {
       one: "{n} terminal sera fermé, et les agents qui y tournent s'arrêteront. Le projet sera ensuite archivé, avec ses métriques et ses réglages.",
@@ -70,8 +76,8 @@ export default {
     },
     "archive.closeLabel": "Fermer et archiver",
     "delete.open": {
-      one: "Pour le supprimer de force, il faut d'abord fermer son space. Son nom sera ensuite demandé.",
-      other: "Pour le supprimer de force, il faut d'abord fermer ses {n} spaces. Son nom sera ensuite demandé.",
+      one: "Pour le supprimer de force, il faut d'abord fermer son space : ses terminaux et les agents qui y tournent seront fermés. Son nom sera ensuite demandé.",
+      other: "Pour le supprimer de force, il faut d'abord fermer ses {n} spaces : leurs terminaux et les agents qui y tournent seront fermés. Son nom sera ensuite demandé.",
     },
     "delete.close": {
       one: "{n} terminal sera fermé, et les agents qui y tournent s'arrêteront. Il faudra ensuite taper le nom du projet pour le supprimer.",
@@ -102,13 +108,19 @@ export default {
     "sub.open": { one: "{n} open", other: "{n} open" },
     "sub.closed": { one: "{n} closed", other: "{n} closed" },
     "remove.title": "Remove “{name}”?",
-    "remove.detail": "Herdr forgets it: it won't be listed or reopened in one click anymore. No file of the project is deleted.",
+    "remove.detail": "Herdr forgets it: it won't be listed or reopened in one click anymore. None of its spaces is open, nothing closes. No file of the project is deleted.",
     "remove.label": "Remove",
     "open.title": "“{name}” is open",
     "open.detail": {
-      one: "To remove it from the registry, close its space first (otherwise it would come back on its own). No file of the project is deleted.",
-      other: "To remove it from the registry, close its {n} spaces first (otherwise it would come back on its own). No file of the project is deleted.",
+      one: "To remove it from the registry, close its space first (otherwise it would come back on its own): its terminals and the agents running in them will be closed. No file of the project is deleted.",
+      other: "To remove it from the registry, close its {n} spaces first (otherwise it would come back on its own): their terminals and the agents running in them will be closed. No file of the project is deleted.",
     },
+    "fact.spaces": "spaces",
+    "fact.terminals": "terminals",
+    "fact.agents": "agents",
+    "fact.busy": { one: "{n} still working", other: "{n} still working" },
+    "fact.idle": "none at work",
+    "busy.warning": { one: "{n} agent is running in this project: closing cuts it off mid-task.", other: "{n} agents are running in this project: closing cuts them off mid-task." },
     "open.label": { one: "Close the space…", other: "Close the spaces…" },
     "close.title": { one: "Close the space “{name}”?", other: "Close the {n} spaces of “{name}”?" },
     "close.detail": {
@@ -157,8 +169,8 @@ export default {
     deleteButton: "Delete by force…",
     footArchived: "Archived: out of the sidebar and the picker, its metrics and settings kept.",
     "archive.open": {
-      one: "To archive it, close its space first (otherwise it would come back on its own). Its metrics, background and settings are kept.",
-      other: "To archive it, close its {n} spaces first (otherwise it would come back on its own). Its metrics, background and settings are kept.",
+      one: "To archive it, close its space first (otherwise it would come back on its own): its terminals and the agents running in them will be closed. Its metrics, background and settings are kept.",
+      other: "To archive it, close its {n} spaces first (otherwise it would come back on its own): their terminals and the agents running in them will be closed. Its metrics, background and settings are kept.",
     },
     "archive.close": {
       one: "{n} terminal will be closed, and the agents running in it will stop. The project is then archived, with its metrics and settings.",
@@ -166,8 +178,8 @@ export default {
     },
     "archive.closeLabel": "Close and archive",
     "delete.open": {
-      one: "To delete it by force, close its space first. Its name is asked next.",
-      other: "To delete it by force, close its {n} spaces first. Its name is asked next.",
+      one: "To delete it by force, close its space first: its terminals and the agents running in them will be closed. Its name is asked next.",
+      other: "To delete it by force, close its {n} spaces first: their terminals and the agents running in them will be closed. Its name is asked next.",
     },
     "delete.close": {
       one: "{n} terminal will be closed, and the agents running in it will stop. You'll then type the project's name to delete it.",

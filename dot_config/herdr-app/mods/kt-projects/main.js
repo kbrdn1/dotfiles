@@ -391,10 +391,26 @@ export default class Projects extends View {
     this.update(e.id, { logos: { ...logosOf(now), [mode]: null }, logosFrom: { ...(now.logosFrom ?? {}), [mode]: null }, logo: undefined, logoFrom: undefined });
   }
 
-  // kt-confirm (danger), answering `kt-projects.confirmed`; `then`: what follows a close.
+  // kt-confirm (danger unless `p` says), answering `kt-projects.confirmed`; `then`: what follows a close.
   ask(step, e, then, p) {
     this.pending = { step, id: e.id, then };
-    openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { ...p, danger: true, command: { name: "kt-projects.confirmed" } } });
+    openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: { danger: true, ...p, command: { name: "kt-projects.confirmed" } } });
+  }
+
+  // What closing a project's spaces closes, said plainly in both confirms of a close: its spaces, their
+  // terminals, the agents at work in them (kt-confirm's count: threads working). Red only when some are.
+  closing(e) {
+    const open = this.spacesOf(e);
+    const tabs = open.flatMap((s) => s.tabs);
+    const ids = new Set(tabs.map((tb) => tb.id));
+    const terms = panes().filter((x) => x.terminal && ids.has(x.tab)).length;
+    const busy = tabs.filter((tb) => tb.status === "working").length;
+    return {
+      n: terms,
+      facts: [[tr("fact.spaces"), String(open.length)], [tr("fact.terminals"), String(terms)], [tr("fact.agents"), busy ? tr("fact.busy", { n: busy }) : tr("fact.idle"), busy ? "ansi1" : "dim"]],
+      warning: busy ? tr("busy.warning", { n: busy }) : null,
+      danger: busy > 0,
+    };
   }
 
   // Forget (« Retirer »), archive or delete by force: an open project's space is closed first (it
@@ -402,7 +418,10 @@ export default class Projects extends View {
   // one: forgetting asks once, archiving is at once (restoring undoes it), deleting asks for its name.
   start(e, then) {
     const n = this.spacesOf(e).length;
-    if (n) return this.ask("close-ask", e, then, { title: tr("open.title", { name: e.name }), detail: CLOSE_WORDS[then].open(n), label: tr("open.label", { n }) });
+    if (n) {
+      const { facts, warning, danger } = this.closing(e);
+      return this.ask("close-ask", e, then, { title: tr("open.title", { name: e.name }), detail: CLOSE_WORDS[then].open(n), facts, warning, danger, label: tr("open.label", { n }) });
+    }
     if (then === "remove") this.ask("remove", e, then, { title: tr("remove.title", { name: e.name }), detail: tr("remove.detail"), label: tr("remove.label") });
     else if (then === "archive") this.archiveNow(e);
     else this.askDelete(e);
@@ -440,10 +459,9 @@ export default class Projects extends View {
     if (!e) return;
     const open = this.spacesOf(e);
     if (p.step === "close-ask" && open.length) {
-      const tabs = new Set(open.flatMap((s) => s.tabs.map((tb) => tb.id)));
-      const n = panes().filter((x) => x.terminal && tabs.has(x.tab)).length;
+      const { n, facts, warning, danger } = this.closing(e);
       const w = CLOSE_WORDS[p.then];
-      return this.ask("close", e, p.then, { title: tr("close.title", { n: open.length, name: e.name }), detail: w.close(n), label: w.label() });
+      return this.ask("close", e, p.then, { title: tr("close.title", { n: open.length, name: e.name }), detail: w.close(n), facts, warning, danger, label: w.label() });
     }
     if (p.step === "close-ask") return this.start(e, p.then); // closed meanwhile: what follows a close
     if (p.step === "close") {
