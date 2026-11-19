@@ -55,7 +55,7 @@ import { REGISTRY, paneTarget, ownPane, paneShown, register, unregister } from "
 // decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser.
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
-import { askFile, askRows, callId, shownRows } from "./ask.js";
+import { askOf, callId, shownRows } from "./ask.js";
 import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals } from "./chat-model.js";
 import {
   pickTarget, tallyText, childOf, liveStep,
@@ -319,7 +319,7 @@ export default class Chat extends View {
     this.sending = false;
     this.sendErr = null; // { why, message } from composer.js sendResult
     this.decision = null; // decide(terminal) while the agent is blocked
-    this.askCall = null; // #79: the blocked call as the model wrote it (chat-index.ts --tool), for an edit's diff
+    this.ask = null; // #79: askOf(pending, call): the card worked out when the request or its call (chat-index.ts --tool) arrives
     this.askOpen = false; // #79: the request shown whole
     this.composer = TextareaState.new({ placeholder: tr("composer.ph") });
     // Monocode's field: one row of 22 px, up to 140 (input.rs:27, :407-411).
@@ -1211,7 +1211,7 @@ export default class Chat extends View {
       const still = target().agent?.address === address && target().agent?.status === "blocked";
       if (still) {
         this.decision = d;
-        this.askCall = null;
+        this.ask = askOf(d?.pending, null);
         this.askOpen = false;
       }
       cx.notify();
@@ -1228,7 +1228,7 @@ export default class Chat extends View {
         call = null;
       }
       if (this.decision === d) {
-        this.askCall = call;
+        this.ask = askOf(d?.pending, call);
         cx.notify();
       }
     });
@@ -2895,9 +2895,11 @@ export default class Chat extends View {
       .child(label);
     // #79: what it asks, whole: the command, or the edit's diff under its file; its first rows, all on a
     // click (up to OPEN, the rest left to the terminal). Opened, the card takes its height at once (no
-    // height animation, #92) and the rows come in fading (motion.js enter, no rise).
-    const ask = p ? askRows(p, this.askCall) : [];
-    const file = p ? askFile(p, this.askCall) : null;
+    // height animation, #92) and the rows come in fading (motion.js enter, no rise). The rows were worked
+    // out when the request or its call arrived (readDecision, askOf): the render only reads them.
+    const mine = p && this.ask?.pending === p ? this.ask : null;
+    const ask = mine?.rows ?? [];
+    const file = mine?.file ?? null;
     const shown = shownRows(ask, this.askOpen);
     const body = v_flex().min_w(0).font_family(CODE).text_size(12).line_height("20px")
       .children(shown.rows.map((r) => {

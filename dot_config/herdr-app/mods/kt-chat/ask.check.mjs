@@ -1,7 +1,8 @@
 // bun ask.check.mjs : #79, a blocked agent's request in full (ask.js), and the call read back from
 // the transcript (chat-index.ts toolCallOf). Made-up lines, no real session.
 import assert from "node:assert/strict";
-import { askFile, askRows, callId, FOLD, OPEN, shownRows } from "./ask.js";
+import { readFileSync } from "node:fs";
+import { askFile, askOf, askRows, callId, FOLD, OPEN, shownRows } from "./ask.js";
 import { toolCallOf } from "./chat-index.ts";
 
 const sign = (rows) => rows.map((r) => r.sign + r.text);
@@ -17,7 +18,10 @@ const edit = { id: "toolu_01B", kind: "permission", tool: "Edit", title: "Autori
 const call = { name: "Edit", input: { file_path: "/w/a.js", old_string: "a\nb", new_string: "a\nc\nd" } };
 assert.deepEqual(sign(askRows(edit, call)), ["-a", "-b", "+a", "+c", "+d"]);
 assert.equal(askFile(edit, call), "/w/a.js");
-assert.deepEqual(sign(askRows(edit, null)), [" /w/a.js"]); // the call not found: the bridge's detail
+// The call not read (yet): the path once, above, and no rows (cold review 2, P3: it was shown twice).
+assert.deepEqual(askRows(edit, null), []);
+assert.deepEqual(askOf(edit, null), { pending: edit, file: "/w/a.js", rows: [] });
+assert.deepEqual(askOf(edit, call).rows.map((r) => r.sign + r.text), ["-a", "-b", "+a", "+c", "+d"]);
 assert.deepEqual(sign(askRows(edit, { name: "MultiEdit", input: { edits: [{ old_string: "x", new_string: "y" }, { old_string: "", new_string: "z" }] } })), ["-x", "+y", "+z"]);
 assert.deepEqual(sign(askRows(edit, { name: "Write", input: { file_path: "/w/n.md", content: "# n\n\nt\n" } })), ["+# n", "+", "+t"]);
 assert.deepEqual(askRows({ kind: "permission", tool: "Bash" }, null), []);
@@ -49,5 +53,11 @@ assert.deepEqual(toolCallOf(bytes, "toolu_01B"), { name: "Edit", input: { file_p
 assert.deepEqual(toolCallOf(bytes, "toolu_01C", 10), { name: "Edit", input: { file_path: "/w/b.js", old_string: "x".repeat(10), new_string: "y" }, cut: true });
 assert.equal(toolCallOf(bytes, "toolu_01D"), null);
 assert.equal(toolCallOf(bytes, "toolu_09Z"), null);
+
+// The render only reads what askOf worked out (cold review 2, P2: a text up to 32 KB was split in the
+// render): main.js calls askOf when the request or its call arrives, never askRows or askFile.
+const main = readFileSync(new URL("./main.js", import.meta.url), "utf8");
+assert.equal(/\bask(Rows|File)\(/.test(main), false, "main.js must not split a request in its render");
+assert.ok(/this\.ask = askOf\(/.test(main), "main.js works the card out with askOf");
 
 console.log("ask: ok");

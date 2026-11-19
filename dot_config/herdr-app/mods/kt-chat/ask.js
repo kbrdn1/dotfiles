@@ -9,11 +9,13 @@ export const OPEN = 400; // rows at most, opened (the render's budget)
 
 const split = (s) => String(s ?? "").replace(/\n+$/, "").split("\n");
 const rows = (s, sign) => (typeof s === "string" && s !== "" ? split(s).map((text) => ({ sign, text })) : []);
+const EDITS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
 
 /**
  * The request as rows { sign: " " | "-" | "+", text }: an edit's lines out and in, a new file's lines, a
- * command's lines; else the bridge's detail as it is. `call`: { name, input } read from the transcript,
- * or null.
+ * command's lines; else the bridge's detail as it is. An edit whose call isn't read (yet) has no rows:
+ * its path, the bridge's detail, is already above (askFile). `call`: { name, input } read from the
+ * transcript, or null.
  */
 export function askRows(pending, call) {
   const tool = call?.name ?? pending?.tool;
@@ -23,15 +25,23 @@ export function askRows(pending, call) {
   if (i && tool === "Write" && typeof i.content === "string") return rows(i.content, "+");
   if (i && tool === "NotebookEdit" && typeof i.new_source === "string") return rows(i.new_source, "+");
   if (i && typeof i.command === "string") return rows(i.command, " ");
+  if (EDITS.includes(tool)) return [];
   return rows(pending?.detail, " ");
 }
 
 /** An edit's request says which file above its diff (the bridge's detail is then the path). */
 export function askFile(pending, call) {
   const tool = call?.name ?? pending?.tool;
-  if (!["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(tool)) return null;
+  if (!EDITS.includes(tool)) return null;
   return call?.input?.file_path ?? call?.input?.notebook_path ?? pending?.detail ?? null;
 }
+
+/**
+ * What the card shows of a request, worked out once, when the request or its call arrives (a text up
+ * to 32 KB is split here, never in the render, which only reads it): `pending` (the request it is for),
+ * `file`, `rows`.
+ */
+export const askOf = (pending, call) => ({ pending, file: askFile(pending, call), rows: askRows(pending, call) });
 
 /** What the card shows: FOLD rows folded, up to OPEN opened; `more`, the rows left out; `foldable`, a toggle. */
 export function shownRows(all, open) {
