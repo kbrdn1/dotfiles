@@ -10,8 +10,8 @@ Ce document ne fait que lister ce qui est installé.
 
 | | |
 |---|---|
-| Skills `me:*` | 32 |
-| Autres skills | 45 |
+| Skills `me:*` | 31 |
+| Autres skills | 42 |
 | Skills liés (tiers) | 102 |
 | Commandes | 73 |
 | Agents | 22 |
@@ -46,7 +46,6 @@ génération de documents. Ce sont elles que `RULES.md` et `WORKFLOW.md` citent.
 | `me:loop:docs-sync` | Loop auto-cadencé : détecte la dérive entre la surface publique du projet (CLI, API, config) et sa documentation, met les docs à jour, et reboucle jusqu'à zéro… |
 | `me:loop:rgaa-until-clean` | Loop auto-cadencé : relance l'audit d'accessibilité automatisé (axe-core / pa11y) sur les routes modifiées, corrige les violations via la skill me:rgaa, et… |
 | `me:loop:test-until-green` | Loop auto-cadencé générique (tout langage) : détecte le runner de tests du projet, le relance et corrige jusqu'à ce que tous les tests passent (exit 0), max 10… |
-| `me:merge` | Merger la PR de la branche courante sur sa base (dev), fermer l'issue liée, remettre le checkout principal à jour sans écraser ses commits locaux, et écrire la… |
 | `me:release` | Publier une version : migration du changelog vers changelogs/<version>.md, bump des fichiers de version, merge dev → main, tag APRÈS le merge, release GitHub… |
 | `me:report` | Rapport HTML local et live d'une branche à l'entrée en review : faits collectés par script (fichiers, diffs, commits, review, CI du sha exact) pour 0 token,… |
 | `me:rezero` | Traduction française fidèle et enrichie des contenus Re:Zero : IF Stories / What If en priorité, Light Novels et Web Novels ensuite |
@@ -82,9 +81,6 @@ Skills à part entière vivant dans le dépôt, hors namespace `me:`.
 | `git-flow-worktree` | End-to-end GitHub workflow with an isolated git worktree : opens the issue via `gh`, creates a clean worktree with `gwm`, makes atomic Gitmoji/Conventional… |
 | `gwm` | Manage git worktrees across any repository with the `gwm` Rust binary (CLI + ratatui TUI) |
 | `herdr` | Control Herdr, a terminal multiplexer for coding agents |
-| `herdr-automations` | Write Sheprd automations: small Luau scripts that run on a schedule or by hand to pull a branch, run validation or commands, start agents in new worktrees with… |
-| `herdr-gpui-browser` | Open a browser tab in Sheprd beside your terminal to show the user a web page, HTML file, or mockup, and get back their notes and picks |
-| `herdr-mods` | Write Sheprd mods: small sandboxed Luau extensions that add a status bar item, a sidebar section, a section of the right-hand mod panel, palette commands, or… |
 | `oneshot` | Ultra-fast feature implementation - Explore then Code then Test |
 | `premortem` | Exécute un premortem sur n'importe quel plan, lancement, produit, recrutement, stratégie ou décision |
 | `prompt-agent` | Create and optimize agent prompts with agent-specific patterns |

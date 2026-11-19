@@ -20,6 +20,36 @@ from pathlib import Path
 HOME = Path.home()
 CLAUDE = HOME / ".claude"
 OUT = Path(__file__).resolve().parent.parent / "CLAUDE-CODE.md"
+# La source chezmoi de ~/.claude dans ce dépôt : le document ne liste que ce qu'elle versionne.
+REPO_CLAUDE = Path(__file__).resolve().parent.parent / "private_dot_claude"
+CHEZMOI_PREFIXES = ("exact_", "private_", "readonly_", "empty_", "executable_", "symlink_", "encrypted_")
+
+
+def source_name(name: str) -> str:
+    """Le nom qu'un fichier de la source chezmoi prend dans $HOME (préfixes retirés, dot_ en point)."""
+    changed = True
+    while changed:
+        changed = False
+        for p in CHEZMOI_PREFIXES:
+            if name.startswith(p):
+                name, changed = name[len(p):], True
+    if name.endswith(".tmpl"):
+        name = name[:-5]
+    return "." + name[4:] if name.startswith("dot_") else name
+
+
+def in_repo(path: Path) -> bool:
+    """Un fichier ou dossier de ~/.claude est-il versionné dans ce dépôt ? Lancé hors du dépôt (pas de
+    source à côté), rien n'est filtré."""
+    if not REPO_CLAUDE.is_dir():
+        return True
+    cur = REPO_CLAUDE
+    for part in path.relative_to(CLAUDE).parts:
+        hit = next((c for c in cur.iterdir() if source_name(c.name) == part), None) if cur.is_dir() else None
+        if hit is None:
+            return False
+        cur = hit
+    return True
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -83,14 +113,19 @@ def collect_skills() -> tuple[list, list, list]:
         return mine, own, linked
     for entry in sorted(root.iterdir(), key=lambda p: p.name.lower()):
         if entry.is_symlink():
+            # Des installations tierces, que le dépôt ne versionne pas et que le document compte à part.
             target = os.readlink(entry)
             linked.append((entry.name, target))
+            continue
+        if not in_repo(entry):
             continue
         if not entry.is_dir():
             continue
         if entry.name == "me":
             # skills/me/<name>/SKILL.md, et skills/me/loop/<name>/SKILL.md
             for sk in sorted(entry.rglob("SKILL.md")):
+                if not in_repo(sk.parent):
+                    continue
                 fm = frontmatter(sk)
                 mine.append((skill_name(sk.parent, fm), summary(fm.get("description", ""))))
             continue
@@ -107,6 +142,8 @@ def collect_md(sub: str) -> list[tuple[str, str]]:
         return []
     rows = []
     for f in sorted(root.rglob("*.md")):
+        if not in_repo(f):
+            continue
         rel = f.relative_to(root).with_suffix("")
         fm = frontmatter(f)
         path_name = str(rel).replace(os.sep, ":")
@@ -142,15 +179,20 @@ def collect_hooks() -> list[str]:
     for event, groups in (cfg.get("hooks") or {}).items():
         for group in groups or []:
             for hook in (group or {}).get("hooks") or []:
-                words = [w.strip("'\"") for w in str(hook.get("command", "")).split()]
+                # Le document est public : ni variable d'environnement (un jeton y passe), ni URL, ni
+                # chemin. Seuls le programme et le nom du fichier qu'il lance sortent.
+                words = [w.strip("'\"") for w in str(hook.get("command", "")).split() if "=" not in w]
+                words = [w for w in words if "://" not in w]
                 if not words:
                     continue
                 paths = [Path(w).name for w in words if "/" in w]
-                if words[0] in INTERPRETERS or "/" in words[0]:
-                    script = paths[0] if paths else words[0]
+                program = words[0] if re.fullmatch(r"[A-Za-z0-9._-]+", words[0]) else ""
+                if program in INTERPRETERS or "/" in words[0]:
+                    script = paths[0] if paths else program
                 else:
-                    script = " ".join([words[0], *paths[-1:]])
-                out.append(f"{event} : {script}")
+                    script = " ".join(x for x in [program, *paths[-1:]] if x)
+                if script:
+                    out.append(f"{event} : {script}")
     return out
 
 
