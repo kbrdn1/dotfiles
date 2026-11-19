@@ -438,13 +438,38 @@ assert.ok(got.every((r) => "whitespace_nowrap" in r.props && r.props.pr?.[0] ===
 assert.ok(nodes(v_list_of(render({ start: 0, end: 50 }, cx))) < 200, "a screen of rows costs a screen of elements");
 function v_list_of(rows) { const x = el("v"); x.kids.push(...rows); return x; }
 // The scroll: a row, half the rows on screen, the top, the bottom, a row's number; a new document at its top.
-// scroll_to_item only brings a row into view (the nearest edge, seen on screen): a move aims just past
-// the rows on screen, never at one of them (a row already shown moves nothing).
-render({ start: 40, end: 70 }, cx); // the rows last on screen: 40 to 69
+// scroll_to_item only brings a row into view (the nearest edge, seen on screen): a move aims at the
+// first row wholly off the screen, never at one of them (a row already shown moves nothing). The
+// rendered range holds one row more on each side (OVER): 40 and 69 are off screen, 41 to 68 on it.
+render({ start: 40, end: 70 }, cx);
 st.scroll.calls.length = 0;
 for (const how of ["down", "up", "half-down", "half-up", "bottom", "12", "top", "99999"]) rawScroll(st, how);
-assert.deepEqual(st.scroll.calls, [["item", 70, "top"], ["item", 39, "top"], ["item", 84, "top"], ["item", 25, "top"], ["bottom"], ["item", 12, "top"], ["item", 0, "top"], ["item", count - 1, "top"]]);
-for (const [how, at] of [["down", 70], ["up", 39], ["half-down", 84], ["half-up", 25]]) assert.ok(at < 40 || at >= 70, `${how} aims off screen`);
+assert.deepEqual(st.scroll.calls, [["item", 69, "top"], ["item", 40, "top"], ["item", 82, "top"], ["item", 27, "top"], ["bottom"], ["item", 12, "top"], ["item", 0, "top"], ["item", count - 1, "top"]]);
+for (const [how, at] of [["down", 69], ["up", 40], ["half-down", 82], ["half-up", 27]]) assert.ok(at < 41 || at > 68, `${how} aims off screen`);
+// ctrl-e / ctrl-y: a row a press, each way (#43). A model of the list as measured on screen
+// (2026-11-19): rows of 19 px, the rendered range = the rows on screen and one more on each side,
+// scroll_to_item bringing a row to the nearest edge, the list a whole number of rows tall (rawList).
+// Before: 3 rows a ctrl-e from the top, 2 a ctrl-y (seen on screen); here, 2 each way.
+{
+  const N = 400, R = 19, H = 43 * R;
+  let off = 0;
+  const range = () => ({ start: Math.max(0, Math.floor(off / R) - 1), end: Math.min(N, Math.ceil((off + H) / R) + 1) });
+  const sim = { range: range(), total: N, scroll: { scroll_to_item(v) {
+    if (v * R < off) off = v * R;
+    else if ((v + 1) * R > off + H) off = (v + 1) * R - H;
+    off = Math.max(0, Math.min(N * R - H, off));
+  }, scroll_to_bottom() { off = N * R - H; } } };
+  const press = (how) => { const was = off; rawScroll(sim, how); sim.range = range(); return off - was; };
+  assert.equal(press("up"), 0, "at the top, ctrl-y stays");
+  const moves = ["down", "down", "down", "up", "down", "up", "up", "up"].map(press);
+  assert.deepEqual(moves, [R, R, R, -R, R, -R, -R, -R], "a row a press, from the top and after a change of way");
+  const half = press("half-down");
+  assert.ok(Math.abs(half - Math.floor(43 / 2) * R) <= R, `half-down: half the screen (${half} px)`);
+  assert.ok(Math.abs(press("half-up") + half) <= R, "half-up: back about as far");
+  press("bottom");
+  assert.equal(press("down"), 0, "at the bottom, ctrl-e stays");
+  assert.equal(press("up"), -R, "and ctrl-y goes back a row");
+}
 render({ start: 0, end: 30 }, cx);
 st.scroll.calls.length = 0;
 rawScroll(st, "up");
@@ -460,6 +485,9 @@ lv2 = rawList(t, m, cx, st, { id: "kx-list", mod: "kt-x", doc: gdoc });
 const sc2 = sizeCx();
 area(lv2).on.on_size_change({ width: 300, height: 500 }, sc2);
 assert.equal(sc2.n, 1);
+assert.equal(st.rows.get("kx-list"), 26, "the area's height in whole rows (500 / 19)");
+area(lv2).on.on_size_change({ width: 300, height: 510 }, sc2);
+assert.equal(sc2.n, 1, "a few pixels more, the same rows: no render");
 m = frame(m, false);
 const narrow = find(rawList(t, m, cx, st, { id: "kx-list", mod: "kt-x", doc: gdoc }), (x) => x.kind === "list")[0].props.args[1];
 assert.ok(narrow > count, "narrower: more rows");

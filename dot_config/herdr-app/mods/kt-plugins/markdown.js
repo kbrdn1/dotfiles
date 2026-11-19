@@ -301,10 +301,12 @@ export function target(url, dir) {
 // In init() (it makes Brut's scroll handle). raw: Brut shown; pages: the paged Brut's page starts per
 // document; colors / busy / queue: colorsOf's; docs: docOf's; seen / fade / n: view()'s fade on a
 // switch; widths / lastW: the boxes' widths (their columns); starts: rowStarts per (hash, columns);
-// scroll / range / total / listOf: rawList's handle, the rows on screen, their count, its document.
+// scroll / range / total / listOf: rawList's handle, the rows on screen, their count, its document;
+// rows: rawList's area height in whole rows (its list is that tall: rawScroll).
 export const mdState = () => ({
   raw: false, colors: new Map(), busy: new Set(), queue: [], docs: new Map(), seen: new Map(), fade: new Map(), n: 0, pages: new Map(),
   widths: new Map(), lastW: 640, starts: new Map(), scroll: VirtualListScrollHandle.new(), range: { start: 0, end: 0 }, total: 0, listOf: null,
+  rows: new Map(),
 });
 
 // A bounded map, least recently used out first.
@@ -323,12 +325,20 @@ export function docOf(st, text, opts) {
 
 // A box's width, for its columns: recorded on its on_size_change; a render only when the columns change
 // (a height, a pixel more, never: no loop through the rows' widths). The first frame uses the last width.
-function measure(st, key) {
+// `rows` (rawList's area): its height in whole rows too, a render when that count changes (the list
+// inside is that tall, so the area's own size never depends on it).
+function measure(st, key, rows = false) {
   return (s, cx) => {
     const before = colsFor(st.widths.get(key) ?? st.lastW);
     remember(st.widths, key, s.width);
     st.lastW = s.width;
-    if (colsFor(s.width) !== before) cx.notify();
+    let moved = false;
+    if (rows) {
+      const n = Math.max(1, Math.floor(s.height / ROW));
+      moved = st.rows.get(key) !== n;
+      remember(st.rows, key, n);
+    }
+    if (colsFor(s.width) !== before || moved) cx.notify();
   };
 }
 const colsOf = (st, key) => colsFor(st.widths.get(key) ?? st.lastW);
@@ -541,11 +551,15 @@ export function rawList(t, m, cx, st, { id, mod, doc }) {
     }
     return out;
   };
+  // The list as tall as the area's whole rows (measure): both its edges on a row's edge, so a row
+  // brought to either one moves the screen by whole rows (rawScroll: a row a press, each way).
+  const tall = st.rows.get(id);
+  const list = v_virtual_list(`${id}:list`, st.total, ROW, (v) => String(v), render);
   return v_flex().flex_1().min_h(0).w_full().min_w(0).rounded(12).border(1).border_color(t.border).bg(t.raised).overflow_hidden()
     .when(lines === null && !checking(), (el) => el.child(note(t, tr("md.mono")).px(14).pt(9)))
     .child(S.swap(`${id}:src`, lines !== undefined, () => div().id(`${id}:area`).flex_1().min_h(0).w_full().min_w(0).relative().overflow_hidden()
-      .on_size_change(measure(st, id))
-      .child(v_virtual_list(`${id}:list`, st.total, ROW, (v) => String(v), render).size_full().track_scroll(st.scroll)
+      .on_size_change(measure(st, id, true))
+      .child((tall ? list.w_full().h(tall * ROW) : list.size_full()).track_scroll(st.scroll)
         .font_family(CODE).text_size(12).line_height(`${ROW}px`).text_color(t.foreground))
       .child(Scrollbar.vertical(`${id}:list`).absolute().inset_0()),
     () => v_flex().flex_1().px(14).py(12).gap(2).children([0.5, 0.9, 0.75, 0.3, 0.95, 0.6].map((w) => S.line(w, { h: 8, lh: ROW }))), { grow: true }));
@@ -554,19 +568,23 @@ export function rawList(t, m, cx, st, { id, mod, doc }) {
 /** Scrolls rawList's Brut: "down" / "up" a row, "half-down" / "half-up" half the rows on screen, "top",
  *  "bottom", or a row's number (`<mod>.raw:<how>`, for tests: that row brought to the nearest edge, the
  *  top when it is above the screen, the bottom when below; already on screen, nothing moves).
- *  scroll_to_item only brings a row into view (seen on screen, 2026-11-19), so a move aims just past
- *  the rows last on screen: the first below them (range.end) to go down, the one above (start − 1) to
- *  go up, half a screen further for the half pages. */
+ *  scroll_to_item only brings a row into view (seen on screen, 2026-11-19), so a move aims at the first
+ *  row wholly off the screen: below it to go down, above it to go up, half a screen further for the
+ *  half pages. The range the list renders holds one row more on each side (OVER, measured on screen
+ *  2026-11-19, #43: aiming at range.end moved 3 rows from the top, at start − 1 moved 2), so the first
+ *  row wholly below is range.end − 1 and the first wholly above is range.start. The list is a whole
+ *  number of rows tall (rawList), so both edges sit on a row's edge: a row a press, each way. */
+const OVER = 1;
 export function rawScroll(st, how) {
   const { start, end } = st.range;
-  const half = Math.max(1, Math.floor((end - start) / 2));
+  const half = Math.max(1, Math.floor((end - start - 2 * OVER) / 2));
   const to = (v) => st.scroll.scroll_to_item(Math.max(0, Math.min(Math.max(0, st.total - 1), v)), "top");
   if (how === "top") to(0);
   else if (how === "bottom") st.scroll.scroll_to_bottom();
-  else if (how === "down") to(end);
-  else if (how === "up") to(start - 1);
-  else if (how === "half-down") to(end - 1 + half);
-  else if (how === "half-up") to(start - half);
+  else if (how === "down") to(end - OVER);
+  else if (how === "up") to(start + OVER - 1);
+  else if (how === "half-down") to(end - OVER - 1 + half);
+  else if (how === "half-up") to(start + OVER - half);
   else if (/^\d+$/.test(how)) to(Number(how));
 }
 
