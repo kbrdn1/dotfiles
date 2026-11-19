@@ -144,9 +144,10 @@ and the modules several mods share are byte-identical copies of one reference, l
 | Projects | `kt-project-picker`, `kt-projects` | The project picker, and Manage projects: rename, color, logos, order, archive, restore, force delete (the name typed to confirm) |
 | Dialogs | `kt-new`, `kt-prompt`, `kt-confirm`, `kt-keys` | A new thread, a rename, a confirmation, the help (`?`, `ctrl-b ?`, `⌘/`) |
 
-The interface is bilingual (fr / en). Every shortcut lives in
-`~/.config/herdr-app/keys.json` and is listed in [`KEYBINDINGS.md`](KEYBINDINGS.md);
-`?` opens the in-app help.
+The interface is bilingual (fr / en). The window's shortcuts (the `ctrl-b` prefix, the pages,
+the panel) live in `~/.config/herdr-app/keys.json` and are listed in
+[`KEYBINDINGS.md`](KEYBINDINGS.md); the keys inside each page and dialog (vim-style: `j` / `k`,
+`dd`, `g t`…) are in their mod, and the in-app help (`?`) lists them all.
 
 ### Claude Code Configuration 🧠
 
@@ -338,8 +339,9 @@ Premium applications via SetApp:
 
 ## Shortcuts & Keybindings ⌨️
 
-Every keybinding lives in **[`KEYBINDINGS.md`](KEYBINDINGS.md)**: Herdr 2, herdr 1,
-AeroSpace, Neovim, Zed, tmux and Ghostty, in one place.
+The keybindings live in **[`KEYBINDINGS.md`](KEYBINDINGS.md)**: Herdr 2, herdr 1,
+AeroSpace, Neovim, Zed, tmux and Ghostty, in one place. For Herdr 2, that is `keys.json`; the
+keys inside each page are listed by the in-app help (`?`).
 
 That file is **generated** from the live configs on the machine:
 
