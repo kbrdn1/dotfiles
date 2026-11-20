@@ -57,6 +57,7 @@ function chat(entries = turn("B", 100, "lu d'abord"), { path = "/p", start = 100
     vh: 0, areaW: 0, pinned: null, top: 120, reveal: null, viewY: null, wheelEst: null, jump: null, tlId: null, tlAbove: false, tlLost: false, bgBtn: false,
     budget: null, shownSteps: new Map(), open: new Set(), settling: false,
     drawn: new Map(), byState: new Map(), heldNow: new Set(), keepRow: null, pressMoved: false,
+    ahead: null, aheadTimer: false, lastWheel: 0, reachWait: null, farTo: null,
   });
   c.state = ingest(null, out(path, start, end, true, entries));
   c.rebuild(true);
@@ -366,14 +367,16 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
     const opened = all.filter((e) => e.turn);
     return { path: "/p", end: all.at(-1).o + 9, turns: opened.map((e) => ({ o: e.o, uuid: e.uuid, at: e.at })), marks: opened.map((e) => ({ o: e.o, uuid: e.uuid, turn: e.uuid, at: e.at, text: e.text, images: 0, note: false })) };
   };
-  // The CLI as chat-index.ts slices: [from, to), its last `lim.turns` turns.
+  // The CLI as chat-index.ts slices: [from, to), its last `lim.turns` turns; `more` as it says it,
+  // something before its start IN THIS READ (start > from): a read with a --from that fits whole says
+  // false with the session's older turns still above (t1, 2026-11-20: the jump that never came).
   const cli = (all, reads, gate = null) => async (path, extra, lim = {}) => {
-    const from = Number(extra[extra.indexOf("--from") + 1]), to = Number(extra[extra.indexOf("--to") + 1]);
+    const at = extra.indexOf("--from"), from = at < 0 ? 0 : Number(extra[at + 1]), to = Number(extra[extra.indexOf("--to") + 1]);
     reads.push([from, to, lim.turns]);
     if (gate) await gate;
     const opened = all.filter((e) => e.turn && e.o >= from && e.o < to).slice(-(lim.turns ?? 30));
     const start = opened[0]?.o ?? to;
-    return out(path, start, to, start > 0, all.filter((e) => e.o >= start && e.o < to));
+    return out(path, start, to, start > from, all.filter((e) => e.o >= start && e.o < to));
   };
   const spawner = () => {
     const cx = { notified: 0, spawn: (fn) => (cx.p = fn(cx)), notify() { cx.notified++; } };
@@ -440,15 +443,260 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
     // The live tail while it reads: not following, the trim keeps every loaded turn (what the next read
     // continues), where it would keep from the window's first turn otherwise.
     const all = many(700); // 1 400 entries, past KEEP
-    for (const reaching of [true, false]) {
+    for (const why of ["reaching", "ahead", null]) {
       const c = chat(all, { start: 0, end: 7000 });
       c.follow = false;
       c.win = { from: 690, to: 700 };
-      c.farTo = reaching ? "T5" : null;
+      c.farTo = why === "reaching" ? "T5" : null;
+      c.ahead = why === "ahead" ? { at: Date.now() } : null;
       c.index = async () => out("/p", 7000, 7010, false, turn("N", 7000));
       await c.tail("/p", true);
-      assert.equal(c.state.start, reaching ? 0 : 1010, reaching ? "reaching: everything stays" : "else: KEEP entries (the window's turns among them), the oldest go");
+      assert.equal(c.state.start, why ? 0 : 1010, why ? `${why}: everything stays (rows read above wait to come in)` : "else: KEEP entries (the window's turns among them), the oldest go");
     }
+  }
+  {
+    // A far message clicked while goAhead()'s read is in flight: read toward after it, never dropped.
+    const all = many(200);
+    const c = chat(all.filter((e) => e.o >= 1950), { start: 1950, end: 2000 });
+    c.summary = summaryOf(all);
+    c.rebuild(true);
+    c.follow = false;
+    let open;
+    const reads = [];
+    c.index = cli(all, reads, new Promise((r) => (open = r)));
+    const cx = spawner();
+    c.goAhead(cx);
+    const auto = cx.p;
+    assert.equal(c.olderBusy, true, "goAhead() reads (the head says « lecture… »)");
+    c.jumpTo(2, cx);
+    assert.equal(c.farTo, "T2", "the click is taken: it waits for the read in flight");
+    open();
+    await auto;
+    await cx.p;
+    assert.equal(c.turns[c.cur]?.id, "T2", "then it reads up to its message and jumps");
+    assert.equal(c.jump, "T2");
+    assert.equal(c.ahead, null, "goAhead()'s rows stay out of a jump");
+  }
+  {
+    // A second far message clicked while the read toward the first is in flight: it is the one reached.
+    const all = many(200);
+    const c = chat(all.filter((e) => e.o >= 1950), { start: 1950, end: 2000 });
+    c.summary = summaryOf(all);
+    c.rebuild(true);
+    let open;
+    const reads = [];
+    c.index = cli(all, reads, new Promise((r) => (open = r)));
+    const cx = spawner();
+    c.jumpTo(2, cx);
+    const first = cx.p;
+    c.jumpTo(4, cx);
+    assert.equal(c.farTo, "T4", "the second click is taken");
+    open();
+    await first;
+    await cx.p;
+    assert.equal(c.turns[c.cur]?.id, "T4", "the second one read up to and jumped to");
+    assert.equal(c.farTo, null, "nothing left waiting (goAhead() works again)");
+    assert.equal(c.olderBusy, false);
+  }
+}
+
+// ── #59, étape 2: « Tours précédents » by itself near the head, at rest, the reader's rows kept on screen ──
+{
+  const many = (n) => Array.from({ length: n }, (_, k) => turn(`T${k}`, k * 10, `message ${k}`)).flat();
+  // 20 turns loaded, T10..T19 drawn, each 100 high, the head 40: T10's top at 20 + 40 = 60.
+  const setup = () => {
+    const c = chat(many(20), { start: 0, end: 200 });
+    c.win = { from: 10, to: 20 };
+    c.follow = false;
+    c.vh = 300; // the head near under 450; the bottom at 1111 + 8 - 300 = 819
+    c.hts.set("kc-head", 40);
+    c.hts.set("kc-working", 50);
+    for (let k = 10; k < 20; k++) c.hts.set(`kc-turn-T${k}`, 100);
+    c.viewSeen({ bounds: { y: 61 } });
+    return c;
+  };
+  // The area's half of a wheel event: the view's top at 61 in the window, the content painted from 61 - top.
+  const up = (top, dy) => ({ delta: { x: 0, y: dy }, position: { x: 5, y: 300 }, local_position: { x: 5, y: top + 239 }, bounds: { y: 61 - top, width: 1000, height: 1060 } });
+  {
+    const c = setup(), cx = ctx();
+    c.areaWheel(up(900, 30), cx);
+    assert.equal(c.ahead, null, "going up far from the head (819, over 1.5 views): nothing yet");
+    c.areaWheel(up(300, -30), cx);
+    assert.equal(c.ahead, null, "going down near it: nothing");
+    c.areaWheel(up(200, 30), cx);
+    assert.ok(c.ahead, "going up near the head (170): the turns above wait to come in");
+    assert.deepEqual(c.aheadRows().map((x) => x.id), ["T5", "T6", "T7", "T8", "T9"], "those « Tours précédents » would draw (the window up to CAP)");
+    assert.deepEqual(c.win, { from: 10, to: 20 }, "nothing drawn above yet: nothing moves on screen");
+    assert.equal(cx.timers.length, 1, "one timer");
+    c.areaWheel(up(170, 30), cx);
+    assert.equal(cx.timers.length, 1, "still one, however many events (bursts of 29)");
+    assert.equal(c.top, 140, "the view's top the last event leaves");
+    c.lastWheel = Date.now() - 1000;
+    cx.fire();
+    assert.deepEqual(c.win, { from: 10, to: 20 }, "at rest but not measured: they wait");
+    assert.equal(cx.timers.length, 1, "the timer again");
+    const n = cx.notified;
+    for (let k = 5; k < 10; k++) c.measured(`kc-turn-T${k}`, { width: 800, height: 120 }, cx);
+    assert.equal(cx.notified, n + 5, "each size measured out of the flow asks a render (the next ones to measure)");
+    c.lastWheel = Date.now();
+    cx.fire();
+    assert.deepEqual(c.win, { from: 10, to: 20 }, "measured, but a wheel event under AHEAD.rest ago: never during a gesture");
+    c.lastWheel = Date.now() - 1000;
+    cx.fire();
+    assert.deepEqual(c.win, { from: 5, to: 20 }, "at rest and measured: they come in");
+    assert.equal(c.reveal, null, "no scroll_to_item: the smallest scroll would move the reader (it lands on T10's bottom)");
+    assert.deepEqual({ id: c.keepRow.id, screen: c.keepRow.screen }, { id: "kc-turn-T10", screen: -80 }, "T10 kept where it is: 80 above the view's top");
+    // The render: the view's top moves by what came above (5 x 120); a row under T10 not measured
+    // (« Tours suivants » a slide brings, here the working row) only shortens the anchor.
+    c.hts.delete("kc-working");
+    const k = c.keepY(new Map());
+    assert.equal(k?.top, 140 + 600, "the view posed at its top plus the rows that came above, to the px");
+    assert.equal(c.keepRow?.correct, true, "kept for a second: a row of another height in the flow corrects it");
+    c.measured("kc-turn-T7", { width: 800, height: 150 }, cx);
+    assert.equal(c.keepY(new Map())?.top, 140 + 630, "T7 came out 30 higher in the flow: corrected");
+    assert.equal(c.ahead, null);
+  }
+  {
+    // The rows read first when none is loaded above: the drawn ones and the cursor stay on their turns.
+    const all = many(200);
+    const c = chat(all.filter((e) => e.o >= 1950), { start: 1950, end: 2000 });
+    c.follow = false;
+    c.cur = 3;
+    const reads = [];
+    c.index = async (path, extra) => {
+      reads.push(extra);
+      const to = Number(extra[extra.indexOf("--to") + 1]), start = to - 300;
+      return out(path, start, to, start > 0, all.filter((e) => e.o >= start && e.o < to));
+    };
+    const cx = { notified: 0, timers: [], spawn: (fn) => (cx.p = fn(cx)), notify() { cx.notified++; } };
+    cx.timer = { after: (ms, fn) => cx.timers.push({ ms, fn }) };
+    c.goAhead(cx);
+    await cx.p;
+    assert.deepEqual(reads, [["--to", "1950"]], "the read « Tours précédents » makes");
+    assert.equal(c.state.start, 1650);
+    assert.deepEqual(c.turns.slice(c.first(), c.end()).map((x) => x.id), ["T195", "T196", "T197", "T198", "T199"], "the same turns drawn");
+    assert.equal(c.turns[c.cur].id, "T198", "the cursor on its turn");
+    assert.equal(c.aheadRows().length, 10, "the read turns wait to come in");
+    assert.equal(cx.timers.length, 1);
+  }
+  {
+    const c = setup(), cx = ctx();
+    c.follow = true;
+    c.goAhead(cx);
+    assert.equal(c.ahead, null, "following the bottom: nothing");
+    c.follow = false;
+    c.jump = "T3";
+    c.goAhead(cx);
+    assert.equal(c.ahead, null, "a jump on its way: nothing");
+    c.jump = null;
+    c.goAhead(cx);
+    c.jump = "T3";
+    c.lastWheel = 0;
+    cx.fire();
+    assert.equal(c.ahead, null, "a jump meanwhile: let go");
+  }
+  {
+    // At CAP the window's bottom goes, never a turn in the view: the view [410, 710] on T13..T16.
+    const c = chat(many(30), { start: 0, end: 300 });
+    c.win = { from: 10, to: 25 };
+    c.follow = false;
+    c.builtLive = false;
+    c.vh = 300;
+    c.hts.set("kc-head", 40);
+    c.hts.set("kc-later", 42);
+    for (let k = 0; k < 25; k++) c.hts.set(`kc-turn-T${k}`, 100); // T0..T9 as the box measured them
+    c.viewSeen({ bounds: { y: 61 } });
+    const cx = ctx();
+    c.areaWheel(up(440, 30), cx);
+    c.lastWheel = Date.now() - 1000;
+    cx.fire();
+    assert.deepEqual(c.win, { from: 2, to: 17 }, "T16, in the view, stays drawn: 8 come above, not 10");
+    assert.equal(c.keepY(new Map())?.top, 410 + 800, "T10 kept on screen");
+  }
+  {
+    // Rows waiting to come in above, then the wheel goes down: let go (what they would cut is where it goes).
+    const c = setup(), cx = ctx();
+    c.areaWheel(up(200, 30), cx);
+    assert.ok(c.ahead);
+    c.areaWheel(up(170, -30), cx);
+    assert.equal(c.ahead, null, "the wheel the other way: the wait let go");
+    c.lastWheel = 0;
+    cx.fire();
+    assert.deepEqual(c.win, { from: 10, to: 20 }, "nothing comes");
+  }
+}
+
+// ── #59: the same downward after a jump (« Tours suivants » by itself), then the live tail followed again.
+// Measured on t1 (2026-11-20, 03:41:23-28): the window [0,10) of 825 turns loaded, the wheel at its end for
+// 5 s, « Tours suivants » under it, nothing came. ──
+{
+  const many = (n) => Array.from({ length: n }, (_, k) => turn(`T${k}`, k * 10, `message ${k}`)).flat();
+  // 30 turns loaded (a jump left the window at their top), the drawn ones 100 high, the head 40, « Tours suivants » 42.
+  const setup = (to, tall = {}) => {
+    const c = chat(many(30), { start: 0, end: 300 });
+    c.win = { from: to - Math.min(to, 15), to };
+    c.follow = false;
+    c.builtLive = false;
+    c.vh = 300;
+    c.hts.set("kc-head", 40);
+    c.hts.set("kc-later", 42);
+    for (let k = c.win.from; k < to; k++) c.hts.set(`kc-turn-T${k}`, tall[k] ?? 100);
+    c.viewSeen({ bounds: { y: 61 } });
+    return c;
+  };
+  const down = (top, dy) => ({ delta: { x: 0, y: dy }, position: { x: 5, y: 300 }, local_position: { x: 5, y: top + 239 }, bounds: { y: 61 - top, width: 1000, height: 4000 } });
+  {
+    // The window under CAP: the turns come at once, under the view (the view doesn't move).
+    const c = setup(10), cx = ctx();
+    c.areaWheel(down(100, -20), cx);
+    assert.deepEqual(c.win, { from: 0, to: 10 }, "going down far from the window's end (420 of 1111): nothing");
+    c.areaWheel(down(500, -20), cx);
+    assert.deepEqual(c.win, { from: 0, to: 15 }, "near its end: « Tours suivants » by itself, the window grown to CAP");
+    assert.equal(c.ahead, null, "at once: nothing above goes, the view doesn't move");
+    assert.equal(c.keepRow, null);
+    assert.equal(cx.timers.length, 0);
+  }
+  {
+    // At CAP: the top goes, at rest only, the first turn in the view kept where it is.
+    const c = setup(15), cx = ctx();
+    c.areaWheel(down(1300, -10), cx);
+    assert.deepEqual(c.win, { from: 0, to: 15 }, "the top would go: not during a gesture");
+    assert.equal(cx.timers.length, 1);
+    c.lastWheel = Date.now();
+    cx.fire();
+    assert.deepEqual(c.win, { from: 0, to: 15 }, "a wheel event under AHEAD.rest ago: still waiting");
+    c.lastWheel = Date.now() - 1000;
+    cx.fire();
+    assert.deepEqual(c.win, { from: 10, to: 25 }, "at rest: « Tours suivants » (10 down, the 10 at the top gone)");
+    assert.deepEqual({ id: c.keepRow?.id, screen: c.keepRow?.screen }, { id: "kc-turn-T12", screen: -50 }, "T12, the first turn in the view, kept 50 above its top");
+    const k = c.keepY(new Map());
+    assert.equal(k?.top, 1310 - 1000, "the view's top moved up by the 10 turns gone, the turns under it not measured yet");
+  }
+  {
+    // Waiting to go down, the window not at the loaded top: nothing above is measured nor waited for.
+    const c = setup(20), cx = ctx();
+    c.areaWheel(down(1300, -10), cx);
+    assert.equal(c.ahead?.down, true);
+    assert.deepEqual(c.aheadRows(), [], "the turns above aren't measured for a move down");
+    c.lastWheel = Date.now() - 1000;
+    cx.fire();
+    assert.deepEqual(c.win, { from: 15, to: 30 }, "the window at the end, T17 (the first in the view) kept");
+  }
+  {
+    // A turn in the view never goes: the cut stops at it (T9, 2 000 high, the view inside it).
+    const c = setup(15, { 9: 2000 }), cx = ctx();
+    c.areaWheel(down(2910, -10), cx);
+    c.lastWheel = Date.now() - 1000;
+    cx.fire();
+    assert.deepEqual(c.win, { from: 9, to: 24 }, "the window's top stops at T9, in the view");
+    assert.equal(c.keepRow?.id, "kc-turn-T9");
+  }
+  {
+    // The window at the end: the wheel at the bottom follows the live tail again.
+    const c = setup(30), cx = ctx();
+    c.areaWheel(down(1260, -20), cx);
+    assert.equal(c.follow, true, "the conversation's end reached: followed again");
+    assert.equal(c.ahead, null, "nothing more to bring");
   }
 }
 console.log("scroll.check: ok");

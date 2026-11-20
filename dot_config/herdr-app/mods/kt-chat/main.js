@@ -116,6 +116,10 @@ const MAX_ENTRIES = 900; // --max-entries: JSON.parse + build() stay ~15 ms in t
 // #59: a read toward a message far above (reach(), the timeline): more turns a read, fewer reads; each
 // one bounded by the summary's openers (timeline.js readFrom). To be measured in the engine (the journal).
 const FAR = { turns: 90, budget: 1500000, entries: 2000 };
+// #59, étape 2: « Tours précédents » by itself (goAhead()) when the wheel going up brings the view's top
+// within `near` view heights of the head; the rows come in `rest` ms after the last wheel event (inertia
+// included), measured first out of the flow, `chunk` turns a render (CAP's ~50 ms a render).
+const AHEAD = { near: 1.5, rest: 150, chunk: 3, give: 10000 };
 const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before the oldest go
 // The live tail: a delta read this often, only while the Chat shows and its agent works.
 const TICK = 750;
@@ -255,6 +259,12 @@ export default class Chat extends View {
     this.heldNow = new Set();
     this.keepRow = null;
     this.pressMoved = false;
+    // #59, étape 2 (goAhead()): rows waiting to come in above ({ at }), its one timer, the last wheel
+    // event's time, and a far message clicked while a read was in flight (reach() after it).
+    this.ahead = null;
+    this.aheadTimer = false;
+    this.lastWheel = 0;
+    this.reachWait = null;
     this.tlId = null;
     this.tlAbove = false;
     this.tlLost = false; // the view moved where no event says (a press on the scrollbar): nothing lit
@@ -539,7 +549,17 @@ export default class Chat extends View {
    * meanwhile (the head says « lecture… »); the bottom, another jump or a key cancel it (farTo).
    */
   reach(m, cx) {
-    if (this.olderBusy || !this.summary || !this.state) return;
+    if (!this.summary || !this.state) return;
+    // Another read in flight (« Tours précédents », goAhead()): this one goes after it (resumeReach()),
+    // never dropped (the click would do nothing).
+    if (this.olderBusy) {
+      this.reachWait = m;
+      this.farTo = m.id;
+      this.follow = false;
+      cx.notify();
+      return;
+    }
+    this.ahead = null;
     const target = this.summary.turns.find((t) => t.uuid === m.turn)?.o ?? m.o;
     this.farTo = m.id;
     this.follow = false; // the live tail's trim keeps what is read (tail(): keepFrom)
@@ -566,9 +586,153 @@ export default class Chat extends View {
       } finally {
         if (this.farTo === m.id) this.farTo = null;
         this.olderBusy = false;
+        this.resumeReach(cx); // another far message clicked meanwhile: its turn now
         cx.notify();
       }
     });
+  }
+
+  /** A far message clicked while another read was in flight (reach()): read toward it now, unless the bottom, a key or another jump let it go meanwhile (farTo). */
+  resumeReach(cx) {
+    const m = this.reachWait;
+    this.reachWait = null;
+    if (m && this.farTo === m.id) this.reach(m, cx);
+  }
+
+  /**
+   * #59, étape 2: « Tours précédents » by itself, as the wheel going up nears the head (wheel(), AHEAD).
+   * The turns above the window are read into the state first when none is loaded there (the drawn ones
+   * stay, rebuild() remaps them: nothing moves on screen), then measured out of the flow (body(), the
+   * rows of aheadRows() not measured yet), then drawn at rest only (spread()). gpui keeps the offset in
+   * px when rows come above the view (measured, 2026-11-20: 2 readings of 2, to the px), so the view is
+   * posed again then (keepY()), never from a top worked out during a gesture.
+   */
+  goAhead(cx) {
+    if (this.ahead || this.olderBusy || this.follow || this.jump != null || this.farTo || !this.state) return;
+    if (this.first() > 0) {
+      this.ahead = { at: Date.now() };
+      cx.notify();
+      return this.restAhead(cx);
+    }
+    if (!this.state.more) return;
+    this.olderBusy = true;
+    cx.notify(); // the head says « lecture… »
+    cx.spawn(async (cx) => {
+      try {
+        const out = await this.index(this.state.path, ["--to", String(this.state.start)]);
+        const next = prepend(this.state, out);
+        if (next === this.state) return; // another state meanwhile (A3)
+        const curId = this.cur >= 0 ? this.turns[this.cur]?.id : null;
+        this.state = next;
+        this.rebuild(this.builtLive, false); // the same turns drawn, now after the read ones
+        if (curId) this.cur = this.turns.findIndex((t) => t.id === curId);
+        if (!this.follow && this.farTo == null && this.first() > 0) this.ahead = { at: Date.now() };
+        if (this.ahead) this.restAhead(cx);
+      } catch {
+        // the head's button reads it again
+      } finally {
+        this.olderBusy = false;
+        this.resumeReach(cx);
+        cx.notify();
+      }
+    });
+  }
+
+  /** The turns goAhead() brings above the window: those « Tours précédents » would draw (turn-window.js older). */
+  aheadRows() {
+    return this.ahead && !this.ahead.down ? this.turns.slice(win.older(this.win).from, this.first()) : [];
+  }
+
+  /**
+   * One timer while rows wait to come in (goAhead()): AHEAD.rest after the last wheel event, inertia
+   * included (bursts of 29 events, measured), and once they are measured, they come (spread()). Let go
+   * when the reader went elsewhere (the bottom, a jump) or after AHEAD.give (the Chat hidden: nothing
+   * measures); the next wheel near the head starts again.
+   */
+  restAhead(cx) {
+    if (this.aheadTimer) return;
+    this.aheadTimer = true;
+    cx.timer.after(AHEAD.rest, (cx) => {
+      this.aheadTimer = false;
+      const a = this.ahead;
+      if (!a) return;
+      if (this.follow || this.jump != null || this.farTo || Date.now() - a.at > AHEAD.give) return void (this.ahead = null);
+      if (Date.now() - this.lastWheel < AHEAD.rest || this.aheadRows().some((x) => !this.hts.has(`kc-turn-${x.id}`))) return this.restAhead(cx);
+      if (a.down) this.spreadBelow(cx);
+      else this.spread(cx);
+    });
+  }
+
+  /**
+   * The rows measured come in above, at rest: the window as « Tours précédents » makes it, the first turn
+   * drawn kept where it is on screen (keepRow: body()'s keepY() poses the view at its new top, then
+   * corrects it for a second if a row comes out another height in the flow). At CAP the window's bottom
+   * goes, never a turn in the view (the last one in it stays drawn: fewer come above then, belowWin()'s
+   * way). The view's top unknown (a reveal, the scrollbar): nothing; the next wheel near the head starts again.
+   */
+  spread(cx) {
+    const g = this.geom(), row = `kc-turn-${this.turns[this.first()]?.id}`, at = g.at.get(row);
+    this.ahead = null;
+    if (this.top == null || !g.known || at == null) return;
+    const w = win.older(this.win);
+    let last = this.end() - 1;
+    for (; last > this.first(); last--) if ((g.tops.get(this.turns[last].id) ?? Infinity) < this.top + this.vh) break;
+    const to = Math.max(w.to, last + 1), from = Math.max(w.from, to - win.CAP);
+    if (from >= this.first()) return;
+    this.keepRow = { id: row, screen: at - this.top, top: this.top, at: Date.now(), correct: true, auto: true };
+    this.win = { from, to };
+    if (this.end() < this.turns.length) this.follow = false;
+    cx.notify();
+  }
+
+  /**
+   * #59: the same downward, once a jump left the window far above the live end: going down near the
+   * window's end, the turns under it come by themselves, as « Tours suivants » brings them (the state
+   * holds them: reach() and the live tail's trim keep everything under the window). Turns that come below
+   * never move the view (gpui keeps the offset from the top): at once while the window grows up to CAP.
+   * Past CAP the turns at its top go, those above the view only: at rest then (restAhead()), the first
+   * turn in the view kept where it is on screen (spreadBelow()). The window at the end, the wheel at the
+   * bottom follows the live tail again (wheel(): atEnd).
+   */
+  goBelow(cx, g, scrollTop) {
+    if (this.ahead || this.follow || this.jump != null || this.farTo) return;
+    const w = this.belowWin(g, scrollTop);
+    if (!w) return;
+    if (w.from === this.first()) {
+      this.win = { from: w.from, to: w.to };
+      cx.notify();
+      return;
+    }
+    this.ahead = { at: Date.now(), down: true };
+    this.restAhead(cx);
+  }
+
+  /**
+   * The window « Tours suivants » makes (turn-window.js newer), its top cut no lower than the first turn in
+   * the view (`vis`, kept on screen): { from, to, vis }, or null when nothing comes.
+   */
+  belowWin(g, scrollTop) {
+    if (this.end() >= this.turns.length) return null;
+    const w = win.newer(this.win, this.turns.length);
+    let vis = this.first();
+    for (; vis < this.end() - 1; vis++) {
+      const id = this.turns[vis].id, y = g.tops.get(id), h = this.hts.get(`kc-turn-${id}`);
+      if (y == null || h == null || y + h > scrollTop) break;
+    }
+    const from = Math.min(w.from, vis), to = Math.min(w.to, from + win.CAP);
+    return to > this.end() ? { from, to, vis } : null;
+  }
+
+  /** goBelow()'s turns past CAP, at rest: the top of the window goes, the first turn in the view stays put (keepY()). */
+  spreadBelow(cx) {
+    const g = this.geom(), top = this.top;
+    this.ahead = null;
+    const w = top == null || !g.known ? null : this.belowWin(g, top);
+    if (!w) return;
+    const row = `kc-turn-${this.turns[w.vis].id}`, at = g.at.get(row);
+    this.keepRow = { id: row, screen: at - top, top, at: Date.now(), correct: true, auto: true };
+    this.win = { from: w.from, to: w.to };
+    cx.notify();
   }
 
   /** The live tail of `path` into the state. Answers whether anything changed (a redraw is due). */
@@ -591,8 +755,9 @@ export default class Chat extends View {
     const grown = ingest(before, out);
     // Not following the bottom, the turns drawn stay (#59: a « Tours précédents » read while it works
     // would go at the next tick): the trim stops at the window's first turn. While reads go up toward a
-    // message far above (reach()), every loaded turn stays: they are what the next read continues.
-    const keepFrom = this.follow ? null : (this.farTo ? this.turns[0] : this.turns[this.first()])?.id ?? null;
+    // message far above (reach()), every loaded turn stays: they are what the next read continues; and
+    // while rows wait to come in above (goAhead()), read for that.
+    const keepFrom = this.follow ? null : (this.farTo || this.ahead ? this.turns[0] : this.turns[this.first()])?.id ?? null;
     this.state = trim(grown, win.keepFor(grown.entries, keepFrom, KEEP));
     // ingest keeps the entries array when nothing came (skipped lines only), trim when under KEEP.
     const grew = this.state.entries !== before.entries;
@@ -727,6 +892,7 @@ export default class Chat extends View {
    * where the reader was looking. The caller redraws.
    */
   older(cx) {
+    this.ahead = null; // the reader's click wins over goAhead()'s rows
     const was = this.first();
     if (was > 0) {
       this.win = win.older(this.win);
@@ -759,6 +925,7 @@ export default class Chat extends View {
         notify({ title: tr("empty.failed.title"), body: String(e?.message ?? e).slice(0, 300), level: "error" });
       } finally {
         this.olderBusy = false;
+        this.resumeReach(cx);
         cx.notify();
       }
     });
@@ -766,6 +933,7 @@ export default class Chat extends View {
 
   /** « Tours suivants »: SHOW more below, the top ones out past CAP; the last turn drawn stays in view. */
   newer() {
+    this.ahead = null; // the reader's click wins over goBelow()'s turns
     const was = this.end() - 1;
     this.win = win.newer(this.win, this.turns.length);
     this.reveal = childOf(was, this.first());
@@ -1726,6 +1894,7 @@ export default class Chat extends View {
     const m = this.marks[k];
     if (!m) return;
     this.farTo = null; // another jump: a read toward an earlier one stops at its next step
+    this.ahead = null; // and goAhead()'s rows stay out
     if (m.i < 0) {
       if (cx) this.reach(m, cx);
       return;
@@ -1820,7 +1989,7 @@ export default class Chat extends View {
         }
         this.settle(cx);
       }
-    } else if (this.jump != null) cx.notify();
+    } else if (this.jump != null || this.ahead) cx.notify(); // a jump waits for its rows; goAhead()'s next ones to measure
   }
 
   /** The bottom once more after a motion (MS.open, and a frame or so), if the view still follows it. */
@@ -1874,6 +2043,12 @@ export default class Chat extends View {
     this.wheelEst = wheelAfter(this.wheelEst, { by, top: viewTop({ viewY: this.viewY, contentY: by, z }), dy, max: g.known ? g.end + 8 - this.vh : Infinity });
     const scrollTop = (this.top = this.wheelEst.top);
     if (!g.known) return;
+    // #59, étape 2: going up near the head, the turns above come by themselves (goAhead()); going down
+    // near the window's end, the turns under it (goBelow()). The wheel the other way lets a wait go: what
+    // it would cut is where the reader goes.
+    if (this.ahead && dy !== 0 && dy < 0 !== Boolean(this.ahead.down)) this.ahead = null;
+    if (dy > 0 && scrollTop < AHEAD.near * this.vh) this.goAhead(cx);
+    else if (dy < 0 && scrollTop + this.vh > g.end + 8 - AHEAD.near * this.vh) this.goBelow(cx, g, scrollTop);
     const whole = this.end() >= this.turns.length; // the window's bottom is the conversation's
     // #59: going down to the conversation's bottom follows it again (the live tail's new turns show).
     if (dy < 0 && !this.follow && atEnd({ scrollTop, vh: this.vh, end: g.end + 8, whole })) {
@@ -1918,6 +2093,7 @@ export default class Chat extends View {
       cx.notify();
     }
     this.keepRow = null; // the reader scrolls: a press's keep no longer holds (keepY())
+    this.lastWheel = Date.now(); // goAhead()'s rows wait for the rest
     this.wheel(cx, ev);
   }
 
@@ -2083,12 +2259,15 @@ export default class Chat extends View {
         if (p != null) h = p;
         else guess = true;
       }
-      if (h == null) return (this.keepRow = null);
-      y += h;
+      // A row under the kept one not measured yet (« Tours suivants » a slide brings, goAhead()) only
+      // shortens the end the anchor stops at; one above it leaves nothing to keep.
+      if (h == null && rowAt == null) return (this.keepRow = null);
+      y += h ?? 0;
     }
     if (rowAt == null) return (this.keepRow = null);
     const top = Math.max(0, rowAt - k.screen);
-    this.keepRow = guess ? { ...k, top, correct: true } : null;
+    // goAhead()'s rows (auto): kept for its second, any row of another height in the flow corrects it.
+    this.keepRow = guess || k.auto ? { ...k, top, correct: true } : null;
     if (Math.abs(top - k.top) < 0.5) return null;
     return { top, h: anchorH({ y: top, end: y + 1, vh: this.vh }) };
   }
@@ -3043,8 +3222,20 @@ export default class Chat extends View {
     for (const i of win.nearFirst(from, to, this.focusTurn())) turns[i - from] = this.turn(t, cx, this.turns[i], i, keyed);
     this.budget = null;
     this.subsDrawn();
+    // #59, étape 2: goAhead()'s rows measured out of the flow, AHEAD.chunk a render (the nearest to the
+    // window first): in a box 0 high at the content's top, clipped, after every child the scroll counts
+    // (its size, scroll_to_item's indices). A budget of their own: drawn as the flow will draw them.
+    const wait = this.aheadRows().filter((x) => !this.hts.has(`kc-turn-${x.id}`)).slice(-AHEAD.chunk);
+    let host = null;
+    if (wait.length) {
+      this.budget = { spans: CODE_SPANS, rows: CODE_ROWS, steps: ROW_BUDGET, fresh: false };
+      host = div().absolute().top(TOP_INSET).left(0).right(0).h(0).overflow_hidden()
+        .child(v_flex().w_full().flex_none().children(wait.map((x) => this.turn(t, cx, x, this.turns.indexOf(x), false))));
+      this.budget = null;
+    }
     // A16: a press that moved the reader keeps its row where it was on screen, whatever the folds above
-    // it are drawn as now (keepY(): an anchor at the view's new top, as the jump's).
+    // it are drawn as now (keepY(): an anchor at the view's new top, as the jump's); goAhead()'s rows
+    // coming in above keep the first turn drawn the same way (auto).
     if (!anchor && this.reveal == null && this.keepRow) {
       const k = this.keepY(this.drawnNow);
       if (k) {
@@ -3073,6 +3264,7 @@ export default class Chat extends View {
         s.ready = true;
         cx.notify();
       }));
+    if (host) children.push(host);
     if (this.reveal != null) {
       this.scroll.scroll_to_item(this.reveal === "bottom" ? last : Math.min(this.reveal, last));
       this.reveal = null;

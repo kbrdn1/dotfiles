@@ -236,10 +236,15 @@ export function trim(state, max) {
   return { ...state, entries: e.slice(i), start: e[i].o, more: true };
 }
 
-/** Older turns (`--to state.start`) put in front. */
+/**
+ * Older turns (`--to state.start`) put in front. `more`: the file has bytes before the new start. Not
+ * the read's own `more`, which says « before its --from »: a read toward a far message (reach(), a
+ * --from) that fits whole has start == from, so more false, with the session's older turns still above
+ * (#59, measured on t1's 160 MB: one read of 90 turns, then the timeline's jump never came).
+ */
 export function prepend(state, out) {
   if (!state || out.path !== state.path || out.end !== state.start) return state;
-  return { ...state, start: out.start, more: out.more, entries: out.entries.concat(state.entries) };
+  return { ...state, start: out.start, more: out.start > 0, entries: out.entries.concat(state.entries) };
 }
 
 /** Messages typed while the agent worked and not taken yet (queue-operation, FIFO). */
