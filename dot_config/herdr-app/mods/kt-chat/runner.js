@@ -19,6 +19,7 @@ import { appHome, shared, checking } from "herdr";
 import * as fs from "fs/promises";
 import { companion, accessoryFor, once } from "./companion.js";
 import { cube34, cubeStyle } from "./companion-cube.js";
+import { sceneOf, cubeMove, TABLE } from "./scene.js";
 import { plan, runnerShown, runnerProps, keepBottom, freshAction, glanceLoops, doneAt, keyOf, CLAWD_POSES } from "./runner-plan.js";
 
 export { runnerShown, runnerProps, keepBottom };
@@ -27,8 +28,9 @@ const DIR = "data/companions/clawd"; // written by brand/companions/clawd/extrac
 // The strip's height. Clawd's (and a program's companion): the tallest pose (30, standing: idle, look, done,
 // error; his jump stays inside it) on GROUND, and 4 px over his head (Kylian, 2026-11-20: 56 left 24 px of
 // nothing over him, 38 while he types; with working()'s pb 4, « … travaille » is 35 px above him typing, 21
-// standing). The LED cube (kt-threads' option, the default) keeps 56: it fills the strip (S = H - GROUND).
-const W = 96, H_CLAWD = 36, H_CUBE = 56;
+// standing). The LED cube's scene (kt-threads' option, the default) takes 36 too (the lead, 2026-11-20): a cube
+// of 28 and its accessories beside it (cubeScene()).
+const W = 96, H_CLAWD = 36, H_CUBE = 36;
 export const bandH = () => (cubeStyle() === "cube" ? H_CUBE : H_CLAWD);
 const LEFT = 8, GROUND = 2; // where his standing feet sit: from the strip's left, above its bottom
 const K = 1000; // the opacity ramps' steepness, as companion.js: a swap takes ms / 2001
@@ -39,21 +41,79 @@ export function runnerBand(runner) {
   return div().flex_none().w_full().h(bandH()).child(runner);
 }
 
-/** Where the cube goes along the band for a state (css px from the strip's left), and how it moves there.
- *  span: the room it travels (the band's width less its margins and its own size). Native motion only:
- *  working: back and forth across the band (.loop on left, ~70 px/s), starting from the side it stands on;
- *  blocked: back home on the left, hopping in place (.loop on top) while it waits; done: off to the right
- *  end, and it stays there; idle, error: home on the left, still. Reduced motion, or no width yet: home. */
-export function cubeMove(status, span, reduced, from = LEFT) {
-  if (reduced || !(span > 0)) return { left: LEFT };
-  const right = LEFT + span;
-  if (status === "working") {
-    const back = from > LEFT + span / 2;
-    return { left: back ? right : LEFT, loop: { from: back ? right : LEFT, to: back ? LEFT : right, period: Math.max(4000, Math.round((2 * span / 70) * 1000)), easing: "ease-in-out" } };
+export { cubeMove };
+
+// The scene (cube style): the real cube, 28 px in the 36 px band (its body about the page's 26: the
+// accessories keep the validated scale), the accessories beside it (src/scene.mjs: 120 x 36 images whose cube
+// stood at x 10, so they lie at -8 from the cube's box), RESERVE px kept on the right for what they reach.
+const CUBE = 28, ACC_X = -8, ACC_W = 120, RESERVE = 80;
+const ACC = "brand/companions/cube/acc";
+const wave = (up, ms) => ({ from: up ? -K : K + 1, to: up ? K + 1 : -K, period: 2 * ms, easing: "linear" });
+
+/** An accessory: its frames swapped natively (two: opposite square waves; three: windows of one triangle),
+ *  shown at once or after the walk (a delay armed by one cue, as companion.js' once()), and its fly once per
+ *  beat (a left transition from its place, fading at the end). */
+function accessory(act, T, sc, ctx) {
+  const { tid, reduced, memo } = ctx;
+  const id = (k) => `kc-acc-${act}-${k}-${tid}`;
+  const layer = (k) => div().id(id(k)).absolute().left(0).top(0).w(ACC_W).h(36);
+  const img = (k) => image(`${ACC}/${act}-${k}.svg`).w(ACC_W).h(36);
+  let frames;
+  if (T.n === 1 || reduced || !T.ms) frames = [layer("f0").child(img(0))];
+  else if (T.n === 2) frames = [layer("a").loop("opacity", wave(false, T.ms)).child(img(0)), layer("b").loop("opacity", wave(true, T.ms)).child(img(1))];
+  else {
+    const period = 2 * T.n * T.ms;
+    frames = Array.from({ length: T.n }, (_, k) => layer(`w${k}`).loop("opacity", { from: (-K * k) / T.n, to: K * (1 - k / T.n), period, easing: "linear" })
+      .child(layer(`w${k}-in`).loop("opacity", { from: (K * (k + 1)) / T.n, to: K * ((k + 1) / T.n - 1), period, easing: "linear" }).child(img(k))));
   }
-  if (status === "done") return { left: right, transition: { duration: 700, easing: "ease-out" } };
-  if (status === "blocked") return { left: LEFT, transition: { duration: 400, easing: "ease-out" }, hop: { from: 0, to: -3, period: 700, easing: "ease-in-out" } };
-  return { left: LEFT, transition: { duration: 900, easing: "ease-in-out" } };
+  // one-shots of this beat: the accessory after the walk, the fly (armed by one cue: the first layout)
+  const key = `${act}-${sc.epoch ?? "s"}`;
+  memo.armed ??= {};
+  const armed = Boolean(memo.armed[key]);
+  const cue = (el) => (armed || reduced ? el : el.on_size_change((_s, cx) => { if (memo.armed[key]) return; memo.armed = { [key]: true }; cx.notify(); }));
+  const late = typeof sc.show === "number" && !reduced;
+  let el = cue(div().id(id(`box-${key}`)).absolute().left(ACC_X).top(0).w(ACC_W).h(36))
+    .when(late, (e) => e.opacity(armed ? 1 : 0).transition("opacity", { duration: 200, delay: sc.show, easing: "linear" }))
+    .children(frames);
+  if (T.fly && !reduced) {
+    const d = T.fly.ms;
+    el = el.child(div().id(id(`fly-${key}`)).absolute().top(0).w(ACC_W).h(36).left(armed ? T.fly.dx : 0).opacity(armed ? 0 : 1)
+      .transition("left", { duration: d, delay: late ? sc.show : 0, easing: "ease-in-out" })
+      .transition("opacity", { duration: 150, delay: (late ? sc.show : 0) + d, easing: "linear" })
+      .child(image(`${ACC}/${act}-fly.svg`).w(ACC_W).h(36)));
+  }
+  return el;
+}
+
+/** The cube style's strip content: sceneOf() (scene.js) made into elements. */
+function cubeScene({ p, memo, now, reduced, seed, cx, width, H }) {
+  const tid = p.terminal;
+  const span = width == null ? 0 : Math.max(0, width - 2 * LEFT - CUBE - RESERVE);
+  // what kt-chat already has at hand (main.js runnerNow): the pending kind, kt.compact, its hc workers
+  const sc = sceneOf({ status: p.status, action: freshAction(p.action, p.since), ask: p.ask ?? null, compacting: Boolean(p.compacting),
+    kidBlocked: Boolean(p.kidBlocked), now, since: p.since, span, reduced, seed, from: memo.cubeLeft });
+  memo.cubeLeft = sc.left;
+  // one timer per epoch while it works (the next beat), as Clawd's: it picks a beat, it never steps an image
+  if (sc.wake != null && cx && !checking() && memo.sceneWake !== sc.wake) {
+    memo.sceneWake = sc.wake;
+    cx.timer.after(Math.max(16, sc.wake - now), (cx) => cx.notify());
+  }
+  const T = sc.act ? TABLE[sc.act] ?? null : null;
+  const top = H - GROUND - CUBE;
+  let mover = div().id(`kc-runner-move-${tid}`).absolute().left(sc.left).top(0).w(CUBE).h(H);
+  if (sc.loop) mover = mover.loop("left", sc.loop);
+  else if (sc.transition) mover = mover.transition("left", sc.transition);
+  // the cube's own motion: a hop (blocked, a question, tests passed), a 1 px bob (typing), a tremble, a sink
+  const m = T?.cube;
+  const hop = sc.hop ?? (m === "hop" ? { from: 0, to: -3, period: 700, easing: "ease-in-out" } : m === "type" ? { from: 0, to: -1, period: 2 * (T.ms || 300), easing: "linear" } : null);
+  let holder = div().id(`kc-runner-body-${tid}`).absolute().left(0).top(top + (m === "sink" ? 2 : 0)).w(CUBE).h(CUBE);
+  if (!reduced && hop) holder = holder.loop("top", { from: top + hop.from, to: top + hop.to, period: hop.period, easing: hop.easing });
+  else if (!reduced && m === "tremble") holder = holder.loop("left", { from: -1, to: 1, period: 200, easing: "linear" });
+  else if (!reduced && m === "pace") holder = holder.loop("left", { from: 0, to: 30, period: 4000, easing: "ease-in-out" }); // in front of its workers
+  const body = cube34({ state: p.status, since: p.since, size: CUBE, height: CUBE, id: `kc-runner-${tid}`, address: tid, memo, cx });
+  mover = mover.child(holder.child(body));
+  if (T && sc.show) mover = mover.child(accessory(sc.act, T, sc, { tid, reduced, memo }));
+  return mover;
 }
 
 /** The strip for one state: a function of its inputs, so a test mod can draw it without the view.
@@ -67,14 +127,7 @@ export function draw({ p, clawd, memo, now, reduced, seed, cx, width = null, onW
   // every program and every state, idle included (runnerShown's cube case)
   if (cubeStyle() === "cube") {
     if (!runnerShown(p.status, p.program, true)) return strip;
-    const S = H - GROUND, span = width == null ? 0 : width - 2 * LEFT - S;
-    const m = cubeMove(p.status, span, reduced, memo.cubeLeft);
-    memo.cubeLeft = m.left;
-    let mover = div().id(`kc-runner-move-${p.terminal}`).absolute().left(m.left).top(0).w(S).h(S);
-    if (m.loop) mover = mover.loop("left", m.loop);
-    else if (m.transition) mover = mover.transition("left", m.transition);
-    const body = cube34({ state: p.status, since: p.since, size: S, height: S, id: `kc-runner-${p.terminal}`, address: p.terminal, memo, cx });
-    return strip.child(mover.child(m.hop ? div().id(`kc-runner-hop-${p.terminal}`).relative().loop("top", m.hop).child(body) : body));
+    return strip.overflow_hidden().child(cubeScene({ p, memo, now, reduced, seed, cx, width, H }));
   }
   const key = keyOf(p.program);
   const pl = plan({ ...p, acc: accessoryFor(freshAction(p.action, p.since), key), reduced, clawd, now, seed });

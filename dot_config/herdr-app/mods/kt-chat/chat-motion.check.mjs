@@ -945,21 +945,27 @@ for (const th of KBRDN) {
   live.style = "cube";
   const cubed = at({}, { status: "working", since: now - 1000 });
   assert.ok(byId(cubed.nodes, "companion-kc-runner-tA"), "cube: the agent's cube in the strip");
-  assert.ok(!cubed.nodes.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-runner-") && v !== "kc-runner" && !/^kc-runner-(tA|move-tA|hop-tA)/.test(String(v)))), "cube: no Clawd layer");
+  assert.ok(!cubed.nodes.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-runner-") && v !== "kc-runner" && !/^kc-runner-(tA|move-tA|body-tA)/.test(String(v)))), "cube: no Clawd layer");
   // the band's whole width (the view's on_size_change, never written in), the cube along it by state
   const { cubeMove } = await import("./runner.js");
   const wide = (o, width) => flat(runner({ p: { terminal: "tA", program: "claude", since: now - 1000, ...o }, clawd, memo: {}, now, reduced: false, seed: 42, cx: cx(), width }));
   const mover = (nodes) => byId(nodes, "kc-runner-move-tA");
   assert.equal(callsOf(byId(cubed.nodes, "kc-runner"), "w_full").length, 1, "the strip: the column's width");
   assert.equal(callsOf(mover(wide({ status: "working" }, 600)), "loop")[0]?.[0], "left", "working: back and forth along the band");
-  assert.deepEqual(callsOf(mover(wide({ status: "done" }, 600)), "left").at(-1), [600 - 8 - 54], "done: off to the right end");
+  // the cube is 28 in the band, 80 px kept on its right for its accessories
+  assert.deepEqual(callsOf(mover(wide({ status: "done" }, 600)), "left").at(-1), [600 - 8 - 28 - 80], "done: off to the right end");
   assert.deepEqual(callsOf(mover(wide({ status: "idle" }, 600)), "left").at(-1), [8], "idle: home on the left");
-  assert.ok(byId(wide({ status: "blocked" }, 600), "kc-runner-hop-tA"), "blocked: home, hopping in place");
+  assert.equal(callsOf(byId(wide({ status: "blocked" }, 600), "kc-runner-body-tA"), "loop")[0]?.[0], "top", "blocked: home, hopping in place");
   assert.deepEqual([cubeMove("working", 400, true).left, cubeMove("working", 400, true).loop], [8, undefined], "reduced motion: home, still");
   assert.deepEqual(callsOf(mover(wide({ status: "working" }, null)), "left").at(-1), [8], "no width yet: home");
-  // The strip's height (Kylian, 2026-11-20): Clawd's is 36 (his tallest pose and 4 px over his head); the
-  // cube keeps its 56, it fills the strip.
-  assert.deepEqual(callsOf(byId(cubed.nodes, "kc-runner"), "h").at(-1), [56], "cube: a strip of 56");
+  // the scene (scene.js): an action's accessory beside the real cube, from the bridge's tool
+  const acting = wide({ status: "working", action: { tool: "Edit", what: "a.js", at: now }, since: now - 1000 }, 600);
+  assert.ok(acting.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-acc-edit-"))), "Edit: the keyboard beside the cube");
+  assert.ok(byId(acting, "companion-kc-runner-tA"), "the real cube (cube34) in the scene");
+  const asking = wide({ status: "blocked", ask: "permission" }, 600);
+  assert.ok(asking.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-acc-permission-"))), "a permission: the sheet to sign");
+  // The strip's height (the lead, 2026-11-20): 36 for Clawd and for the cube's scene.
+  assert.deepEqual(callsOf(byId(cubed.nodes, "kc-runner"), "h").at(-1), [36], "cube: a strip of 36");
   live.style = "subscription";
   assert.deepEqual(callsOf(byId(at({}, { status: "working", since: now - 1000 }).nodes, "kc-runner"), "h").at(-1), [36], "Clawd: a strip of 36");
   live.checking = true;

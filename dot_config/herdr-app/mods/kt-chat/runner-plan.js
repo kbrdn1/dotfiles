@@ -68,11 +68,14 @@ export function keepBottom(follow, was, now) {
 /** What kt-chat hands the runner (set_props), and a key so it hands it only when it changes. agent:
  *  Herdr's agent; bridge: its herdr-bridge file ({ action, since }), or null when there is none
  *  (action undefined: no bridge, as companion.js reads it). */
-export function runnerProps(agent, bridge) {
+export function runnerProps(agent, bridge, { ask = null, compacting = false, kidBlocked = false } = {}) {
+  // the cube's scene (scene.js), from what kt-chat has at hand: ask, the bridge's pending kind while it waits
+  // (« question », « permission »); compacting, kt.compact under way; kidBlocked, one of its hc workers waits
   const props = { terminal: agent?.address ?? null, status: agent?.status ?? null, program: agent?.program ?? null,
-    action: bridge ? bridge.action ?? null : undefined, since: bridge?.since };
+    action: bridge ? bridge.action ?? null : undefined, since: bridge?.since, ask: agent?.status === "blocked" ? ask : null,
+    compacting: Boolean(compacting), kidBlocked: Boolean(kidBlocked) };
   const a = props.action;
-  return { props, key: JSON.stringify([props.terminal, props.status, keyOf(props.program) ?? null, a === undefined ? "-" : a && [a.tool, a.what], props.since ?? null]) };
+  return { props, key: JSON.stringify([props.terminal, props.status, keyOf(props.program) ?? null, a === undefined ? "-" : a && [a.tool, a.what], props.since ?? null, props.ask, props.compacting, props.kidBlocked]) };
 }
 
 /** The action that counts, as companion.js's pick() reads it: one from before this state began is over

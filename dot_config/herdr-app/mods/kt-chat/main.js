@@ -48,7 +48,7 @@
 
 import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
-import { agents, focused, panes, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, writeTextFile, checking, nextCommand, notify, props, layout, run, openOverlay } from "herdr";
+import { agents, focused, panes, terminals, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, writeTextFile, checking, nextCommand, notify, props, layout, run, openOverlay } from "herdr";
 // #56: the composer (pure, composer.check.mjs); kt-threads' decide.js (a byte-identical copy, with
 // decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser.
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
@@ -3619,7 +3619,11 @@ export default class Chat extends View {
   /** runner: what the runner should hold for this target (runnerProps), the bridge only when it is its agent's. */
   runnerNow(tg) {
     const a = tg.agent ?? null;
-    return runnerProps(a, a && this.bridgeFor === a.address ? this.bridge : null);
+    const mine = a && this.bridgeFor === a.address;
+    // the cube's scene: the pending kind, a compaction under way (kt.compact), one of its hc workers waiting
+    const phase = a ? shared("kt.compact")?.[a.address]?.phase : null;
+    return runnerProps(a, mine ? this.bridge : null, { ask: mine ? this.ask?.pending?.kind ?? null : null, compacting: phase === "going" || phase === "sent",
+      kidBlocked: Boolean(a) && cubeStyle() === "cube" && terminals().some((t) => t.parent === a.address && t.status === "blocked") });
   }
 
   /**

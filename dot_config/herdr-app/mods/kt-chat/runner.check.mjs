@@ -88,12 +88,17 @@ eq([[true, true, true], [true, false, false], [false, false, true], [true, undef
 // what kt-chat hands it: only when it changes
 const ag = { address: "tA", status: "working", program: { key: "claude" } };
 const k0 = runnerProps(ag, { action: { tool: "Edit", what: "a.js", at: 1 }, since: 5 });
-eq(k0.props, { terminal: "tA", status: "working", program: { key: "claude" }, action: { tool: "Edit", what: "a.js", at: 1 }, since: 5 }, "props: from the agent and its bridge");
+eq(k0.props, { terminal: "tA", status: "working", program: { key: "claude" }, action: { tool: "Edit", what: "a.js", at: 1 }, since: 5, ask: null, compacting: false, kidBlocked: false }, "props: from the agent and its bridge");
+// the bridge's pending kind, while it waits only (the cube's sign or sheet): a new kind, a new hand-over
+const kb = runnerProps({ ...ag, status: "blocked" }, null, { ask: "permission" });
+eq([kb.props.ask, runnerProps(ag, null, { ask: "permission" }).props.ask, kb.key !== runnerProps({ ...ag, status: "blocked" }, null, { ask: "question" }).key], ["permission", null, true], "props: the pending kind while blocked");
+// a compaction under way, a worker waiting: each one a new hand-over
+eq([{ compacting: true }, { kidBlocked: true }].map((x) => runnerProps(ag, null, x).key !== runnerProps(ag, null).key), [true, true], "props: compaction, a worker waiting");
 eq(runnerProps(ag, { action: { tool: "Edit", what: "a.js", at: 2 }, since: 5 }).key, k0.key, "props: the same action again, no hand-over");
 eq([{ ...ag, status: "done" }, { ...ag, address: "tB" }].map((x) => runnerProps(x, { action: { tool: "Edit", what: "a.js" }, since: 5 }).key !== k0.key), [true, true], "props: status or thread changed");
 eq([{ action: { tool: "Read", what: "a.js" }, since: 5 }, { action: null, since: 5 }, null].map((b) => runnerProps(ag, b).key !== k0.key), [true, true, true], "props: tool, thinking, no bridge");
 eq([runnerProps(ag, null).props.action, runnerProps(ag, { since: 1 }).props.action], [undefined, null], "props: no bridge vs no tool");
-eq(runnerProps(null, null).props, { terminal: null, status: null, program: null, action: undefined, since: undefined }, "props: no agent");
+eq(runnerProps(null, null).props, { terminal: null, status: null, program: null, action: undefined, since: undefined, ask: null, compacting: false, kidBlocked: false }, "props: no agent");
 
 if (failed) { console.error(`${failed} failed`); process.exit(1); }
 console.log("runner-plan: ok");
