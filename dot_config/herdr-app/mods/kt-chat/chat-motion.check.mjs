@@ -797,6 +797,12 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.deepEqual(callsOf(h, "bottom").at(-1), [-15], "its center on the transcript's bottom edge");
   assert.ok(!transitions(shown).includes("height"), "no height moves");
   assert.equal(btnIn(flat(c.composerView(T, { agent }, null, cx()))), undefined, "not in the card's bar");
+  // opaque (Kylian, 2026-11-20): the theme's popover, no alpha; its border and chevron from the theme too
+  const Tb = { ...T, popover: "#242424", border: "#2a2a2a", foreground: "#e0e0e0", accent: "#d4825d" };
+  const solid = btnIn(flat(c.body(Tb, cx(), { agent }, false)));
+  assert.deepEqual([callsOf(solid, "bg").at(-1), callsOf(solid, "border_color").at(-1), callsOf(solid, "text_color").at(-1)], [["#242424"], ["#2a2a2a"], ["#e0e0e0"]],
+    "opaque: popover ground, theme border, foreground chevron");
+  assert.ok(/^#[0-9a-f]{6}$/i.test(callsOf(solid, "bg").at(-1)[0]), "its ground has no alpha");
   // The composer keeps 18 px at its top while the band is away (the button's lower half and 3 px of air);
   // with the band, none (its empty middle takes it). Tied to the band, not to the button.
   const column = (band) => { c.band = band; return flat(c.composerView(T, { agent }, null, cx())).find((n) => callsOf(n, "max_w").some(([w]) => w === 832) && callsOf(n, "pb").some(([p]) => p === 6)); };
@@ -939,7 +945,18 @@ for (const th of KBRDN) {
   live.style = "cube";
   const cubed = at({}, { status: "working", since: now - 1000 });
   assert.ok(byId(cubed.nodes, "companion-kc-runner-tA"), "cube: the agent's cube in the strip");
-  assert.ok(!cubed.nodes.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-runner-") && v !== "kc-runner" && !String(v).startsWith("kc-runner-tA"))), "cube: no Clawd layer");
+  assert.ok(!cubed.nodes.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-runner-") && v !== "kc-runner" && !/^kc-runner-(tA|move-tA|hop-tA)/.test(String(v)))), "cube: no Clawd layer");
+  // the band's whole width (the view's on_size_change, never written in), the cube along it by state
+  const { cubeMove } = await import("./runner.js");
+  const wide = (o, width) => flat(runner({ p: { terminal: "tA", program: "claude", since: now - 1000, ...o }, clawd, memo: {}, now, reduced: false, seed: 42, cx: cx(), width }));
+  const mover = (nodes) => byId(nodes, "kc-runner-move-tA");
+  assert.equal(callsOf(byId(cubed.nodes, "kc-runner"), "w_full").length, 1, "the strip: the column's width");
+  assert.equal(callsOf(mover(wide({ status: "working" }, 600)), "loop")[0]?.[0], "left", "working: back and forth along the band");
+  assert.deepEqual(callsOf(mover(wide({ status: "done" }, 600)), "left").at(-1), [600 - 8 - 54], "done: off to the right end");
+  assert.deepEqual(callsOf(mover(wide({ status: "idle" }, 600)), "left").at(-1), [8], "idle: home on the left");
+  assert.ok(byId(wide({ status: "blocked" }, 600), "kc-runner-hop-tA"), "blocked: home, hopping in place");
+  assert.deepEqual([cubeMove("working", 400, true).left, cubeMove("working", 400, true).loop], [8, undefined], "reduced motion: home, still");
+  assert.deepEqual(callsOf(mover(wide({ status: "working" }, null)), "left").at(-1), [8], "no width yet: home");
   // The strip's height (Kylian, 2026-11-20): Clawd's is 36 (his tallest pose and 4 px over his head); the
   // cube keeps its 56, it fills the strip.
   assert.deepEqual(callsOf(byId(cubed.nodes, "kc-runner"), "h").at(-1), [56], "cube: a strip of 56");

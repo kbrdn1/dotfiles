@@ -3366,10 +3366,11 @@ export default class Chat extends View {
       // over the composer's top: the empty middle of Clawd's band, or the 18 px the column keeps when the band
       // is away (composerView). Bottom 8 bit the last line. No composer (a fixed JSONL): bottom 8, inside.
       // « Tours suivants »' foot (later(), HEAD_H) keeps its button 134 px up and its bones 16 px up at the
-      // bottom: this one (-15 to +15) is under neither.
+      // bottom: this one (-15 to +15) is under neither. Opaque (Kylian, 2026-11-20: what scrolled under it made
+      // it unreadable): the theme's popover ground, its border, the chevron in foreground, light and dark alike.
       .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(!this.fixed && Boolean(tg.agent) && !tg.reason ? -15 : 8).left(0).right(0).justify_center()
-        .child(h_flex().id("kc-bottom").size(30).rounded_full().items_center().justify_center().border(1).border_color(ink(t, 0.1))
-          .bg(ink(t, 0.04)).cursor_pointer().tooltip(tr("bottom")).text_color(ink(t, 0.7)).hover((s) => s.text_color(ink(t, 1)))
+        .child(h_flex().id("kc-bottom").size(30).rounded_full().items_center().justify_center().border(1).border_color(t.border)
+          .bg(t.popover).cursor_pointer().tooltip(tr("bottom")).text_color(t.foreground).hover((s) => s.border_color(t.accent))
           .on_click((_e, cx) => { this.toBottom(); cx.notify(); })
           .child(svg(I("chevron-down")).size(16)))));
   }

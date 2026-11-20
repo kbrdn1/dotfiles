@@ -8,7 +8,8 @@
 // render kt-chat (measured: 201 renders of a nested view for 8 of its parent). companion.js is a copy of
 // brand/companions/companion.js (kt-mods' SHARED; src/build.py writes its data and refreshes the copies).
 //
-// The strip: 96 css px wide, 36 tall for Clawd, 56 for the LED cube (bandH()). kt-chat owns its place: a
+// The strip: the column's width (read by on_size_change; Clawd keeps to its left 96 px, the LED cube runs
+// along it, cubeMove()), 36 tall for Clawd, 56 for the LED cube (bandH()). kt-chat owns its place: a
 // box first in the composer's flow, between the transcript and the rest of the composer, so nothing
 // overlaps it (keepBottom keeps a followed view at
 // the bottom when it comes and goes); it comes in with kt-chat's rise() (motion.js enter(): fades in and
@@ -32,23 +33,48 @@ export const bandH = () => (cubeStyle() === "cube" ? H_CUBE : H_CLAWD);
 const LEFT = 8, GROUND = 2; // where his standing feet sit: from the strip's left, above its bottom
 const K = 1000; // the opacity ramps' steepness, as companion.js: a swap takes ms / 2001
 
-/** kt-chat's place for the runner: a box in the composer's flow, never absolute (nothing above or under it). */
+/** kt-chat's place for the runner: a box in the composer's flow, never absolute (nothing above or under it),
+ *  the column's whole width (Kylian, 2026-11-20: the companion uses the room it is given). */
 export function runnerBand(runner) {
-  return div().flex_none().w(W).h(bandH()).child(runner);
+  return div().flex_none().w_full().h(bandH()).child(runner);
+}
+
+/** Where the cube goes along the band for a state (css px from the strip's left), and how it moves there.
+ *  span: the room it travels (the band's width less its margins and its own size). Native motion only:
+ *  working: back and forth across the band (.loop on left, ~70 px/s), starting from the side it stands on;
+ *  blocked: back home on the left, hopping in place (.loop on top) while it waits; done: off to the right
+ *  end, and it stays there; idle, error: home on the left, still. Reduced motion, or no width yet: home. */
+export function cubeMove(status, span, reduced, from = LEFT) {
+  if (reduced || !(span > 0)) return { left: LEFT };
+  const right = LEFT + span;
+  if (status === "working") {
+    const back = from > LEFT + span / 2;
+    return { left: back ? right : LEFT, loop: { from: back ? right : LEFT, to: back ? LEFT : right, period: Math.max(4000, Math.round((2 * span / 70) * 1000)), easing: "ease-in-out" } };
+  }
+  if (status === "done") return { left: right, transition: { duration: 700, easing: "ease-out" } };
+  if (status === "blocked") return { left: LEFT, transition: { duration: 400, easing: "ease-out" }, hop: { from: 0, to: -3, period: 700, easing: "ease-in-out" } };
+  return { left: LEFT, transition: { duration: 900, easing: "ease-in-out" } };
 }
 
 /** The strip for one state: a function of its inputs, so a test mod can draw it without the view.
- *  reduced: kt.reducedMotion, as motion.js's frame() reads it (one pose, still). seed: the view's chance. */
-export function draw({ p, clawd, memo, now, reduced, seed, cx }) {
+ *  reduced: kt.reducedMotion, as motion.js's frame() reads it (one pose, still). seed: the view's chance.
+ *  width: the strip's width (the view's on_size_change, never written in); onWidth(w, cx): a new width. */
+export function draw({ p, clawd, memo, now, reduced, seed, cx, width = null, onWidth = null }) {
   const H = bandH();
-  const strip = div().id("kc-runner").relative().w(W).h(H);
-  // the cube style (kt-threads' option, the default): the agent's LED cube in 3/4 stands in the strip, for
+  const strip = div().id("kc-runner").relative().w_full().h(H)
+    .when(Boolean(onWidth), (el) => el.on_size_change((size, cx) => onWidth(size.width, cx)));
+  // the cube style (kt-threads' option, the default): the agent's LED cube in 3/4 runs along the strip, for
   // every program and every state, idle included (runnerShown's cube case)
   if (cubeStyle() === "cube") {
     if (!runnerShown(p.status, p.program, true)) return strip;
-    const S = H - GROUND;
-    return strip.child(div().absolute().left(LEFT).top(0)
-      .child(cube34({ state: p.status, since: p.since, size: S, height: S, id: `kc-runner-${p.terminal}`, address: p.terminal, memo, cx })));
+    const S = H - GROUND, span = width == null ? 0 : width - 2 * LEFT - S;
+    const m = cubeMove(p.status, span, reduced, memo.cubeLeft);
+    memo.cubeLeft = m.left;
+    let mover = div().id(`kc-runner-move-${p.terminal}`).absolute().left(m.left).top(0).w(S).h(S);
+    if (m.loop) mover = mover.loop("left", m.loop);
+    else if (m.transition) mover = mover.transition("left", m.transition);
+    const body = cube34({ state: p.status, since: p.since, size: S, height: S, id: `kc-runner-${p.terminal}`, address: p.terminal, memo, cx });
+    return strip.child(mover.child(m.hop ? div().id(`kc-runner-hop-${p.terminal}`).relative().loop("top", m.hop).child(body) : body));
   }
   const key = keyOf(p.program);
   const pl = plan({ ...p, acc: accessoryFor(freshAction(p.action, p.since), key), reduced, clawd, now, seed });
@@ -110,6 +136,7 @@ export class Runner extends View {
   }
 
   render(cx) {
-    return draw({ p: this.p, clawd: this.clawd, memo: this.memo, now: Date.now(), reduced: Boolean(shared("kt.reducedMotion")), seed: this.seed, cx });
+    return draw({ p: this.p, clawd: this.clawd, memo: this.memo, now: Date.now(), reduced: Boolean(shared("kt.reducedMotion")), seed: this.seed, cx,
+      width: this.width ?? null, onWidth: (w, cx) => { if (w !== this.width) { this.width = w; cx.notify(); } } });
   }
 }
