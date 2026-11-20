@@ -14,7 +14,8 @@ const B = { "Run git commit -m x": "commit", "Run git push origin dev": "push", 
   "Run hc kill t3": "kill", "Run mv a b": "move", "Run cp a b": "move", "Run mkdir -p x": "dir", "Run rm -f x": "rm", "Run bun test": "tests",
   "Run cd mods/kt-chat && bun runner.check.mjs": null, "Run cargo test": "tests", "Run make test": "tests", "Run cargo build": "build",
   "Run bun install": "install", "Run pip install x": "install", "Run npx eslint .": null, "Run eslint .": "lint", "Run cat a.js": "read",
-  "Run rg foo": "search", "Run cd x && git commit -m y": "commit", "Run ls": null };
+  "Run rg foo": "search", "Run cd x && git commit -m y": "commit", "Run ls": null,
+  "Run gh run watch 42": "ci", "Run gh pr checks 12 --watch": "ci", "Run gh workflow run ci.yml": "ci" };
 for (const [what, id] of Object.entries(B)) assert.equal(bashOf(what), id, what);
 // the tools, the states
 const W = (tool, what) => actionOf({ status: "working", action: { tool, what } });

@@ -129,12 +129,38 @@ const smoke = (f) => {
 const hourglass = (x, f) => { px(x, G - 12, 8, 1, P.gold); px(x, G - 1, 8, 1, P.gold); px(x + 1, G - 11, 6, 10, P.edge, 0.6); px(x + 2, f ? G - 5 : G - 10, 4, 4, P.yellow); px(x + 3, G - 6, 2, 1, P.yellow, 0.6); };
 const zzz = (n) => { for (let k = 0; k < n; k++) { const x = 26 + k * 3, y = 8 - k * 3; px(x, y, 3, 1, P.blue); dot(x + 1, y + 1, P.blue); px(x, y + 2, 3, 1, P.blue); } };
 const sign = (x, y, ch, pole = true) => { if (pole) px(x + 4, y + 8, 1, G - y - 8, P.accent2); box(x, y, 9, 9, P.dark, P.yellow); if (ch === "?") { px(x + 3, y + 2, 3, 1, P.yellow); dot(x + 5, y + 3, P.yellow); dot(x + 4, y + 4, P.yellow); dot(x + 4, y + 6, P.yellow); } else { px(x + 4, y + 2, 1, 4, P.yellow); dot(x + 4, y + 7, P.yellow); } };
-// done: a placard held up at arm's length, a green check on it; up a little on every other frame
+// done: a placard brandished at arm's length: a green board, a thick white check, its wooden stick held at
+// the cube's side; up and down a little
 const placard = (up) => {
-  const y = G - 26 - up;
-  px(X0 + 1, y + 10, 1, G - 3 - (y + 10), P.accent2);
-  box(X0 - 3, y, 14, 11, P.paper, P.green2);
-  for (const [dx, dy] of [[2, 5], [3, 6], [4, 7], [5, 6], [6, 5], [7, 4], [8, 3], [9, 2]]) { px(X0 - 3 + dx, y + dy, 2, 1, P.green2); }
+  const x = X0 - 6, y = up ? 0 : 1;
+  px(x + 7, y + 12, 2, G - 9 - (y + 12), P.accent2); // the stick, down to its "hand"
+  px(x + 6, G - 10, 4, 2, P.accent3);
+  px(x + 1, y, 15, 12, P.green2); px(x, y + 1, 17, 10, P.green2); // the board, its corners cut
+  px(x + 1, y + 11, 15, 1, "#4f9a5f");
+  for (const [dx, dy] of [[4, 6], [5, 7], [6, 8], [7, 7], [8, 6], [9, 5], [10, 4], [11, 3], [12, 2]]) px(x + dx, y + dy, 2, 2, P.paper);
+};
+// the cart: a flat bed on two wheels, its handle behind (left when pushed to the right), the carton on it
+const cart = (x, handleRight = false) => {
+  px(x, G - 4, 18, 2, P.metal2); px(x, G - 3, 18, 1, P.metal);
+  for (const wx of [x + 2, x + 13]) { px(wx, G - 2, 3, 2, P.darker); dot(wx + 1, G - 2, P.metal2); }
+  const hx = handleRight ? x + 17 : x;
+  px(hx, G - 15, 1, 11, P.metal2); px(handleRight ? hx - 1 : hx, G - 16, 2, 2, P.accent);
+  carton(x + 3, G - 14);
+};
+// the pull request icon (GitHub's: two commits on one branch, the other's arrow coming back), white on green
+const prIcon = (x, y) => {
+  px(x + 1, y, 13, 15, P.green2); px(x, y + 1, 15, 13, P.green2); // the badge, its corners cut
+  const node = (cx, cy) => { px(x + cx - 1, y + cy - 1, 3, 3, P.paper); dot(x + cx, y + cy, P.green2); };
+  node(4, 3); node(4, 11); px(x + 4, y + 5, 1, 5, P.paper); // the branch: two commits
+  node(10, 11); px(x + 10, y + 4, 1, 6, P.paper); px(x + 7, y + 4, 4, 1, P.paper); // the other comes back...
+  dot(x + 7, y + 3, P.paper); dot(x + 7, y + 5, P.paper); dot(x + 6, y + 4, P.paper); // ...its arrow pointing left
+};
+// CI: the pipeline's jobs in a row on a rail, each lit as it runs (yellow) then passes (green)
+const pipeline = (x, cols) => {
+  px(x, G - 9, 26, 9, P.dark); px(x, G - 9, 26, 1, P.edge);
+  px(x + 3, G - 5, 20, 1, P.metal);
+  cols.forEach((c, k) => { px(x + 2 + k * 6, G - 7, 4, 4, c); if (c === P.green) { dot(x + 3 + k * 6, G - 5, P.darker); dot(x + 4 + k * 6, G - 6, P.darker); } });
+  px(x + 1, G - 12, 7, 3, P.blue2); px(x + 2, G - 11, 5, 1, P.led); // its tag: the workflow
 };
 const lever = (x, f) => {
   px(x, G - 3, 8, 1, P.metal2); // the main line, then its two ways
@@ -158,11 +184,12 @@ export const ACTIONS = {
   dir: { frames: [() => folder(X0, false), () => folder(X0, true)], ms: 900 },
   rm: { frames: [() => { bin(X0 + 4, true); ball(X0, G - 18); }, () => { bin(X0 + 4, true); ball(X0 + 7, G - 13); }, () => bin(X0 + 4, false)], ms: 600 },
   commit: { frames: [() => { carton(X0, G - 10, { open: true }); sheet(X0 + 3, G - 17, 2); }, () => carton(X0, G - 10)], ms: 1100 },
-  push: { frames: [() => { belt(X0, 52, 0); depot(96); arrow(X0 + 8, G - 18, 42, 1, P.green); }, () => { belt(X0, 52, 1); depot(96); arrow(X0 + 8, G - 18, 42, 1, P.green); }], ms: 240, fly: { piece: () => carton(X0, G - 12), dx: 50, ms: 2600 } },
-  pull: { frames: [() => { belt(X0, 52, 1); depot(96); arrow(X0 + 8, G - 18, 42, -1, P.blue); }, () => { belt(X0, 52, 0); depot(96); arrow(X0 + 8, G - 18, 42, -1, P.blue); }], ms: 240, fly: { piece: () => carton(X0 + 50, G - 12), dx: -50, ms: 2600 } },
+  push: { frames: [() => { depot(96); arrow(X0 + 8, G - 22, 42, 1, P.green); }], ms: 2600, fly: { piece: () => cart(X0), dx: 42, ms: 2600 } },
+  pull: { frames: [() => { depot(96); arrow(X0 + 8, G - 22, 42, -1, P.blue); }], ms: 2600, fly: { piece: () => cart(X0 + 42, true), dx: -42, ms: 2600 } },
+  ci: { frames: [() => pipeline(X0, [P.green, P.green, P.yellow, P.off]), () => pipeline(X0, [P.green, P.green, P.green, P.yellow])], ms: 900 },
   merge: { frames: [() => { carton(X0, G - 10); carton(X0 + 18, G - 10); arrow(X0 + 15, G - 14, 8, -1, P.violet); }, () => { carton(X0, G - 10); carton(X0 + 1, G - 20); check(X0 + 16, G - 8); }], ms: 1000 },
   branch: { frames: [() => lever(X0, 0), () => lever(X0, 1)], ms: 900 },
-  prcreate: { frames: [() => carton(X0, G - 10), () => { carton(X0, G - 10); px(X0 + 13, G - 19, 1, 9, P.accent2); px(X0 + 14, G - 19, 5, 3, P.green); }], ms: 1100 },
+  prcreate: { frames: [() => { carton(X0, G - 10); px(X0 + 17, G - 13, 1, 13, P.accent2); }, () => { carton(X0, G - 10); px(X0 + 17, G - 13, 1, 13, P.accent2); prIcon(X0 + 10, G - 29); }], ms: 1100 },
   review: { frames: [() => { carton(X0, G - 10, { open: true }); loupe(X0 + 4, G - 14); }, () => { carton(X0, G - 10, { open: true }); loupe(X0 + 9, G - 14); }], ms: 1000 },
   prmerge: { frames: [() => { shelf(X0 + 18); check(X0 + 24, G - 18); }], ms: 2200, fly: { piece: () => carton(X0, G - 11), dx: 20, ms: 2200 } },
   bash: { frames: [() => term(X0, 1, true), () => term(X0, 2, false)], ms: 600 },
