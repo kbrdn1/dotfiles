@@ -74,6 +74,8 @@ import strings from "./strings.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): the note beside another
 // machine's thread (#65).
 import { machineNote } from "./machines.js";
+// kt-threads' projects.js (a byte-identical copy): an archived project isn't listed in Global (#88).
+import { shown } from "./projects.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -388,10 +390,10 @@ export default class Worktrees extends View {
     if (folder && !(folder in this.repos)) { this.resolve(folder, cx); return { kind: "wait" }; }
     const own = folder ? this.repos[folder] : null;
     if (own && !this.global) return { kind: "repo", repo: own };
-    // The projects registry, one group per repo (this computer's).
+    // The projects registry, one group per repo (this computer's), the archived ones left out.
     const seen = new Set();
     const repos = [];
-    for (const e of [...(shared("kt.projects") ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))) {
+    for (const e of shown(shared("kt.projects")).sort((a, b) => (a.order ?? 0) - (b.order ?? 0))) {
       if (e.machine || !e.folder) continue;
       const f = trim(e.folder);
       if (!(f in this.repos)) { this.resolve(f, cx); continue; }

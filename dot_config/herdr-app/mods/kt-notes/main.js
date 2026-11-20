@@ -58,6 +58,8 @@ import { Vim, keysOf, keyOf, step } from "./vim.js";
 import { notePath, projectPath, normalize, present, segments, chunks, toggleTask, preview, parseFind, classify, caseRival, external, relativePath } from "./notes.js";
 import { makeT, relative } from "./i18n.js";
 import strings from "./strings.js";
+// kt-threads' projects.js (a byte-identical copy): an archived project isn't listed (#88).
+import { shown } from "./projects.js";
 
 const tr = makeT(strings);
 // A read-only reason ({ key, vars }, kept by the open note): said in the language shown.
@@ -278,8 +280,8 @@ export default class Notes extends View {
       if (r === undefined) return { kind: "wait" };
       if (r) return { kind: "repo", repo: r, picked: false };
     }
-    // repo: undefined while git is asked, null outside git.
-    const projects = registry().filter((e) => e.folder).map((e) => ({ e, repo: this.repoAt(trim(e.folder), e.machine ?? null, cx) }));
+    // repo: undefined while git is asked, null outside git. An archived project isn't listed (#88).
+    const projects = shown(registry()).filter((e) => e.folder).map((e) => ({ e, repo: this.repoAt(trim(e.folder), e.machine ?? null, cx) }));
     return { kind: "all", projects };
   }
 

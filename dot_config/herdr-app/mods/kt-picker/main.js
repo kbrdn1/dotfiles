@@ -30,6 +30,8 @@ import strings from "./strings.js";
 // kt-keys' machines.js (a byte-identical copy, with machines.strings.js): another machine as a tag, its
 // state's dot, ROOT, its state and account on hover (#64).
 import { machineTag } from "./machines.js";
+// kt-threads' projects.js (a byte-identical copy): an archived project isn't listed (#88).
+import { shown } from "./projects.js";
 
 const tr = makeT(strings);
 const MONO = "Monaspace Krypton";
@@ -310,7 +312,7 @@ export default class Search extends View {
     const open = ps
       .map((s) => ({ kind: "project", key: `p:${s.id}`, s, e: this.entryOf(s, reg), home: this.isHome(s), name: this.projectName(s, reg), branch: s.branch ?? "" }))
       .filter((r) => match(r, [r.name, r.branch, r.s.machine ?? ""]));
-    const closed = reg
+    const closed = shown(reg)
       .filter((e) => !ps.some((s) => this.entryOf(s, reg) === e))
       .map((e) => ({ kind: "closed", key: `c:${e.id}`, e, name: e.name, branch: "" }))
       .filter((r) => match(r, [r.name, "", r.e.machine ?? ""]));

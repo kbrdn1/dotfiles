@@ -1,6 +1,7 @@
 // projects.js: a project archived, restored, or deleted by force (#88). Pure: the caller reads the shared
-// keys and writes what comes back. Source here, in kt-threads; copied byte for byte in kt-projects and
-// kt-project-picker (kt-mods SHARED). Checked by projects.check.mjs.
+// keys and writes what comes back. Source here, in kt-threads; copied byte for byte in kt-projects,
+// kt-project-picker, and the lists that skip an archived project: kt-picker, kt-gwm, kt-notes (kt-mods
+// SHARED). Checked by projects.check.mjs.
 //
 // Archived: the entry of shared "kt.projects" keeps its id, color, logos and order and gains `archived` (ms
 // since the epoch); the sidebar, the picker and the lists skip it, the Accueil dims it. Restored: the field
