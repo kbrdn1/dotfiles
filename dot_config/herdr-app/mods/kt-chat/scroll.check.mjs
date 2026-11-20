@@ -541,9 +541,12 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
     c.lastWheel = Date.now();
     cx.fire();
     assert.deepEqual(c.win, { from: 10, to: 20 }, "measured, but a wheel event under AHEAD.rest ago: never during a gesture");
+    c.m = { shown: new Set(["kc-in-t-T7"]) }; // the box's draw marked T7 shown (landing())
     c.lastWheel = Date.now() - 1000;
     cx.fire();
     assert.deepEqual(c.win, { from: 5, to: 20 }, "at rest and measured: they come in");
+    assert.ok(["T5", "T6", "T7", "T8", "T9"].every((id) => c.fresh.has(id)), "they fade in where they land (#92), where the skeleton was");
+    assert.equal(c.m.shown.has("kc-in-t-T7"), false, "even T7, which the box drew");
     assert.equal(c.reveal, null, "no scroll_to_item: the smallest scroll would move the reader (it lands on T10's bottom)");
     assert.deepEqual({ id: c.keepRow.id, screen: c.keepRow.screen }, { id: "kc-turn-T10", screen: -80 }, "T10 kept where it is: 80 above the view's top");
     // The render: the view's top moves by what came above (5 x 120); a row under T10 not measured
@@ -614,6 +617,27 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
     assert.equal(c.keepY(new Map())?.top, 410 + 800, "T10 kept on screen");
   }
   {
+    // The head's skeleton breathes only while something is on its way above; every way out lets it go.
+    const c = setup(), cx = ctx();
+    assert.deepEqual([c.loading("head"), c.loading("foot")], [false, false], "at rest: faint, still");
+    c.olderBusy = true;
+    assert.equal(c.loading("head"), true, "a read in flight: it breathes");
+    c.olderBusy = false;
+    c.areaWheel(up(200, 30), cx);
+    assert.deepEqual([c.loading("head"), c.loading("foot")], [true, false], "rows waiting to come in above: the head, not the foot");
+    for (let k = 5; k < 10; k++) c.hts.set(`kc-turn-T${k}`, 120);
+    c.lastWheel = Date.now() - 1000;
+    cx.fire();
+    assert.equal(c.loading("head"), false, "they came in: still again");
+    c.areaWheel(up(140, 30), cx);
+    c.ahead.at = Date.now() - 20000;
+    cx.fire();
+    assert.equal(c.loading("head"), false, "let go after AHEAD.give (nothing measures: the Chat hidden)");
+    c.goAhead(cx);
+    c.older(cx);
+    assert.equal(c.loading("head"), false, "« Tours précédents » clicked: its own read says it (olderBusy)");
+  }
+  {
     // Rows waiting to come in above, then the wheel goes down: let go (what they would cut is where it goes).
     const c = setup(), cx = ctx();
     c.areaWheel(up(200, 30), cx);
@@ -652,6 +676,7 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
     assert.deepEqual(c.win, { from: 0, to: 10 }, "going down far from the window's end (420 of 1111): nothing");
     c.areaWheel(down(500, -20), cx);
     assert.deepEqual(c.win, { from: 0, to: 15 }, "near its end: « Tours suivants » by itself, the window grown to CAP");
+    assert.ok(["T10", "T11", "T12", "T13", "T14"].every((id) => c.fresh?.has(id)), "they fade in under the view");
     assert.equal(c.ahead, null, "at once: nothing above goes, the view doesn't move");
     assert.equal(c.keepRow, null);
     assert.equal(cx.timers.length, 0);
@@ -668,9 +693,24 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
     c.lastWheel = Date.now() - 1000;
     cx.fire();
     assert.deepEqual(c.win, { from: 10, to: 25 }, "at rest: « Tours suivants » (10 down, the 10 at the top gone)");
+    assert.ok(c.fresh?.has("T15") && c.fresh.has("T24"), "the turns that came fade in");
     assert.deepEqual({ id: c.keepRow?.id, screen: c.keepRow?.screen }, { id: "kc-turn-T12", screen: -50 }, "T12, the first turn in the view, kept 50 above its top");
     const k = c.keepY(new Map());
     assert.equal(k?.top, 1310 - 1000, "the view's top moved up by the 10 turns gone, the turns under it not measured yet");
+  }
+  {
+    // The foot's skeleton breathes while goBelow()'s turns wait for the rest, and only then.
+    const c = setup(15), cx = ctx();
+    assert.deepEqual([c.loading("head"), c.loading("foot")], [false, false]);
+    c.areaWheel(down(1300, -10), cx);
+    assert.deepEqual([c.loading("head"), c.loading("foot")], [false, true], "turns waiting to come in below: the foot breathes, not the head");
+    c.lastWheel = Date.now() - 1000;
+    cx.fire();
+    assert.equal(c.loading("foot"), false, "they came: still again");
+    const d = setup(15), dx = ctx();
+    d.areaWheel(down(1300, -10), dx);
+    d.newer();
+    assert.equal(d.loading("foot"), false, "« Tours suivants » clicked: the wait let go");
   }
   {
     // Waiting to go down, the window not at the loaded top: nothing above is measured nor waited for.

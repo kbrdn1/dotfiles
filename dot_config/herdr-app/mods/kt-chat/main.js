@@ -178,6 +178,9 @@ const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const COLUMN = 832; // theme.rs:8, the reading column
 const COLUMN_PAD = 23; // theme.rs:12, its sides (the composer's 10 + 1 + 12: prose lines up with its text)
 const TOP_INSET = 20; // transcript.rs:208
+// #59: the head and the foot at one height whatever they show (head(), later()): two turns' skeleton
+// (2 x 52 + 6) and the « Tours précédents » / « Tours suivants » row (8 + 26 + 8), 8 to spare.
+const HEAD_H = 160;
 const SCROLLBAR_W = 16; // the band on the scroll area's right edge where a press is taken for the scrollbar's
 const ROOM = 8; // #92: the room a turn's clipping box keeps on its sides (landing()): more than a row's ml(-6)
 const BUBBLE_MAX = 576; // transcript.rs:217, PROMPT_BUBBLE_MAX
@@ -644,6 +647,18 @@ export default class Chat extends View {
   }
 
   /**
+   * Turns [from, to) that come into the window by themselves (goAhead(), goBelow()): they fade in where
+   * they land (#92, landing()), where the skeleton was; those the box measured too (its draw marked them
+   * shown).
+   */
+  arrive(from, to) {
+    for (const x of this.turns.slice(from, to)) {
+      this.m?.shown.delete(`kc-in-t-${x.id}`);
+      (this.fresh ??= new Set()).add(x.id);
+    }
+  }
+
+  /**
    * One timer while rows wait to come in (goAhead()): AHEAD.rest after the last wheel event, inertia
    * included (bursts of 29 events, measured), and once they are measured, they come (spread()). Let go
    * when the reader went elsewhere (the bottom, a jump) or after AHEAD.give (the Chat hidden: nothing
@@ -679,6 +694,7 @@ export default class Chat extends View {
     for (; last > this.first(); last--) if ((g.tops.get(this.turns[last].id) ?? Infinity) < this.top + this.vh) break;
     const to = Math.max(w.to, last + 1), from = Math.max(w.from, to - win.CAP);
     if (from >= this.first()) return;
+    this.arrive(from, this.first());
     this.keepRow = { id: row, screen: at - this.top, top: this.top, at: Date.now(), correct: true, auto: true };
     this.win = { from, to };
     if (this.end() < this.turns.length) this.follow = false;
@@ -699,6 +715,7 @@ export default class Chat extends View {
     const w = this.belowWin(g, scrollTop);
     if (!w) return;
     if (w.from === this.first()) {
+      this.arrive(this.end(), w.to);
       this.win = { from: w.from, to: w.to };
       cx.notify();
       return;
@@ -731,6 +748,7 @@ export default class Chat extends View {
     if (!w) return;
     const row = `kc-turn-${this.turns[w.vis].id}`, at = g.at.get(row);
     this.keepRow = { id: row, screen: at - top, top, at: Date.now(), correct: true, auto: true };
+    this.arrive(this.end(), w.to);
     this.win = { from: w.from, to: w.to };
     cx.notify();
   }
@@ -3125,26 +3143,49 @@ export default class Chat extends View {
       .child(this.landing(v_flex().w_full().min_w(0).children(out), turn.id, `t-${turn.id}`)), `kc-turn-${turn.id}`, f ? (opened ? "o" : "c") : null);
   }
 
+  /**
+   * #59: the head, at one height whatever it shows (HEAD_H, its content against the first turn): turns
+   * above, « Tours précédents » under two turns' skeleton (skeleton.js, #92) that breathes while a read or
+   * goAhead()'s rows are on their way (one native loop), faint at rest; at the session's start, its label
+   * alone. One height: a read that brings no turn, the last one, a jump, nothing moves under the reader.
+   */
   head(t) {
+    const box = v_flex().h(HEAD_H).justify_end();
     if (this.first() > 0 || this.state?.more) {
-      return this.col(h_flex().justify_center().py(8).child(h_flex().id("kc-older-btn").h(26).px(12).gap(6).items_center().rounded_full()
+      const S = skeleton(t, this.m);
+      const bones = S.list(2, { h: 52, icon: 0, lines: [0.4, 0.75], gap_y: 6 });
+      return this.col(box.child(this.loading("head") ? S.pulse(bones) : bones.opacity(0.35)).child(h_flex().justify_center().py(8).child(h_flex().id("kc-older-btn").h(26).px(12).gap(6).items_center().rounded_full()
         .border(1).border_color(ink(t, 0.1)).cursor_pointer().hover((s) => s.bg(ink(t, 0.08))).text_size(12).text_color(ink(t, 0.6))
         .on_click((_e, cx) => { this.older(cx); cx.notify(); })
         .child(svg(this.olderBusy ? SPIN : I("chevron-up")).size(12).when(Boolean(this.olderBusy), (el) => el.spin(900)))
-        .child(this.olderBusy ? tr("olderLoading") : tr("older"))), "kc-head");
+        .child(this.olderBusy ? tr("olderLoading") : tr("older")))), "kc-head");
     }
-    return this.col(h_flex().justify_center().py(8).child(this.label(t, tr("start"), 0.35)), "kc-head");
+    return this.col(box.child(h_flex().justify_center().py(8).child(this.label(t, tr("start"), 0.35))), "kc-head");
   }
 
   // « Tours suivants » (#59): the head's twin under a window that stops before the end, with how many
   // turns wait below it (the live tail's new ones among them), and « en direct » when the agent's live
   // turn is one of them (the bottom isn't followed then: the button or G bring it back).
+  // #59: the foot, the head's twin (HEAD_H, its content against the last turn drawn): two turns' skeleton
+  // under « Tours suivants » that breathes while goBelow()'s turns wait for the rest, faint otherwise.
   later(t, k) {
-    return this.col(h_flex().justify_center().py(8).child(h_flex().id("kc-later-btn").h(26).px(12).gap(6).items_center().rounded_full()
+    const S = skeleton(t, this.m);
+    const bones = S.list(2, { h: 52, icon: 0, lines: [0.4, 0.75], gap_y: 6 });
+    return this.col(v_flex().h(HEAD_H).justify_start().child(h_flex().justify_center().py(8).child(h_flex().id("kc-later-btn").h(26).px(12).gap(6).items_center().rounded_full()
       .border(1).border_color(ink(t, 0.1)).cursor_pointer().hover((s) => s.bg(ink(t, 0.08))).text_size(12).text_color(ink(t, 0.6))
       .on_click((_e, cx) => { this.newer(); cx.notify(); })
       .child(svg(I("chevron-down")).size(12))
-      .child(tr(this.builtLive ? "laterLive" : "later", { n: k }))), "kc-later");
+      .child(tr(this.builtLive ? "laterLive" : "later", { n: k }))))
+      .child(this.loading("foot") ? S.pulse(bones) : bones.opacity(0.35)), "kc-later");
+  }
+
+  /**
+   * #59: whether the head's skeleton breathes (a read in flight, or goAhead()'s rows waiting to come in
+   * above) or the foot's (goBelow()'s turns waiting for the rest). Every way out lets it go: the read
+   * done or failed (olderBusy), the rows in, let go (restAhead()), a jump, a click (older(), newer()).
+   */
+  loading(at) {
+    return at === "foot" ? Boolean(this.ahead?.down) : Boolean(this.olderBusy || (this.ahead && !this.ahead.down));
   }
 
   // Under a live turn: the agent at work, then what was typed meanwhile and not taken yet, in pale
