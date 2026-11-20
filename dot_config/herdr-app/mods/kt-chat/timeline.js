@@ -50,6 +50,36 @@ export function marks(turns) {
   return out;
 }
 
+/**
+ * #59: Kylian's messages over the WHOLE session: those the summary (chat-index.ts --marks, the file's
+ * heads) lists before the first loaded byte `start`, not loaded ({ i: -1, o: the line's byte }), then
+ * the loaded turns' (marks()). `summary` null: the loaded ones only.
+ */
+export function allMarks(summary, loaded, start) {
+  if (!summary?.marks?.length) return loaded;
+  const have = new Set(loaded.map((m) => m.id));
+  const above = summary.marks
+    .filter((m) => m.o < start && !have.has(m.uuid))
+    .map((m) => ({ i: -1, turn: m.turn, id: m.uuid, text: label(m.text), images: m.images ?? 0, note: m.note, o: m.o }));
+  return above.length ? [...above, ...loaded] : loaded;
+}
+
+/**
+ * #59: where a read upward toward byte `target` starts, from the summary's turn openers (`turns`, in
+ * order): `n` turns above the first loaded byte `start`, never above the turn that holds `target`. Each
+ * read stays bounded, the last one starts on the target's turn. 0 when no opener is above `start`.
+ */
+export function readFrom(turns, start, target, n) {
+  let j = -1, t = -1;
+  for (let k = 0; k < turns.length; k++) {
+    if (turns[k].o < start) j = k;
+    if (turns[k].o <= target) t = k;
+  }
+  if (j < 0) return 0;
+  const k = Math.max(t, j - n + 1);
+  return k < 0 ? 0 : turns[k].o;
+}
+
 /** At most `max` bars: the window slides to keep the active one inside, the newest preferred (bar_window, :386-395). */
 export function barWindow(count, active, max) {
   if (count <= max) return [0, count];

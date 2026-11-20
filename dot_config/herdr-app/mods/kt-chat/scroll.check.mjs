@@ -31,7 +31,7 @@ const ui = {
 const host = {
   agents: () => [], panes: () => [], spaces: () => [], terminals: () => [], theme: () => ({}), settings: () => ({}), props: () => ({}),
   home: () => "/h", appHome: () => "/h/.config/herdr-app", checking: () => true, nextCommand: () => new Promise(() => {}),
-  exec: async () => ({ code: 0, stdout: "" }), hc: async () => ({}), readTextFile: async () => "", writeTextFile: async () => {},
+  exec: async (...a) => (globalThis.execStub ? globalThis.execStub(...a) : { code: 0, stdout: "" }), hc: async () => ({}), readTextFile: async () => "", writeTextFile: async () => {},
 };
 const stub = (set, own, other) => Object.fromEntries([...set].map((n) => [n, n in own ? own[n] : other]));
 plugin({
@@ -356,5 +356,99 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
   c.areaWheel({ delta: { x: 0, y: -40 }, position: { x: 5, y: 361 }, local_position: { x: 5, y: 800 }, bounds: { y: 61 - 500, width: 1000, height: 1019 } }, cx);
   assert.equal(c.top, 519, "500 down, the wheel's 40 down, clamped at the end");
   assert.equal(c.follow, true, "the bottom reached by the wheel: followed again");
+}
+
+// ── #59: the timeline over the whole session (the summary, chat-index.ts --marks): a message far above
+// is read up to, in reads the summary bounds, then jumped to ──
+{
+  const many = (n) => Array.from({ length: n }, (_, k) => turn(`T${k}`, k * 10, `message ${k}`)).flat();
+  const summaryOf = (all) => {
+    const opened = all.filter((e) => e.turn);
+    return { path: "/p", end: all.at(-1).o + 9, turns: opened.map((e) => ({ o: e.o, uuid: e.uuid, at: e.at })), marks: opened.map((e) => ({ o: e.o, uuid: e.uuid, turn: e.uuid, at: e.at, text: e.text, images: 0, note: false })) };
+  };
+  // The CLI as chat-index.ts slices: [from, to), its last `lim.turns` turns.
+  const cli = (all, reads, gate = null) => async (path, extra, lim = {}) => {
+    const from = Number(extra[extra.indexOf("--from") + 1]), to = Number(extra[extra.indexOf("--to") + 1]);
+    reads.push([from, to, lim.turns]);
+    if (gate) await gate;
+    const opened = all.filter((e) => e.turn && e.o >= from && e.o < to).slice(-(lim.turns ?? 30));
+    const start = opened[0]?.o ?? to;
+    return out(path, start, to, start > 0, all.filter((e) => e.o >= start && e.o < to));
+  };
+  const spawner = () => {
+    const cx = { notified: 0, spawn: (fn) => (cx.p = fn(cx)), notify() { cx.notified++; } };
+    return cx;
+  };
+  {
+    // A read far up asks the indexer for more turns a read (FAR); every other read, the usual limits.
+    const c = chat();
+    let args = null;
+    globalThis.execStub = async (_cmd, a) => {
+      args = a;
+      return { code: 0, stdout: "{}" };
+    };
+    await c.index("/p", ["--from", "5"], { turns: 90, budget: 7, entries: 9 });
+    assert.deepEqual(args.slice(1, 8), ["/p", "--last-turns", "90", "--budget", "7", "--max-entries", "9"]);
+    await c.index("/p", ["--marks"]);
+    assert.deepEqual(args.slice(2, 8), ["--last-turns", "30", "--budget", "500000", "--max-entries", "900"], "the usual limits by default");
+    assert.equal(args.at(-1), "--marks");
+    globalThis.execStub = null;
+  }
+  {
+    const all = many(200);
+    const c = chat(all.filter((e) => e.o >= 1950), { start: 1950, end: 2000 });
+    c.summary = summaryOf(all);
+    c.rebuild(true);
+    assert.equal(c.marks.length, 200, "every message of the session on the timeline, not the 5 loaded");
+    assert.deepEqual(c.marks.slice(0, 195).map((m) => m.i), Array(195).fill(-1), "those above: not loaded");
+    const reads = [];
+    c.index = cli(all, reads);
+    const cx = spawner();
+    c.jumpTo(2, cx); // T2, at byte 20
+    assert.equal(c.farTo, "T2", "a read toward it");
+    assert.equal(c.follow, false, "the bottom left: the live tail's trim keeps what is read");
+    assert.equal(c.olderBusy, true, "the head says « lecture… »");
+    await cx.p;
+    assert.deepEqual(reads, [[1050, 1950, 90], [150, 1050, 90], [20, 150, 90]], "90 turns a read, the last from T2's opener");
+    assert.equal(c.state.start, 20);
+    assert.equal(c.turns[c.cur].id, "T2", "then the jump, as to a loaded message");
+    assert.equal(c.jump, "T2");
+    assert.ok(c.first() <= c.cur && c.cur < c.end(), "its turn drawn");
+    assert.equal(c.marks.find((m) => m.id === "T2").i, c.cur);
+    assert.equal(c.olderBusy, false);
+    assert.equal(c.farTo, null);
+  }
+  {
+    // The bottom pressed while it reads: the read in flight lands, no other, no jump.
+    const all = many(200);
+    const c = chat(all.filter((e) => e.o >= 1950), { start: 1950, end: 2000 });
+    c.summary = summaryOf(all);
+    c.rebuild(true);
+    let open;
+    const reads = [];
+    c.index = cli(all, reads, new Promise((r) => (open = r)));
+    const cx = spawner();
+    c.jumpTo(2, cx);
+    c.farTo = null; // what the « bas » button and the keys do (bottom button, move())
+    open();
+    await cx.p;
+    assert.equal(reads.length, 1, "no read after it");
+    assert.equal(c.jump, null, "no jump");
+    assert.equal(c.olderBusy, false);
+  }
+  {
+    // The live tail while it reads: not following, the trim keeps every loaded turn (what the next read
+    // continues), where it would keep from the window's first turn otherwise.
+    const all = many(700); // 1 400 entries, past KEEP
+    for (const reaching of [true, false]) {
+      const c = chat(all, { start: 0, end: 7000 });
+      c.follow = false;
+      c.win = { from: 690, to: 700 };
+      c.farTo = reaching ? "T5" : null;
+      c.index = async () => out("/p", 7000, 7010, false, turn("N", 7000));
+      await c.tail("/p", true);
+      assert.equal(c.state.start, reaching ? 0 : 1010, reaching ? "reaching: everything stays" : "else: KEEP entries (the window's turns among them), the oldest go");
+    }
+  }
 }
 console.log("scroll.check: ok");

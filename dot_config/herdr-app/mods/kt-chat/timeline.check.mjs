@@ -3,7 +3,7 @@
 // without a scroll offset, which message is on screen, the jump's anchor and the [ ] step. Fixtures
 // are made up (no real session).
 import assert from "node:assert/strict";
-import { TL, label, marks, barWindow, barStack, barLift, cardTop, offsets, viewTop, wheelAfter, wheelDy, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+import { TL, label, marks, allMarks, readFrom, barWindow, barStack, barLift, cardTop, offsets, viewTop, wheelAfter, wheelDy, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 
 // ── The hover card stays in the transcript's box (never over the composer under it) ─────────
 assert.equal(cardTop(100, 200, 600), 40, "room around: centred on its bar (mid - 60)");
@@ -164,5 +164,40 @@ assert.equal(ownerOf(mk, 2), 0, "a peer's turn: the message before it");
 assert.equal(ownerOf(mk, 3), 1, "its first message, not its note");
 assert.equal(ownerOf(mk, 6), 3);
 assert.equal(ownerOf(mk, 0), 0, "before any: the first");
+
+// ── #59: the whole session's messages (the summary, chat-index.ts --marks) ──
+{
+  // Loaded from byte 500 (turns a.. above, as `mk`); the summary lists two messages before it, one of
+  // them also loaded (a turn the read completed), and the loaded ones again (by their ids).
+  const summary = {
+    path: "/p",
+    marks: [
+      { o: 100, uuid: "x", turn: "x", text: "Le tout premier\nsuite", images: 1, note: false },
+      { o: 300, uuid: "n0", turn: "x", text: "une note", images: 0, note: true },
+      { o: 450, uuid: "a", turn: "a", text: "Fais la chose", images: 0, note: false },
+      { o: 600, uuid: "c", turn: "c", text: "/me:goal sprint", images: 0, note: false },
+    ],
+  };
+  const all = allMarks(summary, mk, 500);
+  assert.deepEqual(all.map((m) => m.id), ["x", "n0", "a", "c", "n1", "e"], "the summary's before what is loaded, then the loaded ones");
+  assert.deepEqual(all.slice(0, 2).map((m) => [m.i, m.o, m.text, m.images, m.note]), [[-1, 100, "Le tout premier", 1, false], [-1, 300, "une note", 0, true]]);
+  assert.equal(all[2], mk[0], "a message loaded is the loaded one (its turn's index), even when the summary has it before `start`");
+  assert.equal(allMarks(null, mk, 500), mk, "no summary: the loaded ones");
+  assert.equal(allMarks(summary, mk, 0), mk, "everything loaded: the loaded ones");
+  // The message lit and the step go over the whole list; a turn before the loaded ones: the last above.
+  assert.equal(ownerOf(all, 0), 1, "the loaded turn 0 (no message of its own): the last message above it");
+  assert.equal(stepMark(all.length, 2, false, -1), 1, "[ from the first loaded message: the summary's, above");
+}
+{
+  // Where each read toward a message far above starts: 4 turns at most a read, never above its turn.
+  const turns = [0, 100, 200, 300, 400, 500, 600, 700, 800, 900].map((o, k) => ({ o, uuid: `t${k}` }));
+  assert.equal(readFrom(turns, 800, 150, 4), 400, "4 turns above byte 800 (700, 600, 500, 400)");
+  assert.equal(readFrom(turns, 400, 150, 4), 100, "the next one stops on the target's turn (100 holds 150)");
+  assert.equal(readFrom(turns, 850, 150, 4), 500, "a start inside a turn (a read cut it): that turn's opener counts in the 4");
+  assert.equal(readFrom(turns, 850, 820, 4), 800, "the target in that very turn: its opener");
+  assert.equal(readFrom(turns, 100, 0, 4), 0, "the first turn");
+  assert.equal(readFrom(turns, 0, 0, 4), 0, "nothing above: from 0");
+  assert.equal(readFrom([{ o: 50, uuid: "t" }], 50, 10, 4), 0, "a target before the first opener: from the start of the file");
+}
 
 console.log("timeline.check: ok");

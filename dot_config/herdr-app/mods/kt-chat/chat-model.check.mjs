@@ -2,7 +2,8 @@
 // line, heavy lines skipped, trimmed outputs, last K turns) and chat-model.js (merge, pairing,
 // turns, items, fold, tally, queue, ingest) on chat-fixture.jsonl, an invented session.
 import assert from "node:assert/strict";
-import { index, startsTurn, strip, normalize } from "./chat-index.ts";
+import { index, marksOf, startsTurn, strip, normalize } from "./chat-index.ts";
+import { marks as timelineMarks } from "./timeline.js";
 import { arrivals, build, buildInc, classify, fold, foldTree, foldedSteps, ingest, items, merge, pendingQueue, prepend, subArrivals, subItems, subPath, tally, toolKind, toolTitle, trim } from "./chat-model.js";
 
 const all = new Uint8Array(await Bun.file(new URL("./chat-fixture.jsonl", import.meta.url)).arrayBuffer());
@@ -132,6 +133,30 @@ assert.equal((await cli(fixturePath, "--from", "99999999")).from, 0);
 assert.deepEqual(await cli("/nonexistent/x.jsonl"), { error: "missing", path: "/nonexistent/x.jsonl" });
 function openers0() {
   return full.entries.find((e) => e.uuid === "u-14").o;
+}
+
+// ── #59: the session's summary (marksOf, --marks): what the timeline lists, from the heads ──
+{
+  const sum = marksOf(all, { from: 0, size: all.length, path: "/f.jsonl", home: "/w" });
+  assert.equal(sum.end, full.end, "the line being written waits, as index()'s");
+  const turns = build(full.entries);
+  assert.deepEqual(sum.turns.map((t) => t.uuid), turns.map((t) => t.id), "every turn's opener, in order");
+  const want = timelineMarks(turns).map((m) => [m.id, m.turn, m.text, m.images, m.note]);
+  assert.ok(want.length >= 3 && want.some((m) => m[4]), "the fixture has prompts and a note typed while it worked");
+  assert.deepEqual(sum.marks.map((m) => [m.uuid, m.turn, m.text, m.images, m.note]), want, "the timeline's marks, without building the turns");
+  for (const m of sum.marks) assert.equal(all[m.o - 1] ?? 10, 10, "at a line start");
+  for (const t of sum.turns) assert.equal(all[t.o - 1] ?? 10, 10, "a turn's opener at a line start: a read can start there");
+  // Incremental: up to a cut, then from its end, gives the same summary (a note's turn before the first
+  // opener of the second part: null, the caller's last one).
+  const cut = marksOf(all.subarray(0, Math.floor(all.length / 2)), { from: 0, size: all.length });
+  const rest = marksOf(all.subarray(cut.end), { from: cut.end, size: all.length });
+  const lastTurn = cut.turns.at(-1)?.uuid ?? null;
+  assert.deepEqual([...cut.turns, ...rest.turns], sum.turns);
+  assert.deepEqual([...cut.marks, ...rest.marks.map((m) => ({ ...m, turn: m.turn ?? lastTurn }))], sum.marks);
+  assert.ok(!JSON.stringify(sum).includes("SECRET"), "tool results never parsed into it");
+  const viaMarks = await cli(fixturePath, "--marks");
+  assert.deepEqual(viaMarks.marks, wire(sum.marks));
+  assert.equal((await cli(fixturePath, "--marks", "--from", String(cut.end))).turns.length, rest.turns.length);
 }
 
 // ── The model ───────────────────────────────────────────────────────────────

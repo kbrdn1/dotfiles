@@ -1,5 +1,6 @@
 // bun chat-index.ts <session.jsonl> [--from N] [--to N] [--last-turns K] [--budget CHARS] [--max-entries M]
 // bun chat-index.ts <session.jsonl> --tool <tool_use id>   (#79: one call's input, the last 4 MB read)
+// bun chat-index.ts <session.jsonl> --marks [--from N]     (the session's summary instead: marksOf, #59)
 //
 // Reads a Claude Code transcript from byte N (never `tail`: nix's gives one line on these files)
 // and prints { path, session, from, start, end, size, more, entries, meta } on stdout:
@@ -395,6 +396,62 @@ export function index(bytes: Uint8Array, opts: Options = {}) {
   return { path: opts.path ?? null, session: session ?? null, from, start, end, size, more: start > from, entries: entries.slice(first), meta: rest, skipped, bad, tail: prev, rewound };
 }
 
+// A line that can carry a turn's opening or a message typed while it worked: a user line (its `type` is
+// in the first 300 bytes of Claude Code's lines) or a queued command; never tool results, nor a
+// sub-agent's. Only those are parsed: the summary of a 160 MB transcript reads its heads only.
+const USER_HEAD = /"type":"user"|"attachment":\{"type":"queued_command"/;
+const NOT_A_MARK = /"isSidechain":true|"content":\[\{"type":"tool_result"/;
+const firstLine = (s: string) => {
+  for (const l of String(s ?? "").split("\n")) {
+    const t = l.trim().split(/\s+/).join(" ");
+    if (t) return cap(t, 300);
+  }
+  return "";
+};
+
+/**
+ * #59: the session's summary, however long the file: every line that opens a turn ({ o, uuid, at }) and
+ * Kylian's messages, as the timeline lists them (timeline.js marks): a prompt, a / or ! command, a note
+ * typed while it worked ({ o, uuid, turn: its turn's uuid (null: before the first one read here), at,
+ * text: its first line, images, note }). `end` as index()'s: `--marks --from end` goes on from there.
+ */
+export function marksOf(bytes: Uint8Array, opts: Options = {}) {
+  const from = opts.from ?? 0;
+  const size = opts.size ?? from + bytes.length;
+  const dec = new TextDecoder();
+  const turns: Entry[] = [];
+  const marks: Entry[] = [];
+  let pos = 0;
+  let last: string | null = null;
+  for (;;) {
+    const nl = bytes.indexOf(10, pos);
+    if (nl < 0) break;
+    const line = bytes.subarray(pos, nl);
+    const off = from + pos;
+    pos = nl + 1;
+    if (line.length < 2) continue;
+    const head = dec.decode(line.subarray(0, 300));
+    if (!USER_HEAD.test(head) || NOT_A_MARK.test(head)) continue;
+    let o: any;
+    try {
+      o = JSON.parse(dec.decode(line));
+    } catch {
+      continue;
+    }
+    for (const e of normalize(o, off, {}, opts.home ?? "", () => false)) {
+      if (e.k !== "user") continue;
+      if (e.turn) {
+        turns.push({ o: e.o, uuid: e.uuid, at: e.at });
+        last = e.uuid;
+      }
+      if (e.from || e.meta || (!e.turn && !e.text?.trim())) continue;
+      const text = e.cmd ? [e.cmd.name, e.cmd.args].filter(Boolean).join(" ") : e.text;
+      marks.push({ o: e.o, uuid: e.uuid ?? `u${e.o}`, turn: e.turn ? e.uuid : last, at: e.at, text: firstLine(text), images: e.images ?? 0, note: !e.turn });
+    }
+  }
+  return { path: opts.path ?? null, from, end: from + pos, size, turns, marks };
+}
+
 /**
  * #79: the tool call `id` as the model wrote it, { name, input, cut } or null, from the transcript's
  * last bytes, the newest line first. A permission is asked for the call just written, so it is near
@@ -459,6 +516,9 @@ if (import.meta.main) {
   const bytes = new Uint8Array(await file.slice(from, Math.max(from, to)).arrayBuffer());
   const t = args.indexOf("--tail");
   const tail = t >= 0 && args[t + 1] && !args[t + 1].startsWith("--") ? args[t + 1] : undefined;
-  const out = index(bytes, { from, size, lastTurns: num("--last-turns"), budget: num("--budget"), maxEntries: num("--max-entries"), home: process.env.HOME ?? "", path, tail, side: args.includes("--sidechain") });
+  // The output can be MBs: written once, never followed by process.exit (it would cut a piped stdout).
+  const out = args.includes("--marks")
+    ? marksOf(bytes, { from, size, home: process.env.HOME ?? "", path })
+    : index(bytes, { from, size, lastTurns: num("--last-turns"), budget: num("--budget"), maxEntries: num("--max-entries"), home: process.env.HOME ?? "", path, tail, side: args.includes("--sidechain") });
   process.stdout.write(JSON.stringify(out));
 }

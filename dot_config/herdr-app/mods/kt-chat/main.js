@@ -96,7 +96,7 @@ import { companion, variantFor } from "./companion-logo.js";
 // colors (ring.js, levels.js), the percent rolling (roll.js); byte-identical copies.
 import { ring, ringColor } from "./ring.js";
 import { roll } from "./roll.js";
-import { TL, marks as markList, barStack, barLift, cardTop, offsets, viewTop, wheelAfter, wheelDy, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+import { TL, marks as markList, allMarks, readFrom, barStack, barLift, cardTop, offsets, viewTop, wheelAfter, wheelDy, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 // #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
 import * as win from "./turn-window.js";
 import { skeleton, readyFor, still } from "./skeleton.js";
@@ -113,6 +113,9 @@ const CODE = "Monaspace Neon";
 const K = 30; // turns read at first, and per read of « Tours précédents »
 const BUDGET = 500000; // chat-index.ts --budget: characters of JSON per read
 const MAX_ENTRIES = 900; // --max-entries: JSON.parse + build() stay ~15 ms in the mod engine
+// #59: a read toward a message far above (reach(), the timeline): more turns a read, fewer reads; each
+// one bounded by the summary's openers (timeline.js readFrom). To be measured in the engine (the journal).
+const FAR = { turns: 90, budget: 1500000, entries: 2000 };
 const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before the oldest go
 // The live tail: a delta read this often, only while the Chat shows and its agent works.
 const TICK = 750;
@@ -233,8 +236,12 @@ export default class Chat extends View {
     // The timeline (#85): Kylian's messages (timeline.js marks, made in rebuild), the scroll area's
     // rows' heights (col() id -> design px) and its own, the message lit (its id; the last while
     // following) and whether its turn starts above the view, the bar hovered and its card, a jump
-    // waiting for its rows' heights (a turn id).
+    // waiting for its rows' heights (a turn id). #59: the whole session's (the summary, chat-index.ts --marks:
+    // every turn's opener and Kylian's messages, read once per full read), and the message a read upward
+    // is going toward (reach(): its id).
     this.marks = [];
+    this.summary = null;
+    this.farTo = null;
     this.hts = new Map();
     this.vh = 0;
     this.areaW = 0; // the scroll area's width (design px): a reflow under a view that follows (areaSized)
@@ -393,7 +400,7 @@ export default class Chat extends View {
           if (this.bgMenu) this.closeBg(cx);
           else this.bgMenu = true;
         }
-        else if (name === "tl") this.tlCommand(arg);
+        else if (name === "tl") this.tlCommand(arg, cx);
         else if (name === "confirmed") this.confirmed(cx, arg); // kt-confirm said yes to a /command (askRoute's id)
         else if (name === "compact-ok") this.compactor.yes(arg); // kt-confirm said yes to « Compacter » (its ask's id)
         cx.notify();
@@ -431,8 +438,8 @@ export default class Chat extends View {
     return r?.stdout?.trim() || null;
   }
 
-  async index(path, extra = []) {
-    const args = [`${appHome()}/mods/kt-chat/chat-index.ts`, path, "--last-turns", String(K), "--budget", String(BUDGET), "--max-entries", String(MAX_ENTRIES), ...extra];
+  async index(path, extra = [], lim = {}) {
+    const args = [`${appHome()}/mods/kt-chat/chat-index.ts`, path, "--last-turns", String(lim.turns ?? K), "--budget", String(lim.budget ?? BUDGET), "--max-entries", String(lim.entries ?? MAX_ENTRIES), ...extra];
     const r = await exec(`${home()}/.nix-profile/bin/bun`, args, { timeout: 60000 });
     if (r.code !== 0) throw new Error((r.stderr || r.stdout || `exit ${r.code}`).trim().split("\n").slice(-3).join(" "));
     return JSON.parse(r.stdout);
@@ -477,6 +484,8 @@ export default class Chat extends View {
               this.cur = -1;
               this.win = win.bottom(this.turns.length);
               this.reveal = "bottom";
+              this.farTo = null;
+              this.readSummary(cx, path);
             }
             if (this.err) {
               this.state = null;
@@ -504,6 +513,64 @@ export default class Chat extends View {
     });
   }
 
+  /**
+   * #59: the timeline's summary of the whole file (chat-index.ts --marks: every turn's opener and
+   * Kylian's messages, from the lines' heads, ~0.2 s on a 160 MB transcript), after a full read. Without
+   * it, the timeline lists the loaded turns' messages only, as before.
+   */
+  readSummary(cx, path) {
+    cx.spawn(async (cx) => {
+      try {
+        const s = await this.index(path, ["--marks"]);
+        if (this.state?.path !== path || !Array.isArray(s?.marks)) return;
+        this.summary = s;
+        this.marks = allMarks(s, markList(this.turns), this.state.start);
+        cx.notify();
+      } catch {
+        // the loaded turns' messages stay what the timeline lists
+      }
+    });
+  }
+
+  /**
+   * #59: a message of the timeline above what is loaded (i -1: from the summary). Reads go up from the
+   * first loaded byte, bounded by the summary's turn openers (timeline.js readFrom, FAR turns at most a
+   * read), until its turn is in; then the jump, as to any loaded message. The view stays where it is
+   * meanwhile (the head says « lecture… »); the bottom, another jump or a key cancel it (farTo).
+   */
+  reach(m, cx) {
+    if (this.olderBusy || !this.summary || !this.state) return;
+    const target = this.summary.turns.find((t) => t.uuid === m.turn)?.o ?? m.o;
+    this.farTo = m.id;
+    this.follow = false; // the live tail's trim keeps what is read (tail(): keepFrom)
+    this.olderBusy = true;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        while (this.farTo === m.id && this.state?.more && this.state.start > target) {
+          const s = this.state;
+          const out = await this.index(s.path, ["--from", String(readFrom(this.summary.turns, s.start, target, FAR.turns)), "--to", String(s.start)], FAR);
+          const next = prepend(this.state, out);
+          if (next === this.state) break; // another state meanwhile (a full read, another agent): it no longer continues
+          this.state = next;
+          this.rebuild(this.builtLive, false); // the same turns drawn, now after the read ones
+          cx.notify(); // the timeline as it fills in
+        }
+        const k = this.farTo === m.id ? this.marks.findIndex((x) => x.id === m.id) : -1;
+        if (k >= 0 && this.marks[k].i >= 0) {
+          this.farTo = null;
+          this.jumpTo(k, cx);
+        }
+      } catch (e) {
+        notify({ title: tr("empty.failed.title"), body: String(e?.message ?? e).slice(0, 300), level: "error" });
+      } finally {
+        if (this.farTo === m.id) this.farTo = null;
+        this.olderBusy = false;
+        cx.notify();
+      }
+    });
+  }
+
   /** The live tail of `path` into the state. Answers whether anything changed (a redraw is due). */
   async tail(path, live) {
     // #59: the chain's last link read, so a prompt that went back (a rewind) is seen in the delta.
@@ -523,8 +590,10 @@ export default class Chat extends View {
     const before = this.state;
     const grown = ingest(before, out);
     // Not following the bottom, the turns drawn stay (#59: a « Tours précédents » read while it works
-    // would go at the next tick): the trim stops at the window's first turn.
-    this.state = trim(grown, win.keepFor(grown.entries, this.follow ? null : this.turns[this.first()]?.id ?? null, KEEP));
+    // would go at the next tick): the trim stops at the window's first turn. While reads go up toward a
+    // message far above (reach()), every loaded turn stays: they are what the next read continues.
+    const keepFrom = this.follow ? null : (this.farTo ? this.turns[0] : this.turns[this.first()])?.id ?? null;
+    this.state = trim(grown, win.keepFor(grown.entries, keepFrom, KEEP));
     // ingest keeps the entries array when nothing came (skipped lines only), trim when under KEEP.
     const grew = this.state.entries !== before.entries;
     if (!grew && live === this.builtLive) return false; // the state still moves on to the new end
@@ -563,7 +632,7 @@ export default class Chat extends View {
       turn.assets = turnAssets(turn, { session, cwd, home: home(), seen }).all;
     }
     // The timeline's messages, here rather than in render; the heights of turns gone (trim) go too.
-    this.marks = markList(this.turns);
+    this.marks = allMarks(this.summary?.path === this.state?.path ? this.summary : null, markList(this.turns), this.state?.start ?? 0);
     const rows = new Set(this.turns.map((t) => `kc-turn-${t.id}`));
     for (const k of this.hts.keys()) if (k.startsWith("kc-turn-") && !rows.has(k)) this.hts.delete(k);
     if (this.byState) for (const k of this.byState.keys()) if (!rows.has(k.slice(0, k.lastIndexOf("|")))) this.byState.delete(k);
@@ -750,6 +819,7 @@ export default class Chat extends View {
       this.win = win.reach(this.win, n, to); // the cursor draws the turn it reaches, CAP at most
       this.reveal = childOf(to, this.first());
       this.jump = null; // a jump still waiting for its rows: this move wins
+      this.farTo = null; // a read toward a message far above too (reach())
       this.light(to); // the timeline lights the cursor's message
     };
     switch (a) {
@@ -767,7 +837,7 @@ export default class Chat extends View {
       case "panel-prev":
       case "panel-next": {
         const to = stepMark(this.marks.length, this.tlIndex(), this.tlAbove, a === "panel-next" ? 1 : -1, this.vim.count);
-        if (to >= 0) this.jumpTo(to);
+        if (to >= 0) this.jumpTo(to, cx);
         return true;
       }
       case "open": {
@@ -1649,11 +1719,17 @@ export default class Chat extends View {
 
   /**
    * To the k-th message: its turn drawn (as the cursor does), the cursor on it, then its top at the
-   * view's top once its rows are measured (body(): the anchor). A note goes to its turn's top.
+   * view's top once its rows are measured (body(): the anchor). A note goes to its turn's top. One above
+   * what is loaded (the summary's, #59): read up to it first (reach()).
    */
-  jumpTo(k) {
+  jumpTo(k, cx = null) {
     const m = this.marks[k];
     if (!m) return;
+    this.farTo = null; // another jump: a read toward an earlier one stops at its next step
+    if (m.i < 0) {
+      if (cx) this.reach(m, cx);
+      return;
+    }
     // Where the view leaves from, for the glide: the bottom while following, else the top last known;
     // unknown when the window moves its top (its rows above aren't the same), then the way it goes.
     const a = this.tlIndex(), g = this.geom(), was = this.first();
@@ -1671,7 +1747,7 @@ export default class Chat extends View {
   }
 
   /** `tl:hover:<n>` (its card open, no delay), `tl:jump:<n>`, `tl:off`: the captures' pointer. */
-  tlCommand(arg) {
+  tlCommand(arg, cx = null) {
     const [what, at] = String(arg).split(":");
     const k = Number(at);
     if (what === "off") {
@@ -1681,7 +1757,7 @@ export default class Chat extends View {
       if (what === "hover") {
         this.tlHover = k;
         this.tlOpen = true;
-      } else if (what === "jump") this.jumpTo(k);
+      } else if (what === "jump") this.jumpTo(k, cx);
     }
   }
 
@@ -1900,7 +1976,7 @@ export default class Chat extends View {
       if (!this.m.reduced) bar = bar.transition("width", p).transition("opacity", p);
       bars.push(h_flex().id(`kc-tl-${m.id}`).w_full().h(row).flex_none().items_center().justify_end().cursor_pointer()
         .on_hover((h, cx) => { if (h) this.hoverMark(cx, k); })
-        .on_click((_e, cx) => { this.jumpTo(k); cx.notify(); })
+        .on_click((_e, cx) => { this.jumpTo(k, cx); cx.notify(); })
         .child(bar));
     }
     let card = null;
@@ -3019,7 +3095,7 @@ export default class Chat extends View {
       .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(8).left(0).right(0).justify_center()
         .child(h_flex().id("kc-bottom").size(30).rounded_full().items_center().justify_center().border(1).border_color(ink(t, 0.1))
           .bg(ink(t, 0.04)).cursor_pointer().tooltip(tr("bottom")).text_color(ink(t, 0.7)).hover((s) => s.text_color(ink(t, 1)))
-          .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.jump = null; this.win = win.bottom(this.turns.length); this.reveal = "bottom"; cx.notify(); })
+          .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.jump = null; this.farTo = null; this.win = win.bottom(this.turns.length); this.reveal = "bottom"; cx.notify(); })
           .child(svg(I("chevron-down")).size(16)))));
   }
 
