@@ -126,7 +126,9 @@ export default class Context extends View {
       }
     });
     cx.timer.every(EVERY, (cx) => {
-      // A compaction waiting for the end of a turn goes even while Context is hidden (its address, kept).
+      // A compaction waiting for the end of a turn goes even while Context is hidden (its address, kept);
+      // and kt-confirm's yes reaches it then too (saidYes()).
+      this.saidYes();
       if (this.compactor.tick(cx, { address: this.term, session: this.line?.session_id ?? null })) cx.notify();
       if (visible()) this.read(cx);
       else if (this.shown) { this.shown = false; cx.notify(); }
@@ -379,12 +381,25 @@ export default class Context extends View {
     return panelIn(this.motion, this.draw(cx));
   }
 
+  /**
+   * kt-confirm's yes to « Compacter », from shared (`kt.confirm.said`, A.9): its command reaches a shown
+   * copy only, Context is often hidden by then. yes() takes an ask once, whichever way it came first.
+   */
+  saidYes() {
+    for (const name of Object.keys(shared("kt.confirm.said") ?? {})) {
+      if (name.startsWith("kt-context.compact-ok:")) this.compactor.yes(name.slice("kt-context.compact-ok:".length));
+    }
+  }
+
   draw(cx) {
     const vis = visible();
     const target = terminal();
     if (vis && !checking() && (!this.shown || target !== this.term)) this.read(cx);
     // « Compacter »: a yes goes at once when the agent rests (the command's notify brings this render).
-    if (!checking()) this.compactor.tick(cx, { address: this.term, session: this.line?.session_id ?? null });
+    if (!checking()) {
+      this.saidYes();
+      this.compactor.tick(cx, { address: this.term, session: this.line?.session_id ?? null });
+    }
     if (vis && !this.shown) this.showGen++;
     this.shown = vis;
     const m = frame(this.motion, Boolean(shared("kt.reducedMotion")));

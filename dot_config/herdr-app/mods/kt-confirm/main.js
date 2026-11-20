@@ -32,7 +32,7 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, settings, nextCommand, checking, spaces, panes, terminals, shared, home } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, settings, nextCommand, checking, spaces, panes, terminals, shared, setShared, commands, home } from "herdr";
 import { keyOf, keysOf } from "./vim.js";
 import { motionState, frame, sheet, leave, sharpen } from "./motion.js";
 import { ditherBand, TOP } from "./dither.js";
@@ -46,6 +46,12 @@ const I = (name) => (name.includes("/") ? name : `mods/kt-threads/${name}.svg`);
 // A color with alpha `a`, replacing any it has (glass themes are #rrggbbaa).
 const alpha = (c, a) => `${String(c).slice(0, 7)}${a}`;
 const veil = () => (settings().dark ? alpha("#000000", "8c") : alpha("#0a0a0a", "59"));
+// A yes to a mod's command, said in shared too (`kt.confirm.said`: { command name: when }, the last 10
+// minutes): `<mod>.<command>` reaches that mod's shown copies only, and Context was often hidden by the
+// time « Compacter » was said yes to (A.9). The mod takes it from there (kt-context's timer).
+export const SAID = "kt.confirm.said";
+export const said = (prev, name, now = Date.now()) =>
+  ({ ...Object.fromEntries(Object.entries(prev ?? {}).filter(([, at]) => now - at < 600000)), [name]: now });
 const TONES = { danger: ["ansi1", "circle-alert"], warning: ["blocked", "circle-alert"], success: ["done", "circle-check"], info: ["accent", "message-circle-question"] };
 const STATE_ICON = { ok: ["circle-check", "done"], refused: ["x", "ansi1"], warn: ["circle-alert", "blocked"] };
 
@@ -249,7 +255,12 @@ export default class Confirm extends View {
     if (this.done || this.locked(this.view())) return;
     const v = (this.done = this.view());
     // Opened bare (`mod.open`), or about something gone: nothing to run, it only closes.
-    if (!v.missing && v.command?.name) run(v.command.name, v.command.args ?? {});
+    if (!v.missing && v.command?.name) {
+      run(v.command.name, v.command.args ?? {});
+      // An app command runs anywhere; a mod's is said in shared too (SAID).
+      const head = v.command.name.split(":")[0];
+      if (!commands().some((c) => c.name === head)) setShared(SAID, said(shared(SAID), v.command.name));
+    }
     this.dismiss(cx);
   }
 
