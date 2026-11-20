@@ -99,12 +99,22 @@ export function offsets(heights, inset = 0) {
 }
 
 /**
- * The scroll offset after a wheel event, from the row under the pointer: its top in the content, the
- * pointer in it and in the view (all as painted before this event), less the event's delta (> 0 goes
- * up), within [0, max].
+ * The view's top in the content (design px), as gpui painted it. Measured in the engine (2026-11-20, a
+ * journal under Kylian's trackpad): the scroll area's own handlers get the bounds of the CONTENT it
+ * scrolls, so their y is the view's top less the offset, and their local y is in the content. The view's
+ * top (`viewY`, window px) comes from the box around the area (main.js kc-view). `z`: the app's zoom.
  */
-export function wheelTop({ top, inRow, inView, dy, max }) {
-  return Math.max(0, Math.min(Math.max(0, max), top + inRow - inView - dy));
+export const viewTop = ({ viewY, contentY, z = 1 }) => Math.max(0, (viewY - contentY) / z);
+
+/**
+ * The offset after a wheel event (dy > 0 goes up), within [0, max]. `top`: as the bounds `by` it came
+ * with say (viewTop). gpui delivers events on the bounds of its last paint, several before the next one
+ * (13 in 2 ms after a stall, measured): from the same bounds, each starts where the last one left it,
+ * as gpui moves the offset (clamped at each). `est`: the last answer, { by, top }, or null.
+ */
+export function wheelAfter(est, { by, top, dy, max }) {
+  const from = est && est.by === by ? est.top : top;
+  return { by, top: Math.max(0, Math.min(Math.max(0, max), from - dy)) };
 }
 
 /**
@@ -112,23 +122,6 @@ export function wheelTop({ top, inRow, inView, dy, max }) {
  * delta.y is 0 (gpui takes the other axis then: a sideways swipe scrolls the transcript, A14).
  */
 export const wheelDy = (delta) => (delta?.y ? delta.y : delta?.x ?? 0);
-
-/**
- * A wheel event reaches the row under the pointer and the scroll area, in an order the host chooses:
- * each half is kept (the latest of each kind) until both halves of one event are in: the same pointer
- * and the same delta. The pointer alone isn't enough (A6): it stays still under a wheel, so an event
- * whose row half never came (the pointer over the area's padding) would pair its area half with the
- * next event's row. Two events with the same pointer and delta pair right either way.
- * `half`: { row (the row's id, absent for the area's half), px, py (the pointer, window), y (the
- * pointer in the row or the view), dy }. Answers { keep, pair }: what to keep for the next half, and
- * once complete { id, inRow, inView, dy } for wheelTop.
- */
-export function pairWheel(kept, half) {
-  const next = half.row != null ? { ...kept, row: half } : { ...kept, view: half };
-  const { row, view } = next;
-  if (row && view && row.px === view.px && row.py === view.py && row.dy === view.dy) return { keep: null, pair: { id: row.row, inRow: row.y, inView: view.y, dy: view.dy } };
-  return { keep: next, pair: null };
-}
 
 /**
  * The message on screen (measure_active, :101-125): following the bottom, or within NEAR_END of it

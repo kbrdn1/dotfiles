@@ -3,7 +3,7 @@
 // without a scroll offset, which message is on screen, the jump's anchor and the [ ] step. Fixtures
 // are made up (no real session).
 import assert from "node:assert/strict";
-import { TL, label, marks, barWindow, barStack, barLift, cardTop, offsets, pairWheel, wheelDy, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+import { TL, label, marks, barWindow, barStack, barLift, cardTop, offsets, viewTop, wheelAfter, wheelDy, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 
 // ── The hover card stays in the transcript's box (never over the composer under it) ─────────
 assert.equal(cardTop(100, 200, 600), 40, "room around: centred on its bar (mid - 60)");
@@ -66,34 +66,32 @@ assert.equal(o.end, 1461);
 assert.equal(o.known, true);
 assert.equal(offsets([40, undefined, 200], 20).known, false, "a row not measured yet");
 
-// The offset from a wheel event: the pointer 120 px into the turn at 360, 300 px down the view: the
-// view's top is at 180; the wheel goes down 50 (delta -50): 230. Up past the top: 0; down past the end: max.
-assert.equal(wheelTop({ top: 360, inRow: 120, inView: 300, dy: 0, max: 1000 }), 180);
-assert.equal(wheelTop({ top: 360, inRow: 120, inView: 300, dy: -50, max: 1000 }), 230);
-assert.equal(wheelTop({ top: 360, inRow: 120, inView: 300, dy: 400, max: 1000 }), 0);
-assert.equal(wheelTop({ top: 360, inRow: 120, inView: 300, dy: -2000, max: 1000 }), 1000);
+// The view's top from what the engine hands the scroll area (journal on t1, 2026-11-20, the view
+// following the bottom): the view's top at 61 px in the window, the content painted from -5415: 5476,
+// which is the bottom (the rows' end 6295 + 8 of padding - a view of 827).
+assert.equal(viewTop({ viewY: 61, contentY: -5415 }), 5476);
+assert.equal(viewTop({ viewY: 61, contentY: -5415 }), 6295 + 8 - 827, "the bottom while following");
+assert.equal(viewTop({ viewY: 61, contentY: 61 }), 0, "the content from the view's top: the head");
+assert.equal(viewTop({ viewY: 122, contentY: -10830, z: 2 }), 5476, "at zoom 2, in design px");
+assert.equal(viewTop({ viewY: 61, contentY: 70 }), 0, "never above the head");
 
-// The two halves of one wheel event, in either order; a half of another event (another pointer) waits.
-const row = (y, dy, px = 5, py = 400) => ({ row: "kc-turn-c", px, py, y, dy });
-const view = (y, dy, px = 5, py = 400) => ({ row: null, px, py, y, dy });
-let w = pairWheel(null, row(120, -50));
-assert.equal(w.pair, null);
-w = pairWheel(w.keep, view(300, -50));
-assert.deepEqual(w, { keep: null, pair: { id: "kc-turn-c", inRow: 120, inView: 300, dy: -50 } }, "the row first");
-w = pairWheel(pairWheel(null, view(300, -50)).keep, row(120, -50));
-assert.deepEqual(w.pair, { id: "kc-turn-c", inRow: 120, inView: 300, dy: -50 }, "the area first");
-w = pairWheel(pairWheel(null, view(300, -50, 5, 380)).keep, row(120, -20));
-assert.equal(w.pair, null, "the area's half of an earlier event (the pointer moved) is not this one's");
-assert.deepEqual(pairWheel(w.keep, view(300, -20)).pair, { id: "kc-turn-c", inRow: 120, inView: 300, dy: -20 }, "its own half pairs");
-// A6: the pointer still over the area's top padding, an event brings only the area's half (dy -10);
-// the next one (dy -40), the content moved, a row under the pointer: its row half must wait for its own
-// area half, not take the kept one (that one was 30 px off: top 20 where the view was at 50).
-w = pairWheel(null, view(30, -10, 400, 30));
-w = pairWheel(w.keep, row(20, -40, 400, 30));
-assert.equal(w.pair, null, "an earlier event's area half, the same pointer but another delta, is not this one's");
-w = pairWheel(w.keep, view(30, -40, 400, 30));
-assert.deepEqual(w.pair, { id: "kc-turn-c", inRow: 20, inView: 30, dy: -40 }, "its own area half pairs");
-assert.equal(wheelTop({ top: 20, inRow: w.pair.inRow, inView: w.pair.inView, dy: w.pair.dy, max: 5000 }), 50, "the view's top after it");
+// After an event: its delta (> 0 goes up) from the painted top, clamped to [0, max] as gpui clamps it.
+let e = wheelAfter(null, { by: -5415, top: 5476, dy: 1, max: 5476 });
+assert.deepEqual(e, { by: -5415, top: 5475 });
+// The journal's burst: 13 events in 2 ms on the bounds of one paint (-3738: the top 3799), 420 px of
+// deltas between them, then the next paint's bounds (-3318: 3379). Each event starts where the last left
+// it; the next paint agrees.
+const burst = [49, 45, 41, 39, 36, 33, 58, 24, 22, 21, 19, 17, 16];
+e = null;
+for (const dy of burst) e = wheelAfter(e, { by: -3738, top: viewTop({ viewY: 61, contentY: -3738 }), dy, max: 5476 });
+assert.equal(e.top, 3799 - 420, "the burst adds up");
+assert.equal(e.top, viewTop({ viewY: 61, contentY: -3318 }), "what the next paint shows");
+assert.equal(wheelAfter(e, { by: -3318, top: 3379, dy: 14, max: 5476 }).top, 3365, "new bounds: from them");
+// Against the head: gpui stops at 0 at each event, so a turn back down starts from 0.
+e = wheelAfter(null, { by: 61, top: 0, dy: 100, max: 5476 });
+assert.equal(e.top, 0);
+assert.equal(wheelAfter(e, { by: 61, top: 0, dy: -30, max: 5476 }).top, 30, "back down from the head, not from -100");
+assert.equal(wheelAfter(null, { by: -5415, top: 5476, dy: -800, max: 5476 }).top, 5476, "the end");
 // A14: the area scrolls y only, so a delta of 0 in y moves it by delta.x.
 assert.equal(wheelDy({ x: 0, y: -40 }), -40);
 assert.equal(wheelDy({ x: 25, y: 0 }), 25, "a sideways swipe scrolls the transcript");

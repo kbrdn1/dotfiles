@@ -54,9 +54,9 @@ function chat(entries = turn("B", 100, "lu d'abord"), { path = "/p", start = 100
   const c = Object.create(Chat.prototype);
   Object.assign(c, {
     turns: [], win: { from: 0, to: 0 }, hts: new Map(), marks: [], builtLive: true, follow: true, cur: -1, queued: [], olderBusy: false,
-    vh: 0, areaW: 0, pinned: null, top: 120, reveal: null, wheelAt: null, jump: null, tlId: null, tlAbove: false, tlLost: false, bgBtn: false,
+    vh: 0, areaW: 0, pinned: null, top: 120, reveal: null, viewY: null, wheelEst: null, jump: null, tlId: null, tlAbove: false, tlLost: false, bgBtn: false,
     budget: null, shownSteps: new Map(), open: new Set(), settling: false,
-    drawn: new Map(), byState: new Map(), heldNow: new Set(), keepRow: null, pressAt: null, pressMoved: false,
+    drawn: new Map(), byState: new Map(), heldNow: new Set(), keepRow: null, pressMoved: false,
   });
   c.state = ingest(null, out(path, start, end, true, entries));
   c.rebuild(true);
@@ -120,6 +120,19 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
   assert.equal(c.follow, true, "the background's button over the bar's top is not the bar");
   c.areaPress(press(990, 60), cx);
   assert.equal(c.follow, false, "under it, the bar");
+}
+{
+  // The engine hands the area the CONTENT's bounds and a local y in the content (journal, 2026-11-20):
+  // scrolled 5 000 px down, a press 20 px under the view's top is at 5 020 in the content. Where the
+  // button is: the press against the view's top (viewY), not its local y.
+  const c = chat(), cx = ctx();
+  c.bgBtn = true;
+  c.viewSeen({ bounds: { y: 61 } });
+  const real = (vy) => ({ position: { x: 990, y: 61 + vy }, local_position: { x: 990, y: 5000 + vy }, bounds: { y: 61 - 5000, width: 1000, height: 9000 } });
+  c.areaPress(real(20), cx);
+  assert.equal(c.follow, true, "scrolled down, the button is still the button");
+  c.areaPress(real(60), cx);
+  assert.equal(c.follow, false, "and under it, the bar");
 }
 
 // ── A2: the area shrinks or reflows under a view that follows: the bottom again ──
@@ -237,15 +250,19 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
     c.follow = false;
     c.cur = 2;
     c.drawn = new Map([["A", "o"], ["B", "c"], ["C", "o"]]);
+    c.viewSeen({ bounds: { y: 61 } }); // the pointer crossed the transcript (kc-view): the view's top in the window
     return c;
   };
-  const rowHalf = (y) => ({ position: { x: 5, y: 400 }, local_position: { x: 5, y } });
-  const viewHalf = (y) => ({ position: { x: 5, y: 400 }, local_position: { x: 500, y }, bounds: { width: 1000, height: 500 } });
+  // A press as the engine hands it (journal, 2026-11-20): the view's top at 61 in the window, scrolled
+  // 400 px. The row's half: its bounds in the window (B's top 660: 61 + 660 - 400); the area's half: the
+  // content's bounds (61 - 400) and a local y in the content.
+  const rowHalf = (y) => ({ position: { x: 5, y: 321 + y }, local_position: { x: 5, y }, bounds: { y: 321, width: 1000, height: 300 } });
+  const viewHalf = (y) => ({ position: { x: 5, y: 321 + y }, local_position: { x: 500, y: 660 + y }, bounds: { y: 61 - 400, width: 1000, height: 1400 } });
   {
     const c = setup(), cx = ctx();
     // The press: in turn B, 40 px into it, 300 px down the view (B's top 660: the view's top 400).
     c.pressTurn("kc-turn-B", rowHalf(40), cx);
-    c.areaPress(viewHalf(300), cx);
+    c.areaPress(viewHalf(40), cx);
     assert.equal(c.cur, 1);
     assert.deepEqual({ id: c.keepRow.id, screen: c.keepRow.screen, top: c.keepRow.top }, { id: "kc-turn-B", screen: 260, top: 400 }, "B kept 260 px down the view");
     // The next render: A, above B, now held closed (its closed height known: 400).
@@ -257,7 +274,7 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
   {
     const c = setup(), cx = ctx();
     c.pressTurn("kc-turn-B", rowHalf(40), cx);
-    c.areaPress(viewHalf(300), cx);
+    c.areaPress(viewHalf(40), cx);
     // A's closed height never measured: this render guesses (nothing moves), the size A reports corrects it.
     assert.equal(c.keepY(new Map([["A", "c"], ["B", "o"], ["C", "c"]])), null);
     assert.equal(c.keepRow.correct, true);
@@ -273,12 +290,12 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
     const c = setup(), cx = ctx();
     c.follow = true;
     c.pressTurn("kc-turn-B", rowHalf(40), cx);
-    c.areaPress(viewHalf(300), cx);
+    c.areaPress(viewHalf(40), cx);
     assert.equal(c.keepRow, null, "following the bottom, a press doesn't move the reader (the last turn stays first)");
     c.follow = false;
     c.cur = 1;
     c.pressTurn("kc-turn-B", rowHalf(40), cx);
-    c.areaPress(viewHalf(300), cx);
+    c.areaPress(viewHalf(40), cx);
     assert.equal(c.keepRow, null, "a press in the reader's own turn moves nothing");
   }
 }
@@ -315,12 +332,29 @@ const press = (x, y = 300) => ({ local_position: { x, y }, bounds: { width: 1000
   c.tlLost = true;
   c.tlId = "C";
   const cx = ctx();
-  // One event: the row under the pointer (turn B, 40 px into it) then the area (the pointer 300 px down the view).
-  const ev = (y) => ({ delta: { x: 0, y: -10 }, position: { x: 5, y: 400 }, local_position: { x: 5, y } });
-  c.wheel(cx, "kc-turn-B", ev(40));
-  c.areaWheel(ev(300), cx);
+  // One event as the engine hands the area its half (journal, 2026-11-20): the view's top at 61 in the
+  // window, the view 100 px down the content, so the content painted from 61 - 100; a local y in the
+  // content. The wheel goes down 10.
+  const ev = { delta: { x: 0, y: -10 }, position: { x: 5, y: 361 }, local_position: { x: 5, y: 400 }, bounds: { y: 61 - 100, width: 1000, height: 1010 } };
+  c.areaWheel(ev, cx);
+  assert.equal(c.top, null, "the view's top in the window not seen yet: unknown, nothing measured");
+  c.viewSeen({ bounds: { y: 61 } }); // kc-view under the pointer
+  c.areaWheel(ev, cx);
   assert.equal(c.tlLost, false, "a wheel event measured the view: lit again");
+  assert.equal(c.top, 110, "the view's top: 100 down, then the wheel's 10");
   assert.equal(c.tlId, "B", "B starts in the view (its top 360, the view's top 110)");
-  assert.equal(c.top, 110);
+}
+{
+  // The bottom by the wheel follows again (the live tail's new turns show): the view's top measured at
+  // the bottom (the rows' end 1011 + 8 - 500 = 519), going down.
+  const c = chat(three(), { start: 0, end: 30 });
+  for (const [id, h] of [["kc-head", 40], ["kc-turn-A", 300], ["kc-turn-B", 300], ["kc-turn-C", 300], ["kc-working", 50]]) c.hts.set(id, h);
+  c.vh = 500;
+  c.follow = false;
+  const cx = ctx();
+  c.viewSeen({ bounds: { y: 61 } });
+  c.areaWheel({ delta: { x: 0, y: -40 }, position: { x: 5, y: 361 }, local_position: { x: 5, y: 800 }, bounds: { y: 61 - 500, width: 1000, height: 1019 } }, cx);
+  assert.equal(c.top, 519, "500 down, the wheel's 40 down, clamped at the end");
+  assert.equal(c.follow, true, "the bottom reached by the wheel: followed again");
 }
 console.log("scroll.check: ok");

@@ -96,7 +96,7 @@ import { companion, variantFor } from "./companion-logo.js";
 // colors (ring.js, levels.js), the percent rolling (roll.js); byte-identical copies.
 import { ring, ringColor } from "./ring.js";
 import { roll } from "./roll.js";
-import { TL, marks as markList, barStack, barLift, cardTop, offsets, pairWheel, wheelDy, wheelTop, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
+import { TL, marks as markList, barStack, barLift, cardTop, offsets, viewTop, wheelAfter, wheelDy, activeAt, atEnd, anchorH, glide, stepMark, ownerOf } from "./timeline.js";
 // #59: the turns drawn, a window [from, to) of CAP turns at most that no longer sticks to the end.
 import * as win from "./turn-window.js";
 import { skeleton, readyFor, still } from "./skeleton.js";
@@ -233,7 +233,7 @@ export default class Chat extends View {
     // The timeline (#85): Kylian's messages (timeline.js marks, made in rebuild), the scroll area's
     // rows' heights (col() id -> design px) and its own, the message lit (its id; the last while
     // following) and whether its turn starts above the view, the bar hovered and its card, a jump
-    // waiting for its rows' heights (a turn id), and the half of a wheel event already in (wheel()).
+    // waiting for its rows' heights (a turn id).
     this.marks = [];
     this.hts = new Map();
     this.vh = 0;
@@ -242,12 +242,11 @@ export default class Chat extends View {
     // A16: each fold's state as last drawn ("o" open, "c" closed: turn id -> state), the heights a turn's
     // row was measured at in each state (`${row}|${state}` -> design px), the folds held closed by the
     // budget in the last render, the row a press asked to keep where it is on screen ({ id, screen, top,
-    // at, correct }: keepY()), the half of a press already in (pairPress()) and whether it moved the reader.
+    // at, correct }: keepY()) and whether the press moved the reader.
     this.drawn = new Map();
     this.byState = new Map();
     this.heldNow = new Set();
     this.keepRow = null;
-    this.pressAt = null;
     this.pressMoved = false;
     this.tlId = null;
     this.tlAbove = false;
@@ -257,7 +256,10 @@ export default class Chat extends View {
     this.tlOpen = false;
     this.tlOpening = false;
     this.jump = null;
-    this.wheelAt = null;
+    // The view's top in the window (window px, viewSeen(): the box around the scroll area, kc-view) and the
+    // last wheel event's offset ({ by, top }: timeline.js wheelAfter), what the view's top is measured from.
+    this.viewY = null;
+    this.wheelEst = null;
     // The jump's glide (glide(), timeline.js): the view's top as last known (design px; null unknown:
     // after a reveal or a press on the scrollbar), where a jump leaves from, the slide drawn ({ gen, dy, ready }).
     this.top = null;
@@ -1777,25 +1779,28 @@ export default class Chat extends View {
   }
 
   /**
-   * One wheel event reaches the row under the pointer (`row`: its id) and the scroll area (`row`
-   * null), in either order (timeline.js pairWheel): once both halves are in, the offset it leaves, then
-   * the message on screen; a redraw only when that changes.
+   * One wheel event over the scroll area, its own half: the bounds it carries are the content's (measured
+   * in the engine, timeline.js viewTop), so the view's top it leaves is the view's (viewY) less them, its
+   * delta taken off (wheelAfter: several events on one paint add up). Then the bottom followed again when
+   * it reaches it, the message on screen; a redraw only when that changes. Unknown until the pointer has
+   * crossed the transcript once (viewSeen()).
    */
-  wheel(cx, row, ev) {
-    if (!ev.local_position) return;
-    // A14: the area moves by delta.x when delta.y is 0 (it scrolls y only); both halves carry it (A6).
-    const { keep, pair: w } = pairWheel(this.wheelAt, { row, px: ev.position.x, py: ev.position.y, y: ev.local_position.y, dy: wheelDy(ev.delta) });
-    this.wheelAt = keep;
-    if (!w || this.vh <= 0) return;
-    const g = this.geom();
-    if (!g.known || !g.at.has(w.id)) return;
-    const z = this.zoom();
-    // The area's padding (TOP_INSET above, 8 under) is part of what scrolls.
-    const scrollTop = wheelTop({ top: g.at.get(w.id), inRow: w.inRow / z, inView: w.inView / z, dy: w.dy / z, max: g.end + 8 - this.vh });
-    this.top = scrollTop;
+  wheel(cx, ev) {
+    const by = ev.bounds?.y;
+    if (by == null || this.viewY == null || this.vh <= 0) {
+      this.top = null;
+      return;
+    }
+    const g = this.geom(), z = this.zoom();
+    // A14: the area moves by delta.x when delta.y is 0 (it scrolls y only). Its padding (TOP_INSET above,
+    // 8 under) is part of what scrolls.
+    const dy = wheelDy(ev.delta) / z;
+    this.wheelEst = wheelAfter(this.wheelEst, { by, top: viewTop({ viewY: this.viewY, contentY: by, z }), dy, max: g.known ? g.end + 8 - this.vh : Infinity });
+    const scrollTop = (this.top = this.wheelEst.top);
+    if (!g.known) return;
     const whole = this.end() >= this.turns.length; // the window's bottom is the conversation's
     // #59: going down to the conversation's bottom follows it again (the live tail's new turns show).
-    if (w.dy < 0 && !this.follow && atEnd({ scrollTop, vh: this.vh, end: g.end + 8, whole })) {
+    if (dy < 0 && !this.follow && atEnd({ scrollTop, vh: this.vh, end: g.end + 8, whole })) {
       this.follow = true;
       this.cur = -1;
       cx.notify();
@@ -1836,23 +1841,31 @@ export default class Chat extends View {
       this.follow = false;
       cx.notify();
     }
-    // gpui scrolls whether or not the event pairs: unknown until it does (wheel() sets it back).
-    this.top = null;
     this.keepRow = null; // the reader scrolls: a press's keep no longer holds (keepY())
-    this.wheel(cx, null, ev);
+    this.wheel(cx, ev);
+  }
+
+  /**
+   * The box around the scroll area (kc-view) under the pointer: its top in the window is the view's top,
+   * what the area's events are measured from (wheel(), keepPress()). It follows the layout and the zoom:
+   * taken again at every pointer move and wheel over the transcript.
+   */
+  viewSeen(ev) {
+    if (ev?.bounds?.y != null) this.viewY = ev.bounds.y;
   }
 
   /**
    * A press on the scrollbar (the area's right edge, SCROLLBAR_W) moves the view where no event says:
    * the bottom isn't followed any more (A1: else the next live tick pulls the view back down), the
    * view's top is unknown, and the timeline lights nothing until a wheel measures it again (A7). A
-   * press on the text, or on the background's button over the bar's top (bgControls), leaves them; on
-   * the text, it is the view's half of a press in a turn (pairPress(), A16).
+   * press on the text, or on the background's button over the bar's top (bgControls), leaves them. The
+   * press's y in the view: from the view's top (viewSeen()), its local y being the content's.
    */
   areaPress(ev, cx) {
     if (!ev.local_position || !ev.bounds) return;
-    const z = this.zoom(), { x, y } = ev.local_position, w = ev.bounds.width;
-    if (x <= w - SCROLLBAR_W * z) return this.pairPress(null, ev);
+    const z = this.zoom(), { x } = ev.local_position, w = ev.bounds.width;
+    if (x <= w - SCROLLBAR_W * z) return;
+    const y = this.viewY != null && ev.position ? ev.position.y - this.viewY : ev.local_position.y;
     if (this.bgBtn && y >= 10 * z && y <= 36 * z && x >= w - 36 * z) return;
     this.top = null;
     this.keepRow = null;
@@ -1931,7 +1944,6 @@ export default class Chat extends View {
     const pin = this.pinned; // this render brings the bottom: the first size it makes is covered (measured())
     return h_flex().id(id).w_full().flex_none().justify_center()
       .on_size_change((size, cx) => this.measured(id, size, cx, pin, state))
-      .on_scroll_wheel((ev, cx) => this.wheel(cx, id, ev))
       // A16: a press in a turn makes it the reader's (the cursor): its folded work is served first.
       .when(id.startsWith("kc-turn-"), (el) => el.on_mouse_down("left", (ev, cx) => this.pressTurn(id, ev, cx)))
       .child(inner);
@@ -1939,8 +1951,8 @@ export default class Chat extends View {
 
   /**
    * A16: the turn pressed becomes the cursor's, which body() serves first (nearFirst); a fold of it held
-   * closed by the budget then opens as one the reader opens (foldAt: rows()). The press's row half
-   * (pairPress()): where that row is on screen, so a fold above it that this changes doesn't move it.
+   * closed by the budget then opens as one the reader opens (foldAt: rows()). Where that row is on screen
+   * (keepPress()), so a fold above it that this changes doesn't move it.
    */
   pressTurn(id, ev, cx) {
     const i = this.turns.findIndex((t) => `kc-turn-${t.id}` === id);
@@ -1951,28 +1963,24 @@ export default class Chat extends View {
       if (this.heldNow?.has(t.id)) this.foldAt = { id: t.id, at: Date.now() };
       cx.notify();
     }
-    this.pairPress(id, ev);
+    this.keepPress(id, ev);
   }
 
   /**
-   * A press reaches the turn's row (`row`) and the scroll area (`row` null), in an order the host
-   * chooses (timeline.js pairWheel, a delta of 0): once both are in, where the row is on screen. When
-   * the press moved the reader, that row is kept there (keepRow: keepY() moves the view's top by what
-   * the folds above it change in the next render).
+   * When the press moved the reader, where the pressed row is on screen: its bounds against the view's
+   * top (viewSeen()), the view's top following (row top in the content + the view's top - the row's).
+   * That row is kept there (keepRow: keepY() moves the view's top by what the folds above it change in
+   * the next render).
    */
-  pairPress(row, ev) {
-    if (!ev?.local_position || !ev.position) return;
-    const z = this.zoom();
-    const { keep, pair } = pairWheel(this.pressAt, { row, px: ev.position.x, py: ev.position.y, y: ev.local_position.y / z, dy: 0 });
-    this.pressAt = keep;
-    if (!pair || !this.pressMoved) return;
+  keepPress(row, ev) {
+    if (!this.pressMoved) return;
     this.pressMoved = false;
-    const g = this.geom();
-    if (!g.known || !g.at.has(pair.id)) return;
-    const at = g.at.get(pair.id);
-    const top = Math.max(0, at + pair.inRow - pair.inView);
+    const by = ev?.bounds?.y, g = this.geom();
+    if (by == null || this.viewY == null || !g.known || !g.at.has(row)) return;
+    const at = g.at.get(row);
+    const top = Math.max(0, at + (this.viewY - by) / this.zoom());
     this.top = top;
-    this.keepRow = { id: pair.id, screen: at - top, top, at: Date.now(), correct: false };
+    this.keepRow = { id: row, screen: at - top, top, at: Date.now(), correct: false };
   }
 
   /**
@@ -2995,7 +3003,11 @@ export default class Chat extends View {
       this.top = null; // the smallest scroll, from where gpui is: unknown until a wheel or a jump
     }
     const rail = this.rail(t);
-    return div().relative().flex_1().min_h(0).flex().flex_col()
+    // kc-view: the box the scroll area fills, its top the view's (viewSeen(): the area's own events carry
+    // the content's bounds, not the view's).
+    return div().id("kc-view").relative().flex_1().min_h(0).flex().flex_col()
+      .on_mouse_move((ev, _cx) => this.viewSeen(ev))
+      .on_scroll_wheel((ev, _cx) => this.viewSeen(ev))
       .child(v_flex().id("kc-scroll").flex_1().min_h(0).overflow_y_scrollbar().track_scroll(this.scroll).pt(TOP_INSET).pb(8)
         .on_size_change((size, cx) => this.areaSized(size, cx))
         .on_scroll_wheel((ev, cx) => this.areaWheel(ev, cx))
