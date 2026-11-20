@@ -25,7 +25,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { focused, panes, spaces, agents, theme, layout, readTextFile, writeTextFile, exec, hc, home, appHome, nextCommand, checking, run, openOverlay, shared } from "herdr";
+import { focused, panes, spaces, agents, theme, layout, readTextFile, writeTextFile, exec, hc, home, appHome, nextCommand, checking, run, openOverlay, shared, setShared } from "herdr";
 import * as fs from "fs/promises";
 import { makeT, compact, relative, time } from "./i18n.js";
 import strings from "./strings.js";
@@ -41,11 +41,12 @@ import { Vim, keysOf } from "./vim.js";
 import { merge, breakdown, grid, gridInk, details, curve, current, sessionId, SPREAD } from "./model.js";
 // « Compacter » by the gauge (Kylian, 2026-11-19): kt-chat's compact.js, a byte-identical copy (with
 // compact.strings.js, keysend.js and say.js): asks (kt-confirm), waits for rest, /compact in the terminal.
-import { Compactor, compactButton } from "./compact.js";
+import { Compactor, compactButton, compactStatus } from "./compact.js";
 
 const tr = makeT(strings);
-// The host functions compact.js is handed (it imports none: shared, checked bare).
-const HOST = { agents, hc, exec, home, readTextFile, writeTextFile, stat: (p) => fs.stat(p), openOverlay };
+// The host functions compact.js is handed (it imports none: shared, checked bare); shared: « Compacter »'s
+// one state for Context and the Chat (A.9).
+const HOST = { agents, hc, exec, home, readTextFile, writeTextFile, stat: (p) => fs.stat(p), openOverlay, shared, setShared };
 const ME = "context"; // this block's id in the layout's "panel-body" stack
 const EVERY = 4000; // the status line, while Context shows
 const MONO = "Monaspace Krypton";
@@ -229,9 +230,11 @@ export default class Context extends View {
 
   head(t, now) {
     const l = this.line;
-    // « Compacter » (compact.js) for the followed agent, and what it does now on a line of its own.
+    // « Compacter » (compact.js) for the followed agent, and what it does now on a line of its own: the same
+    // state and mark as the Chat's (A.9), « Session compactée » with this transcript's last compaction.
     const agent = this.compactor.status(this.term) != null;
-    const cw = this.compactor.words(this.term);
+    const cw = this.compactor.words(this.term, this.st?.compactions?.at(-1) ?? null);
+    const status = compactStatus(t, "kc-cstat", cw, { still: Boolean(shared("kt.reducedMotion")) });
     return this.card(t, "kc-head")
       .child(h_flex().gap(12).items_center()
         .child(ring(t, "kc-ring", now.pct, 44, { kind: "ctx", window: now.window, roll, m: this.motion }))
@@ -240,7 +243,7 @@ export default class Context extends View {
             .child(div().flex_1().min_w(0).truncate().text_size(13.5).font_semibold().child(tr("title")))
             .when(this.keyed, (el) => el.child(modePill(t, this.vim)))
             .when(agent, (el) => el.child(compactButton(t, "kc-compact", cw, () => this.compactor.press(this.term, l.session_id ?? null)))))
-          .when(Boolean(cw.note), (el) => el.child(div().truncate().text_size(11).text_color(cw.error ? t.ansi1 : t.muted).child(cw.note)))
+          .when(Boolean(status), (el) => el.child(status))
           .child(div().truncate().font_family(MONO).text_size(11.5).text_color(t.muted)
             .child(tr("of", { used: compact(now.tokens), window: compact(now.window) })))
           // A compaction since the last call: its « after », until the next call says exactly.

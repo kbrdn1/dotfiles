@@ -10,11 +10,11 @@
 // compacts, then done; the status line's ctx_pct reads null until the next call.
 // Shared byte for byte (source kt-chat, a copy in kt-context) with compact.strings.js, keysend.js and
 // say.js; no host import: the mod hands herdr's functions in. Checked by compact.check.mjs (kt-chat).
-import { div } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { keysSend, sayReadyOf, sayFail } from "./keysend.js";
 import { say } from "./say.js";
-import { makeT } from "./i18n.js";
+import { makeT, compact as kilo } from "./i18n.js";
 import strings from "./compact.strings.js";
 
 const tr = makeT(strings);
@@ -22,6 +22,9 @@ export const COMPACT = "/compact";
 export const TTL = 300000; // an ask answered later than this sends nothing
 export const WAIT = 1800000; // a compaction waiting for the end of a turn longer than this is dropped
 export const SHOWN = 60000; // « Session compactée » or a failure stays this long at most
+// A send or a follow older than this, whoever owns it, goes: its task went with its view (a reload, a
+// restart), the state outlives it in shared (A.9). Past endOf's 300 s with room to spare.
+export const STUCK = 360000;
 const WHYS = new Set(Object.keys(strings.fr).filter((k) => k.startsWith("why.")).map((k) => k.slice(4)));
 
 /** When /compact may go for an agent's status: "now" (idle, done), "later" (working; blocked: its dialog
@@ -97,16 +100,36 @@ export async function endOf(io, address, turn0) {
 }
 
 /**
+ * A.9: the compactions by terminal, one state for the Chat and Context: shared KEY when the host has it
+ * (both views see the same, whichever asked), else this one's own (a check's bare host). A Map's face:
+ * get, set, delete, iteration.
+ */
+export const KEY = "kt.compact";
+function storeOf(h) {
+  let own = {};
+  const read = () => (h.shared ? h.shared(KEY) ?? {} : own);
+  const write = (all) => (h.setShared ? h.setShared(KEY, all) : (own = all));
+  return {
+    get: (a) => read()[a],
+    set: (a, s) => write({ ...read(), [a]: s }),
+    delete: (a) => { const all = { ...read() }; delete all[a]; write(all); },
+    [Symbol.iterator]: () => Object.entries(read())[Symbol.iterator](),
+  };
+}
+
+/**
  * One per view. mod: the view's mod ("kt-chat" | "kt-context"): kt-confirm calls back
- * `<mod>.compact-ok:<id>` (its nextCommand hands yes() the id). h: herdr's functions (ioOf's, and
- * openOverlay). The compactions by terminal: { id, session, at, phase: "asking" | "later" | "going" |
- * "sent" | "done" | "failed", why?, track? }.
+ * `<mod>.compact-ok:<id>` (its nextCommand hands yes() the id). h: herdr's functions (ioOf's, openOverlay,
+ * shared and setShared). The compactions by terminal (storeOf): { id, owner, session, at, asked, phase:
+ * "asking" | "later" | "going" | "sent" | "done" | "failed", why?, track? }. `owner`: the view that asked;
+ * only it sends /compact (never twice), every view shows it.
  */
 export class Compactor {
   constructor(mod, h) {
     this.mod = mod;
     this.h = h;
-    this.by = new Map();
+    this.me = `${mod}#${Math.random().toString(36).slice(2, 8)}`;
+    this.by = storeOf(h);
   }
 
   status(address) {
@@ -124,7 +147,7 @@ export class Compactor {
     const when = whenOf(this.status(address));
     if (!address || !when || s?.phase === "going") return null;
     const id = `${address}~${now.toString(36)}${Math.floor(rnd * 1e9).toString(36)}`;
-    this.by.set(address, { id, session: session ?? null, at: now, phase: "asking" });
+    this.by.set(address, { id, owner: this.me, session: session ?? null, at: now, asked: now, phase: "asking" });
     this.h.openOverlay({ mod: "kt-confirm", kind: "dialog", width: 1, height: 1, frame: "none", props: {
       title: tr("ask.title"), detail: when === "later" ? `${tr("ask.detail")}\n\n${tr("ask.later")}` : tr("ask.detail"),
       label: tr("ask.label"), tone: "info", command: { name: `${this.mod}.compact-ok:${id}` } } });
@@ -156,7 +179,8 @@ export class Compactor {
       if (s.phase === "later") {
         const other = shown.address === address && shown.session != null && s.session != null && shown.session !== s.session;
         if (status == null || other || now - s.at > WAIT) { drop(); continue; }
-        if (whenOf(status) !== "now") continue;
+        // The view that asked sends it, alone: the other shows it (A.9).
+        if (whenOf(status) !== "now" || (s.owner && s.owner !== this.me)) continue;
         this.by.set(address, { ...s, phase: "going", at: now });
         changed = true;
         // The send, then its turn followed to its end: « Compaction en cours », then « Session compactée »,
@@ -180,27 +204,53 @@ export class Compactor {
         });
         continue;
       }
-      // Its own task ends a tracked send; an untracked one (no turn count) goes after SHOWN.
+      // Its own task ends a tracked send; an untracked one (no turn count) goes after SHOWN; one stuck past
+      // STUCK (its task gone) goes whoever owns it.
+      if ((s.phase === "going" || s.phase === "sent") && now - s.at > STUCK) { drop(); continue; }
       if (s.phase === "sent" && !s.track && (status == null || now - s.at > SHOWN)) drop();
       if ((s.phase === "failed" || s.phase === "done") && now - s.at > SHOWN) drop();
     }
     return changed;
   }
 
-  /** What shows for `address`: { label, tip, note, error, press: false while it goes }. */
-  words(address) {
+  /**
+   * What shows for `address`: { phase, label, tip, note, error, press: false while it goes }. `cut`: the
+   * view's last compaction ({ at, pre, post }, its transcript's compact_boundary): one made since the ask
+   * says its tokens in « Session compactée » (A.9).
+   */
+  words(address, cut = null) {
     const s = this.by.get(address);
     const ph = s?.phase;
     const why = s?.why && WHYS.has(s.why) ? s.why : "say-refused";
+    const at = typeof cut?.at === "string" ? Date.parse(cut.at) : cut?.at;
+    const made = ph === "done" && cut?.pre > 0 && cut?.post > 0 && at >= (s.asked ?? s.at) - 5000;
     return {
+      phase: ph ?? null,
       label: ph === "later" ? tr("button.cancel") : ph === "going" || ph === "sent" ? tr("button.going") : tr("button"),
       tip: ph === "later" ? tr("button.cancelTip") : tr("button.tip"),
       note: ph === "later" ? tr("note.later") : ph === "going" ? tr("note.going") : ph === "sent" ? tr("note.sent")
+        : made ? tr("note.doneTokens", { from: kilo(cut.pre), to: kilo(cut.post) })
         : ph === "done" ? tr("note.done") : ph === "failed" ? tr("note.failed", { why: tr(`why.${why}`) }) : null,
       error: ph === "failed",
       press: ph !== "going" && ph !== "sent",
     };
   }
+}
+
+/**
+ * A.9: what the compaction does now, the same in both views: its mark (a wait's clock; while it goes a dot
+ * breathing, one native loop, still in reduced motion; done, the check; failed, the alert) and its words.
+ * null at rest.
+ */
+export function compactStatus(t, id, words, { still = false } = {}) {
+  if (!words.note) return null;
+  const ph = words.phase;
+  const color = ph === "done" ? t.done : ph === "failed" ? t.ansi1 : t.muted;
+  const dot = div().size(7).flex_none().rounded_full().bg(t.accent);
+  const mark = ph === "going" || ph === "sent" ? (still ? dot : dot.loop("opacity", { from: 0.35, to: 1, period: 1200 }))
+    : svg(`mods/kt-threads/${ph === "later" ? "clock" : ph === "done" ? "check" : "circle-alert"}.svg`).size(12).flex_none().text_color(color);
+  return h_flex().id(id).gap(6).items_center().min_w(0).text_size(11.5).text_color(color)
+    .child(mark).child(div().min_w(0).truncate().child(words.note));
 }
 
 /** The button, the same in both views: a small pill (h 22) that never moves its line. */

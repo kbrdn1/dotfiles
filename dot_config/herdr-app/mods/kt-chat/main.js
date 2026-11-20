@@ -54,7 +54,7 @@ import { agents, focused, panes, theme, settings, shared, setShared, home, appHo
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
 import { askOf, callId, shownRows } from "./ask.js";
-import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals } from "./chat-model.js";
+import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals, compaction } from "./chat-model.js";
 import {
   pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
@@ -82,7 +82,7 @@ import { STEPS as FLOW_STEPS } from "./workflows.js";
 import { keysSend as keysRoute, sayReadyOf, sayFail } from "./keysend.js";
 import { say as sayBridge } from "./say.js";
 // « Compacter » by the ctx ring (compact.js, shared with Context's head): asks, waits for rest, /compact.
-import { Compactor, compactButton, ioOf } from "./compact.js";
+import { Compactor, compactButton, compactStatus, ioOf } from "./compact.js";
 // kt-keys' dither.js (a byte-identical copy): the windows that keep the background inside the corners.
 import { bandWindows, ALL } from "./dither.js";
 import { motionState, frame, enter, collapse, rows, MS, DY } from "./motion.js";
@@ -102,13 +102,14 @@ import { TL, marks as markList, allMarks, readFrom, barStack, barLift, cardTop, 
 import * as win from "./turn-window.js";
 import { skeleton, readyFor, still } from "./skeleton.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
-import { makeT, duration, time, num, relative } from "./i18n.js";
+import { makeT, duration, time, num, relative, compact as kilo } from "./i18n.js";
 import strings from "./strings.js";
 import * as fs from "fs/promises";
 
 const tr = makeT(strings);
 // The host functions keysend.js, say.js and compact.js are handed (they import none: shared, checked bare).
-const HOST = { agents, hc, exec, home, readTextFile, writeTextFile, stat: (p) => fs.stat(p), openOverlay };
+// shared: « Compacter »'s one state for the Chat and Context (compact.js storeOf, A.9).
+const HOST = { agents, hc, exec, home, readTextFile, writeTextFile, stat: (p) => fs.stat(p), openOverlay, shared, setShared };
 const MONO = "Monaspace Krypton";
 const CODE = "Monaspace Neon";
 const K = 30; // turns read at first, and per read of « Tours précédents »
@@ -367,13 +368,7 @@ export default class Chat extends View {
       const moved = this.complete(cx);
       if (moved || had !== Boolean(this.draft.trim())) cx.notify();
     });
-    // Enter sends; shift-enter asks for a line break (the field may give one by itself). The menu open
-    // with rows: Enter takes its active row.
-    this.composer.on("submit", (e, cx) => {
-      if (e?.shift) this.composer.replace("\n");
-      else if (this.cpl.menu?.rows.length) this.accept(this.cpl.menu.active, cx);
-      else this.send(cx);
-    });
+    this.composer.on("submit", (e, cx) => this.submitted(e, cx));
     this.composer.on("focus", (_e, cx) => {
       this.typing = true;
       if (Date.now() - this.cpl.at > STALE) this.loadCatalog(cx); // a head start on the first `/`
@@ -1628,6 +1623,35 @@ export default class Chat extends View {
     });
   }
 
+  /**
+   * A.9: a data timer (1 s) while a compaction this Chat asked for is on its way: the Chat hidden has no
+   * render to tick it (Context's own timer runs always). Gone with the last of them.
+   */
+  compactTimer(cx) {
+    const mine = [...this.compactor.by].some(([, s]) => s.owner === this.compactor.me && s.phase !== "done" && s.phase !== "failed");
+    if (mine && !this.compactTicker) {
+      this.compactTicker = cx.timer.every(1000, (cx) => {
+        this.saidYes();
+        if (this.compactor.tick(cx, { address: target().agent?.address, session: this.line?.session_id ?? null })) cx.notify();
+        this.compactTimer(cx);
+      });
+    } else if (!mine && this.compactTicker) {
+      this.compactTicker.cancel();
+      this.compactTicker = null;
+    }
+  }
+
+  /**
+   * kt-confirm's yes to « Compacter », from shared too (`kt.confirm.said`, A.9): its command reaches a shown
+   * copy only, the Chat may be hidden by then; taken at its next render or tick (within compact.js' TTL).
+   * yes() takes an ask once, whichever way it came first.
+   */
+  saidYes() {
+    for (const name of Object.keys(shared("kt.confirm.said") ?? {})) {
+      if (name.startsWith("kt-chat.compact-ok:")) this.compactor.yes(name.slice("kt-chat.compact-ok:".length));
+    }
+  }
+
   // « Ouvrir le terminal »: the thread's panes again (thread-body on main, no motion), the keyboard to
   // this Chat's agent's pane, as kt-head's view.js does on ctrl-b space.
   openTerminal() {
@@ -2654,7 +2678,9 @@ export default class Chat extends View {
     if (b.kind === "compact") {
       const id = `c:${b.id}`;
       const opened = this.open.has(id);
-      const head = [b.trigger === "auto" ? tr("notice.compactAuto") : tr("notice.compact"), b.tokens ? tr("notice.tokens", { n: num(b.tokens) }) : null].filter(Boolean).join(" · ");
+      // A.9: before → after (« 968 k → 64 k tokens »), the boundary's own counts.
+      const counts = b.tokens && b.post ? tr("notice.tokensFromTo", { from: kilo(b.tokens), to: kilo(b.post) }) : b.tokens ? tr("notice.tokens", { n: num(b.tokens) }) : null;
+      const head = [b.trigger === "auto" ? tr("notice.compactAuto") : tr("notice.compact"), counts].filter(Boolean).join(" · ");
       const row = this.milestone(t, `kc-cp-${b.id}`, I("check"), head, { onClick: b.text ? () => this.toggle(id) : null });
       return opened && b.text
         ? v_flex().min_w(0).child(row).child(div().pl(22).pb(8).text_size(14).line_height("24px").text_color(ink(t, 0.48))
@@ -3431,22 +3457,26 @@ export default class Chat extends View {
         .when(Boolean(perm), (el) => el.child(toolPill(PERM[perm] ?? OWN("lock"), [[tr(`perm.${perm}`) || perm, 0.7]], full ? FULL_ACCESS : null)))
         .child(div().flex_1())
         .child(send));
-    // « Compacter » (compact.js): what it does now goes in the same words' slot (no line of its own).
-    const cw = this.compactor.words(a?.address);
+    // « Compacter » (compact.js): what it does now goes in the same words' slot (no line of its own), as
+    // Context shows it (A.9: one state, shared; its mark breathing while it goes). The context after a
+    // compaction: its postTokens until the next call (the status line's ctx_pct reads 0 meanwhile).
+    const cut = compaction(this.state?.entries);
+    const cw = this.compactor.words(a?.address, cut);
+    const status = !this.sending && !this.sendErr ? compactStatus(t, "kc-cstat", cw, { still: this.m.reduced }) : null;
     const say = this.sending ? tr("composer.sending")
       : this.sendErr ? tr(`composer.err.${this.sendErr.why}`, { why: this.sendErr.message ?? "" })
-        : cw.note ? cw.note
         : this.cpl.route ? this.cpl.route // #81: the route the /command at the head takes
         : this.handle.is_focused() ? tr("hint")
           : m === "queue" ? tr("composer.queue") : m === "blocked" ? tr("composer.held") : tr("composer.hint");
-    const sayErr = Boolean(this.sendErr) || (!this.sending && cw.error);
-    const ctx = Number(this.line?.ctx_pct);
+    const sayErr = Boolean(this.sendErr);
+    const ctx = cut ? (cut.post / (this.line?.window || 1_000_000)) * 100 : Number(this.line?.ctx_pct);
     const bar = (icon, text, id) => h_flex().id(id).h(24).px(6).ml(-6).gap(6).items_center().rounded(6).text_size(12).text_color(ink(t, 0.55))
       .child(svg(icon).size(14).flex_none()).child(div().max_w(256).truncate().child(text));
     const under = h_flex().pt(6).px(15).gap(10).items_center().min_w(0)
       .when(Boolean(pr), (el) => el.child(bar(I(pr.worktree ? "folder-tree" : "folder"), pr.worktree ? tr("ws.worktree") : tr("ws.checkout"), "kc-ws")))
       .when(Boolean(pr?.branch), (el) => el.child(bar(I("git-branch"), pr.branch, "kc-br")))
-      .child(div().flex_1().min_w(0).truncate().flex().justify_end().text_size(11).text_color(sayErr ? ERR : ink(t, 0.45)).child(say))
+      .child(status ? h_flex().flex_1().min_w(0).justify_end().child(status)
+        : div().flex_1().min_w(0).truncate().flex().justify_end().text_size(11).text_color(sayErr ? ERR : ink(t, 0.45)).child(say))
       // kt-composer's CTX item: its label, the 14 px ring, the percent rolling in the ring's color (levels.js'
       // context thresholds by the window's size); the ring's tooltip says « Contexte 77 % » (ring.strings.js).
       // « Compacter » before it (Kylian: where the context shows), h 22 in the line's 24: nothing moves.
@@ -3819,7 +3849,11 @@ export default class Chat extends View {
     this.live(cx, tg, want);
     // « Compacter » (compact.js): a yes waiting for rest goes when the agent's status says so (a render
     // follows each status change, as live() does).
-    if (!checking()) this.compactor.tick(cx, { address: tg.agent?.address, session: this.line?.session_id ?? null });
+    if (!checking()) {
+      this.saidYes();
+      this.compactor.tick(cx, { address: tg.agent?.address, session: this.line?.session_id ?? null });
+      this.compactTimer(cx);
+    }
     // #88: a project deleted by force (kt-projects) leaves kt.chat.backgrounds from outside this copy: its
     // last texture is forgotten and data/kt-chat swept, as after a setting changed here.
     const bgAll = shared(BG) ?? {};

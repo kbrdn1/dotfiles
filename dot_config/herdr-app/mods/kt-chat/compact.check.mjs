@@ -26,7 +26,7 @@ const el = (kind) => {
 };
 plugin({
   setup(b) {
-    b.module("gpui-kit", () => ({ loader: "object", exports: { div: () => el("div") } }));
+    b.module("gpui-kit", () => ({ loader: "object", exports: { div: () => el("div"), svg: () => el("svg") } }));
     b.module("gpui-base", () => ({ loader: "object", exports: { h_flex: () => el("h") } }));
     b.module("herdr", () => ({ loader: "object", exports: { shared: () => null, checking: () => true } })); // i18n.js: French
   },
@@ -253,6 +253,59 @@ assert.equal(answerOf(["❯ /compact", "  ⎿  Not enough messages to compact.",
   const io = ioOf(h, { timer: { after: (ms, fn) => { slept += ms; fn(); } } }, "t9");
   await io.sleep(120);
   assert.deepEqual([slept, io.status(), await io.blocked("t9")], [120, "working", false]);
+}
+
+// A.9: one state for the Chat and Context (shared "kt.compact"): the Chat asks, both show the same words,
+// the Chat alone sends /compact, both say it done with the compaction's tokens (its transcript's).
+{
+  const h = host();
+  const store = {};
+  h.shared = (k) => store[k];
+  h.setShared = (k, v) => { store[k] = v; return null; };
+  const chat = new Compactor("kt-chat", h), ctx = new Compactor("kt-context", h);
+  chat.press("t9", "s1", 1000, 0.3);
+  assert.equal(ctx.words("t9").label, "Compacter", "asked, not said yes to yet: the button as at rest");
+  assert.equal(ctx.yes(idOf(h.overlays[0]), 1100), true, "the yes reaches the ask wherever it is read");
+  assert.deepEqual([chat.words("t9").note, ctx.words("t9").note], ["Compaction à la fin du tour", "Compaction à la fin du tour"], "the same words in both views");
+  const cx2 = cxOf(), cx1 = cxOf();
+  ctx.tick(cx2, { address: "t9", session: "s1" }, 1200);
+  assert.equal(cx2.tasks.length, 0, "Context didn't ask: it never sends");
+  chat.tick(cx1, { address: "t9", session: "s1" }, 1300);
+  assert.equal(cx1.tasks.length, 1, "the Chat asked: it sends, once");
+  assert.equal(ctx.words("t9").note, "Compaction…", "Context shows it going");
+  await run(cx1);
+  const cut = { at: Date.now(), pre: 95348, post: 23005 };
+  assert.match(ctx.words("t9", cut).note, /^Session compactée, 95.* → 23.* tokens$/, "done, said with the tokens before and after");
+  assert.equal(ctx.words("t9", { at: 1000 - 60000, pre: 1, post: 1 }).note, "Session compactée", "an older compaction's tokens aren't this one's");
+}
+
+// A.9: a send or a follow whose task went with its view (shared outlives a reload, a restart): past STUCK,
+// whoever owns it, it goes; before that, it stays (another view's task may still be on it).
+{
+  const { STUCK } = await import("./compact.js");
+  const h = host();
+  const store = { "kt.compact": { t9: { id: "t9~x", owner: "kt-chat#gone", phase: "going", at: 1000, asked: 900 } } };
+  h.shared = (k) => store[k];
+  h.setShared = (k, v) => { store[k] = v; return null; };
+  const ctx = new Compactor("kt-context", h);
+  ctx.tick(cxOf(), {}, 1000 + STUCK - 1);
+  assert.equal(ctx.words("t9").phase, "going", "not yet: its owner may still be on it");
+  ctx.tick(cxOf(), {}, 1000 + STUCK + 1);
+  assert.equal(ctx.words("t9").phase, null, "past STUCK: let go, the button again");
+  assert.equal(ctx.words("t9").press, true);
+}
+
+// A.9: the status's mark, the same in both views: nothing at rest, a dot breathing while it goes (a native
+// loop, still in reduced motion), the check, the alert.
+{
+  const { compactStatus } = await import("./compact.js");
+  const t = { muted: "m", done: "ok", ansi1: "err", accent: "a" };
+  assert.equal(compactStatus(t, "kc-cs", { note: null }), null, "at rest: nothing");
+  const going = compactStatus(t, "kc-cs", { phase: "sent", note: "Compaction en cours" });
+  assert.ok(going.kids[0].props.loop, "going: the dot breathes");
+  assert.equal(compactStatus(t, "kc-cs", { phase: "sent", note: "x" }, { still: true }).kids[0].props.loop, undefined, "reduced motion: still");
+  assert.equal(compactStatus(t, "kc-cs", { phase: "done", note: "x" }).kids[0].kind, "svg", "done: its mark");
+  assert.deepEqual(compactStatus(t, "kc-cs", { phase: "failed", note: "x" }).props.text_color, ["err"], "failed: said as an error");
 }
 
 // The button: its words, pressable or not.

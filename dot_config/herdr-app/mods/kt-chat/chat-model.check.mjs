@@ -522,4 +522,27 @@ const same = (entries, live, cache) => {
   assert.deepEqual([subItems([many], 8).items.length, subItems([many], 8).more], [8, 4], "bounded: the last 8, and how many more");
 }
 
+// ── A.9: a compaction, as a throwaway session wrote it (haiku, 2.1.329, 2026-11-20): its boundary with its
+// tokens before and after, its summary, the terminal's « Compacted (ctrl+o…) » (the boundary says it) ──
+{
+  const { compaction } = await import("./chat-model.js");
+  const enc = (lines) => new TextEncoder().encode(lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  const base = { isSidechain: false, sessionId: "s-cp", timestamp: "2026-11-20T05:40:00.000Z" };
+  const lines = [
+    { ...base, type: "user", uuid: "u1", parentUuid: null, message: { role: "user", content: "compte jusqu'à 3" } },
+    { ...base, type: "assistant", uuid: "a1", parentUuid: "u1", message: { id: "m1", role: "assistant", model: "m", content: [{ type: "text", text: "1 2 3" }] } },
+    { ...base, type: "system", subtype: "compact_boundary", uuid: "b1", parentUuid: null, logicalParentUuid: "a1", content: "Conversation compacted", level: "info", compactMetadata: { trigger: "manual", preTokens: 95348, postTokens: 23005 } },
+    { ...base, type: "user", uuid: "s1", parentUuid: "b1", isCompactSummary: true, message: { role: "user", content: "This session is being continued from a previous conversation…" } },
+    { ...base, type: "user", uuid: "c1", parentUuid: "s1", message: { role: "user", content: "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>" } },
+  ];
+  const out = index(enc(lines), { from: 0, size: 1e6, exists: () => false });
+  const notices = out.entries.filter((e) => e.k === "notice").map((e) => [e.kind, e.tokens ?? null, e.post ?? null]);
+  assert.deepEqual(notices, [["compact", 95348, 23005], ["summary", null, null]], "the boundary with both counts, its summary, no « Compacted » card");
+  assert.deepEqual(compaction(out.entries), { pre: 95348, post: 23005, at: Date.parse(base.timestamp) }, "the context it left: the gauge's until the next call");
+  const after = index(enc([...lines, { ...base, type: "assistant", uuid: "a2", parentUuid: "c1", message: { id: "m2", role: "assistant", model: "m", content: [{ type: "text", text: "ok" }] } }]), { from: 0, size: 1e6, exists: () => false });
+  assert.equal(compaction(after.entries), null, "a call since: the status line says exactly again");
+  const [turn] = build(out.entries);
+  assert.equal(turn.blocks.find((b) => b.role === "notice" && b.kind === "compact")?.text?.startsWith("This session"), true, "the summary under its boundary (a click unfolds it)");
+}
+
 console.log("chat-model ok");

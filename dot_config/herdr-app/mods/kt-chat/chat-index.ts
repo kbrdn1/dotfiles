@@ -228,6 +228,9 @@ export function normalize(o: any, off: number, meta: Meta, home: string, exists:
       if (/^\s*\[Request interrupted by user/.test(text)) return out.concat({ k: "notice", o: off, uuid: o.uuid, at, kind: "interrupt" });
       if (/^\s*<(local-command-stdout|local-command-stderr|bash-stdout|bash-stderr)>/.test(text)) {
         const body = ["local-command-stdout", "local-command-stderr", "bash-stdout", "bash-stderr"].map((t) => tag(text, t)).filter(Boolean).join("\n");
+        // A.9: the terminal's « Compacted (ctrl+o to see full summary) »: the boundary already says it, its
+        // summary under it (seen on a throwaway session, 2.1.329).
+        if (/^Compacted \(ctrl\+o/.test(body.replace(ANSI, "").trim())) return out;
         return out.concat({ k: "notice", o: off, uuid: o.uuid, at, kind: "command", text: cap(body.replace(ANSI, ""), 2000) });
       }
       const turn = startsTurn(o, text, side);
@@ -254,7 +257,8 @@ export function normalize(o: any, off: number, meta: Meta, home: string, exists:
     }
     case "system":
       if (o.subtype === "turn_duration") return [{ k: "notice", o: off, uuid: o.uuid, at, kind: "duration", ms: o.durationMs ?? null }];
-      if (o.subtype === "compact_boundary") return [{ k: "notice", o: off, uuid: o.uuid, at, kind: "compact", trigger: o.compactMetadata?.trigger ?? null, tokens: o.compactMetadata?.preTokens ?? null }];
+      // A.9: its tokens before and after (the gauge falls to `post` until the next call says exactly).
+      if (o.subtype === "compact_boundary") return [{ k: "notice", o: off, uuid: o.uuid, at, kind: "compact", trigger: o.compactMetadata?.trigger ?? null, tokens: o.compactMetadata?.preTokens ?? null, post: o.compactMetadata?.postTokens ?? null }];
       if (o.subtype === "local_command") {
         const t = String(o.content ?? "");
         const body = tag(t, "local-command-stdout") ?? tag(t, "local-command-stderr") ?? "";

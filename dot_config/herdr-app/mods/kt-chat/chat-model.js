@@ -247,6 +247,19 @@ export function prepend(state, out) {
   return { ...state, start: out.start, more: out.start > 0, entries: out.entries.concat(state.entries) };
 }
 
+/**
+ * A.9: the context a compaction left, while no call came after it (the status line's ctx_pct reads 0 until
+ * the next call, measured on a throwaway session, 2.1.329): its compact_boundary's { pre, post, at }, or null.
+ */
+export function compaction(entries) {
+  for (let i = (entries?.length ?? 0) - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.k === "assistant") return null;
+    if (e.k === "notice" && e.kind === "compact" && e.post > 0) return { pre: e.tokens ?? null, post: e.post, at: e.at ?? null };
+  }
+  return null;
+}
+
 /** Messages typed while the agent worked and not taken yet (queue-operation, FIFO). */
 export function pendingQueue(entries) {
   const fifo = [];
