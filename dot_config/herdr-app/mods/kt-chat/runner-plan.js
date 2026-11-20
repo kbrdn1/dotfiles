@@ -51,8 +51,10 @@ export const VARIANTS = {
 
 export const keyOf = (program) => (typeof program === "string" ? program : program?.key ?? null);
 
-/** Whether the runner is there: kt-chat's one condition (the slot, the « go to bottom » pill). */
-export function runnerShown(status, program) {
+/** Whether the runner is there: kt-chat's one condition (the slot, the « go to bottom » pill).
+ *  cube: the cube style (companion-cube.js), generic: there for any agent, idle too (it breathes). */
+export function runnerShown(status, program, cube = false) {
+  if (cube) return Boolean(status);
   return SHOWN.has(status) && COMPANIONS.has(keyOf(program));
 }
 

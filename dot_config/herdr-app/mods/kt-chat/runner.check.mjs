@@ -11,6 +11,8 @@ const clawd = { complete: true, poses: {} };
 // kt-chat's one condition
 eq(["working", "blocked", "done", "error", "idle", undefined].map((s) => runnerShown(s, "claude")), [true, true, true, true, false, false], "shown: by status");
 eq([runnerShown("working", "codex"), runnerShown("working", { key: "claude" }), runnerShown("working", "pi"), runnerShown("working", null)], [true, true, false, false], "shown: by program");
+// the cube style: any agent, idle too (the generic cube has a state for it); no agent, no runner
+eq([runnerShown("idle", "pi", true), runnerShown("working", null, true), runnerShown(undefined, "claude", true)], [true, true, false], "shown: the cube style");
 
 // what he does: the mood, from the status and the action's accessory
 eq(["read", "web", "edit", "bash", "git", "tests", null, "think", "agent-claude", "agent-codex"].map((a) => moodOf("working", a)),

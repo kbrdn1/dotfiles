@@ -1216,7 +1216,7 @@ export default class Kanban extends View {
     const muted = th.settled || th.asleep;
     const bridge = th.terminal ? this.shownLive[th.terminal] : null;
     const pet = companion({
-      program: th.program, state: th.agent?.status ?? th.status ?? "idle", id: `kk-c-${key}`, cx, size: 20, height: 16,
+      program: th.program, state: th.agent?.status ?? th.status ?? "idle", id: `kk-c-${key}`, address: th.terminal, cx, size: 20, height: 16,
       action: bridge?.state ? (bridge.action ?? null) : undefined, since: bridge?.state ? bridge.since : undefined,
       memo: (this.memos[`${col}:${th.terminal ?? th.id}`] ??= {}),
     });
@@ -1592,7 +1592,7 @@ export default class Kanban extends View {
       .child(ditherBand(DRAWER_W - 2, 64, 15, alpha(tint, settings().dark ? "6b" : "4d"), TOP))
       .child(h_flex().size_full().px(12).gap(10).items_center()
         .child(h_flex().size(36).flex_none().rounded(10).items_center().justify_center().border(1).border_color(alpha(tint, "4d")).bg(alpha(t.background, "e6"))
-          .child(companion({ program: th.program, state: th.agent?.status ?? th.status ?? "idle", id: `kk-dr-c-${key}`, cx, size: 24, height: 20,
+          .child(companion({ program: th.program, state: th.agent?.status ?? th.status ?? "idle", id: `kk-dr-c-${key}`, address: th.terminal, cx, size: 24, height: 20,
             action: bridge?.state ? (bridge.action ?? null) : undefined, since: bridge?.state ? bridge.since : undefined,
             memo: (this.memos[`drawer:${th.terminal ?? key}`] ??= {}) })))
         .child(v_flex().flex_1().min_w(0).gap(3)

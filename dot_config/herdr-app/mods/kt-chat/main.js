@@ -92,6 +92,7 @@ import { motionState, frame, enter, collapse, rows, MS, DY } from "./motion.js";
 import { tasksLedge, tasksOf, agentsLedge, shownAgents, agentAge, isAlive, startOf, endOf, FADE, say as sayTask, runOf, watching } from "./shelf.js";
 import { twig, treeLine, hang, stem } from "./tree.js";
 import { companion, variantFor } from "./companion-logo.js";
+import { cubeStyle } from "./companion-cube.js";
 // The context as the composer's status line says it (kt-composer): kt-threads' ring and its threshold
 // colors (ring.js, levels.js), the percent rolling (roll.js); byte-identical copies.
 import { ring, ringColor } from "./ring.js";
@@ -3667,7 +3668,7 @@ export default class Chat extends View {
     const rest = treeLine(t);
     const H = 28; // kt-threads' BRANCH_H
     const pet = (x, id) => companion({
-      program: a?.program, id, cx, size: 20, height: 16,
+      program: a?.program, id, parent: a?.address, cx, size: 20, height: 16,
       variant: variantFor(`${key}:${x.id}`, led.kin),
       state: isAlive(x) ? "working" : x.state === "done" ? "done" : x.state === "error" ? "error" : "idle",
       since: isAlive(x) ? startOf(x) : now - endOf(x) < 5000 ? undefined : endOf(x),
@@ -3841,7 +3842,7 @@ export default class Chat extends View {
     const writes = !this.fixed && Boolean(tg.agent) && !tg.reason;
     // runner: its band (composerView) entering or leaving moves the transcript's bottom edge by 64 px: a
     // view following the bottom is brought back to it in this same frame (body() reveals it), not one late.
-    const band = writes && runnerShown(tg.agent?.status, tg.agent?.program);
+    const band = writes && runnerShown(tg.agent?.status, tg.agent?.program, cubeStyle() === "cube");
     if (keepBottom(this.follow, this.band, band)) this.reveal = "bottom";
     this.band = band;
     const pr = this.project(t, cx, tg);

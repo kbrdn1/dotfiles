@@ -12,7 +12,7 @@ export const OPT_KEY = /^[A-Za-z0-9_-]+$/;
 export const GENERATED = new Set(["gpui-kit.d.ts", "jsconfig.json"]);
 // The shared modules, and the mod that holds the reference copy (copies must match it byte for byte).
 export const SHARED = { "vim.js": "kt-keys", "motion.js": "kt-keys", "bus.js": "kt-keys", "dither.js": "kt-keys", "filters.js": "kt-keys", "viz.js": "kt-keys", "i18n.js": "kt-keys", "roll.js": "kt-keys", "skeleton.js": "kt-keys", "fuzzy.js": "kt-picker",
-  "levels.js": "kt-keys", "reread.js": "kt-keys", "shortcuts.js": "kt-keys", "panel.js": "kt-keys", "ring.js": "kt-threads", "ring.strings.js": "kt-threads", "companion-logo.js": "kt-threads", "band.js": "kt-gwm", "select.js": "kt-gwm",
+  "levels.js": "kt-keys", "reread.js": "kt-keys", "shortcuts.js": "kt-keys", "panel.js": "kt-keys", "ring.js": "kt-threads", "ring.strings.js": "kt-threads", "companion-logo.js": "kt-threads", "companion-cube.js": "kt-threads", "band.js": "kt-gwm", "select.js": "kt-gwm",
   "threads-model.js": "kt-threads", "threads-io.js": "kt-threads", "thread-filter.js": "kt-threads", "pr-pick.js": "kt-threads",
   "viz.strings.js": "kt-keys", "steps.js": "kt-flow", "steps.strings.js": "kt-flow",
   "decide.js": "kbrdn-toast", "decide.strings.js": "kbrdn-toast",

@@ -3,4 +3,7 @@
     { "key": "halo", "label": { "fr": "Halo de la sidebar", "en": "Sidebar halo" }, "type": "bool", "default": true,
       "description": { "fr": "La trame en halo à la couleur du projet (kt-threads et kt-head).", "en": "The halo dither in the project's color (kt-threads and kt-head)." } },
     { "key": "companion", "label": { "fr": "Animations du companion", "en": "Companion animations" }, "type": "bool", "default": true,
-      "description": { "fr": "Rebond pendant le travail, ressort et badges animés des tuiles d'agent.", "en": "Bounce while working, spring and animated badges on the agent tiles." } } ] }
+      "description": { "fr": "Rebond pendant le travail, ressort et badges animés des tuiles d'agent.", "en": "Bounce while working, spring and animated badges on the agent tiles." } },
+    { "key": "companion_style", "label": { "fr": "Style des compagnons", "en": "Companion style" }, "type": "enum", "values": ["cube", "subscription"],
+      "labels": [{ "fr": "Cube LED générique", "en": "Generic LED cube" }, { "fr": "Par abonnement (logo du programme)", "en": "By subscription (program logo)" }], "default": "cube",
+      "description": { "fr": "Le cube : un visage par agent (7 familles, 10 variantes), l'anneau des workers d'un lead. Par abonnement : le logo du programme et ses coiffes.", "en": "The cube: a face per agent (7 families, 10 variants), a lead's ring of workers. By subscription: the program's logo and its coiffes." } } ] }

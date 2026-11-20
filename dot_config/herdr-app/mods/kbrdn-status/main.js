@@ -138,7 +138,7 @@ export default class KbrdnStatus extends View {
     if (!a) return null;
     const b = this.bridge[ft];
     return companion({
-      program: a.program, state: a.status, id: `ks-pet-${a.address}`, cx, size: 20, height: 16,
+      program: a.program, state: a.status, id: `ks-pet-${a.address}`, address: a.address, cx, size: 20, height: 16,
       action: b?.state ? (b.action ?? null) : undefined, since: b?.state ? b.since : undefined,
       memo: (this.memos[a.address] ??= {}),
     });

@@ -22,8 +22,12 @@
 // agent. cx: the render's cx. at: draw as of that time, with no timers (previews).
 // variant: a sub-agent's coiffe (#71, brand/companions out var/*), from variantFor(); a parent has none.
 // It sits on the glyph's head, top left, and bobs with it: the same tile told apart at a glance.
+// While kt-threads' option companion_style is "cube" (the default), companion() hands over to
+// companion-cube.js (copy both files): pass the agent's terminal `address`, and for a bridge sub-agent its
+// `parent` terminal; its coiffe's index becomes its rank.
 import { div, image, svg } from "gpui-kit";
 import { settings, theme, shared } from "herdr";
+import { cube, cubeStyle } from "./companion-cube.js";
 
 const ROOT = "brand/companions/out";
 // <data> written by src/build.py from index.json: do not edit by hand
@@ -73,6 +77,11 @@ export function variantFor(key, siblings = []) {
 }
 
 export function companion(o) {
+  // the cube is an agent's (its terminal, or a bridge sub-agent's parent): a thread without a session, or a
+  // shell, keeps the program's icon
+  if (cubeStyle() === "cube" && (o.address || o.parent) && !o.program?.shell) {
+    return cube({ ...o, rank: DATA.variants.list.includes(o.variant) ? DATA.variants.list.indexOf(o.variant) : undefined });
+  }
   const t = theme();
   const p = o.program ?? {};
   const live = o.at == null;

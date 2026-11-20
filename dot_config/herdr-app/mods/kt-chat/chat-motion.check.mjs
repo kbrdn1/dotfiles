@@ -62,10 +62,11 @@ let readFake = async () => "";
 let focusedFake = () => null;
 let openOverlayFake = () => null;
 // checking() answers live.checking: true for the Chat (as herdr-app check), false where a timer is the point.
-const live = { checking: true };
+// style: kt-threads' companion_style, "subscription" (the logos, Clawd) here unless a test asks for the cube.
+const live = { checking: true, style: "subscription" };
 const host = {
   agents: () => agentsFake(), panes: () => [], spaces: () => [], terminals: () => [], theme: () => ({}), settings: () => ({ dark: true, zoom: 1 }),
-  props: () => ({}), shared: () => undefined, layout: () => null, focused: () => focusedFake(), keys: () => ({}), openOverlay: (o) => openOverlayFake(o),
+  props: () => ({}), shared: (k) => (k === "kt.opt.kt-threads.companion_style" ? live.style : undefined), layout: () => null, focused: () => focusedFake(), keys: () => ({}), openOverlay: (o) => openOverlayFake(o),
   home: () => "/h", appHome: () => "/h/.config/herdr-app", checking: () => live.checking, nextCommand: () => new Promise(() => {}),
   exec: (...a) => execFake(...a), hc: (a) => hcFake(a), readTextFile: (p) => readFake(p), writeTextFile: async () => {},
 };
@@ -858,6 +859,12 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   const ids = under(box).flatMap((n) => callsOf(n, "id").map(([v]) => v));
   assert.deepEqual([delayOf(box), ids.includes(`${wid}-after-blocked-a`), ids.includes(`${wid}-after-bang-a`)], [4 * 170, true, true],
     "after the wave (4 x 170 ms): blocked and its bang");
+  // the cube style (the app's default): the agent's LED cube stands in the strip, Clawd or not
+  live.style = "cube";
+  const cubed = at({}, { status: "working", since: now - 1000 });
+  assert.ok(byId(cubed.nodes, "companion-kc-runner-tA"), "cube: the agent's cube in the strip");
+  assert.ok(!cubed.nodes.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-runner-") && v !== "kc-runner" && !String(v).startsWith("kc-runner-tA"))), "cube: no Clawd layer");
+  live.style = "subscription";
   live.checking = true;
 }
 

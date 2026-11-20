@@ -252,7 +252,7 @@ export default class Agents extends View {
     const st = kidStatus(k, this.listed);
     // Its program's companion (companion-logo.js) at 20×16, the smallest size it draws cleanly: a bob
     // while working, "!" blocked, sparkles once done; one memo per address, so one-shots never replay.
-    const pic = k.program ? companion({ program: k.program, state: st, id: `sub-c-${k.address}`, cx, size: 20, height: 16,
+    const pic = k.program ? companion({ program: k.program, state: st, id: `sub-c-${k.address}`, address: k.address, cx, size: 20, height: 16,
       variant: s.variant, memo: (this.memos[k.address] ??= {}) }) : null;
     const on = k.address === shown;
     const tree = treeLine(t);
@@ -481,7 +481,7 @@ export default class Agents extends View {
           // The program's tile, alive (24×20): its icon, a bob while working, what it does in a corner
           // (herdr-bridge's action), "!" blocked, sparkles once done; a click hops it, the row still focuses.
           })).child(companion({
-            program: a.program, state: a.status, id: `ag-c-${a.address}`, cx, size: 24, height: 20,
+            program: a.program, state: a.status, id: `ag-c-${a.address}`, address: a.address, cx, size: 24, height: 20,
             action: this.live?.[a.address]?.bridge?.state ? (this.live[a.address].bridge.action ?? null) : undefined,
             since: this.live?.[a.address]?.bridge?.state ? this.live[a.address].bridge.since : undefined,
             memo: (this.memos[a.address] ??= {}),

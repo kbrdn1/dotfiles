@@ -343,7 +343,7 @@ export default class SessionLine extends View {
         case "icon": return p.tint ? svg(p.src).size(14).flex_none().text_color(t.foreground) : image(p.src).w(14).h(14).flex_none();
         // Its own fixed 20×16 box: the bob, the badge and a hop move inside it, never the line.
         case "pet": return companion({ program: a.program, state: p.state, action: p.action, since: p.since, cx,
-          size: PET_W, height: 16, id: `sl-pet-${a.address}`, memo: (this.memos[a.address] ??= {}) });
+          size: PET_W, height: 16, id: `sl-pet-${a.address}`, address: a.address, memo: (this.memos[a.address] ??= {}) });
         case "svg": return svg(p.src).size(12).flex_none().text_color(t.muted);
         // kind said, not read off the tip (ring.js' "Contexte" test): the tip is in the language shown.
         case "ring": return ring(t, `sl-ring-${p.id}`, p.pct, RING, { tip: p.tip, window: p.window, kind: p.id === "ctx" ? "ctx" : "quota" });

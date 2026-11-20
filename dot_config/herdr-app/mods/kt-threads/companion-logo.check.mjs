@@ -26,7 +26,9 @@ const el = (kind, arg) => {
 plugin({
   setup(build) {
     build.module("gpui-kit", () => ({ loader: "object", exports: { div: () => el("div"), image: (s) => el("image", s), svg: (s) => el("svg", s) } }));
-    build.module("herdr", () => ({ loader: "object", exports: { settings: () => ({ dark: true }), theme: () => ({}), shared: () => undefined } }));
+    // the logos are the "subscription" style (the cube has its own check: brand/companions/src/cube.check.mjs)
+    build.module("herdr", () => ({ loader: "object", exports: { settings: () => ({ dark: true }), theme: () => ({}),
+      shared: (k) => (k === "kt.opt.kt-threads.companion_style" ? "subscription" : undefined), setShared: () => null, terminals: () => [] } }));
   },
 });
 const { variantFor, companion } = await import("./companion-logo.js");

@@ -16,6 +16,7 @@ import { View, div, image } from "gpui-kit";
 import { appHome, shared, checking } from "herdr";
 import * as fs from "fs/promises";
 import { companion, accessoryFor, once } from "./companion.js";
+import { cube34, cubeStyle } from "./companion-cube.js";
 import { plan, runnerShown, runnerProps, keepBottom, freshAction, glanceLoops, doneAt, keyOf, CLAWD_POSES } from "./runner-plan.js";
 
 export { runnerShown, runnerProps, keepBottom };
@@ -33,9 +34,17 @@ export function runnerBand(runner) {
 /** The strip for one state: a function of its inputs, so a test mod can draw it without the view.
  *  reduced: kt.reducedMotion, as motion.js's frame() reads it (one pose, still). seed: the view's chance. */
 export function draw({ p, clawd, memo, now, reduced, seed, cx }) {
+  const strip = div().id("kc-runner").relative().w(W).h(H);
+  // the cube style (kt-threads' option, the default): the agent's LED cube in 3/4 stands in the strip, for
+  // every program and every state, idle included (runnerShown's cube case)
+  if (cubeStyle() === "cube") {
+    if (!runnerShown(p.status, p.program, true)) return strip;
+    const S = H - GROUND;
+    return strip.child(div().absolute().left(LEFT).top(0)
+      .child(cube34({ state: p.status, since: p.since, size: S, height: S, id: `kc-runner-${p.terminal}`, address: p.terminal, memo, cx })));
+  }
   const key = keyOf(p.program);
   const pl = plan({ ...p, acc: accessoryFor(freshAction(p.action, p.since), key), reduced, clawd, now, seed });
-  const strip = div().id("kc-runner").relative().w(W).h(H);
   if (!pl) return strip;
   if (pl.who === "companion") {
     return strip.child(div().absolute().left(LEFT).top(H - GROUND - 16)

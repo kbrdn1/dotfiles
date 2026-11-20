@@ -830,7 +830,7 @@ export default class Threads extends View {
     const kin = [...(this.live[agent?.terminal]?.agents ?? list)].sort((x, y) => startOf(x) - startOf(y)).map((s) => `${key}:${s.id}`);
     // An ending seen within 5 s sparkles (the memo dates it); an older one, seen on a reload, does not.
     const icon = (a) => companion({
-      program: agent?.program, id: `kt-sa-${id}-${a.id}`, cx, size: 20, height: 16,
+      program: agent?.program, id: `kt-sa-${id}-${a.id}`, parent: agent?.terminal, cx, size: 20, height: 16,
       variant: variantFor(`${key}:${a.id}`, kin),
       state: isAlive(a) ? "working" : a.state === "done" ? "done" : a.state === "error" ? "error" : "idle",
       since: isAlive(a) ? startOf(a) : Date.now() - endOf(a) < 5000 ? undefined : endOf(a),
@@ -1627,7 +1627,7 @@ export default class Threads extends View {
     // hops it once; the card's own click still runs (it doesn't stop the event).
     const bridge = agent?.terminal ? this.live[agent.terminal] : null;
     const pet = companion({
-      program: agent?.program, state: agent?.status ?? c.status, id: `kt-c-${c.id}`, cx,
+      program: agent?.program, state: agent?.status ?? c.status, id: `kt-c-${c.id}`, address: agent?.terminal, cx,
       action: bridge?.state ? (bridge.action ?? null) : undefined, since: bridge?.state ? bridge.since : undefined,
       size: compact ? 20 : 24, height: compact ? 16 : 20, memo: (this.memos[agent?.terminal ?? c.id] ??= {}),
     });
