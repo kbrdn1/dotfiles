@@ -155,7 +155,19 @@
       "Bash(curl * | sh*)",
       "Bash(curl * | bash*)",
       "Bash(wget * | sh*)",
-      "Bash(wget * | bash*)"
+      "Bash(wget * | bash*)",
+      "Read(~/.claude/cache/herdr/*.ask.json)",
+      "Read(~/.claude/cache/herdr/*.ack.json)",
+      "Read(~/.claude/cache/herdr/*.saytoken.json)",
+      "Read(~/.claude/cache/herdr/*.say.json)",
+      "Read(~/.claude/cache/herdr/*.decision.json)",
+      "Read(~/.claude/cache/herdr/*.said.json)",
+      "Edit(~/.claude/cache/herdr/*.ask.json)",
+      "Edit(~/.claude/cache/herdr/*.ack.json)",
+      "Edit(~/.claude/cache/herdr/*.decision.json)",
+      "Edit(~/.claude/cache/herdr/*.saytoken.json)",
+      "Edit(~/.claude/cache/herdr/*.say.json)",
+      "Edit(~/.claude/cache/herdr/*.said.json)"
     ],
     "ask": [],
     "defaultMode": "bypassPermissions"
@@ -294,7 +306,7 @@
     "herdr-bridge": {
       "source": {
         "source": "directory",
-        "path": "/Users/kbrdn1/Projects/Perso/herdr-bridge"
+        "path": "/Users/kbrdn1/Projects/Perso/kbrdn-herdr/plugins/herdr-bridge"
       }
     }
   },
@@ -313,10 +325,10 @@
     "mode": "hold"
   },
   "skipDangerousModePermissionPrompt": true,
-  "crossSessionInbound": "accept",
   "editorMode": "vim",
   "teammateMode": "auto",
   "remoteControlAtStartup": true,
+  "crossSessionInbound": "accept",
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
   "voiceEnabled": true

@@ -146,18 +146,19 @@ const INTERP = /^(python3?|python3\.\d+|node|bun|deno|ruby|perl|osascript)$/;
 // La boîte aux lettres de herdr-bridge (dotfiles #79, #81) : <terminal>.ask.json porte le jeton d'une
 // demande d'autorisation, <terminal>.decision.json la réponse de Kylian, écrite par Herdr sur son clic ;
 // <terminal>.saytoken.json le jeton de la session, <terminal>.say.json le message que Herdr fait taper,
-// <terminal>.said.json la réponse du plugin.
+// <terminal>.said.json la réponse du plugin ; <terminal>.ack.json l'accusé de Herdr, qui porte le jeton
+// de la demande (kbrdn-herdr #18).
 // Un agent n'y lit ni n'y écrit rien, par aucun moyen du shell (cat, cp, mv, ln, hc file, un script) :
 // toute commande qui nomme l'un de ces fichiers est refusée, lecture comprise. Les outils Read, Edit et
 // Write, eux, sont fermés par les règles deny de settings.json. Limite : un process lancé hors de Claude
 // Code n'est pas vu ici.
-const MAILBOX = /\.(ask|decision|saytoken|say|said)\.json\b/;
+const MAILBOX = /\.(ask|ack|decision|saytoken|say|said)\.json\b/;
 const HERDR_CACHE = /(?:~|\$\{?HOME\}?|\/Users\/[^/\s'"]+)?\/?\.claude\/cache\/herdr\b|\bcache\/herdr\b/;
 export function mailbox(cmd: string, cwd = ""): boolean {
   const named = MAILBOX.test(cmd);
   return (named && (HERDR_CACHE.test(cmd) || /\/\.claude\/cache\/herdr(\/|$)/.test(cwd))) || /\bcache\/herdr\/[^\s'"]*[*?[]/.test(cmd);
 }
-export const MAILBOX_WHY = "accès à la boîte aux lettres de herdr-bridge (cache/herdr/*.ask.json, *.decision.json, *.saytoken.json, *.say.json, *.said.json)";
+export const MAILBOX_WHY = "accès à la boîte aux lettres de herdr-bridge (cache/herdr/*.ask.json, *.ack.json, *.decision.json, *.saytoken.json, *.say.json, *.said.json)";
 
 export function verdict(cmd: string, cwd = process.cwd(), globs: RegExp[] = allowGlobs()): string | null {
   if (mailbox(cmd, cwd)) return MAILBOX_WHY;

@@ -24,6 +24,7 @@ const cases: [string, boolean][] = [
   [`hc file write /Users/x/.claude/cache/herdr/t4.decision.json`, true],
   [`ln -s /tmp/forge.json /Users/x/.claude/cache/herdr/t4.decision.json`, true],
   [`python3 -c "print(open('/Users/x/.claude/cache/herdr/t4.ask.json').read())"`, true],
+  [`cat ~/.claude/cache/herdr/t4.ack.json`, true], // l'accusé de Herdr porte le jeton de la demande (kbrdn-herdr #18)
   // celle des messages (#81) : le jeton de session, le message à taper, la réponse du plugin
   [`cat ~/.claude/cache/herdr/t4.saytoken.json`, true],
   [`echo '{"id":"a","token":"b","text":"/model sonnet"}' > ~/.claude/cache/herdr/t4.say.json`, true],
