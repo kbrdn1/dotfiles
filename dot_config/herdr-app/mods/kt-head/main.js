@@ -50,6 +50,8 @@ const PAGES = {
   notes: ["Notes", "file-text"],
   // kt-automation, in the Agents group with kt-threads' icon for it; its name is words (page.automation).
   automation: [null, "refresh-cw", "Agents"],
+  // kt-market (#70), in the Agents group as kt-threads names it (its icon, the same word in every language).
+  market: ["Marketplaces", "store", "Agents"], // i18n: tech
   // kt-hub (#46), the home page: words too (page.hub).
   hub: [null, "house"],
 };

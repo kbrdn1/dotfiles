@@ -89,6 +89,11 @@ for (const name of ["kbrdn-threads", "kbrdn-threads-glass"]) {
   d = deps({ layout: () => root });
   view("", d);
   assert.deepEqual(d.calls, [STAMP, TO("chat")], `${name}: ctrl-b space goes to the Chat column`);
+  // A.6: every page of the view stack but the thread has its crumb (main.js PAGES): Marketplaces had none.
+  const src = readFileSync(new URL("./main.js", import.meta.url), "utf8");
+  const crumbs = new Set([...src.match(/const PAGES = \{([\s\S]*?)\n\};/)[1].matchAll(/^ {2}(\w+): \[/gm)].map((m) => m[1]));
+  const pages = find(root, "view").children.map((c) => c.id).filter((id) => id !== "thread");
+  assert.deepEqual(pages.filter((p) => !crumbs.has(p)), [], `${name}: a page without its crumb`);
 }
 
 console.log("view.check: ok");
