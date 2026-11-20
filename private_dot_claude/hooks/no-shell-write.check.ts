@@ -17,6 +17,21 @@ const cases: [string, boolean][] = [
   [`printf 'x' >> ~/.zshrc`, true],
   [`jq . a.json | tee config.json`, true],
   [`cd /x && echo a > "$OUT/f.txt"`, true], // cible inconnue
+  // la boîte aux lettres des autorisations (#79) : ni lue ni écrite par le shell, par aucun moyen
+  [`cat ~/.claude/cache/herdr/t4.ask.json`, true],
+  [`cp /tmp/x.json ~/.claude/cache/herdr/t4.decision.json`, true],
+  [`echo '{"id":"a","token":"b","choice":"yes"}' > $HOME/.claude/cache/herdr/t4.decision.json`, true],
+  [`hc file write /Users/x/.claude/cache/herdr/t4.decision.json`, true],
+  [`ln -s /tmp/forge.json /Users/x/.claude/cache/herdr/t4.decision.json`, true],
+  [`python3 -c "print(open('/Users/x/.claude/cache/herdr/t4.ask.json').read())"`, true],
+  // celle des messages (#81) : le jeton de session, le message à taper, la réponse du plugin
+  [`cat ~/.claude/cache/herdr/t4.saytoken.json`, true],
+  [`echo '{"id":"a","token":"b","text":"/model sonnet"}' > ~/.claude/cache/herdr/t4.say.json`, true],
+  [`cp /tmp/ok.json $HOME/.claude/cache/herdr/t4.said.json`, true],
+  [`ls ~/.claude/cache/herdr/*`, true], // un glob qui les couvrirait
+  [`cat t4.ask.json`, false], // ailleurs, un fichier qui porte ce nom n'est pas la boîte
+  [`ls ~/.claude/cache/herdr/t4.json`, false], // l'état d'un agent reste lisible
+  [`jq .pending ~/.claude/cache/herdr/t4.json`, false],
   // permis
   [`ls -la > /dev/null 2>&1`, false],
   [`cmd 2>&1 | tail -3`, false],
@@ -71,5 +86,7 @@ for (const [cmd, deny] of cases) {
   const got = verdict(cmd, cwd, glob) !== null;
   if (got !== deny) { bad++; console.error(`${deny ? "devrait refuser" : "devrait permettre"} : ${cmd.split("\n")[0]}  →  ${verdict(cmd, cwd, glob)}`); }
 }
+// La boîte nommée seule, depuis son dossier (un `cd` d'un appel précédent) : refusée aussi.
+if (verdict(`cat t4.ask.json`, "/Users/x/.claude/cache/herdr", glob) === null) { bad++; console.error("devrait refuser : cat t4.ask.json depuis cache/herdr"); }
 if (bad) { console.error(`no-shell-write : ${bad} échec(s)`); process.exit(1); }
 console.log(`no-shell-write : ok (${cases.length} cas)`);
