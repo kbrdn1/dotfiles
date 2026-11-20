@@ -393,7 +393,16 @@ export default class Chat extends View {
     // on 2026-11-19: this binding wins and the field pastes nothing. The keymap is the app's: a reload binds
     // the same again, which changes nothing.
     // i18n: tech
-    cx.bind_keys([{ keystroke: "cmd-v", action: "kt_chat_paste", context: "KtComposer > Input" }]);
+    // #81, the menu in the field (Kylian's probe, 2026-11-20: Tab left the field): Tab and Shift+Tab never
+    // leave it (the open menu's row, else nothing); ↑ ↓ move the open menu's row, only while it is open
+    // (KtMenu, on the field's box then: the field keeps them for its lines otherwise).
+    cx.bind_keys([
+      { keystroke: "cmd-v", action: "kt_chat_paste", context: "KtComposer > Input" }, // i18n: tech
+      { keystroke: "tab", action: "kt_chat_tab", context: "KtComposer > Input" }, // i18n: tech
+      { keystroke: "shift-tab", action: "kt_chat_tab", context: "KtComposer > Input" }, // i18n: tech
+      { keystroke: "up", action: "kt_chat_menu_up", context: "KtMenu > Input" }, // i18n: tech
+      { keystroke: "down", action: "kt_chat_menu_down", context: "KtMenu > Input" }, // i18n: tech
+    ]);
     cx.spawn(async (cx) => {
       for (;;) {
         const c = await nextCommand();
@@ -1218,9 +1227,13 @@ export default class Chat extends View {
         made = true;
       }
     }
-    // The route the command at the head would take (herdr-bridge's is asked only as it goes: send()).
+    // The route the command at the head would take (herdr-bridge's is asked only as it goes: send()). A
+    // known /command further in is text for Claude Code, which runs one only at the head of a message (as
+    // its own field does; Kylian's probe, 2026-11-20): the line says so, the menu and the mark stay at the head.
     const head = /^\s*\/(\S+)/.exec(this.draft)?.[1];
-    const route = head && c.catalog.commands.some((x) => x.name === head) ? routeWords(routeOf(this.draft, { say: false })) : null;
+    const known = (n) => c.catalog.commands.some((x) => x.name === n);
+    const inner = !head && [...this.draft.matchAll(/(?:^|\s)\/([^\s/]+)/g)].some((m) => known(m[1]));
+    const route = head && known(head) ? routeWords(routeOf(this.draft, { say: false })) : inner ? tr("composer.headOnly") : null;
     const changed = made || was !== c.menu || route !== c.route;
     c.route = route;
     return changed;
@@ -1255,6 +1268,14 @@ export default class Chat extends View {
     }
     this.composer.focus();
     cx.notify();
+  }
+
+  /** A press on a menu row (Kylian's probe, 2026-11-20: after the click the keyboard had left the field):
+   *  the row goes in as Tab would, then the field takes the keyboard back once the press is over (its
+   *  release lands after this), the cursor where accept() left it, after the word and its space. */
+  pickPress(i, cx) {
+    this.accept(i, cx);
+    cx.timer.after(16, (cx) => { this.composer.focus(); cx.notify(); });
   }
 
   /** The menu's keys while it is open: Tab takes the active row, ctrl-n / ctrl-p (↓ ↑ when the field
@@ -1347,7 +1368,7 @@ export default class Chat extends View {
     const c = this.cpl;
     if (!c.menu && !c.last) return null;
     const rowsShown = Math.max(2, Math.min(ROWS, Math.floor((this.vh - 72) / ROW)));
-    const v = menuView(t, this.m, c.menu, { last: c.last, gen: c.gen, dark: Boolean(settings().dark), onPick: (i, cx) => this.accept(i, cx), scroll: this.menuScroll, rows: rowsShown });
+    const v = menuView(t, this.m, c.menu, { last: c.last, gen: c.gen, dark: Boolean(settings().dark), onPick: (i, cx) => this.pickPress(i, cx), scroll: this.menuScroll, rows: rowsShown });
     if (!v) return null;
     return h_flex().absolute().left(0).right(0).bottom(8).justify_center()
       .child(v_flex().w_full().max_w(COLUMN).px(10).child(v));
@@ -3470,10 +3491,14 @@ export default class Chat extends View {
     const drafts = this.draftView(t, cx);
     const card = v_flex().id("kc-card").w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
       .bg(dark ? ink(t, 0.03) : t.background).when(!dark, (el) => el.shadow_sm())
-      // Cmd+V in the field comes here first (init's binding, « KtComposer > Input »): pasteKey.
+      // Cmd+V in the field comes here first (init's binding, « KtComposer > Input »): pasteKey. Tab and the
+      // open menu's ↑ ↓ too (#81): menuKey, the field keeps the keyboard.
       .key_context("KtComposer").on_action("kt_chat_paste", (_e, cx) => this.pasteKey(cx))
+      .on_action("kt_chat_tab", (_e, cx) => { if (this.menuKey("tab", cx)) cx.notify(); })
+      .on_action("kt_chat_menu_up", (_e, cx) => { if (this.menuKey("up", cx)) cx.notify(); })
+      .on_action("kt_chat_menu_down", (_e, cx) => { if (this.menuKey("down", cx)) cx.notify(); })
       .when(Boolean(drafts), (el) => el.child(drafts))
-      .child(div().id("kc-field").px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
+      .child(div().id("kc-field").when(Boolean(this.cpl.menu), (el) => el.key_context("KtMenu")).px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
         // A picked word the field holds as a token (#81 fx3, CHIPS): marked by its category (menu.js tokenMark).
         .child(Textarea.new(this.composer).w_full().text_size(14).text_color(ink(t, 1))
           .token((ctx) => tokenMark(t, this.cpl.pieces.get(ctx.token.id) ?? { kind: "file", category: "file", text: ctx.token.text }, ctx,

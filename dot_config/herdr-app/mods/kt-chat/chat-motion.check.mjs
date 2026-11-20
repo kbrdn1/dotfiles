@@ -432,7 +432,7 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   const c = completing(chat(), "");
   Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false) });
   const card = flat(c.composerView(T, { agent: { address: "t9", status: "idle", program: "claude" } }, null, cx())).find((n) => callsOf(n, "id").some(([v]) => v === "kc-card"));
-  assert.deepEqual([callsOf(card, "key_context"), callsOf(card, "on_action").map(([a]) => a)], [[["KtComposer"]], ["kt_chat_paste"]], "the card: its context, the action");
+  assert.deepEqual([callsOf(card, "key_context"), callsOf(card, "on_action").map(([a]) => a)], [[["KtComposer"]], ["kt_chat_paste", "kt_chat_tab", "kt_chat_menu_up", "kt_chat_menu_down"]], "the card: its context, its actions (#93's paste, #81's menu keys)");
   const did = [];
   c.attach = (_cx, paths, source) => did.push(["att", paths, source]);
   c.paste = () => did.push(["paste"]);
@@ -894,6 +894,56 @@ for (const th of KBRDN) {
   assert.deepEqual(ticked(true), c.turns.map((_, i) => i === 1), "keyed, cur on the 2nd turn: its tick only");
   assert.deepEqual(ticked(false), c.turns.map(() => false), "the field or the terminal keyed: none");
   c.cur = -1;
+}
+
+// ── The menu in the field (Kylian's probe of B, 2026-11-20): a press on a row gives the field the keyboard
+// back once the press is over; Tab and the open menu's ↑ ↓ are the field's actions (KtMenu on its box only
+// while the menu is open), Tab with the menu closed does nothing (it never leaves the field); a known
+// /command further in the message says it runs only at the head ──
+{
+  const two = (c) => { c.cpl.catalog.commands.push({ name: "commit", description: "Commit", hint: null, kind: "command", category: "skill" }); return c; };
+  // (a) a press on a row: accept, then ONE timer that puts the field back on the keyboard.
+  const c = completing(chat(), "/go");
+  let focused = 0;
+  c.composer.focus = () => { focused++; };
+  const x = cx();
+  c.complete(x);
+  c.pickPress(0, x);
+  assert.deepEqual(c.composer.wrote, [["token", { start: 0, end: 3 }, "/me:goal"], ["replace", " "]], "the press: the row goes in");
+  const back = x.timers.find(([ms]) => ms === 16);
+  focused = 0;
+  back[1]({ notify() {} });
+  assert.equal(focused, 1, "then the field has the keyboard back");
+  // (b) the keys, as the card's actions.
+  const agent = { address: "t9", status: "idle", program: "claude" };
+  const parts = (k) => { const ns = flat(k.composerView(T, { agent }, null, cx())); const by = (id) => ns.find((n) => callsOf(n, "id").some(([v]) => v === id)); return { card: by("kc-card"), field: by("kc-field") }; };
+  const act = (card, name) => callsOf(card, "on_action").find(([n]) => n === name)[1](null, cx());
+  const m = two(completing(chat(), ""));
+  Object.assign(m, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(m.motion, false) });
+  typeIn(m, "/");
+  let p = parts(m);
+  assert.deepEqual(callsOf(p.field, "key_context"), [["KtMenu"]], "the menu open: KtMenu on the field's box");
+  act(p.card, "kt_chat_menu_down");
+  assert.equal(m.cpl.menu.active, 1, "↓: the next row");
+  act(p.card, "kt_chat_menu_up");
+  act(p.card, "kt_chat_menu_down");
+  act(p.card, "kt_chat_tab");
+  assert.deepEqual(m.composer.wrote.slice(-2), [["token", { start: 0, end: 1 }, "/commit"], ["replace", " "]], "Tab: the active row");
+  const q = completing(chat(), "");
+  Object.assign(q, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(q.motion, false) });
+  typeIn(q, "bonjour");
+  p = parts(q);
+  assert.equal(callsOf(p.field, "key_context").length, 0, "the menu closed: no KtMenu (↑ ↓ are the field's lines)");
+  act(p.card, "kt_chat_tab");
+  assert.deepEqual(q.composer.wrote, [], "Tab, the menu closed: nothing, and it stays in the field");
+  // (c) a known /command further in: it runs only at the head, the line says so; at the head, its route.
+  const r = completing(chat(), "");
+  typeIn(r, "voir /me:goal ");
+  assert.equal(r.cpl.route, "Une commande ne s'exécute qu'en début de message");
+  typeIn(r, "voir /Users/k/a.md");
+  assert.equal(r.cpl.route, null, "a path is not a command");
+  typeIn(r, "/me:goal x");
+  assert.equal(r.cpl.route, "invoquée par l'agent", "at the head: its route");
 }
 
 // ── Reduced motion: none of it ──────────────────────────────────────────────
