@@ -102,7 +102,7 @@ import { TL, marks as markList, allMarks, readFrom, barStack, barLift, cardTop, 
 import * as win from "./turn-window.js";
 import { skeleton, readyFor, still } from "./skeleton.js";
 import { Vim, keyOf, keysOf, step } from "./vim.js";
-import { makeT, duration, time, num, relative, compact as kilo } from "./i18n.js";
+import { makeT, duration, time, num, relative, compact as kilo, lang } from "./i18n.js";
 import strings from "./strings.js";
 import * as fs from "fs/promises";
 
@@ -353,6 +353,11 @@ export default class Chat extends View {
     this.composer = TextareaState.new({ placeholder: tr("composer.ph") });
     // Monocode's field: one row of 22 px, up to 140 (input.rs:27, :407-411).
     this.composer.set_auto_grow(1, 6);
+    // A.6: TextareaState has no placeholder setter. Keep the handlers so relang() can recreate the
+    // field in the language shown without losing its retained state.
+    this.fieldLang = lang();
+    this.onField = [];
+    const on = (event, handler) => { this.onField.push([event, handler]); this.composer.on(event, handler); };
     // #81, the completions: the catalog (complete.js merge's commands, the session's MCP tools, the
     // project's files) and when it was read, the menu open (completer.js) and the last one shown (it fades
     // out, menu.js), its openings (each fades in anew), the token Esc closed, the route line under the card,
@@ -362,7 +367,7 @@ export default class Chat extends View {
     this.menuScroll = ScrollHandle.new();
     this.pendingRoute = null;
     this.compactor = new Compactor("kt-chat", HOST); // « Compacter » by the ctx ring (compact.js)
-    this.composer.on("change", (_e, cx) => {
+    on("change", (_e, cx) => {
       const had = Boolean(this.draft.trim());
       this.draft = this.composer.value();
       if (this.sendErr && this.sendErr.why !== "blocked") this.sendErr = null;
@@ -375,13 +380,13 @@ export default class Chat extends View {
       if (flick) this.keyFx = { n: (this.keyFx?.n ?? 0) + 1, at: now, out: false };
       if (flick || moved || had !== Boolean(this.draft.trim())) cx.notify();
     });
-    this.composer.on("submit", (e, cx) => this.submitted(e, cx));
-    this.composer.on("focus", (_e, cx) => {
+    on("submit", (e, cx) => this.submitted(e, cx));
+    on("focus", (_e, cx) => {
       this.typing = true;
       if (Date.now() - this.cpl.at > STALE) this.loadCatalog(cx); // a head start on the first `/`
       cx.notify();
     });
-    this.composer.on("blur", (_e, cx) => { this.typing = false; this.closeMenu(cx); cx.notify(); });
+    on("blur", (_e, cx) => { this.typing = false; this.closeMenu(cx); cx.notify(); });
     // #93: the files waiting above the field (attach.js), a paste or a chooser running (a turn's assets are
     // worked out in rebuild(), on the turn).
     this.drafts = [];
@@ -390,7 +395,7 @@ export default class Chat extends View {
     this.pasting = false;
     this.picking = false;
     // A paste the field found no text in: the Finder's files, else the clipboard's image (attach.js).
-    this.composer.on("paste_other", (_e, cx) => this.paste(cx));
+    on("paste_other", (_e, cx) => this.paste(cx));
     this.keyPasting = false;
     if (checking()) return;
     // Cmd+V in the field is ours (pasteKey), ahead of the field's own: bound on the field's key context
@@ -1651,9 +1656,11 @@ export default class Chat extends View {
       const d = await decide(address).catch(() => null);
       const still = target().agent?.address === address && target().agent?.status === "blocked";
       if (still) {
+        // A language refresh keeps an opened card open when it is still the same request.
+        const same = d?.pending?.id != null && this.decision?.pending?.id === d.pending.id;
         this.decision = d;
         this.ask = askOf(d?.pending, null);
-        this.askOpen = false;
+        this.askOpen = same && this.askOpen;
       }
       cx.notify();
       // #79: the call itself, read back from the transcript by its id: what an edit changes (the bridge
@@ -1673,6 +1680,24 @@ export default class Chat extends View {
         cx.notify();
       }
     });
+  }
+
+  /** The blocked request must be read again after a new blocking, agent or interface language. */
+  decisionStale(want) {
+    return this.lastStatus !== "blocked" || this.decisionFor !== want || this.decisionLang !== lang();
+  }
+
+  /** Recreate the field in the language shown while preserving its retained state and keyboard. */
+  relang() {
+    const previous = this.composer;
+    const next = (this.composer = TextareaState.new({ placeholder: tr("composer.ph") }));
+    this.fieldLang = lang();
+    next.set_auto_grow(1, 6);
+    for (const [event, handler] of this.onField) next.on(event, handler);
+    next.set_value(previous.content());
+    next.set_selected_range(previous.selected_range());
+    if (this.typing) next.focus();
+    previous.release();
   }
 
   /**
@@ -3440,6 +3465,7 @@ export default class Chat extends View {
    * the right what the composer says, then the context.
    */
   composerView(t, tg, pr, cx) {
+    if (this.fieldLang != null && this.fieldLang !== lang()) this.relang();
     const a = tg.agent;
     const dark = Boolean(settings().dark);
     const m = sendMode(a?.status ?? null);
@@ -3887,9 +3913,10 @@ export default class Chat extends View {
     if (delta) this.load(cx, true);
     // #56: blocked, the request is read once (per agent and per blocking); out of it, dropped, and a
     // refusal for « blocked » goes with it.
-    if (status === "blocked" && !this.fixed && (this.lastStatus !== "blocked" || this.decisionFor !== want)) {
+    if (status === "blocked" && !this.fixed && this.decisionStale(want)) {
+      if (this.lastStatus !== "blocked" || this.decisionFor !== want) this.decision = null;
       this.decisionFor = want;
-      this.decision = null;
+      this.decisionLang = lang();
       this.readDecision(cx, want);
     } else if (status !== "blocked") {
       this.decisionFor = null;
