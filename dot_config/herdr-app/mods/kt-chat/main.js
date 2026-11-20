@@ -1053,6 +1053,15 @@ export default class Chat extends View {
     return !this.fixed && Boolean(tg.agent) && !tg.reason;
   }
 
+  /** The field's Enter: the menu open with rows, its active row; else the send. Shift-Enter: nothing from
+   *  here, Herdr's Textarea breaks the line itself, then says `submit` with `shift` (a second line break
+   *  from here was one too many, Kylian 2026-11-20). */
+  submitted(e, cx) {
+    if (e?.shift) return;
+    if (this.cpl.menu?.rows.length) this.accept(this.cpl.menu.active, cx);
+    else this.send(cx);
+  }
+
   /**
    * The draft to the agent, by `hc send` (composer.js: never --force). Working, Claude Code queues it;
    * blocked, nothing goes (the request shows instead). Sent, the field empties and the live tail
@@ -2191,7 +2200,8 @@ export default class Chat extends View {
       // The wave reaches the outer bars a beat after the hovered one; back at rest, all at once.
       const p = { duration: TL.MS, delay: hov >= 0 ? Math.min(Math.abs(k - hov), TL.RIPPLE) * TL.STEP : 0, easing: "ease-out" };
       let bar = div().id(`kc-tlb-${m.id}`).h(TL.BAR_H).w(TL.BAR_W + (TL.BAR_LIFT - TL.BAR_W) * barLift(k, hov)).rounded_full()
-        .bg(ink(t, 1)).opacity(lit ? TL.LIT : TL.IDLE);
+        // The mark where the view is: the theme's accent (Kylian, 2026-11-20); the others, ink.
+        .bg(k === on ? t.accent : ink(t, 1)).opacity(lit ? TL.LIT : TL.IDLE);
       if (!this.m.reduced) bar = bar.transition("width", p).transition("opacity", p);
       bars.push(h_flex().id(`kc-tl-${m.id}`).w_full().h(row).flex_none().items_center().justify_end().cursor_pointer()
         .on_hover((h, cx) => { if (h) this.hoverMark(cx, k); })
@@ -3218,7 +3228,8 @@ export default class Chat extends View {
   // Under a live turn: the agent at work, then what was typed meanwhile and not taken yet, in pale
   // « en file » bubbles (queue-operation), on the right like the user's.
   working(t) {
-    return this.col(v_flex().pb(10).min_w(0)
+    // pb 4 (was 10): under « … travaille », the band of Clawd comes next (Kylian, 2026-11-20: too much void).
+    return this.col(v_flex().pb(4).min_w(0)
       .child(this.workingLine(t))
       .children(this.queued.map((q, i) => h_flex().id(`kc-q-${i}`).pt(8).pl(BUBBLE_ROW_PAD).w_full().justify_end()
         .child(v_flex().items_end().gap(4).max_w(BUBBLE_MAX)
@@ -3351,20 +3362,34 @@ export default class Chat extends View {
         .children(children))
       .when(Boolean(rail), (el) => el.child(rail))
       // transcript.rs:5986-6062, « jump to bottom »: 30 round, border 0.1, ground 0.04, chevron 16 at 0.7.
-      // Inside the transcript's box: the runner's band is under it, in the composer's flow.
-      .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(8).left(0).right(0).justify_center()
+      // Kylian's choice (2026-11-20, A): centered, its center on the transcript's bottom edge, its lower half
+      // over the composer's top: the empty middle of Clawd's band, or the 18 px the column keeps when the band
+      // is away (composerView). Bottom 8 bit the last line. No composer (a fixed JSONL): bottom 8, inside.
+      // « Tours suivants »' foot (later(), HEAD_H) keeps its button 134 px up and its bones 16 px up at the
+      // bottom: this one (-15 to +15) is under neither.
+      .when(!this.follow, (el) => el.child(h_flex().absolute().bottom(!this.fixed && Boolean(tg.agent) && !tg.reason ? -15 : 8).left(0).right(0).justify_center()
         .child(h_flex().id("kc-bottom").size(30).rounded_full().items_center().justify_center().border(1).border_color(ink(t, 0.1))
           .bg(ink(t, 0.04)).cursor_pointer().tooltip(tr("bottom")).text_color(ink(t, 0.7)).hover((s) => s.text_color(ink(t, 1)))
-          .on_click((_e, cx) => { this.follow = true; this.cur = -1; this.jump = null; this.farTo = null; this.win = win.bottom(this.turns.length); this.reveal = "bottom"; cx.notify(); })
+          .on_click((_e, cx) => { this.toBottom(); cx.notify(); })
           .child(svg(I("chevron-down")).size(16)))));
+  }
+
+  /** Back to the bottom, following it again (« En bas »): a read toward a message far above is dropped too. */
+  toBottom() {
+    this.follow = true;
+    this.cur = -1;
+    this.jump = null;
+    this.farTo = null;
+    this.win = win.bottom(this.turns.length);
+    this.reveal = "bottom";
   }
 
   /**
    * conversation.rs:2907-3271, the composer: a card in the reading column (px 10, pb 6), radius 12,
    * border 0.1 (0.2 focused), ground 0.03 in dark (opaque in light, with its shadow); the field at
    * 14 px (px 12, pt 10, pb 14); a toolbar (px 8, pb 10, gap 4) of pills (h 26, px 6, radius 6, ground
-   * 0.1): the model and effort, the permission mode, read only; the send button (h 26, radius 7, ink on
-   * paper). Under it (pt 6, px 15, gap 10, 12 px at 0.55): the checkout or worktree, the branch, and on
+   * 0.1): the model and effort, the permission mode, read only; the send button (h 26, radius 7; ready, in
+   * the theme's accent with its accent_foreground on it: Kylian, 2026-11-20). Under it (pt 6, px 15, gap 10, 12 px at 0.55): the checkout or worktree, the branch, and on
    * the right what the composer says, then the context.
    */
   composerView(t, tg, pr, cx) {
@@ -3423,7 +3448,7 @@ export default class Chat extends View {
     const label = this.sending ? tr("composer.sendingShort") : m === "queue" ? tr("composer.queueShort") : tr("composer.sendShort");
     const send = h_flex().id("kc-send").h(26).flex_none().gap(6).items_center().justify_center().rounded(7)
       .when(can.ok || this.sending, (el) => el.px(8)).when(!(can.ok || this.sending), (el) => el.w(26))
-      .bg(can.ok ? t.foreground : ink(t, 0.3)).text_color(can.ok ? t.background : alpha(t.background, "66"))
+      .bg(can.ok ? t.accent : ink(t, 0.3)).text_color(can.ok ? t.accent_foreground ?? t.background : alpha(t.background, "66"))
       .tooltip(m === "queue" ? tr("composer.sendQueue") : tr("composer.send"))
       .when(can.ok, (el) => el.cursor_pointer().on_click((_e, cx) => { cx.stop_propagation(); this.send(cx); }))
       .child(this.sending ? svg(SPIN).size(14).spin(900) : svg(SEND).size(14))
@@ -3515,6 +3540,10 @@ export default class Chat extends View {
     const subsEl = ledge("agents", subs && { led: subs }, (x) => this.agentsShelf(t, x.led, a, cx));
     return h_flex().w_full().flex_none().justify_center()
       .child(v_flex().relative().w_full().max_w(COLUMN).px(10).pb(6).gap(8)
+        // « En bas »'s lower half (its center on the transcript's edge, body()) lands in the band's empty
+        // middle; with no band, in these 18 px (15, and 3 of air over the card): never over the card. Kept
+        // while the band is away, not with the button: no height moves when it comes or goes.
+        .when(!this.band, (el) => el.pt(18))
         // runner: its band in the flow, first, on the card's left edge: the transcript ends above it and
         // nothing is drawn over it or under it (Kylian, 2026-11-19: the live turn went over Clawd when it
         // bit into the transcript). this.band: render() worked it out, to keep a followed view at the bottom.
@@ -3874,7 +3903,7 @@ export default class Chat extends View {
     }
     const keyed = this.handle.is_focused();
     const writes = !this.fixed && Boolean(tg.agent) && !tg.reason;
-    // runner: its band (composerView) entering or leaving moves the transcript's bottom edge by 64 px: a
+    // runner: its band (composerView) entering or leaving moves the transcript's bottom edge by its height and the gap (44 px for Clawd, 64 for the cube): a
     // view following the bottom is brought back to it in this same frame (body() reveals it), not one late.
     const band = writes && runnerShown(tg.agent?.status, tg.agent?.program, cubeStyle() === "cube");
     if (keepBottom(this.follow, this.band, band)) this.reveal = "bottom";

@@ -8,8 +8,9 @@
 // render kt-chat (measured: 201 renders of a nested view for 8 of its parent). companion.js is a copy of
 // brand/companions/companion.js (kt-mods' SHARED; src/build.py writes its data and refreshes the copies).
 //
-// The strip: 96 x 56 css px. kt-chat owns its place: a 96 x 56 box first in the composer's flow, between
-// the transcript and the rest of the composer, so nothing overlaps it (keepBottom keeps a followed view at
+// The strip: 96 css px wide, 36 tall for Clawd, 56 for the LED cube (bandH()). kt-chat owns its place: a
+// box first in the composer's flow, between the transcript and the rest of the composer, so nothing
+// overlaps it (keepBottom keeps a followed view at
 // the bottom when it comes and goes); it comes in with kt-chat's rise() (motion.js enter(): fades in and
 // rises, in a box that clips). The runner fills that box and has no handler.
 import { View, div, image } from "gpui-kit";
@@ -22,18 +23,24 @@ import { plan, runnerShown, runnerProps, keepBottom, freshAction, glanceLoops, d
 export { runnerShown, runnerProps, keepBottom };
 
 const DIR = "data/companions/clawd"; // written by brand/companions/clawd/extract.mjs, never in a repo
-const W = 96, H = 56; // the strip
+// The strip's height. Clawd's (and a program's companion): the tallest pose (30, standing: idle, look, done,
+// error; his jump stays inside it) on GROUND, and 4 px over his head (Kylian, 2026-11-20: 56 left 24 px of
+// nothing over him, 38 while he types; with working()'s pb 4, « … travaille » is 35 px above him typing, 21
+// standing). The LED cube (kt-threads' option, the default) keeps 56: it fills the strip (S = H - GROUND).
+const W = 96, H_CLAWD = 36, H_CUBE = 56;
+export const bandH = () => (cubeStyle() === "cube" ? H_CUBE : H_CLAWD);
 const LEFT = 8, GROUND = 2; // where his standing feet sit: from the strip's left, above its bottom
 const K = 1000; // the opacity ramps' steepness, as companion.js: a swap takes ms / 2001
 
 /** kt-chat's place for the runner: a box in the composer's flow, never absolute (nothing above or under it). */
 export function runnerBand(runner) {
-  return div().flex_none().w(W).h(H).child(runner);
+  return div().flex_none().w(W).h(bandH()).child(runner);
 }
 
 /** The strip for one state: a function of its inputs, so a test mod can draw it without the view.
  *  reduced: kt.reducedMotion, as motion.js's frame() reads it (one pose, still). seed: the view's chance. */
 export function draw({ p, clawd, memo, now, reduced, seed, cx }) {
+  const H = bandH();
   const strip = div().id("kc-runner").relative().w(W).h(H);
   // the cube style (kt-threads' option, the default): the agent's LED cube in 3/4 stands in the strip, for
   // every program and every state, idle included (runnerShown's cube case)

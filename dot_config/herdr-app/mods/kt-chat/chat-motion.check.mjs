@@ -8,8 +8,9 @@
 //   is followed; drawn again later, it lands as it is;
 // - the background panel comes in as a popup and fades out before it goes;
 // - #81: the completion menu, a popup over the transcript (in and out on its opacity, never a height),
-//   a pick's wave under the text in the field's box, and the keys route's Enter only on a prompt that
-//   reads the command;
+//   a pick's wave under the text in the field's box, Shift+Enter adding no line break of its own, and
+//   the keys route's Enter only on a prompt that reads the command; « En bas » floating on the
+//   transcript's bottom edge; the kbrdn accent on the send button and the timeline's mark;
 // - reduced motion: none of it, no transition anywhere (fold, turn, panel, menu).
 import assert from "node:assert/strict";
 import { plugin } from "bun";
@@ -776,6 +777,81 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.ok(c.going.has("kc-tasks-led-tA"));
 }
 
+// ── « En bas » (Kylian, 2026-11-20, A): floating, centered, its center on the transcript's bottom edge
+// (bottom -15: bottom 8 bit the last line), its lower half over the composer's top: the band's empty middle,
+// or the 18 px the column keeps while the band is away (never over the card). No height moves with it.
+// No composer (a fixed JSONL): bottom 8, inside ──
+{
+  const c = completing(chat(), "");
+  Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false), scroll: { scroll_to_item() {} }, readFor: "t9" });
+  const agent = { address: "t9", status: "idle", program: "claude" };
+  const btnIn = (nodes) => nodes.find((n) => callsOf(n, "id").some(([v]) => v === "kc-bottom"));
+  const holder = (nodes) => nodes.find((n) => n.kids.some((k) => callsOf(k.__node, "id").some(([v]) => v === "kc-bottom")));
+  c.follow = true;
+  assert.equal(btnIn(flat(c.body(T, cx(), { agent }, false))), undefined, "following: no button");
+  c.follow = false;
+  const shown = flat(c.body(T, cx(), { agent }, false));
+  const b = btnIn(shown);
+  const h = holder(shown);
+  assert.ok(callsOf(h, "absolute").length && callsOf(h, "justify_center").length, "floating, centered");
+  assert.deepEqual(callsOf(h, "bottom").at(-1), [-15], "its center on the transcript's bottom edge");
+  assert.ok(!transitions(shown).includes("height"), "no height moves");
+  assert.equal(btnIn(flat(c.composerView(T, { agent }, null, cx()))), undefined, "not in the card's bar");
+  // The composer keeps 18 px at its top while the band is away (the button's lower half and 3 px of air);
+  // with the band, none (its empty middle takes it). Tied to the band, not to the button.
+  const column = (band) => { c.band = band; return flat(c.composerView(T, { agent }, null, cx())).find((n) => callsOf(n, "max_w").some(([w]) => w === 832) && callsOf(n, "pb").some(([p]) => p === 6)); };
+  assert.deepEqual(callsOf(column(false), "pt").at(-1), [18]);
+  assert.equal(callsOf(column(true), "pt").length, 0);
+  c.follow = true;
+  assert.deepEqual(callsOf(column(false), "pt").at(-1), [18], "the same while following: the button doesn't move a height");
+  c.band = false;
+  // No composer (a fixed JSONL): inside, bottom 8.
+  c.follow = false;
+  c.fixed = "/f.jsonl";
+  c.readFor = "file:/f.jsonl";
+  assert.deepEqual(callsOf(holder(flat(c.body(T, cx(), {}, false))), "bottom").at(-1), [8]);
+  c.fixed = null;
+  c.farTo = { id: "far" };
+  callsOf(b, "on_click").at(-1)[0](null, cx());
+  assert.deepEqual([c.follow, c.reveal, c.farTo], [true, "bottom", null], "the click: back to the bottom, following, a far read dropped");
+}
+
+// ── Shift+Enter: Herdr's field breaks the line itself, then says submit with shift; nothing more from
+// here (Kylian, 2026-11-20: one line too many). Enter: the open menu's row, else the send ──
+{
+  const c = completing(chat(), "deux lignes\n");
+  c.submitted({ shift: true }, cx());
+  assert.deepEqual([c.composer.wrote, Boolean(c.sending)], [[], false], "Shift+Enter: no second line break, nothing sent");
+  typeIn(c, "/go");
+  c.submitted({}, cx());
+  assert.deepEqual(c.composer.wrote.slice(-2), [["select", { start: 0, end: 3 }], ["replace", "/me:goal "]], "Enter on the open menu: its row");
+}
+
+// ── The kbrdn theme's accent (Kylian, 2026-11-20): the send button, ready, and the timeline's mark where the
+// view is take theme().accent, in dark and in light (themes/kbrdn-dark.json, kbrdn-light.json), the button's
+// icon and word in accent_foreground; with nothing to send it stays a quiet ink; the other marks, ink ──
+const KBRDN = [
+  { foreground: "#e0e0e0", background: "#191919", popover: "#242424", accent: "#d4825d", accent_foreground: "#1a1a1a" },
+  { foreground: "#1a1a1a", background: "#ffffff", popover: "#ffffff", accent: "#a64d2e", accent_foreground: "#ffffff" },
+];
+// The send button.
+for (const th of KBRDN) {
+  const c = completing(chat(), "");
+  Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false) });
+  const btn = () => flat(c.composerView(th, { agent: { address: "t9", status: "idle", program: "claude" } }, null, cx())).find((n) => callsOf(n, "id").some(([v]) => v === "kc-send"));
+  assert.notEqual(callsOf(btn(), "bg").at(-1)[0], th.accent, "nothing to send: not the accent");
+  c.draft = "bonjour";
+  assert.deepEqual([callsOf(btn(), "bg").at(-1), callsOf(btn(), "text_color").at(-1)], [[th.accent], [th.accent_foreground]], "ready: the accent, its foreground on it");
+}
+// The timeline: the mark where the view is (following the bottom: the last one), the accent; the others, ink.
+for (const th of KBRDN) {
+  const c = chat();
+  Object.assign(c, { m: frame(c.motion, false), marks: [{ id: "m1", i: 0, text: "un" }, { id: "m2", i: 1, text: "deux" }, { id: "m3", i: 2, text: "trois" }], width: 1000, vh: 600, follow: true, tlLost: false, tlHover: -1 });
+  const bars = flat(c.rail(th)).filter((n) => callsOf(n, "id").some(([v]) => /^kc-tlb-/.test(v)));
+  const inked = `${th.foreground}ff`;
+  assert.deepEqual(bars.map((b) => callsOf(b, "bg").at(-1)[0]), [inked, inked, th.accent], "the current mark: the accent");
+}
+
 // ── Reduced motion: none of it ──────────────────────────────────────────────
 {
   const c = chat({ reduced: true });
@@ -864,7 +940,11 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   const cubed = at({}, { status: "working", since: now - 1000 });
   assert.ok(byId(cubed.nodes, "companion-kc-runner-tA"), "cube: the agent's cube in the strip");
   assert.ok(!cubed.nodes.some((n) => callsOf(n, "id").some(([v]) => String(v).startsWith("kc-runner-") && v !== "kc-runner" && !String(v).startsWith("kc-runner-tA"))), "cube: no Clawd layer");
+  // The strip's height (Kylian, 2026-11-20): Clawd's is 36 (his tallest pose and 4 px over his head); the
+  // cube keeps its 56, it fills the strip.
+  assert.deepEqual(callsOf(byId(cubed.nodes, "kc-runner"), "h").at(-1), [56], "cube: a strip of 56");
   live.style = "subscription";
+  assert.deepEqual(callsOf(byId(at({}, { status: "working", since: now - 1000 }).nodes, "kc-runner"), "h").at(-1), [36], "Clawd: a strip of 36");
   live.checking = true;
 }
 
