@@ -69,10 +69,14 @@ export function pick(menu, row, { mention = (p) => `@${p}` } = {}) {
   return { start, end, text: `${text} `, piece: { id: `file:${row.path}`, kind: "file", category: "file", label: base(row.path), text, source: "complete" }, reopen: false };
 }
 
-/** A command typed by hand at the head of the message, complete (a space after it) and known: its
- *  piece, or null (still being typed, or a word the catalog doesn't know: it stays text). */
+/** The commands typed by hand anywhere in the message (Kylian, 2026-11-20: several skills in one), each
+ *  complete (a space after it) and known, in order: [{ start, piece }] (a word still being typed, a path
+ *  or a word the catalog doesn't know stays text). */
 export function typed(text, commands) {
-  const m = /^\s*\/(\S+)\s/.exec(String(text ?? ""));
-  const item = m && (commands ?? []).find((x) => x.name === m[1]);
-  return item ? { start: m.index + m[0].indexOf("/"), piece: commandPiece(item) } : null;
+  const out = [];
+  for (const m of String(text ?? "").matchAll(/(^|\s)\/([^\s/\\]+)(?=\s)/g)) {
+    const item = (commands ?? []).find((x) => x.name === m[2]);
+    if (item) out.push({ start: m.index + m[1].length, piece: commandPiece(item) });
+  }
+  return out;
 }

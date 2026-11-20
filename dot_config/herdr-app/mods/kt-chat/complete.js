@@ -17,8 +17,9 @@
 
 /**
  * The completion under the cursor: { trigger: "/" | "@" | "#", start, end, query } or null. Offsets are
- * UTF-16, as TextareaState's selected_range(). `/` only at the head of the message (Claude Code runs a
- * slash there only, and paths stay out); `#` bare or before a letter (`# Title`, `#93` stay text).
+ * UTF-16, as TextareaState's selected_range(). `/` at the start of any word (Kylian, 2026-11-20: a skill
+ * is called anywhere in a message, several in one), never in a path (a second `/` or a `\`); `#` bare or
+ * before a letter (`# Title`, `#93` stay text).
  */
 export function tokenAt(text, cursor) {
   const s = String(text ?? "");
@@ -29,7 +30,7 @@ export function tokenAt(text, cursor) {
   const trigger = frag[0];
   const query = frag.slice(1);
   if (trigger === "/") {
-    if (s.slice(0, start).trim() || /[/\\]/.test(query)) return null;
+    if (/[/\\]/.test(query)) return null;
   } else if (trigger === "@") {
     if (query.includes("@")) return null;
   } else if (trigger === "#") {

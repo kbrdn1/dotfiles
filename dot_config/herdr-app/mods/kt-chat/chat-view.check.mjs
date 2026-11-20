@@ -2,7 +2,9 @@
 // reach in kt-chat: the agent chosen (the focused pane's Claude first, another tab never), the fold's
 // words in the order the work was done, and where « Tours précédents » and the cursor leave the view.
 import assert from "node:assert/strict";
-import { pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects, hazeRows } from "./chat-view.js";
+import { pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep, projectOf, bgSettings, fadeAt, bgLayers, modelName, workedFor, ink, orphans, clampText, foldMd, noticeHead, veilRects, hazeRows, filesRead, FILES, ditherCells, flickerCells, FIELD_FX } from "./chat-view.js";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import strings from "./strings.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
@@ -262,5 +264,47 @@ assert.equal(veilRects({ w: 1200, h: 1000, column: 832, haze: true })[1].y + vei
 const narrow = veilRects({ w: 600, h: 400, column: 832 });
 assert.deepEqual([narrow[0].x, narrow[0].x + narrow[0].w], [16, 584], "a narrow view: kept off the corners");
 assert.deepEqual(veilRects({ w: 20, h: 400 }), []);
+
+// #81, @'s files (Kylian's probe, 2026-11-20: a thread at ~, « aucune correspondance »): ~ is no git repo,
+// git ls-files fails (128) and the list stayed empty. Now: git's list in a repo; else the folder's own,
+// bounded, `cut` past the cap.
+assert.deepEqual(filesRead({ code: 0, stdout: "b.js\na.md\n" }, null), { files: ["b.js", "a.md"], cut: false }, "a repo: git's list");
+assert.equal(filesRead({ code: 128, stdout: "" }, { code: 1, stdout: "" }), null, "neither read: nothing new");
+assert.deepEqual(filesRead({ code: 128, stdout: "" }, { code: 0, stdout: "x.md\nsub/y.js\n" }), { files: ["x.md", "sub/y.js"], cut: false }, "not a repo: the folder's own files");
+const big = filesRead({ code: 128 }, { code: 0, stdout: Array.from({ length: 6 }, (_, i) => `f${i}`).join("\n") }, 5);
+assert.deepEqual([big.files.length, big.cut], [5, true], "bounded at the cap, and it says so");
+// The real listing on a folder made here: hidden files and folders, app bundles, node_modules, deeper than
+// FILES.DEPTH, all left out; paths relative to the folder, sorted.
+{
+  const d = mkdtempSync(`${tmpdir()}/kt-chat-files-`);
+  try {
+    for (const p of ["notes.md", "a/b/c/d.md", "a/b/c/e/too-deep.md", ".hidden.md", ".git/config", "node_modules/m/i.js", "X.app/Contents/Info.plist", "src/main.js"]) {
+      mkdirSync(`${d}/${p.split("/").slice(0, -1).join("/")}`, { recursive: true });
+      writeFileSync(`${d}/${p}`, "x");
+    }
+    const r = Bun.spawnSync(["/bin/sh", "-c", FILES.LIST, "sh", d, String(FILES.DEPTH), String(FILES.CAP + 1)]);
+    assert.deepEqual(filesRead({ code: 128 }, { code: r.exitCode, stdout: String(r.stdout) }), { files: ["a/b/c/d.md", "notes.md", "src/main.js"], cut: false }, "the folder's files, bounded");
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+// #81, the field's wave (Kylian, 2026-11-20: dither pixels, very light, from a corner): a Bayer 4 × 4 dither
+// in the card's top-left corner, densest there, none at the far edge, none outside the rounded corner; few
+// enough cells to draw (each one an element). A keystroke's flicker: a few of them, the same for the same n.
+{
+  const cells = ditherCells();
+  const { W, H, CELL, R } = FIELD_FX;
+  assert.ok(cells.length > 50 && cells.length < 300, `a light dither, ${cells.length} cells`);
+  assert.ok(cells.every((p) => p.x >= 0 && p.y >= 0 && p.x < W && p.y < H && p.d >= 0 && p.d <= 1), "inside its corner, its distance from 0 to 1");
+  const near = cells.filter((p) => p.d < 0.25).length, far = cells.filter((p) => p.d > 0.75).length;
+  assert.ok(near > 2 * far, `densest at the corner (${near} near, ${far} far)`);
+  assert.ok(!cells.some((p) => { const m = [p.x + CELL / 2, p.y + CELL / 2]; return m[0] < R && m[1] < R && Math.hypot(R - m[0], R - m[1]) > R; }), "none outside the rounded corner");
+  const f = flickerCells(3);
+  assert.equal(new Set(f).size, FIELD_FX.FLICK_N, "a few distinct cells");
+  assert.ok(f.every((p) => cells.some((q) => q.x === p.x && q.y === p.y)), "of the corner's dither");
+  assert.deepEqual(flickerCells(3), f, "the same keystroke, the same cells");
+  assert.notDeepEqual(flickerCells(4), f, "the next one, others");
+}
 
 console.log("chat-view ok");

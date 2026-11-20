@@ -88,6 +88,7 @@ const { motionState, frame } = await import("./motion.js");
 const { mdState } = await import("./markdown.js");
 const { Compactor } = await import("./compact.js");
 const { FRESH } = await import("./menu.js");
+const { FIELD_FX } = await import("./chat-view.js");
 const { menuFor } = await import("./completer.js");
 
 // The tree under an element, flat; a node's calls by name.
@@ -413,7 +414,7 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.deepEqual(c.composer.wrote, [["token", { start: 0, end: 3 }, "/me:goal"], ["replace", " "]], "/go becomes the token « /me:goal », then a space");
   const [tid, piece] = [...c.cpl.pieces][0];
   assert.deepEqual([tid, piece.category, piece.shown, typeof piece.at], ["cmd:me:goal#1", "workflow", false, "number"], "its own id per pick, its time");
-  assert.deepEqual(x.timers.map(([ms]) => ms), [FRESH + 40], "ONE timer to draw it still");
+  assert.deepEqual(x.timers.map(([ms]) => ms), [FRESH + 40, FIELD_FX.HOLD, FIELD_FX.HOLD + FIELD_FX.WAVE + FIELD_FX.OUT], "ONE timer to draw it still, and the field's wave: let go, then dropped");
   Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false) });
   const nodes = flat(c.composerView(T, { agent: { address: "t9", status: "idle", program: "claude" } }, null, cx()));
   const box = nodes.find((n) => callsOf(n, "id").some(([v]) => v === "kc-field"));
@@ -936,14 +937,71 @@ for (const th of KBRDN) {
   assert.equal(callsOf(p.field, "key_context").length, 0, "the menu closed: no KtMenu (↑ ↓ are the field's lines)");
   act(p.card, "kt_chat_tab");
   assert.deepEqual(q.composer.wrote, [], "Tab, the menu closed: nothing, and it stays in the field");
-  // (c) a known /command further in: it runs only at the head, the line says so; at the head, its route.
+  // (c) anywhere (Kylian, 2026-11-20: a skill anywhere, several in one message): further in, a skill is the
+  // agent's to call; a Claude Code built-in runs only at the head, the line says so; at the head, its route.
   const r = completing(chat(), "");
+  r.cpl.catalog.commands.push({ name: "compact", description: null, hint: null, kind: "builtin", category: "builtin" });
   typeIn(r, "voir /me:goal ");
-  assert.equal(r.cpl.route, "Une commande ne s'exécute qu'en début de message");
+  assert.equal(r.cpl.route, "invoquée par l'agent", "a skill further in: the agent's");
+  typeIn(r, "puis /compact ");
+  assert.equal(r.cpl.route, "Une commande de Claude Code (/compact, /model…) ne s'exécute qu'en début de message", "a built-in further in: said");
   typeIn(r, "voir /Users/k/a.md");
   assert.equal(r.cpl.route, null, "a path is not a command");
   typeIn(r, "/me:goal x");
   assert.equal(r.cpl.route, "invoquée par l'agent", "at the head: its route");
+  // @ on a folder's listing that stopped at its cap (chat-view.js filesRead): the line under the card says so.
+  const k = completing(chat(), "");
+  Object.assign(k.cpl.catalog, { files: ["x.md"], filesCut: true });
+  typeIn(k, "voir @x");
+  assert.match(k.cpl.route ?? "", /^Dossier trop gros : les 20\D?000 premiers fichiers, 4 niveaux au plus$/, "cut: said under the card");
+  k.cpl.catalog.filesCut = false;
+  typeIn(k, "voir @x.");
+  assert.equal(k.cpl.route, null, "not cut: nothing");
+}
+
+// ── Anywhere, several in one message (Kylian, 2026-11-20), and the field's tint when a word is applied (« un
+// effet smooth »): the / menu opens further in; each command typed by hand, complete and known, becomes its
+// marked word, once; the card's tint layer fades in (opacity, native) while the field holds one, out after ──
+{
+  const c = completing(chat(), "");
+  Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false) });
+  c.cpl.catalog.commands.push({ name: "commit", description: "Commit", hint: null, kind: "command", category: "skill" });
+  typeIn(c, "voir /go");
+  assert.equal(c.cpl.menu?.rows[0]?.id, "cmd:me:goal", "the / menu further in");
+  typeIn(c, "voir /me:goal puis /commit ");
+  assert.deepEqual(c.composer.wrote.filter(([k]) => k === "token").map(([, r, w]) => [r.start, w]), [[5, "/me:goal"], [19, "/commit"]], "two words, each marked");
+  typeIn(c, "voir /me:goal puis /commit et ");
+  assert.equal(c.composer.wrote.filter(([k]) => k === "token").length, 2, "typing on: no second mark");
+  // The field's wave (Kylian, 2026-11-20: dither from a corner, back to normal after a while): the last word's
+  // tint and its dither cells, out before their first layout, in after it (each cell delayed by its distance
+  // from the corner), out again once FIELD_FX.HOLD is over, gone after; reduced motion: none.
+  const view = () => flat(c.composerView(KBRDN[0], { agent: { address: "t9", status: "idle", program: "claude" } }, null, cx()));
+  const n = c.fieldFx.id;
+  const parts = () => { const ns = view(); return { tint: ns.find((x) => callsOf(x, "id").some(([v]) => v === `kc-card-tint-${n}`)), layer: ns.find((x) => callsOf(x, "id").some(([v]) => v === `kc-card-fx-${n}`)), cells: ns.filter((x) => callsOf(x, "id").some(([v]) => String(v).startsWith(`kc-fx-${n}-`))) }; };
+  let p = parts();
+  assert.ok(p.cells.length > 50, "dither cells in the corner");
+  assert.deepEqual([callsOf(p.tint, "opacity").at(-1), callsOf(p.cells[0], "opacity").at(-1)], [[0], [0]], "before its first layout: out");
+  callsOf(p.layer, "on_size_change").at(-1)[0]({}, { notify() {} });
+  p = parts();
+  const delays = p.cells.map((x) => callsOf(x, "transition").at(-1)[1].delay);
+  assert.deepEqual([callsOf(p.tint, "opacity").at(-1), callsOf(p.cells[0], "opacity").at(-1), delays[0] <= delays.at(-1)], [[1], [1], true], "then in, a wave leaving the corner");
+  c.fieldFx.out = true;
+  p = parts();
+  assert.deepEqual([callsOf(p.tint, "opacity").at(-1), callsOf(p.cells[0], "opacity").at(-1)], [[0], [0]], "after the hold: back to normal");
+  c.fieldFx = null;
+  assert.deepEqual(parts().cells, [], "then gone");
+  // A keystroke's flicker (Kylian: « un léger scintillement de quelques pixels à chaque frappe »): its few
+  // cells drawn lit, fading out from their first layout.
+  c.keyFx = { n: 7, at: 0, out: false };
+  const flick = () => view().filter((x) => callsOf(x, "id").some(([v]) => String(v).startsWith("kc-fl-7-")));
+  assert.deepEqual(flick().map((x) => callsOf(x, "opacity").at(-1)[0]), Array(FIELD_FX.FLICK_N).fill(1), "a few cells, lit");
+  callsOf(view().find((x) => callsOf(x, "id").some(([v]) => v === "kc-card-flick-7")), "on_size_change").at(-1)[0]({}, { notify() {} });
+  assert.deepEqual(flick().map((x) => [callsOf(x, "opacity").at(-1)[0], callsOf(x, "transition").at(-1)[0]]), Array(FIELD_FX.FLICK_N).fill([0, "opacity"]), "then fading out");
+  const z = completing(chat({ reduced: true }), "/go");
+  Object.assign(z, { m: frame(z.motion, true) });
+  z.complete(cx());
+  z.accept(0, cx());
+  assert.equal(z.fieldFx ?? null, null, "reduced motion: no wave");
 }
 
 // ── Reduced motion: none of it ──────────────────────────────────────────────

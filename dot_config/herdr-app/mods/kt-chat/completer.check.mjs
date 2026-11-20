@@ -32,7 +32,7 @@ m = move(menuFor("/", 1, catalog), 1);
 const kept = m.rows[m.active].id;
 assert.equal(menuFor("/", 1, catalog, { prev: m }).rows[menuFor("/", 1, catalog, { prev: m }).active].id, kept, "the active row stays");
 assert.equal(menuFor("/zzz", 4, catalog).rows.length, 0, "no match: open, empty");
-assert.equal(menuFor("texte /go", 9, catalog), null, "mid-message: no menu");
+assert.equal(menuFor("texte /go", 9, catalog).rows[0].id, "cmd:me:goal", "mid-message too (Kylian: a skill anywhere)");
 
 // "#": the servers, then one server's tools.
 m = menuFor("#d", 2, catalog);
@@ -91,13 +91,14 @@ assert.equal(move(m, -1).active, m.rows.length - 1);
 assert.equal(move(move(m, -1), 1).active, 0);
 assert.equal(move(menuFor("/zzz", 4, catalog), 1).active, 0);
 
-// Typed by hand (fx3): a known command at the head, complete (a space after it): its piece; still being
-// typed, unknown, or not at the head: nothing (it stays text).
-assert.deepEqual(typed("/commit fix", catalog.commands), { start: 0, piece: { id: "cmd:commit", kind: "command", category: "skill", label: "/commit", text: "/commit", source: "complete" } });
-assert.equal(typed(" /me:goal x", catalog.commands).start, 1);
-assert.equal(typed("/commit", catalog.commands), null, "no space yet: still being typed");
-assert.equal(typed("/comm ", catalog.commands), null, "a word the catalog doesn't know");
-assert.equal(typed("/nope x", catalog.commands), null);
-assert.equal(typed("dis /commit x", catalog.commands), null, "not at the head");
+// Typed by hand (fx3): every known command, anywhere, complete (a space after it): its piece; still being
+// typed, unknown, or a path: nothing (it stays text). Several in one message (Kylian, 2026-11-20).
+assert.deepEqual(typed("/commit fix", catalog.commands), [{ start: 0, piece: { id: "cmd:commit", kind: "command", category: "skill", label: "/commit", text: "/commit", source: "complete" } }]);
+assert.deepEqual(typed(" /me:goal x", catalog.commands).map((x) => x.start), [1]);
+assert.deepEqual(typed("/commit", catalog.commands), [], "no space yet: still being typed");
+assert.deepEqual(typed("/comm ", catalog.commands), [], "a word the catalog doesn't know");
+assert.deepEqual(typed("/nope x", catalog.commands), []);
+assert.deepEqual(typed("dis /commit puis /me:goal x", catalog.commands).map((x) => [x.start, x.piece.text]), [[4, "/commit"], [17, "/me:goal"]], "anywhere, several");
+assert.deepEqual(typed("lis /tmp/commit x et a/commit ", catalog.commands), [], "a path, a word with a slash in it: text");
 
 console.log("kt-chat completer: ok");

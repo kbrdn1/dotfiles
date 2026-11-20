@@ -56,7 +56,7 @@ import { decide, decisionButtons } from "./decide.js";
 import { askOf, callId, shownRows } from "./ask.js";
 import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals, compaction } from "./chat-model.js";
 import {
-  pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep,
+  pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep, filesRead, FILES, ditherCells, flickerCells, FIELD_FX,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
   foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
@@ -70,7 +70,7 @@ import { attachmentsOf, photoSize, extOf, familyOf, tileOf, CARD, colsFor, gridW
 import { turnAssets } from "./assets.js";
 import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteChoice, mayHoldFiles, copyArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
 // kt-keys' categories.js (a byte-identical copy, with workflows.js): the pieces' one chip (#81 and #93).
-import { classify } from "./categories.js";
+import { classify, colorOf } from "./categories.js";
 // #81: the field's completions (/ # @): completer.js' menu over kt-keys' complete.js (byte-identical
 // copies, with complete.strings.js), menu.js' popup and a picked word as the field draws it (tokenMark:
 // marked by its category, it alone moves, once), and the route a /command takes: herdr-bridge's say.js
@@ -78,7 +78,7 @@ import { classify } from "./categories.js";
 // rest by hc send.
 import { menuFor, move as menuMove, pick as menuPick, typed as typedCommand } from "./completer.js";
 import { menuView, tokenMark, routeWords, ROW, ROWS, FRESH } from "./menu.js";
-import { tokenAt, merge, filesOf, routeOf } from "./complete.js";
+import { tokenAt, merge, routeOf } from "./complete.js";
 import { keysSend as keysRoute, sayReadyOf, sayFail } from "./keysend.js";
 import { say as sayBridge } from "./say.js";
 // « Compacter » by the ctx ring (compact.js, shared with Context's head): asks, waits for rest, /compact.
@@ -355,11 +355,10 @@ export default class Chat extends View {
     this.composer.set_auto_grow(1, 6);
     // #81, the completions: the catalog (complete.js merge's commands, the session's MCP tools, the
     // project's files) and when it was read, the menu open (completer.js) and the last one shown (it fades
-    // out, menu.js), its openings (each fades in anew), the token Esc closed, a command typed by hand
-    // already made a marked word (its start), the route line under the card, the words the field holds as
-    // tokens (token id -> piece, the time it came and whether its first layout came), the words made. Then
-    // the menu's scroll, and a confirmed route waiting for kt-confirm.
-    this.cpl = { catalog: { commands: [], tools: [], files: [] }, at: 0, loading: false, menu: null, last: null, gen: 0, dismissed: null, typedAt: null, route: null, pieces: new Map(), n: 0 };
+    // out, menu.js), its openings (each fades in anew), the token Esc closed, the route line under the card,
+    // the words the field holds as tokens (token id -> piece, the time it came and whether its first layout
+    // came), the words made. Then the menu's scroll, and a confirmed route waiting for kt-confirm.
+    this.cpl = { catalog: { commands: [], tools: [], files: [] }, at: 0, loading: false, menu: null, last: null, gen: 0, dismissed: null, route: null, pieces: new Map(), n: 0 };
     this.menuScroll = ScrollHandle.new();
     this.pendingRoute = null;
     this.compactor = new Compactor("kt-chat", HOST); // « Compacter » by the ctx ring (compact.js)
@@ -368,7 +367,13 @@ export default class Chat extends View {
       this.draft = this.composer.value();
       if (this.sendErr && this.sendErr.why !== "blocked") this.sendErr = null;
       const moved = this.complete(cx);
-      if (moved || had !== Boolean(this.draft.trim())) cx.notify();
+      // A keystroke's flicker (Kylian, 2026-11-20; chat-view.js flickerCells): a few dither cells light and
+      // fade, at most every FIELD_FX.EVERY ms (each one costs two renders of the Chat); not for a word going
+      // in as a token (quiet), not in reduced motion.
+      const now = Date.now();
+      const flick = CHIP_FX && !this.m?.reduced && !this.cpl.quiet && now - (this.keyFx?.at ?? 0) >= FIELD_FX.EVERY;
+      if (flick) this.keyFx = { n: (this.keyFx?.n ?? 0) + 1, at: now, out: false };
+      if (flick || moved || had !== Boolean(this.draft.trim())) cx.notify();
     });
     this.composer.on("submit", (e, cx) => this.submitted(e, cx));
     this.composer.on("focus", (_e, cx) => {
@@ -1207,46 +1212,52 @@ export default class Chat extends View {
     if (c.menu) c.last = c.menu;
     else if (was) this.menuGone(cx);
     if (c.menu && Date.now() - c.at > STALE) this.loadCatalog(cx);
-    // Typed by hand, complete (the space after it) and known: the same marked word as a pick, once
-    // (typedAt: its place; a token there already: it was picked). The token puts the cursor at its end:
-    // put back where it was (the same length) before any change it raises is read (quiet: whatever order
-    // the events come in).
-    const ty = CHIPS ? typedCommand(this.draft, c.catalog.commands) : null;
+    // Typed by hand, complete (the space after it) and known, anywhere and as many as there are (Kylian,
+    // 2026-11-20: a skill anywhere, several in one message): each the same marked word as a pick, once (a
+    // token there already: it was picked or marked). The token puts the cursor at its end: put back where it
+    // was (the same length) before any change it raises is read (quiet: whatever order the events come in).
     let made = false;
-    if (!ty) c.typedAt = null;
-    else if (c.typedAt !== ty.start) {
-      c.typedAt = ty.start;
-      if (!(this.composer.content().tokens ?? []).some((s) => s.range.start === ty.start)) {
-        c.quiet = true;
-        try {
-          this.markWord(cx, ty.piece, { start: ty.start, end: ty.start + ty.piece.text.length });
-          this.composer.set_selected_range({ start: end, end });
-        } finally {
-          c.quiet = false;
-        }
-        made = true;
+    const held = this.composer.content().tokens ?? [];
+    for (const ty of CHIPS ? typedCommand(this.draft, c.catalog.commands) : []) {
+      if (held.some((s) => s.range.start === ty.start)) continue;
+      c.quiet = true;
+      try {
+        this.markWord(cx, ty.piece, { start: ty.start, end: ty.start + ty.piece.text.length });
+        this.composer.set_selected_range({ start: end, end });
+      } finally {
+        c.quiet = false;
       }
+      made = true;
     }
-    // The route the command at the head would take (herdr-bridge's is asked only as it goes: send()). A
-    // known /command further in is text for Claude Code, which runs one only at the head of a message (as
-    // its own field does; Kylian's probe, 2026-11-20): the line says so, the menu and the mark stay at the head.
+    // The route the command at the head would take (herdr-bridge's is asked only as it goes: send()). Further
+    // in, a skill or a command is the agent's to call (« invoquée par l'agent »); a Claude Code built-in
+    // (/compact, /model…) runs only at the head: the line says so.
     const head = /^\s*\/(\S+)/.exec(this.draft)?.[1];
-    const known = (n) => c.catalog.commands.some((x) => x.name === n);
-    const inner = !head && [...this.draft.matchAll(/(?:^|\s)\/([^\s/]+)/g)].some((m) => known(m[1]));
-    const route = head && known(head) ? routeWords(routeOf(this.draft, { say: false })) : inner ? tr("composer.headOnly") : null;
+    const cmd = (n) => c.catalog.commands.find((x) => x.name === n);
+    const inner = head ? [] : [...this.draft.matchAll(/(?:^|\s)\/([^\s/\\]+)/g)].map((m) => cmd(m[1])).filter(Boolean);
+    // @'s menu on a folder's listing that stopped at its cap: say so (the file wanted may lie past it).
+    const cut = c.menu?.trigger === "@" && c.catalog.filesCut ? tr("composer.filesCut", { n: num(FILES.CAP), depth: FILES.DEPTH }) : null;
+    const route = cut ?? (head && cmd(head) ? routeWords(routeOf(this.draft, { say: false }))
+      : inner.some((x) => x.kind === "builtin") ? tr("composer.headOnly") : inner.length ? routeWords({ via: "send", by: "agent" }) : null);
     const changed = made || was !== c.menu || route !== c.route;
     c.route = route;
     return changed;
   }
 
   /** A word becomes the marked token (fx3): its own id per word (two never share one), its piece kept with
-   *  the time it came (its one motion, menu.js tokenMark), then ONE timer draws it still. */
+   *  the time it came (its one motion, menu.js tokenMark), then ONE timer draws it still. And the field's
+   *  wave (fieldFx, Kylian 2026-11-20): its hue comes from a corner as dither, holds, then goes back to
+   *  normal: one timer to let it go (FIELD_FX.HOLD), one to drop it once gone; a newer word takes its place. */
   markWord(cx, piece, range) {
     const c = this.cpl;
     const id = `${piece.id}#${++c.n}`;
     c.pieces.set(id, { ...piece, at: Date.now(), shown: false });
     this.composer.replace_range_with_token(range, { id, text: piece.text, label: piece.label });
-    if (CHIP_FX && !this.m?.reduced) cx.timer.after(FRESH + 40, (cx) => cx.notify());
+    if (!CHIP_FX || this.m?.reduced) return;
+    cx.timer.after(FRESH + 40, (cx) => cx.notify());
+    const fx = (this.fieldFx = { id: c.n, category: piece.category, shown: false, out: false });
+    cx.timer.after(FIELD_FX.HOLD, (cx) => { if (this.fieldFx === fx) { fx.out = true; cx.notify(); } });
+    cx.timer.after(FIELD_FX.HOLD + FIELD_FX.WAVE + FIELD_FX.OUT, (cx) => { if (this.fieldFx === fx) { this.fieldFx = null; cx.notify(); } });
   }
 
   /** The menu's active row into the field (completer.js pick): a marked word (CHIPS, markWord) then a
@@ -1348,9 +1359,12 @@ export default class Chat extends View {
       // Sorted by git (completer.js ranks them as they come); quotepath off: a path with an accent as
       // itself, not "\303\211" between quotes (the mention would name no file).
       const g = cwd ? await exec("git", ["-c", "core.quotepath=off", "-C", cwd, "ls-files", "-co", "--exclude-standard"], { timeout: 10000 }).catch(() => null) : null; // i18n: tech
+      // Not a repo (a thread at ~): the folder's own files, bounded (chat-view.js filesRead, FILES).
+      const f = cwd && g?.code !== 0 ? await exec("/bin/sh", ["-c", FILES.LIST, "sh", cwd, String(FILES.DEPTH), String(FILES.CAP + 1)], { timeout: 10000 }).catch(() => null) : null; // i18n: tech
       c.loading = false;
       if (j) c.catalog = { ...c.catalog, commands: merge(j.items, j.listing, classify), tools: j.tools ?? [] };
-      if (g?.code === 0) c.catalog = { ...c.catalog, files: filesOf(g.stdout) };
+      const read = filesRead(g, f);
+      if (read) c.catalog = { ...c.catalog, files: read.files, filesCut: read.cut };
       // The open menu again, on what was read.
       if (c.menu) {
         const { end } = this.composer.selected_range();
@@ -3489,8 +3503,35 @@ export default class Chat extends View {
     // #93: files dropped on the face join the message (dropped(): their paths, absolute, never a copy); the
     // ones waiting show above the text (draftView); « + » opens the system's chooser.
     const drafts = this.draftView(t, cx);
-    const card = v_flex().id("kc-card").w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
+    // A word applied in the field (a marked skill, command, tool or file, #81 fx3; Kylian, 2026-11-20: « changer
+    // de couleur fond ou bordure … un effet smooth », back to normal after a while, « des pixels dither très
+    // légèrement, en fondu, qui partent d'un coin »): under the field, the card's tint (its border and a light
+    // ground in the word's hue) and dither cells in its top-left corner (chat-view.js ditherCells) come in as a
+    // wave from that corner, hold, and go (markWord's fieldFx and timers). Opacity only, native (gpui animates
+    // no color); the first layout is the cue (as tokenMark's). Reduced motion: none of it.
+    const fx = this.fieldFx;
+    const hue = fx ? colorOf(t, fx.category) : null;
+    const lit = Boolean(fx?.shown && !fx.out);
+    const fxEls = !fx ? [] : [
+      div().id(`kc-card-tint-${fx.id}`).absolute().inset_0().rounded(12).border(1).border_color(alpha(hue, "99"))
+        .bg(alpha(hue, dark ? "14" : "0f")).opacity(lit ? 1 : 0).transition("opacity", { duration: lit ? FIELD_FX.IN + FIELD_FX.WAVE : FIELD_FX.OUT, easing: "ease-out" }),
+      div().id(`kc-card-fx-${fx.id}`).absolute().top(0).left(0).w(FIELD_FX.W).h(FIELD_FX.H)
+        .on_size_change((_size, cx) => { if (!fx.shown) { fx.shown = true; cx.notify(); } })
+        .children(ditherCells().map((p, i) => div().id(`kc-fx-${fx.id}-${i}`).absolute().left(p.x).top(p.y).size(FIELD_FX.CELL).bg(alpha(hue, dark ? "40" : "33"))
+          .opacity(lit ? 1 : 0).transition("opacity", { duration: lit ? FIELD_FX.IN : FIELD_FX.OUT, delay: Math.round(p.d * FIELD_FX.WAVE), easing: "ease-out" }))),
+    ];
+    // The keystroke's flicker (the change handler's keyFx): its few cells drawn lit, then, at their first
+    // layout, fading out (no timer: the first layout is the cue).
+    const kf = this.keyFx;
+    if (kf) {
+      fxEls.push(div().id(`kc-card-flick-${kf.n}`).absolute().top(0).left(0).w(FIELD_FX.W).h(FIELD_FX.H)
+        .on_size_change((_size, cx) => { if (!kf.out) { kf.out = true; cx.notify(); } })
+        .children(flickerCells(kf.n).map((p, i) => div().id(`kc-fl-${kf.n}-${i}`).absolute().left(p.x).top(p.y).size(FIELD_FX.CELL)
+          .bg(alpha(t.accent, dark ? "4d" : "40")).opacity(kf.out ? 0 : 1).transition("opacity", { duration: FIELD_FX.FLICK, easing: "ease-out" }))));
+    }
+    const card = v_flex().id("kc-card").relative().w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
       .bg(dark ? ink(t, 0.03) : t.background).when(!dark, (el) => el.shadow_sm())
+      .children(fxEls)
       // Cmd+V in the field comes here first (init's binding, « KtComposer > Input »): pasteKey. Tab and the
       // open menu's ↑ ↓ too (#81): menuKey, the field keeps the keyboard.
       .key_context("KtComposer").on_action("kt_chat_paste", (_e, cx) => this.pasteKey(cx))

@@ -5,6 +5,63 @@
 export const isClaude = (a) => a?.program?.key === "claude" || /^claude/.test(a?.app ?? "");
 
 /**
+ * #81, a word applied in the field (Kylian, 2026-11-20: « des pixels dither très légèrement, en fondu, qui
+ * partent d'un coin du champ », and back to normal after a while): the cells of a 4 × 4 Bayer dither in a
+ * w × h corner of the card, densest at the corner (`peak`) and none at the far edge, none outside the card's
+ * rounded corner (radius r), each with its distance from the corner (0 to 1: the wave's delay). FIELD_FX: the
+ * sizes and the times (in, the wave's spread, the hold, out), in px and ms.
+ */
+export const FIELD_FX = { CELL: 4, W: 168, H: 56, R: 12, PEAK: 0.6, IN: 220, WAVE: 260, HOLD: 900, OUT: 420, FLICK: 260, FLICK_N: 5, EVERY: 250 };
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+export function ditherCells({ w = FIELD_FX.W, h = FIELD_FX.H, cell = FIELD_FX.CELL, r = FIELD_FX.R, peak = FIELD_FX.PEAK } = {}) {
+  const out = [];
+  const max = Math.hypot(w, h);
+  for (let y = 0; y < h; y += cell) {
+    for (let x = 0; x < w; x += cell) {
+      const mx = x + cell / 2, my = y + cell / 2;
+      if (mx < r && my < r && Math.hypot(r - mx, r - my) > r) continue; // outside the rounded corner
+      const d = Math.hypot(mx, my) / max;
+      if (BAYER4[((y / cell) % 4) * 4 + ((x / cell) % 4)] / 16 >= peak * (1 - d)) continue;
+      out.push({ x, y, d });
+    }
+  }
+  return out;
+}
+
+/** A keystroke's flicker (Kylian, 2026-11-20: « un léger scintillement de quelques pixels à chaque frappe »):
+ *  k cells of the corner's dither, picked by the keystroke's number n (the same n, the same cells). */
+export function flickerCells(n, k = FIELD_FX.FLICK_N, cells = ditherCells()) {
+  const out = [];
+  let h = (Math.imul(n | 0, 2654435761) >>> 0) || 1;
+  while (out.length < Math.min(k, cells.length)) {
+    h = (Math.imul(h, 1103515245) + 12345) >>> 0;
+    const c = cells[h % cells.length];
+    if (!out.includes(c)) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * #81, the files @ completes (Kylian's probe, 2026-11-20: a thread at ~ gave « aucune correspondance »: ~ is
+ * no git repo, `git ls-files` fails there and the list stayed empty). git's list when the folder is a repo
+ * (sorted, the repo's own); else the folder's own files, bounded: FILES.DEPTH levels, FILES.CAP files, the
+ * hidden ones, app bundles and build folders left out (FILES.LIST, run as `sh -c LIST sh <cwd> <depth>
+ * <cap + 1>`), `cut` when it stopped at the cap. null: neither read answered.
+ */
+export const FILES = {
+  CAP: 20000,
+  DEPTH: 4,
+  LIST: 'cd "$1" && find . -maxdepth "$2" \\( -name ".?*" -o -name "*.app" -o -name node_modules -o -name Library -o -name target -o -name dist -o -name build \\) -prune -o -type f -print 2>/dev/null | head -n "$3" | sed "s|^\\./||" | LC_ALL=C sort', // i18n: tech
+};
+export function filesRead(git, list, cap = FILES.CAP) {
+  const lines = (r) => String(r?.stdout ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  if (git?.code === 0) return { files: lines(git).slice(0, cap), cut: false };
+  if (list?.code !== 0) return null;
+  const all = lines(list);
+  return { files: all.slice(0, cap), cut: all.length > cap };
+}
+
+/**
  * The Chat's agent: the shown tab's Claude agent, the focused pane's first (when the Chat has the
  * keyboard, focused().terminal is no longer the agent's, the tab's focused pane still is). Or why
  * there is none: { reason: "noAgent" | "notClaude" (with app) | "remote" (with machine) }.
