@@ -1,6 +1,6 @@
 // bun completer.check.mjs: completer.js (#81 L4) on an invented catalog: the menu for each trigger,
-// the active row kept or reset, Esc's dismissal, the moves, what a pick writes (and its piece), a
-// command typed by hand, the effect. gpui mocked for categories.js.
+// the active row kept or reset, Esc's dismissal, the moves, what a pick writes (and its piece), a command
+// typed by hand once complete and known. gpui mocked for categories.js.
 import assert from "node:assert/strict";
 import { plugin } from "bun";
 
@@ -10,7 +10,7 @@ plugin({
     build.module("gpui-base", () => ({ loader: "object", exports: { h_flex: () => null } }));
   },
 });
-const { menuFor, move, pick, typed, effectOf } = await import("./completer.js");
+const { menuFor, move, pick, typed } = await import("./completer.js");
 const { merge } = await import("./complete.js");
 const { classify } = await import("./categories.js");
 const { mentionText } = await import("./attach.js");
@@ -72,14 +72,13 @@ assert.equal(pick({ start: 0, end: 4 }, { type: "file", path: "notes/a b.md" }, 
   assert.equal(shown[0].rows[0].path, "src/m00000/f.js", "an empty query: the list's order");
 }
 
-// A command: its piece, then a space.
+// A command: its piece (its category marks the word), then a space.
 m = menuFor("/go", 3, catalog);
 p = pick(m, m.rows[0]);
 assert.equal(p.text, "/me:goal ");
-assert.deepEqual(effectOf(p.piece), { category: "workflow", rail: true });
+assert.equal(p.piece.category, "workflow");
 m = menuFor("/sch", 4, catalog);
-assert.deepEqual(effectOf(pick(m, m.rows[0]).piece), { category: "automation", rail: false });
-assert.deepEqual(effectOf(null), { category: "file", rail: false });
+assert.equal(pick(m, m.rows[0]).piece.category, "automation");
 
 // Esc: closed until another token.
 const d = { trigger: "/", start: 0 };
@@ -92,11 +91,13 @@ assert.equal(move(m, -1).active, m.rows.length - 1);
 assert.equal(move(move(m, -1), 1).active, 0);
 assert.equal(move(menuFor("/zzz", 4, catalog), 1).active, 0);
 
-// Typed by hand: a known command then a space at the head.
+// Typed by hand (fx3): a known command at the head, complete (a space after it): its piece; still being
+// typed, unknown, or not at the head: nothing (it stays text).
 assert.deepEqual(typed("/commit fix", catalog.commands), { start: 0, piece: { id: "cmd:commit", kind: "command", category: "skill", label: "/commit", text: "/commit", source: "complete" } });
 assert.equal(typed(" /me:goal x", catalog.commands).start, 1);
-assert.equal(typed("/commit", catalog.commands), null, "no space yet");
+assert.equal(typed("/commit", catalog.commands), null, "no space yet: still being typed");
+assert.equal(typed("/comm ", catalog.commands), null, "a word the catalog doesn't know");
 assert.equal(typed("/nope x", catalog.commands), null);
-assert.equal(typed("dis /commit x", catalog.commands), null);
+assert.equal(typed("dis /commit x", catalog.commands), null, "not at the head");
 
 console.log("kt-chat completer: ok");

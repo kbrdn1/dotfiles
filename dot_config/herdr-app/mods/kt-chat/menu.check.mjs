@@ -1,9 +1,10 @@
 // bun menu.check.mjs: menu.js (#81 L4-L5) with gpui mocked: the popup fades in (enter) and out
 // (MS.leave, ease-in), a new opening fades in again, the active row's fill sits on its row and glides
 // (ink), the rows say their words (complete.strings.js), a press picks, a short transcript shows fewer
-// rows; the wave's three layers (from, to, cascade, hue) and the rail (one bead per step, 25 ms apart,
-// the rail fading at 300 ms: 480 ms); reduced motion draws neither and the popup comes and goes at once.
-// motion.js' sweep() has its own check (kt-keys). Not a layout check.
+// rows; a picked word (tokenMark, fx3): marked by its category for good (dark: the word in its hue; light:
+// in foreground, the hue on its line; a workflow: its 8 beads), and once, fresh, its veil going out, its
+// line coming, the beads lit 25 ms apart; still after FRESH; reduced motion: marked, still, at once.
+// Not a layout check.
 import assert from "node:assert/strict";
 import { plugin } from "bun";
 
@@ -32,7 +33,7 @@ plugin({
     build.module("herdr", () => ({ loader: "object", exports: { shared: () => null, checking: () => true } }));
   },
 });
-const { menuView, wave, rail, routeWords, ROW, ROWS, CREST } = await import("./menu.js");
+const { menuView, tokenMark, routeWords, ROW, ROWS, FRESH } = await import("./menu.js");
 const { motionState, frame, MS } = await import("./motion.js");
 const { STEPS } = await import("./workflows.js");
 
@@ -89,24 +90,49 @@ const R = motionState();
 assert.deepEqual(menuView(t, frame(R, true), menu, opts).props.opacity, undefined, "no fade");
 assert.equal(menuView(t, frame(R, true), null, { ...opts, last: menu }), null, "gone at once");
 
-// The wave: three layers from left of the field to its width, 40 ms apart, fainter behind, under the text.
-const layers = wave(t, frame(motionState(), false), "kc-wave-1", "workflow", 500);
-assert.equal(layers.length, 3);
-assert.deepEqual(layers.map((l) => l.props.left[0]), [-24, -32, -40]);
-assert.deepEqual(layers.map((l) => l.trp.left.delay), [0, 40, 80]);
-assert.deepEqual(layers.map((l) => l.props.text_color[0]), [`${t.ansi3}6b`, `${t.ansi3}48`, `${t.ansi3}24`], "the category's hue, as the bands, fainter behind");
-assert.equal(layers[0].arg, CREST);
-assert.equal(CREST, "mods/kt-chat/dither-crest.svg", "the crest ships with kt-chat");
-assert.deepEqual(wave(t, frame(motionState(), true), "kc-wave-1", "workflow", 500), [], "reduced: no wave");
-assert.deepEqual(wave(t, frame(motionState(), false), "w", "mcp", 100, { dark: false })[0].props.text_color, [`${t.accent}4d`]);
-
-// The rail: one bead per step, lit 25 ms apart (120 ms each), the rail fading at 300 ms for 180: 480 ms.
-const r = rail(t, frame(motionState(), false), "kc-rail-1", STEPS.length);
-assert.equal(r.kids.length, 8);
-assert.deepEqual(r.kids.map((b) => b.trp.opacity.delay), [0, 25, 50, 75, 100, 125, 150, 175]);
-assert.equal(r.kids[7].trp.opacity.delay + r.kids[7].trp.opacity.duration, 295, "the last bead lit before the rail fades");
-assert.equal(r.trp.opacity.delay + r.trp.opacity.duration, 480);
-assert.equal(rail(t, frame(motionState(), true), "kc-rail-1", 8), null, "reduced: no rail");
+// A picked word (tokenMark, fx3): the token's own element, in the field's line.
+{
+  const ctx = { line_height: 20 };
+  const byId = (n, id) => find(n, (x) => x.props?.id?.[0] === id)[0];
+  const textOf = (n) => find(n, (x) => x.kids?.some((k) => typeof k === "string"))[0];
+  // Fresh workflow, before its first layout: the veil up, the beads out; then they move, once.
+  const now = 10_000;
+  const wf = { kind: "command", category: "workflow", text: "/me:goal", at: now - 10, shown: false };
+  let w = tokenMark(t, wf, ctx, { id: "tk1", now });
+  assert.deepEqual([w.props.id, w.props.h], [["tk1"], [20]], "its own id, the line's height");
+  assert.deepEqual(textOf(w).kids, ["/me:goal"], "the text that goes");
+  assert.deepEqual(textOf(w).props.text_color, [t.ansi3], "dark: the word in its category's hue");
+  const veil = byId(w, "tk1-v");
+  assert.deepEqual([veil.props.opacity, veil.trp.opacity.duration], [[1], 420], "the veil, up, going out in 420 ms");
+  const beads = find(w, (x) => /^tk1-b\d$/.test(x.props?.id?.[0] ?? ""));
+  assert.equal(beads.length, STEPS.length, "a workflow's line: one bead per step");
+  assert.deepEqual(beads.map((b) => b.props.opacity[0]), Array(8).fill(0));
+  assert.deepEqual(beads.map((b) => b.trp.opacity.delay), [0, 25, 50, 75, 100, 125, 150, 175], "lit left to right, 25 ms apart");
+  let notified = 0;
+  w.on.on_size_change({}, { notify: () => notified++ });
+  assert.deepEqual([wf.shown, notified], [true, 1], "its first layout is the cue (kept on the piece)");
+  w = tokenMark(t, wf, ctx, { id: "tk1", now: now + 100 });
+  assert.deepEqual([byId(w, "tk1-v").props.opacity, find(w, (x) => x.props?.id?.[0] === "tk1-b7")[0].props.opacity], [[0], [1]], "then the veil out, the beads lit");
+  // After FRESH: still, marked, no transition, no veil.
+  w = tokenMark(t, wf, ctx, { id: "tk1", now: now + FRESH + 1 });
+  assert.equal(byId(w, "tk1-v"), undefined, "no veil");
+  assert.deepEqual(find(w, (x) => x.tr?.length), [], "no transition at all");
+  assert.deepEqual(find(w, (x) => /^tk1-b\d$/.test(x.props?.id?.[0] ?? "")).map((b) => b.props.opacity[0]), Array(8).fill(1), "the cycle stays");
+  // Light: the word in foreground, the hue on its line only (L6d's rule).
+  const sk = { kind: "command", category: "skill", text: "/commit" };
+  const l = tokenMark(t, sk, ctx, { id: "tk2", dark: false });
+  assert.deepEqual(textOf(l).props.text_color, [t.foreground]);
+  assert.deepEqual(byId(l, "tk2-u").props.bg, [`${t.ansi4}b3`], "the line in the skill's hue");
+  // A file: a neutral line, the word in foreground; an MCP tool: the accent.
+  const f = tokenMark(t, { kind: "file", category: "file", text: "@main.js" }, ctx, { id: "tk3" });
+  assert.deepEqual([textOf(f).props.text_color, byId(f, "tk3-u").props.bg], [[t.foreground], [`${t.muted}99`]]);
+  assert.deepEqual(textOf(tokenMark(t, { kind: "mcp-tool", category: "mcp", text: "mcp__docs__query" }, ctx, { id: "tk4" })).props.text_color, [t.accent]);
+  // Reduced motion, or the motion turned off (CHIP_FX false): marked at once, nothing moves.
+  for (const o of [{ reduced: true }, { fx: false }]) {
+    const z = tokenMark(t, { ...wf, shown: false, at: now - 10 }, ctx, { id: "tk5", now, ...o });
+    assert.deepEqual([byId(z, "tk5-v"), find(z, (x) => x.tr?.length).length, z.on.on_size_change], [undefined, 0, undefined], JSON.stringify(o));
+  }
+}
 
 // The route's words under the card (complete.js routeOf's shapes).
 assert.equal(routeWords({ via: "send" }), null, "a message: nothing");

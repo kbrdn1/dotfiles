@@ -70,15 +70,15 @@ import { attachmentsOf, photoSize, extOf, familyOf, tileOf, CARD, colsFor, gridW
 import { turnAssets } from "./assets.js";
 import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteChoice, mayHoldFiles, copyArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
 // kt-keys' categories.js (a byte-identical copy, with workflows.js): the pieces' one chip (#81 and #93).
-import { pieceChip, classify } from "./categories.js";
+import { classify } from "./categories.js";
 // #81: the field's completions (/ # @): completer.js' menu over kt-keys' complete.js (byte-identical
-// copies, with complete.strings.js), menu.js' popup and its dither effects (the wave, a workflow's rail
-// of workflows.js' steps), and the route a /command takes: herdr-bridge's say.js when its session token
-// is fresh (keysend.js sayReady), a Claude Code built-in as keys (keysend.js), the rest by hc send.
-import { menuFor, move as menuMove, pick as menuPick, typed as typedCommand, effectOf } from "./completer.js";
-import { menuView, wave, rail, routeWords, ROW, ROWS } from "./menu.js";
+// copies, with complete.strings.js), menu.js' popup and a picked word as the field draws it (tokenMark:
+// marked by its category, it alone moves, once), and the route a /command takes: herdr-bridge's say.js
+// when its session token is fresh (keysend.js sayReady), a Claude Code built-in as keys (keysend.js), the
+// rest by hc send.
+import { menuFor, move as menuMove, pick as menuPick, typed as typedCommand } from "./completer.js";
+import { menuView, tokenMark, routeWords, ROW, ROWS, FRESH } from "./menu.js";
 import { tokenAt, merge, filesOf, routeOf } from "./complete.js";
-import { STEPS as FLOW_STEPS } from "./workflows.js";
 import { keysSend as keysRoute, sayReadyOf, sayFail } from "./keysend.js";
 import { say as sayBridge } from "./say.js";
 // « Compacter » by the ctx ring (compact.js, shared with Context's head): asks, waits for rest, /compact.
@@ -129,10 +129,13 @@ const BRIDGE = 2000; // #84: the bridge file read again while the agent works or
 const SUB_TRIES = 3; // #58: failed reads of a sub-agent's transcript in a row before it stops trying (until unfolded again)
 const STALE = 30000; // #81: the completions' catalog is read again when older, as the menu opens or the field takes focus
 const ASK_TTL = 300000; // #81: a kt-confirm « yes » later than this after its ask sends nothing
-// #81: a completed piece becomes a chip in the field (an InlineToken). Probed with herdr-app check
-// (2026-11-19): value(), what goes, gives the token's `text`; but check never draws a token, so the
-// chip's render (Textarea.token) is unproven until the capture slot: plain text until then.
-const CHIPS = false;
+// #81 fx3 (Kylian, 2026-11-20: « mot bloc marqué »): a picked word becomes an InlineToken the field draws
+// with menu.js' tokenMark, marked by its category; it alone moves, once. value(), what goes, gives the
+// token's text (probed with herdr-app check, 2026-11-19); check never draws a token, so the rest is proven
+// on Kylian's own field (SLOT-CHAT, in order): 1. the token draws: else CHIPS false (plain text, the route
+// line alone); 2. its veil and its line move: else CHIP_FX false (marked, still); 3. its height in the line.
+const CHIPS = true;
+const CHIP_FX = true;
 // runner: the runner above the composer (runner.js, runner-plan.js; companion.js for its fallback):
 // runnerShown(status, program) says when its band shows (composerView, in the flow), Runner is the nested
 // view drawn there, runnerProps what feedRunner() hands it, keepBottom when the band moves a followed view.
@@ -352,13 +355,12 @@ export default class Chat extends View {
     this.composer.set_auto_grow(1, 6);
     // #81, the completions: the catalog (complete.js merge's commands, the session's MCP tools, the
     // project's files) and when it was read, the menu open (completer.js) and the last one shown (it fades
-    // out, menu.js), its openings (each fades in anew), the token Esc closed, a /command typed by hand
-    // already made a chip (its start), the route line under the card, the pieces the field holds as chips
-    // (token id -> piece), the waves started. Then the menu's scroll, the wave running ({ id, category,
-    // rail }), and a confirmed route waiting for kt-confirm.
+    // out, menu.js), its openings (each fades in anew), the token Esc closed, a command typed by hand
+    // already made a marked word (its start), the route line under the card, the words the field holds as
+    // tokens (token id -> piece, the time it came and whether its first layout came), the words made. Then
+    // the menu's scroll, and a confirmed route waiting for kt-confirm.
     this.cpl = { catalog: { commands: [], tools: [], files: [] }, at: 0, loading: false, menu: null, last: null, gen: 0, dismissed: null, typedAt: null, route: null, pieces: new Map(), n: 0 };
     this.menuScroll = ScrollHandle.new();
-    this.wave = null;
     this.pendingRoute = null;
     this.compactor = new Compactor("kt-chat", HOST); // « Compacter » by the ctx ring (compact.js)
     this.composer.on("change", (_e, cx) => {
@@ -1178,12 +1180,14 @@ export default class Chat extends View {
 
   /**
    * On each change of the field (never in render): the menu for its text and cursor (completer.js), its
-   * catalog read again when older than STALE, a /command typed by hand at the head made a chip with its
-   * wave (once per place), the route that command takes (the line under the card). true: what shows changed.
+   * catalog read again when older than STALE, a command typed by hand made the marked word once complete
+   * and known (fx3, Kylian: « pour l'écrit à la main, aussi faire l'effet »; nothing while it's being
+   * typed, an unknown word stays text), the route the /command at the head takes (the line under the
+   * card). true: what shows changed.
    */
   complete(cx) {
     const c = this.cpl;
-    if (c.quiet) return false; // its own chip going in (below): the change it raises is not Kylian's
+    if (c.quiet) return false; // its own word going in (below): the change it raises is not Kylian's
     const was = c.menu;
     const { end } = this.composer.selected_range();
     // Esc closed one token: another one (or none) under the cursor and the menu may open again.
@@ -1194,26 +1198,23 @@ export default class Chat extends View {
     if (c.menu) c.last = c.menu;
     else if (was) this.menuGone(cx);
     if (c.menu && Date.now() - c.at > STALE) this.loadCatalog(cx);
-    const ty = typedCommand(this.draft, c.catalog.commands);
+    // Typed by hand, complete (the space after it) and known: the same marked word as a pick, once
+    // (typedAt: its place; a token there already: it was picked). The token puts the cursor at its end:
+    // put back where it was (the same length) before any change it raises is read (quiet: whatever order
+    // the events come in).
+    const ty = CHIPS ? typedCommand(this.draft, c.catalog.commands) : null;
     let made = false;
     if (!ty) c.typedAt = null;
     else if (c.typedAt !== ty.start) {
       c.typedAt = ty.start;
-      // Picked from the menu, it is a chip already (and its wave ran: accept() set typedAt).
       if (!(this.composer.content().tokens ?? []).some((s) => s.range.start === ty.start)) {
-        c.pieces.set(ty.piece.id, ty.piece);
-        if (CHIPS) {
-          // The token puts the cursor at its end: put back where it was (the same length) before any
-          // change it raises is read (quiet: whatever order the events come in).
-          c.quiet = true;
-          try {
-            this.composer.replace_range_with_token({ start: ty.start, end: ty.start + ty.piece.text.length }, { id: ty.piece.id, text: ty.piece.text, label: ty.piece.label });
-            this.composer.set_selected_range({ start: end, end });
-          } finally {
-            c.quiet = false;
-          }
+        c.quiet = true;
+        try {
+          this.markWord(cx, ty.piece, { start: ty.start, end: ty.start + ty.piece.text.length });
+          this.composer.set_selected_range({ start: end, end });
+        } finally {
+          c.quiet = false;
         }
-        this.wave = { id: `kc-wave-${++c.n}`, ...effectOf(ty.piece) };
         made = true;
       }
     }
@@ -1225,8 +1226,18 @@ export default class Chat extends View {
     return changed;
   }
 
-  /** The menu's active row into the field (completer.js pick): a chip (CHIPS) then a space, with its wave;
-   *  a server only narrows the list to its tools (the menu stays). A press reads the menu fading too. */
+  /** A word becomes the marked token (fx3): its own id per word (two never share one), its piece kept with
+   *  the time it came (its one motion, menu.js tokenMark), then ONE timer draws it still. */
+  markWord(cx, piece, range) {
+    const c = this.cpl;
+    const id = `${piece.id}#${++c.n}`;
+    c.pieces.set(id, { ...piece, at: Date.now(), shown: false });
+    this.composer.replace_range_with_token(range, { id, text: piece.text, label: piece.label });
+    if (CHIP_FX && !this.m?.reduced) cx.timer.after(FRESH + 40, (cx) => cx.notify());
+  }
+
+  /** The menu's active row into the field (completer.js pick): a marked word (CHIPS, markWord) then a
+   *  space; a server only narrows the list to its tools (the menu stays). A press reads the menu fading too. */
   accept(i, cx) {
     const c = this.cpl;
     const menu = c.menu ?? c.last;
@@ -1235,16 +1246,13 @@ export default class Chat extends View {
     const program = target().agent?.program ?? "claude";
     const p = menuPick(menu, row, { mention: (x) => mentionText(program, x) });
     c.dismissed = null;
-    if (p.piece?.kind === "command") c.typedAt = p.start; // its wave is this one: complete() makes no second
     if (p.piece && CHIPS) {
-      c.pieces.set(p.piece.id, p.piece);
-      this.composer.replace_range_with_token({ start: p.start, end: p.end }, { id: p.piece.id, text: p.piece.text, label: p.piece.label });
+      this.markWord(cx, p.piece, { start: p.start, end: p.end });
       this.composer.replace(" ");
     } else {
       this.composer.set_selected_range({ start: p.start, end: p.end });
       this.composer.replace(p.text);
     }
-    if (p.piece) this.wave = { id: `kc-wave-${++c.n}`, ...effectOf(p.piece) };
     this.composer.focus();
     cx.notify();
   }
@@ -3171,7 +3179,10 @@ export default class Chat extends View {
       if (refs) out.push(refs);
       out.push(this.actions(t, turn));
     }
-    const here = keyed && i === (this.cur < 0 ? this.turns.length - 1 : this.cur);
+    // The keyboard's turn, only while one moves through them (j k gg G ctrl-d ctrl-u, a jump: cur set):
+    // at rest (cur -1, the bottom followed) no turn is pointed at (Kylian, 2026-11-20: an accent tick at a
+    // bubble's height « parfois », with nothing to say what it was).
+    const here = keyed && this.cur >= 0 && i === this.cur;
     // #92: a turn that arrived live fades in where it lands (landing()); the others are drawn as they are.
     return this.col(v_flex().relative().w_full().min_w(0).pb(8)
       // The keyboard's turn: a short 2 × 16 accent tick in the column's margin, at its top (a mark as
@@ -3457,26 +3468,16 @@ export default class Chat extends View {
     // #93: files dropped on the face join the message (dropped(): their paths, absolute, never a copy); the
     // ones waiting show above the text (draftView); « + » opens the system's chooser.
     const drafts = this.draftView(t, cx);
-    // #81: a completed piece's wave (menu.js: three dither crests crossing the field in its category's
-    // hue, then a workflow's rail of its steps), under the text, in the field's box that clips: nothing
-    // around it moves. Gone once it ran, and never in reduced motion. The field's width: the card's.
-    const fx = this.wave;
-    const fieldW = Math.min(this.width, COLUMN) - 22;
-    const waves = fx ? wave(t, this.m, fx.id, fx.category, fieldW, { dark }) : [];
-    const railEl = fx?.rail ? rail(t, this.m, `${fx.id}-rail`, FLOW_STEPS.length, { dark }) : null;
-    if (fx && !waves.length && !railEl) this.wave = null;
     const card = v_flex().id("kc-card").w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
       .bg(dark ? ink(t, 0.03) : t.background).when(!dark, (el) => el.shadow_sm())
       // Cmd+V in the field comes here first (init's binding, « KtComposer > Input »): pasteKey.
       .key_context("KtComposer").on_action("kt_chat_paste", (_e, cx) => this.pasteKey(cx))
       .when(Boolean(drafts), (el) => el.child(drafts))
-      .child(div().id("kc-field").relative().overflow_hidden().px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
-        .children(waves)
-        .when(Boolean(railEl), (el) => el.child(railEl))
-        // A piece the field holds as a token (#81, CHIPS): its chip (categories.js pieceChip), as #93's above the text.
+      .child(div().id("kc-field").px(12).pt(10).pb(14).cursor_text().on_click(() => this.composer.focus())
+        // A picked word the field holds as a token (#81 fx3, CHIPS): marked by its category (menu.js tokenMark).
         .child(Textarea.new(this.composer).w_full().text_size(14).text_color(ink(t, 1))
-          .token((ctx) => pieceChip(t, this.cpl.pieces.get(ctx.token.id) ?? { kind: "file", category: "file", label: ctx.token.label ?? ctx.token.text }, { dark })
-            .h(Math.min(22, ctx.line_height || 22)))))
+          .token((ctx) => tokenMark(t, this.cpl.pieces.get(ctx.token.id) ?? { kind: "file", category: "file", text: ctx.token.text }, ctx,
+            { id: `kc-tk-${ctx.token.id}`, dark, fx: CHIP_FX, reduced: Boolean(this.m?.reduced) }))))
       .child(h_flex().px(8).pb(10).gap(4).items_center()
         .child(this.iconBtn(t, "kc-attach", this.picking || this.pasting ? SPIN : I("plus"), tr("attach.pick"), (cx) => this.pick(cx), 26))
         .when(Boolean(model), (el) => el.child(toolPill(CLAUDE_ICON, [[model, 1], ...(effort ? [[effort, 0.5]] : [])])))

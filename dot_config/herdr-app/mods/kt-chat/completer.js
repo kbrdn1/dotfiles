@@ -1,8 +1,8 @@
 // completer.js (kt-chat, #81 L4): the completion menu's state, pure, over complete.js and
 // categories.js (kt-keys' copies): which rows show for the text and the cursor, the active row, what a
-// pick writes into the field, and a command typed by hand that becomes a piece. Checked by
-// completer.check.mjs. main.js keeps the state, calls these on `change` (never in render) and draws
-// menu.js.
+// pick writes into the field, and a command typed by hand once it is complete and known (fx3: it becomes
+// the same marked word as a pick). Checked by completer.check.mjs. main.js keeps the state, calls these
+// on `change` (never in render) and draws menu.js.
 import { tokenAt, rank, commandPiece, toolPiece, toolOf } from "./complete.js";
 import { ORDER } from "./categories.js";
 
@@ -69,12 +69,10 @@ export function pick(menu, row, { mention = (p) => `@${p}` } = {}) {
   return { start, end, text: `${text} `, piece: { id: `file:${row.path}`, kind: "file", category: "file", label: base(row.path), text, source: "complete" }, reopen: false };
 }
 
-/** A command typed by hand at the head of the message, then a space: its piece (and the wave), or null. */
+/** A command typed by hand at the head of the message, complete (a space after it) and known: its
+ *  piece, or null (still being typed, or a word the catalog doesn't know: it stays text). */
 export function typed(text, commands) {
   const m = /^\s*\/(\S+)\s/.exec(String(text ?? ""));
   const item = m && (commands ?? []).find((x) => x.name === m[1]);
   return item ? { start: m.index + m[0].indexOf("/"), piece: commandPiece(item) } : null;
 }
-
-/** The wave a pick (or a typed command) starts: its category's hue, and the rail for a workflow. */
-export const effectOf = (piece) => (piece ? { category: piece.category, rail: piece.category === "workflow" } : { category: "file", rail: false });

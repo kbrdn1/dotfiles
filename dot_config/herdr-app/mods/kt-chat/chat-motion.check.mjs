@@ -8,7 +8,8 @@
 //   is followed; drawn again later, it lands as it is;
 // - the background panel comes in as a popup and fades out before it goes;
 // - #81: the completion menu, a popup over the transcript (in and out on its opacity, never a height),
-//   a pick's wave under the text in the field's box, Shift+Enter adding no line break of its own, and
+//   a pick, or a known command typed by hand, becoming a marked word (a token, nothing else in the field;
+//   an unknown word stays text), Shift+Enter adding no line break of its own, and
 //   the keys route's Enter only on a prompt that reads the command; « En bas » floating on the
 //   transcript's bottom edge; the kbrdn accent on the send button and the timeline's mark;
 // - reduced motion: none of it, no transition anywhere (fold, turn, panel, menu).
@@ -86,6 +87,8 @@ const { index } = await import("./chat-index.ts");
 const { motionState, frame } = await import("./motion.js");
 const { mdState } = await import("./markdown.js");
 const { Compactor } = await import("./compact.js");
+const { FRESH } = await import("./menu.js");
+const { menuFor } = await import("./completer.js");
 
 // The tree under an element, flat; a node's calls by name.
 const flat = (p, out = []) => { const n = p?.__node; if (!n) return out; out.push(n); for (const k of n.kids) flat(k, out); return out; };
@@ -350,8 +353,9 @@ const ten = ["/d/logo.png", "/d/capture.png", "/d/photo.jpg", "/d/Compte rendu r
 // transcript's box, never in the composer): in and out on its opacity, ONE timer after it faded out;
 // nothing in it or in the composer moves on a height (the transcript would resize each frame) ──
 const field = (text) => {
-  const f = { text, wrote: [], value: () => f.text, selected_range: () => ({ start: f.text.length, end: f.text.length }), content: () => ({ text: f.text, tokens: [] }),
-    replace_range_with_token(r, tk) { f.wrote.push(["token", r, tk.text]); }, set_selected_range(r) { f.wrote.push(["select", r]); }, replace(s) { f.wrote.push(["replace", s]); },
+  const f = { text, wrote: [], tokens: [], value: () => f.text, selected_range: () => ({ start: f.text.length, end: f.text.length }), content: () => ({ text: f.text, tokens: f.tokens }),
+    replace_range_with_token(r, tk) { f.wrote.push(["token", r, tk.text]); f.tokens.push({ range: { start: r.start, end: r.start + tk.text.length }, token: tk }); },
+    set_selected_range(r) { f.wrote.push(["select", r]); }, replace(s) { f.wrote.push(["replace", s]); },
     focus() {}, set_value() {}, set_auto_grow() {}, on() {} };
   return f;
 };
@@ -364,7 +368,6 @@ const completing = (c, text) => {
     at: Date.now(), loading: false, menu: null, last: null, gen: 0, dismissed: null, typedAt: null, route: null, pieces: new Map(), n: 0 };
   c.menuScroll = { scroll_to_item() {} };
   c.vh = 600;
-  c.wave = null;
   return c;
 };
 const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some(([v]) => v === `kc-menu-${gen}`));
@@ -400,26 +403,27 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.ok(!transitions(flat(c.composerView(T, { agent }, null, cx()))).includes("height"), "the composer: no height transition");
 }
 {
-  // A pick: the token's range becomes the command and a space (plain text while CHIPS waits for the
-  // capture slot), and its wave under the text, in the field's box that clips (a workflow: its rail
-  // too); still no height moving in the composer.
+  // A pick (fx3, « mot bloc marqué »): the token's range becomes a token of its own id per pick, then a
+  // space; the piece keeps its pick's time; ONE timer draws it still after FRESH. The field holds only
+  // the text (no layer in it), and nothing moves on a height.
   const c = completing(chat(), "/go");
   const x = cx();
   c.complete(x);
   c.accept(0, x);
-  assert.deepEqual(c.composer.wrote, [["select", { start: 0, end: 3 }], ["replace", "/me:goal "]], "/go becomes « /me:goal »");
-  assert.deepEqual([c.wave.category, c.wave.rail], ["workflow", true], "a workflow: the wave, then its rail");
+  assert.deepEqual(c.composer.wrote, [["token", { start: 0, end: 3 }, "/me:goal"], ["replace", " "]], "/go becomes the token « /me:goal », then a space");
+  const [tid, piece] = [...c.cpl.pieces][0];
+  assert.deepEqual([tid, piece.category, piece.shown, typeof piece.at], ["cmd:me:goal#1", "workflow", false, "number"], "its own id per pick, its time");
+  assert.deepEqual(x.timers.map(([ms]) => ms), [FRESH + 40], "ONE timer to draw it still");
   Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false) });
   const nodes = flat(c.composerView(T, { agent: { address: "t9", status: "idle", program: "claude" } }, null, cx()));
   const box = nodes.find((n) => callsOf(n, "id").some(([v]) => v === "kc-field"));
-  const kids = box.kids.map((k) => k.__node);
-  assert.deepEqual(kids.slice(0, 4).map((n) => callsOf(n, "id").at(-1)?.[0]), ["kc-wave-1-0", "kc-wave-1-1", "kc-wave-1-2", "kc-wave-1-rail"], "under the text: drawn first");
-  assert.equal(kids.at(-1).kind, "Textarea.new", "the text over them");
-  assert.ok(callsOf(box, "overflow_hidden").length && callsOf(box, "relative").length, "the field's box clips them");
+  assert.deepEqual(box.kids.map((k) => k.__node.kind), ["Textarea.new"], "the field holds the text only");
+  assert.ok(callsOf(box.kids[0].__node, "token").length, "its words drawn by tokenMark");
   assert.ok(!transitions(nodes).includes("height"), "no height moves");
-  // The pick's own change (the field now reads "/me:goal "): no second wave.
-  typeIn(c, "/me:goal ");
-  assert.equal(c.wave.id, "kc-wave-1", "one pick, one wave");
+  // A second pick of the same command: another id (two tokens never share one).
+  c.cpl.menu = c.cpl.last = menuFor("/go", 3, c.cpl.catalog);
+  c.accept(0, cx());
+  assert.deepEqual([...c.cpl.pieces.keys()], ["cmd:me:goal#1", "cmd:me:goal#2"]);
 }
 {
   // #93, Cmd+V in the field: the composer's card carries the binding's context and takes its action
@@ -496,15 +500,32 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.deepEqual([c.hoverPiece, k2.pressed, k2.stopped], [null, true, undefined], "no card: not ours");
 }
 {
-  // A command typed by hand, then a space: its piece and its wave, once (typing on starts none).
+  // A command typed by hand (fx3, Kylian: « pour l'écrit à la main, aussi faire l'effet »): nothing while
+  // it's being typed; complete (the space after it) and known, the same marked word as a pick, once, the
+  // cursor put back after its space; typing on makes no second one; an unknown word stays text.
   const c = completing(chat(), "");
-  typeIn(c, "/me:goal");
-  assert.equal(c.wave, null, "no space yet");
-  assert.equal(typeIn(c, "/me:goal "), true, "a redraw for the wave");
-  assert.deepEqual([c.wave?.id, c.wave?.category], ["kc-wave-1", "workflow"]);
-  typeIn(c, "/me:goal sprint");
-  assert.equal(c.wave.id, "kc-wave-1", "typing on: the same wave");
+  const x = cx();
+  typeIn(c, "/me:g", x);
+  typeIn(c, "/me:goal", x);
+  assert.deepEqual([c.composer.wrote, c.cpl.pieces.size], [[], 0], "still being typed: nothing");
+  assert.equal(typeIn(c, "/me:goal ", x), true, "complete and known: a redraw");
+  assert.deepEqual(c.composer.wrote, [["token", { start: 0, end: 8 }, "/me:goal"], ["select", { start: 9, end: 9 }]], "the token, then the cursor after its space");
+  const [tid, piece] = [...c.cpl.pieces][0];
+  const stills = () => x.timers.filter(([ms]) => ms === FRESH + 40).length; // (the menu's own fade-out timer aside)
+  assert.deepEqual([tid, piece.category, piece.shown, typeof piece.at, stills()], ["cmd:me:goal#1", "workflow", false, "number", 1], "fresh: its one motion, ONE timer");
+  typeIn(c, "/me:goal s", x);
+  typeIn(c, "/me:goal sprint", x);
+  assert.deepEqual([c.composer.wrote.length, c.cpl.pieces.size, stills()], [2, 1, 1], "typing on: no second word, no second motion");
   assert.equal(c.cpl.route, "invoquée par l'agent", "the route line: a skill goes to the agent");
+  // Unknown: text. Picked from the menu, then its space read again: no second word.
+  const u = completing(chat(), "");
+  typeIn(u, "/nope ");
+  assert.deepEqual([u.composer.wrote, u.cpl.pieces.size], [[], 0], "an unknown word stays text");
+  const p = completing(chat(), "/go");
+  p.complete(cx());
+  p.accept(0, cx());
+  typeIn(p, "/me:goal ");
+  assert.equal(p.cpl.pieces.size, 1, "picked, then its own change: one word");
 }
 {
   // Reduced motion: it shows and goes at once, no transition, no timer.
@@ -830,7 +851,7 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.deepEqual([c.composer.wrote, Boolean(c.sending)], [[], false], "Shift+Enter: no second line break, nothing sent");
   typeIn(c, "/go");
   c.submitted({}, cx());
-  assert.deepEqual(c.composer.wrote.slice(-2), [["select", { start: 0, end: 3 }], ["replace", "/me:goal "]], "Enter on the open menu: its row");
+  assert.deepEqual(c.composer.wrote.slice(-2), [["token", { start: 0, end: 3 }, "/me:goal"], ["replace", " "]], "Enter on the open menu: its row");
 }
 
 // ── The kbrdn theme's accent (Kylian, 2026-11-20): the send button, ready, and the timeline's mark where the
@@ -856,6 +877,23 @@ for (const th of KBRDN) {
   const bars = flat(c.rail(th)).filter((n) => callsOf(n, "id").some(([v]) => /^kc-tlb-/.test(v)));
   const inked = `${th.foreground}ff`;
   assert.deepEqual(bars.map((b) => callsOf(b, "bg").at(-1)[0]), [inked, inked, th.accent], "the current mark: the accent");
+}
+
+// ── The keyboard's turn (Kylian, 2026-11-20): its accent tick (2 × 16, in the column's margin at the turn's
+// top) only while one moves through the turns (cur set), on that turn; the Chat keyed at rest (cur -1, the
+// bottom followed): none, though o / y still act on the last turn; the field or the terminal keyed: none ──
+{
+  const c = chat();
+  Object.assign(c, { width: 700, m: frame(c.motion, false) });
+  const th = KBRDN[0];
+  const ticked = (keyed) => c.turns.map((tn, i) => flat(c.turn(th, cx(), tn, i, keyed)).some((n) => callsOf(n, "left").some(([v]) => v === -14) && callsOf(n, "bg").some(([v]) => v === th.accent)));
+  assert.ok(c.turns.length >= 2, "the fixture has turns to move through");
+  c.cur = -1;
+  assert.deepEqual(ticked(true), c.turns.map(() => false), "keyed, at rest: no tick");
+  c.cur = 1;
+  assert.deepEqual(ticked(true), c.turns.map((_, i) => i === 1), "keyed, cur on the 2nd turn: its tick only");
+  assert.deepEqual(ticked(false), c.turns.map(() => false), "the field or the terminal keyed: none");
+  c.cur = -1;
 }
 
 // ── Reduced motion: none of it ──────────────────────────────────────────────
