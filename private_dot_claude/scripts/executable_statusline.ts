@@ -64,6 +64,14 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
+// ── The usage of the context a call ended on ────────────────────────
+// A call that ran iterations server-side (an advisor consulted mid-call: message, advisor_message,
+// message) sums them in its top-level usage: 552 K + 558 K read showed as 1.1M on a 1M window
+// (2026-11-19). Its context is its last "message" iteration's; the advisor's is another model's.
+function callUsage(u: any): any {
+  return (Array.isArray(u?.iterations) && u.iterations.findLast((x: any) => (x?.type ?? "message") === "message")) || u;
+}
+
 // ── Resolve context usage from JSON input or transcript fallback ─────
 function getContextInfo(data: any): { usedPct: number | null; windowSize: number; usedTokens: number } {
   const cw = data.context_window;
@@ -90,7 +98,7 @@ function getContextInfo(data: any): { usedPct: number | null; windowSize: number
       try {
         const e = JSON.parse(line);
         if (e.isApiErrorMessage || e.isSidechain) continue;
-        const u = e.message?.usage;
+        const u = callUsage(e.message?.usage);
         if (!u) continue;
         contextLength = (u.input_tokens ?? 0) +
           (u.cache_creation_input_tokens ?? 0) +
@@ -236,7 +244,7 @@ function lastUsage(path: string): { u: any; at: number | null; ttl: number } | n
       let e: any;
       try { e = JSON.parse(lines[i]); } catch { continue; }
       if (e.isSidechain || e.isApiErrorMessage || !e.message?.usage) continue;
-      found ??= { u: e.message.usage, at: Date.parse(e.timestamp) || null, ttl: 300 };
+      found ??= { u: callUsage(e.message.usage), at: Date.parse(e.timestamp) || null, ttl: 300 };
       const cc = e.message.usage.cache_creation;
       if (cc?.ephemeral_1h_input_tokens > 0) { found.ttl = 3600; break; }
       if (cc?.ephemeral_5m_input_tokens > 0) break;
