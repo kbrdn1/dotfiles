@@ -3,6 +3,8 @@
 // when more are. Checked by chat-view.check.mjs.
 
 export const isClaude = (a) => a?.program?.key === "claude" || /^claude/.test(a?.app ?? "");
+export const isCodex = (a) => a?.program?.key === "codex" || /^codex/.test(a?.app ?? "");
+export const isReadableAgent = (a) => isClaude(a) || isCodex(a);
 
 /**
  * #81, a word applied in the field (Kylian, 2026-11-20: « des pixels dither très légèrement, en fondu, qui
@@ -62,7 +64,7 @@ export function filesRead(git, list, cap = FILES.CAP) {
 }
 
 /**
- * The Chat's agent: the shown tab's Claude agent, the focused pane's first (when the Chat has the
+ * The Chat's agent: the shown tab's Claude or Codex agent, the focused pane's first (when the Chat has the
  * keyboard, focused().terminal is no longer the agent's, the tab's focused pane still is). Or why
  * there is none: { reason: "noAgent" | "notClaude" (with app) | "remote" (with machine) }.
  */
@@ -71,8 +73,8 @@ export function pickTarget({ focused, agents, panes }) {
   const mine = tab ? agents().filter((a) => a.tab === tab) : [];
   if (!mine.length) return { reason: "noAgent" }; // i18n: tech
   const pane = panes().find((p) => p.tab === tab && p.focused && p.terminal);
-  const claude = mine.filter(isClaude);
-  const a = claude.find((x) => x.address === pane?.terminal) ?? claude[0];
+  const readable = mine.filter(isReadableAgent);
+  const a = readable.find((x) => x.address === pane?.terminal) ?? readable[0];
   if (!a) {
     const o = mine.find((x) => x.address === pane?.terminal) ?? mine[0];
     return { reason: "notClaude", app: o.program?.name ?? o.app ?? "" }; // i18n: tech

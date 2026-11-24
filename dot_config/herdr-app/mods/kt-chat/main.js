@@ -2,10 +2,10 @@
 // Monocode's look (#57, #75). The agent is the shown tab's Claude agent (the focused pane's if it
 // is one): when the Chat has the keyboard, focused().terminal is no longer the agent's.
 //
-// Data: ~/.claude/cache/statusline/herdr-<terminal>.json gives transcript_path, the model and effort
-// (statusline.ts), else its session_id is looked up under ~/.claude/projects. chat-index.ts (bun, by
-// exec) reads the JSONL from a byte and prints the last K turns, trimmed; chat-model.js (pure) makes
-// the turns, their items and folds. render only walks built turns: nothing is parsed or grouped there.
+// Data: Claude Code comes from its statusline transcript_path (or session id). Codex comes from the
+// rollout its live process holds open, with a guarded cwd/start-time fallback after it exits.
+// chat-index.ts or codex-index.ts (bun, by exec) reads JSONL from a byte and prints the same compact
+// entries; chat-model.js makes the turns, their items and folds. render only walks built turns.
 //
 // The look is Monocode Native's (github.com/hardbeat920/monocode, MIT, crates/monocode-gpui at
 // 09d0443), its values read in the code, not by eye (the references are by the constants below and
@@ -36,7 +36,8 @@
 // scroll offset is exposed: the rows report their heights, a wheel event the pointer's place.
 //
 // Live (#55, live()): while this face shows and the agent works, a delta (`--from end`) every TICK
-// ms, plus one at each status change and on coming back on screen; nothing at rest.
+// ms, plus one at each status change and on coming back on screen; nothing at rest, except a shown
+// Codex's rollout rechecked every CODEX_RECHECK_MS (/new, /resume: another file, read in full).
 //
 // The thread's Chat face (#54, back with #86: Kylian wants it in place of the tab's panes, not beside
 // them): the layout's stack thread-body shows this copy (child chat) or the tab's panes (child main).
@@ -55,8 +56,9 @@ import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
 import { decide, decisionButtons } from "./decide.js";
 import { askOf, callId, shownRows } from "./ask.js";
 import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals, compaction } from "./chat-model.js";
+import { resolveCodexLink, shouldPollCodex, CODEX_RECHECK_MS } from "./codex-link.js";
 import {
-  pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep, filesRead, FILES, ditherCells, FIELD_FX,
+  pickTarget, isCodex, tallyText, childOf, chatShown, takesFocus, liveStep, filesRead, FILES, ditherCells, FIELD_FX,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
   foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
@@ -227,6 +229,7 @@ export default class Chat extends View {
     this.builtLive = false;
     this.queued = []; // pendingQueue() of a live turn
     this.ticker = null; // the live tail's timer, only while the face shows and the agent works
+    this.codexPoll = null; // a shown Codex at rest: its rollout rechecked (/new, /resume), shouldPollCodex
     this.wasShown = false;
     this.lastStatus = undefined;
     this.err = null; // { code, path?, why? }: why the transcript isn't shown
@@ -234,6 +237,7 @@ export default class Chat extends View {
     this.loadedFor = undefined;
     this.line = null; // the agent's status line (model, effort, ctx_pct), read with its transcript_path
     this.fixed = props()?.file ?? null; // a JSONL shown instead of the agent's
+    this.codexLinks = new Map(); // terminal -> bounded rollout link (PID fingerprint + last check)
     // ctrl-b space (kt-head's view.js) asks for the keyboard through this shared stamp (a time). One
     // older than 2 s when this copy starts is not a request; a fresh one is (the first ctrl-b space
     // starts this copy: its stamp is written just before).
@@ -447,7 +451,24 @@ export default class Chat extends View {
     return tg.agent && !tg.reason ? tg.agent.address : null;
   }
 
-  async locate(address) {
+  async locate(address, agent = null, force = false) {
+    if (isCodex(agent)) {
+      const terminal = terminals().find((x) => x.address === address);
+      const link = await resolveCodexLink(this.codexLinks, address, terminal, async ({ pid, createdMs, cwd }) => {
+        if (!terminal) return null;
+        const r = await exec(`${home()}/.nix-profile/bin/bun`, [
+          `${appHome()}/mods/kt-chat/codex-index.ts`, "--resolve",
+          "--pid", String(pid), "--created-ms", String(createdMs), "--cwd", cwd,
+        ], { timeout: 20000 }).catch(() => null);
+        try {
+          return JSON.parse(r?.stdout || "null");
+        } catch {
+          return null;
+        }
+      }, { force });
+      this.line = { model: agent?.program?.name ?? "Codex", session_id: link.session, transcript_path: link.path };
+      return link.path;
+    }
     let line = null;
     try {
       const s = await readTextFile(`${home()}/.claude/cache/statusline/herdr-${address}.json`);
@@ -465,7 +486,9 @@ export default class Chat extends View {
   }
 
   async index(path, extra = [], lim = {}) {
-    const args = [`${appHome()}/mods/kt-chat/chat-index.ts`, path, "--last-turns", String(lim.turns ?? K), "--budget", String(lim.budget ?? BUDGET), "--max-entries", String(lim.entries ?? MAX_ENTRIES), ...extra];
+    const codex = /\/\.codex\/sessions\/\d{4}\/\d{2}\/\d{2}\/rollout-[^/]+\.jsonl$/.test(path);
+    const script = codex ? "codex-index.ts" : "chat-index.ts";
+    const args = [`${appHome()}/mods/kt-chat/${script}`, path, "--last-turns", String(lim.turns ?? K), "--budget", String(lim.budget ?? BUDGET), "--max-entries", String(lim.entries ?? MAX_ENTRIES), ...extra];
     const r = await exec(`${home()}/.nix-profile/bin/bun`, args, { timeout: 60000 });
     if (r.code !== 0) throw new Error((r.stderr || r.stdout || `exit ${r.code}`).trim().split("\n").slice(-3).join(" "));
     return JSON.parse(r.stdout);
@@ -495,7 +518,7 @@ export default class Chat extends View {
           this.turns = [];
           this.err = null;
         } else {
-          const path = this.fixed ?? (await this.locate(want));
+          const path = this.fixed ?? (await this.locate(want, tg.agent, !delta));
           if (delta && path && this.state?.path === path && this.readFor === want) {
             changed = await this.tail(path, live);
           } else {
@@ -3933,6 +3956,30 @@ export default class Chat extends View {
     } else if (!tick && this.ticker) {
       this.ticker.cancel();
       this.ticker = null;
+    }
+    // A shown Codex at rest (#53): its rollout rechecked every CODEX_RECHECK_MS, forced (a tick just
+    // under the link's lease would skip it), and a full read only when it changed (/new, /resume). The
+    // timer stops itself as the ticker does.
+    const poll = shouldPollCodex({ shown, fixed: this.fixed, codex: isCodex(tg.agent), status });
+    if (poll && !this.codexPoll) {
+      this.codexPoll = cx.timer.every(CODEX_RECHECK_MS, (cx) => {
+        const tg = target();
+        const want = this.wanted(tg);
+        const shown = this.isShown();
+        if (want == null || want !== this.loadedFor || !shouldPollCodex({ shown, fixed: this.fixed, codex: isCodex(tg.agent), status: tg.agent?.status ?? null })) {
+          this.codexPoll?.cancel();
+          this.codexPoll = null;
+          this.wasShown = shown;
+          return;
+        }
+        cx.spawn(async (cx) => {
+          const path = await this.locate(want, tg.agent, true);
+          if (want === this.loadedFor && path !== (this.state?.path ?? null)) this.load(cx);
+        });
+      });
+    } else if (!poll && this.codexPoll) {
+      this.codexPoll.cancel();
+      this.codexPoll = null;
     }
   }
 

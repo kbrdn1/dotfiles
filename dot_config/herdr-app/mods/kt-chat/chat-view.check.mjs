@@ -9,7 +9,8 @@ import strings from "./strings.js";
 
 // ── The agent ───────────────────────────────────────────────────────────────
 const claude = (address, tab) => ({ address, tab, program: { key: "claude", name: "Claude Code" }, app: "claude-code" });
-const other = (address, tab) => ({ address, tab, program: { key: "codex", name: "Codex" }, app: "codex" });
+const codex = (address, tab) => ({ address, tab, program: { key: "codex", name: "Codex" }, app: "codex" });
+const other = (address, tab) => ({ address, tab, program: { key: "pi", name: "Pi" }, app: "pi" });
 const env = (agents, panes, tab = "tab-1") => ({ focused: () => ({ tab }), agents: () => agents, panes: () => panes });
 
 assert.deepEqual(pickTarget(env([], [])), { reason: "noAgent" });
@@ -20,9 +21,10 @@ const two = [claude("t1", "tab-1"), claude("t2", "tab-1")];
 assert.equal(pickTarget(env(two, [{ tab: "tab-1", terminal: "t2", focused: true }])).agent.address, "t2");
 assert.equal(pickTarget(env(two, [{ tab: "tab-1", terminal: "t2", focused: false }])).agent.address, "t1");
 assert.equal(pickTarget(env(two, [{ tab: "tab-2", terminal: "t2", focused: true }])).agent.address, "t1", "a focused pane of another tab doesn't count");
-// A Claude agent wins over a focused Codex one; no Claude at all says which program it is.
-assert.equal(pickTarget(env([other("t1", "tab-1"), claude("t2", "tab-1")], [{ tab: "tab-1", terminal: "t1", focused: true }])).agent.address, "t2");
-assert.deepEqual(pickTarget(env([other("t1", "tab-1")], [])), { reason: "notClaude", app: "Codex" });
+// Claude and Codex are readable: the focused pane wins. An unsupported agent still says which one.
+assert.equal(pickTarget(env([codex("t1", "tab-1"), claude("t2", "tab-1")], [{ tab: "tab-1", terminal: "t1", focused: true }])).agent.address, "t1");
+assert.equal(pickTarget(env([codex("t1", "tab-1")], [])).agent.address, "t1");
+assert.deepEqual(pickTarget(env([other("t3", "tab-1")], [])), { reason: "notClaude", app: "Pi" });
 // Claude on another machine.
 const remote = pickTarget(env([claude("vps/t4", "tab-1")], []));
 assert.equal(remote.reason, "remote");
