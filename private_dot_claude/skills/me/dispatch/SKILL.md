@@ -197,6 +197,26 @@ Au retour :
    `Claude-Session`. Écrire le message (Gitmoji + Conventional, trailer compris).
 6. Une fois l'issue mergée : `hc kill i<N>` puis `hc rm i<N>`, et ses helpers s'il en reste.
 
+## 5b. Contexte et compaction
+
+Un résumé de compaction perd ce qui compte le plus pour un lead : qui fait quoi, quels hashes, ce qui est posé sans
+commit. La règle met la vérité dans un fichier, pas dans le résumé.
+
+- **Note de reprise du lead** : un fichier tenu à jour à chaque fin de lot (workers avec nom, adresse, brief et état ;
+  hashes commités ; posé non commité avec les fichiers exacts ; règles en vigueur ; ce qui attend l'utilisateur ;
+  étape en cours et suivante). Le lier une fois : `ln -sfn <note> ~/.claude/handoff/"$CLAUDE_CODE_SESSION_ID".md`.
+- **Le hook fait le reste** (`~/.claude/hooks/handoff.sh`, déclaré dans `settings.json`) :
+  - PreCompact : photographie les enfants hc du terminal (`<session_id>.snapshot.md`) et sort les consignes du résumé ;
+  - SessionStart `compact|resume` : réinjecte la note et la photo. Sans note pour la session, il ne fait rien.
+- **Quand compacter le lead** : entre deux lots, jamais pendant une vérification, une pose ou un commit en vol. Note
+  d'abord, puis `/compact garde la table des workers, les hashes, le posé non commité, les décisions en attente,
+  l'étape en cours`. L'auto-compaction est couverte par le même hook.
+- **Les workers ne compactent pas.** À chaque retour, lire `jq .ctx_pct ~/.claude/cache/statusline/herdr-<adresse>.json`.
+  À 60 % ou plus : lui demander de finir le lot en cours, d'écrire `NOTES.md` (état exact) et de s'arrêter ; puis
+  `hc kill` + `hc rm` (transcript gardé) et le relancer à neuf avec « lis ton BRIEF.md et ton NOTES.md ». Un worker
+  compacté malgré tout relit son brief et ses notes avant toute action (règle à mettre dans son brief).
+- **Worker Codex** : même règle, sa compaction interne n'est pas une mémoire fiable ; relance à neuf depuis brief + notes.
+
 ## Repli séquentiel (hors hc)
 
 Même état des lieux (étape 1), puis le lead fait le travail lui-même, un élément après l'autre, dans l'ordre du plan.

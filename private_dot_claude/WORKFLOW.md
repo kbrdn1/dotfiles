@@ -308,6 +308,14 @@ hc ls --label sprint=<slug>       # tout le chantier ; hc attach i51 pour prendr
 Vérifié le 2026-11-18 : sans `env PATH="$PATH"`, les hooks échouent (pas de node) ; une tâche passée en argument de
 `claude` fait revenir `hc wait` avant le tour ; sans `--outlive-parent`, un redémarrage du lead tue les workers.
 
+**Contexte et compaction** (2026-11-25, après une semaine où tous les workers sont tombés) : le lead tient une note
+de reprise (`~/.claude/handoff/<session_id>.md`, un lien vers sa note) et la met à jour à chaque fin de lot ; le
+hook `~/.claude/hooks/handoff.sh` dit au résumé quoi garder (PreCompact, son stdout sert de consignes) et réinjecte
+la note après une compaction ou une reprise (SessionStart `compact|resume`). Le lead compacte entre deux lots, jamais
+en pleine vérification. Les workers ne compactent pas : à 60 % de contexte (`ctx_pct` dans
+`~/.claude/cache/statusline/herdr-<adresse>.json`), ils finissent le lot, écrivent `NOTES.md` et s'arrêtent ; le lead
+les relance à neuf depuis brief + notes (`hc kill` + `hc rm`, transcript gardé). Pareil pour un worker Codex.
+
 ```mermaid
 flowchart TD
     L["Lead (session Herdr)<br/>état des lieux · worktrees"] -->|hc run + hc send| W1["worker i51<br/>worktree feat-51"]

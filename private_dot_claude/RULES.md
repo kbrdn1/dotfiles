@@ -54,6 +54,13 @@ Conventions :
 
 ---
 
+## Contexte & compaction (orchestration)
+- 🟡 **Le lead tient une note de reprise**, mise à jour à chaque fin de lot : workers (nom, adresse, brief, état), hashes commités, posé non commité (fichiers exacts), règles en vigueur, ce qui attend l'utilisateur, étape en cours. C'est elle qui fait foi, pas le résumé d'une compaction. Liée par `~/.claude/handoff/<session_id>.md` : le hook `handoff.sh` donne au résumé ce qu'il doit garder (PreCompact) et réinjecte la note après une compaction ou une reprise (SessionStart).
+- 🟡 **Compaction du lead entre deux lots seulement**, jamais pendant une vérification ni un commit en vol ; la note d'abord, puis `/compact <ce qu'il faut garder>`.
+- 🟡 **Les workers ne compactent pas** : à 60 % de contexte (`ctx_pct` de `~/.claude/cache/statusline/herdr-<adresse>.json`), fin du lot en cours, `NOTES.md` à jour, arrêt ; le lead le relance à neuf depuis son brief et ses notes. Détail : `/me:dispatch`.
+
+---
+
 ## Qualité & exécution
 - 🟡 **Complétude** : si je commence une implémentation, je la termine en état fonctionnel. Pas de TODO sur du code cœur, pas de mock/stub, pas de `not implemented`. Code réel uniquement.
 - 🟡 **Scope** : construire **uniquement ce qui est demandé** (MVP d'abord, YAGNI). Pas de features spéculatives ni de bloat non demandé.
