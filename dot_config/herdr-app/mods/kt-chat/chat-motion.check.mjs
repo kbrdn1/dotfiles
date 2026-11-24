@@ -990,13 +990,10 @@ for (const th of KBRDN) {
   assert.deepEqual([callsOf(p.tint, "opacity").at(-1), callsOf(p.cells[0], "opacity").at(-1)], [[0], [0]], "after the hold: back to normal");
   c.fieldFx = null;
   assert.deepEqual(parts().cells, [], "then gone");
-  // A keystroke's flicker (Kylian: « un léger scintillement de quelques pixels à chaque frappe »): its few
-  // cells drawn lit, fading out from their first layout.
+  // No effect per keystroke (Kylian, 2026-11-25: the flicker re-rendered the whole Chat and held up fast typing
+  // and deleting): the field draws no flicker cells, even with a keystroke's state left over.
   c.keyFx = { n: 7, at: 0, out: false };
-  const flick = () => view().filter((x) => callsOf(x, "id").some(([v]) => String(v).startsWith("kc-fl-7-")));
-  assert.deepEqual(flick().map((x) => callsOf(x, "opacity").at(-1)[0]), Array(FIELD_FX.FLICK_N).fill(1), "a few cells, lit");
-  callsOf(view().find((x) => callsOf(x, "id").some(([v]) => v === "kc-card-flick-7")), "on_size_change").at(-1)[0]({}, { notify() {} });
-  assert.deepEqual(flick().map((x) => [callsOf(x, "opacity").at(-1)[0], callsOf(x, "transition").at(-1)[0]]), Array(FIELD_FX.FLICK_N).fill([0, "opacity"]), "then fading out");
+  assert.deepEqual(view().filter((x) => callsOf(x, "id").some(([v]) => String(v).startsWith("kc-fl-") || v === "kc-card-flick-7")), [], "no flicker in the field");
   const z = completing(chat({ reduced: true }), "/go");
   Object.assign(z, { m: frame(z.motion, true) });
   z.complete(cx());

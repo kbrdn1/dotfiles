@@ -56,7 +56,7 @@ import { decide, decisionButtons } from "./decide.js";
 import { askOf, callId, shownRows } from "./ask.js";
 import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals, compaction } from "./chat-model.js";
 import {
-  pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep, filesRead, FILES, ditherCells, flickerCells, FIELD_FX,
+  pickTarget, tallyText, childOf, chatShown, takesFocus, liveStep, filesRead, FILES, ditherCells, FIELD_FX,
   projectOf, bgSettings, bgLayers, modelName, workedFor, ink, OPACITY, CELL_SIZES, EFFECTS, HAZE_DARK, hazeRows, orphans, clampText,
   foldMd, noticeHead, veilRects, VEIL,
 } from "./chat-view.js";
@@ -372,13 +372,9 @@ export default class Chat extends View {
       this.draft = this.composer.value();
       if (this.sendErr && this.sendErr.why !== "blocked") this.sendErr = null;
       const moved = this.complete(cx);
-      // A keystroke's flicker (Kylian, 2026-11-20; chat-view.js flickerCells): a few dither cells light and
-      // fade, at most every FIELD_FX.EVERY ms (each one costs two renders of the Chat); not for a word going
-      // in as a token (quiet), not in reduced motion.
-      const now = Date.now();
-      const flick = CHIP_FX && !this.m?.reduced && !this.cpl.quiet && now - (this.keyFx?.at ?? 0) >= FIELD_FX.EVERY;
-      if (flick) this.keyFx = { n: (this.keyFx?.n ?? 0) + 1, at: now, out: false };
-      if (flick || moved || had !== Boolean(this.draft.trim())) cx.notify();
+      // No effect per keystroke (Kylian, 2026-11-25): each flicker re-rendered the whole Chat twice and held up
+      // fast typing and deleting. A keystroke redraws only when the menu or the empty state changes.
+      if (moved || had !== Boolean(this.draft.trim())) cx.notify();
     });
     on("submit", (e, cx) => this.submitted(e, cx));
     on("focus", (_e, cx) => {
@@ -3546,16 +3542,7 @@ export default class Chat extends View {
         .children(ditherCells().map((p, i) => div().id(`kc-fx-${fx.id}-${i}`).absolute().left(p.x).top(p.y).size(FIELD_FX.CELL).bg(alpha(hue, dark ? "40" : "33"))
           .opacity(lit ? 1 : 0).transition("opacity", { duration: lit ? FIELD_FX.IN : FIELD_FX.OUT, delay: Math.round(p.d * FIELD_FX.WAVE), easing: "ease-out" }))),
     ];
-    // The keystroke's flicker (the change handler's keyFx): its few cells drawn lit, then, at their first
-    // layout, fading out (no timer: the first layout is the cue).
-    const kf = this.keyFx;
-    if (kf) {
-      fxEls.push(div().id(`kc-card-flick-${kf.n}`).absolute().top(0).left(0).w(FIELD_FX.W).h(FIELD_FX.H)
-        .on_size_change((_size, cx) => { if (!kf.out) { kf.out = true; cx.notify(); } })
-        .children(flickerCells(kf.n).map((p, i) => div().id(`kc-fl-${kf.n}-${i}`).absolute().left(p.x).top(p.y).size(FIELD_FX.CELL)
-          .bg(alpha(t.accent, dark ? "4d" : "40")).opacity(kf.out ? 0 : 1).transition("opacity", { duration: FIELD_FX.FLICK, easing: "ease-out" }))));
-    }
-    const card = v_flex().id("kc-card").relative().w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
+    const card =v_flex().id("kc-card").relative().w_full().rounded(12).border(1).border_color(ink(t, this.typing ? 0.2 : 0.1))
       .bg(dark ? ink(t, 0.03) : t.background).when(!dark, (el) => el.shadow_sm())
       .children(fxEls)
       // Cmd+V in the field comes here first (init's binding, « KtComposer > Input »): pasteKey. Tab and the
