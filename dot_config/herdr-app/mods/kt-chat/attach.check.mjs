@@ -1,7 +1,7 @@
 // bun attach.check.mjs: the Chat's draft attachments (#93), with made-up paths: the list, what goes to
 // the agent, the paste and chooser commands, « Citer ».
 import assert from "node:assert/strict";
-import { DRAFT_MAX, PASTE_KEPT, add, copyArgs, draftItem, isPasteName, mayHoldFiles, mentionText, mentionsOf, pasteArgs, pasteChoice, pasteName, pasteSweep, pasted, pickArgs, picked, plainOf, promptOf, quoteOf, remove } from "./attach.js";
+import { DRAFT_MAX, PASTE_KEPT, add, copyArgs, draftItem, isPasteName, mentionText, mentionsOf, pasteArgs, pasteChoice, pasteName, pasteSweep, pasted, pickArgs, picked, plainOf, promptOf, quoteOf, remove } from "./attach.js";
 
 // A piece (the shape #81 shares): what shows, exactly what goes, its att-model kind for the viewer.
 assert.deepEqual(draftItem("/p/cap.png", "drop"), {
@@ -55,9 +55,6 @@ assert.deepEqual(pasteChoice("un\r\ndeux\rtrois", { none: true }), { text: "un\n
 assert.deepEqual(pasteChoice("garde-le", { failed: true }), { text: "garde-le" }, "the read failing never loses a text");
 assert.deepEqual(pasteChoice("", { none: true }), { other: true });
 assert.deepEqual(pasteChoice(undefined, null), { other: true });
-// Only a text that may come with files waits for their read: gpui gives a copied file as its path.
-assert.ok(mayHoldFiles("/p/a b.pdf/p/c.csv") && mayHoldFiles("/tmp/build.log"));
-assert.ok(!mayHoldFiles("bonjour") && !mayHoldFiles("a b.pdf\rc.csv") && !mayHoldFiles(" /p/x") && !mayHoldFiles(undefined));
 // A piece copied as a file: its URL alone, on a private pasteboard here (never Kylian's), read back.
 assert.deepEqual(copyArgs("/p/x.pdf").slice(-1), ["/p/x.pdf"]);
 const board = `kt-chat-check-${process.pid}`;

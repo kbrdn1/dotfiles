@@ -428,8 +428,10 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
 }
 {
   // #93, Cmd+V in the field: the composer's card carries the binding's context and takes its action
-  // (pasteKey, ahead of the field's own paste). A Finder copy (its names as text, joined by \r: probed)
-  // joins its files and types nothing; a text goes in as typed; no text at all: paste()'s way.
+  // (pasteKey, ahead of the field's own paste). The pasteboard says whether files came, never the text's
+  // shape: a Finder copy's text is its names (one alone: no « / », no \r; two: joined by \r; probed in the
+  // app on 2026-11-25), a card copied by Cmd+C its path. Files join and nothing is typed; a text goes in
+  // as typed; no text at all: paste()'s way.
   const c = completing(chat(), "");
   Object.assign(c, { width: 700, handle: { is_focused: () => false }, runner: null, m: frame(c.motion, false) });
   const card = flat(c.composerView(T, { agent: { address: "t9", status: "idle", program: "claude" } }, null, cx())).find((n) => callsOf(n, "id").some(([v]) => v === "kc-card"));
@@ -448,19 +450,24 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
     return asked;
   };
   live.checking = false;
-  // gpui gives a Finder copy as its paths (Kylian's capture): the files are read, joined, nothing typed.
+  // One file copied in the Finder: its name alone (Kylian, 2026-11-25: the name was typed, nothing joined).
+  assert.deepEqual(await run("a b.pdf", "files\n/p/a b.pdf\n"), ["files"], "a name: the pasteboard is asked");
+  // Two: their names joined by \r. A card copied by Cmd+C: its path.
+  assert.deepEqual(await run("a b.pdf\rc.csv", "files\n/p/a b.pdf\n/p/c.csv\n"), ["files"]);
+  assert.deepEqual(await run("/d/Devis client.pdf", "files\n/d/Devis client.pdf\n"), ["files"]);
   assert.deepEqual(await run("/p/a b.pdf/p/c.csv", "files\n/p/a b.pdf\n/p/c.csv\n"), ["files"], "the files only are read");
-  // A text that can't hold files: in at once, no osascript (the 60 to 120 ms stay out of a plain paste).
-  assert.deepEqual(await run("un\r\ndeux", "files\n/p/never.pdf\n"), [], "a plain text: nothing read");
-  // A text starting with « / » with no file behind it (a path typed somewhere): read, then typed.
+  // A text with no file behind it: read, then typed (\r\n as \n), a path as well.
+  assert.deepEqual(await run("un\r\ndeux", "none\n"), ["files"]);
   assert.deepEqual(await run("/tmp/build.log", "none\n"), ["files"]);
   assert.deepEqual(await run(undefined, ""), [], "no text: nothing read here");
   // The host refusing the read: the files are still asked for; none, it says so and types nothing.
   assert.deepEqual(await run(() => { throw new Error("not granted"); }, "none\n"), ["files"]);
   live.checking = true;
   execFake = async () => ({ code: 0, stdout: "" });
-  assert.deepEqual([...did, ...c.composer.wrote], [["att", ["/p/a b.pdf", "/p/c.csv"], "paste"], ["paste"], ["replace", "un\ndeux"], ["replace", "/tmp/build.log"]],
-    "files joined (nothing typed), no text: paste(), the texts typed");
+  assert.deepEqual([...did, ...c.composer.wrote], [
+    ["att", ["/p/a b.pdf"], "paste"], ["att", ["/p/a b.pdf", "/p/c.csv"], "paste"], ["att", ["/d/Devis client.pdf"], "paste"],
+    ["att", ["/p/a b.pdf", "/p/c.csv"], "paste"], ["paste"], ["replace", "un\ndeux"], ["replace", "/tmp/build.log"],
+  ], "files joined (nothing typed: names, URL), no text: paste(), the texts typed");
   assert.deepEqual(c.sendErr, { why: "paste" }, "an unreadable clipboard says so");
 }
 // Cmd+C on a card under the pointer (the keyboard on the Chat): the piece copied as a file, its card says

@@ -108,12 +108,6 @@ export function pasteChoice(text, said) {
   if (text == null || text === "") return { other: true };
   return { text: String(text).replace(/\r\n?/g, "\n") };
 }
-/**
- * Whether a clipboard's text may come with files, so their read (60 to 120 ms of osascript, measured) is
- * worth it: gpui gives a copied file as its absolute path (Kylian's capture, 2026-11-19: the field typed
- * the Finder's files as their paths), so a text that doesn't start with « / » holds none and goes in at once.
- */
-export const mayHoldFiles = (text) => String(text ?? "").startsWith("/");
 
 // A piece copied as a file (Cmd+V of it in the Finder copies the file, a chat or a mail attaches it, the
 // Chat's own field joins it): its file URL alone on the pasteboard, argv[0] its absolute path; argv[1] a

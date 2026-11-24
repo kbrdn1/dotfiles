@@ -70,7 +70,7 @@ import { attachmentsOf, photoSize, extOf, familyOf, tileOf, CARD, colsFor, gridW
 // #93: a turn's assets (its tools' images and files, the files its answer cites: assets.js), and the
 // field's attachments (a drop, a paste, a picked file) and « Citer » (attach.js).
 import { turnAssets } from "./assets.js";
-import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteChoice, mayHoldFiles, copyArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
+import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteChoice, copyArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
 // kt-keys' categories.js (a byte-identical copy, with workflows.js): the pieces' one chip (#81 and #93).
 import { classify, colorOf } from "./categories.js";
 // #81: the field's completions (/ # @): completer.js' menu over kt-keys' complete.js (byte-identical
@@ -1463,10 +1463,11 @@ export default class Chat extends View {
   /**
    * Cmd+V in the field (kt_chat_paste, bound in init ahead of the field's own paste). The Finder's copied
    * files join the message as a drop does, their names or paths never typed; any other text goes in as the
-   * field would put it (one undo step); no text at all goes paste()'s way (files, else the image). Only a
-   * text that may come with files (mayHoldFiles: gpui gives a copied file as its path) waits for the read
-   * of the clipboard's files (osascript, 60 to 120 ms measured); any other text goes in at once. The
-   * field's own paste stays for its menu (Edit > Paste: a Finder copy's paths typed there, as before).
+   * field would put it (one undo step); no text at all goes paste()'s way (files, else the image). Every
+   * text waits for the read of the clipboard's files (osascript, 60 to 120 ms measured): only the pasteboard
+   * says whether files came, a Finder copy's text being their names (one alone: no « / », measured in the
+   * app on 2026-11-25). The field's own paste stays for its menu (Edit > Paste: a Finder copy's names typed
+   * there).
    */
   pasteKey(cx) {
     let text = null;
@@ -1477,7 +1478,12 @@ export default class Chat extends View {
       unread = true;
     }
     if (!unread && pasteChoice(text, null).other) return this.paste(cx);
-    const put = (cx, c) => {
+    if (checking() || this.keyPasting) return;
+    this.keyPasting = true;
+    cx.spawn(async (cx) => {
+      const said = pasted(await exec("/usr/bin/osascript", pasteArgs("", true), { timeout: 15000 }).catch((e) => e));
+      this.keyPasting = false;
+      const c = pasteChoice(unread ? null : text, said);
       if (c.files) return this.attach(cx, c.files, "paste");
       if (unread) this.sendErr = { why: "paste" };
       else {
@@ -1485,14 +1491,6 @@ export default class Chat extends View {
         this.draft = this.composer.value();
       }
       cx.notify();
-    };
-    if (!unread && !mayHoldFiles(text)) return put(cx, pasteChoice(text, null));
-    if (checking() || this.keyPasting) return;
-    this.keyPasting = true;
-    cx.spawn(async (cx) => {
-      const said = pasted(await exec("/usr/bin/osascript", pasteArgs("", true), { timeout: 15000 }).catch((e) => e));
-      this.keyPasting = false;
-      put(cx, pasteChoice(unread ? null : text, said));
     });
   }
 
