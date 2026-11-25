@@ -64,7 +64,7 @@ const world = {
       ],
     },
     fx6: { updatedAt: now - 40 * MIN, flow: { steps: [{ id: "issue", label: "issue #3", state: "done" }, { id: "report", label: "report", state: "current" }] } },
-    fx2: { pending: { id: "p1", kind: "permission", title: "Autoriser Bash", detail: "rm -rf build", options: [] } },
+    fx2: { pending: { id: "p1", kind: "permission", tool: "Bash", title: "Autoriser Bash", detail: "rm -rf build", options: [] } },
     fx8: { answer: "La PR\n  est prête." },
   },
   reports: { "acme|fix/#9-login": { review: null, ci: null, pr: { number: 9, state: "OPEN", url: "u/9" }, at: null } },
@@ -145,7 +145,8 @@ assert.equal(beta.issue, "3"); // no branch: the flow's issue step
 assert.deepEqual(M.prOf({ cwd: "/fx/acme", branch: "main" }, spaces[1], { ...world, reports: {}, prs: { [M.prKey(null, "/fx/acme", "main")]: { number: 1 } } }), { pr: null, from: null });
 
 // What it waits on (herdr-bridge's pending) and what it does (the sidebar's live line).
-assert.deepEqual(th["fx-t2"].asks, { kind: "permission", title: "Autoriser Bash", detail: "rm -rf build" });
+// Its tool kept: the Kanban says the title again in the language shown (decide.js titleOf, #77).
+assert.deepEqual(th["fx-t2"].asks, { kind: "permission", tool: "Bash", title: "Autoriser Bash", detail: "rm -rf build" });
 assert.equal(wt.asks, null);
 assert.equal(wt.line, "Run bun test"); // working: its last action
 assert.equal(th["fx-t8"].line, "La PR est prête."); // done: its answer, on one line

@@ -135,6 +135,34 @@ async function answer(terminal, pending, choice, withToken) {
   }
 }
 
+// What a request says, in the language shown. herdr-bridge publishes its title and labels in French, and
+// what they say as data too (kind, tool, notice; an option's key, kind, note, mode, update): they are said
+// again from that. Its own text stays for the rest (a question's answers, a notice in the engine's words,
+// a newer bridge's choice).
+const ASKS = { ExitPlanMode: "planTitle", EnterPlanMode: "enterPlan", AskUserQuestion: "question" };
+const MODES = { auto: "modeAuto", acceptEdits: "modeEdits", default: "modeManual", plan: "modePlan" };
+const WHERE = { session: "whereSession", localSettings: "whereLocal", projectSettings: "whereRepo", userSettings: "whereAll" };
+export function titleOf(p) {
+  if (!p) return "";
+  if (p.kind === "input") return (p.notice && p.title) || tr("waiting");
+  if (ASKS[p.tool]) return tr(ASKS[p.tool]);
+  if (p.kind === "permission" && p.tool) return tr("allow", { tool: p.tool });
+  return p.title ?? "";
+}
+const ruleOf = (u) => (Array.isArray(u?.rules) ? u.rules.map((r) => (r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName)).join(", ")
+  : Array.isArray(u?.directories) ? u.directories.join(", ") : MODES[u?.mode] ? tr(MODES[u.mode]) : String(u?.mode ?? ""));
+const whereOf = (d) => (WHERE[d] ? tr(WHERE[d]) : String(d ?? ""));
+export function labelOf(o) {
+  if (["yes", "no", "accept", "refuse"].includes(o?.key)) return tr(o.key);
+  if (o?.key === "plan-default") return tr("planManual");
+  if (o?.key === "plan-change") return tr("planChange");
+  if (o?.kind === "yes" && o.note) return tr("yesNote");
+  if (o?.kind === "no" && o.note) return tr("noNote");
+  if (o?.kind === "mode" && o.update) return tr("yesMode", { mode: ruleOf(o.update), where: whereOf(o.update.destination) });
+  if (o?.kind === "rule" && o.update) return tr("yesRule", { rule: ruleOf(o.update), where: whereOf(o.update.destination) });
+  return o?.label ?? o?.key ?? "";
+}
+
 // What `terminal` waits on now, and how to answer it. The screen is read only for a blocked agent the
 // plugin says nothing actionable about. `full`: every choice the terminal offers (the Chat); else the
 // plain ones only (the cards).
@@ -152,6 +180,8 @@ export async function decide(terminal, { full = false } = {}) {
   if (pending?.kind === "permission" && !full) pending = { ...pending, options: (pending.options ?? []).filter((o) => !o.note && !o.update) };
   // Answered once from here: the same dialog gets no buttons again.
   if (pending && answered.has(pending.id)) pending = { ...pending, options: [] };
+  // Said in the language shown (titleOf, labelOf): every card reads these.
+  if (pending) pending = { ...pending, title: titleOf(pending), options: (pending.options ?? []).map((o) => ({ ...o, label: labelOf(o) })) };
   return {
     terminal,
     pending,
@@ -189,8 +219,6 @@ export function decisionButtons(d, { onDone, cursor = null } = {}) {
       })
       .child(label.toUpperCase());
   if (!p.options?.length) return h_flex().flex_none().child(pill("open", tr("open"), null));
-  // yes / no (and a held message's accept / refuse) said in the language shown (herdr-bridge publishes
-  // its labels in French); any other option keeps its own label.
-  const said = (o) => (["yes", "no", "accept", "refuse"].includes(o.key) ? tr(o.key) : o.label);
-  return h_flex().flex_none().gap(4).children(p.options.map((o) => pill(o.key, said(o), o.tone === "positive" ? t.done : t.ansi1)));
+  // Said in the language shown now (labelOf: herdr-bridge publishes its labels in French).
+  return h_flex().flex_none().gap(4).children(p.options.map((o) => pill(o.key, labelOf(o), o.tone === "positive" ? t.done : t.ansi1)));
 }

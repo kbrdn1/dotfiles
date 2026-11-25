@@ -374,7 +374,7 @@ export function threadOf(space, tab, world) {
     prFrom: from,
     report: reportOf(lead, space, world.repos, world.reports),
     flow: flowOf(bridge?.flow),
-    asks: bridge?.pending?.title ? { kind: bridge.pending.kind ?? null, title: String(bridge.pending.title), detail: bridge.pending.detail ? String(bridge.pending.detail) : null } : null,
+    asks: bridge?.pending?.title ? { kind: bridge.pending.kind ?? null, tool: bridge.pending.tool ?? null, title: String(bridge.pending.title), detail: bridge.pending.detail ? String(bridge.pending.detail) : null } : null,
     line: lineOf(tab.status, bridge),
     sl,
     cost: sl?.cost_usd ?? null,

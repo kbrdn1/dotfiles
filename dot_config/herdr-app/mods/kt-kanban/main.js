@@ -75,7 +75,7 @@ import { OPTIONS, COLUMN_KEYS, DEFAULT_VIEWS, choice, nextChoice, board, slices,
   FIELDS, draftThread, draftsOf, attach, archivePlan, ciCount, cardMenu, menuStart, takesFocus, sessionOf, ttlText, termText, chipsOf, dropToken, addTerm, filterValues, completions, cardTerms, WIDTH, stepWidth, laneWidths, toggleHidden } from "./kanban.js";
 // The sidebar's decisions (a byte-identical copy of kbrdn-toast's decide.js): what a blocked agent waits
 // on, its pills, and its answer (press, the sidebar's and the toast's path).
-import { decide, decisionButtons, press as answer } from "./decide.js";
+import { decide, decisionButtons, press as answer, titleOf } from "./decide.js";
 import { companion } from "./companion-logo.js";
 // kt-keys' viz.js (a byte-identical copy, with viz.strings.js): the drawer's dither steps (flow, checks).
 import { viz } from "./viz.js";
@@ -1479,7 +1479,7 @@ export default class Kanban extends View {
   // shows; else herdr-bridge's pending in the model): { title, detail }; nothing known, that it waits.
   askOf(th) {
     const p = this.decisions[th.terminal]?.pending ?? th.asks;
-    return { title: p?.title || tr("now.blocked"), detail: p?.detail || null };
+    return { title: titleOf(p) || tr("now.blocked"), detail: p?.detail || null }; // in the language shown (#77)
   }
 
   // An empty column says why, in clear.

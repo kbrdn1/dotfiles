@@ -12,6 +12,7 @@ const runs = []; // [command, args]
 const reads = []; // hc calls
 let screen = "";
 let blocked = new Set();
+let langNow = null; // kt.lang: null is auto (French here)
 mock.module("herdr", () => ({
   home: () => HOME,
   agents: () => [...blocked].map((address) => ({ address, status: "blocked" })),
@@ -20,7 +21,7 @@ mock.module("herdr", () => ({
   hc: async (args) => { reads.push(args); return { code: 0, stdout: screen }; },
   run: (name, args) => runs.push([name, args]),
   theme: () => ({}),
-  shared: () => null, setShared: () => {}, checking: () => true, exec: async () => ({ code: 1, stdout: "" }),
+  shared: (k) => (k === "kt.lang" ? langNow : null), setShared: () => {}, checking: () => true, exec: async () => ({ code: 1, stdout: "" }),
 }));
 const chain = () => new Proxy(() => {}, { get: () => chain, apply: () => chain() });
 mock.module("gpui-kit", () => ({ div: chain, svg: chain }));
@@ -116,4 +117,31 @@ assert.equal((await decide("tfx5")).pending, null);
 // Only the made-up home was written.
 assert.ok(writes.every(([p]) => p.startsWith(`${HOME}/`)));
 assert.equal(writes.length, 3);
+
+// In English, a card has no French word (w-docs, #77: herdr-bridge publishes its title and labels in
+// French). Said again from what it publishes as data: the tool, each option's kind, note, update, mode.
+const FRENCH = /[àâçéèêëîïôûùœ]|\b(Oui|Non|Autoriser|avec|consigne|passer|plus|demander|pour|dans|dépôt|partout|Plan à|Changer|valide|Attend)\b/;
+const MODE = { type: "setMode", mode: "acceptEdits", destination: "session" };
+const english = async (t, pending, label) => {
+  files[`${cache(t)}.json`] = JSON.stringify({ pending });
+  const { pending: p } = await decide(t, { full: true });
+  for (const s of [p.title, ...p.options.map((o) => o.label)]) assert.ok(s && !FRENCH.test(s), `${label}: « ${s} »`);
+  return p;
+};
+langNow = "en";
+const card = await english("tfx7", { ...JSON.parse(permission("tfx-p7")).pending, options: [...JSON.parse(permission("tfx-p7")).pending.options,
+  { key: "mode-1", kind: "mode", tone: "positive", label: "Oui, et passer en édition auto pour la session", mode: "acceptEdits", update: MODE }] }, "permission");
+assert.deepEqual([card.title, ...card.options.map((o) => o.label)], ["Allow Bash?", "Yes", "Yes, with a note",
+  "Yes, and don't ask again for Bash(npm test:*) in this repo (local)", "No", "No, with instructions", "Yes, and switch to auto-accept edits for this session"]);
+const plan = await english("tfx8", { id: "tfx-p8", kind: "permission", tool: "ExitPlanMode", title: "Plan à valider", detail: "1. lire", options: [
+  { key: "plan-default", kind: "mode", tone: "positive", label: "Oui, je valide les éditions", mode: "default" },
+  { key: "plan-change", kind: "no", tone: "negative", label: "Changer le plan", note: true }] }, "plan");
+assert.deepEqual([plan.title, ...plan.options.map((o) => o.label)], ["Plan to approve", "Yes, I'll approve each edit", "Change the plan"]);
+assert.equal((await english("tfx6", { id: "tfx-p6", kind: "input", title: "Attend ta réponse", options: [] }, "input")).title, "Waiting for your answer");
+// A question's answers are its own words; French again: the bridge's words, as before.
+const qn = { id: "tfx-q", kind: "permission", tool: "AskUserQuestion", title: "Question", detail: "Which?", options: [{ key: "answer-0", kind: "answer", tone: "positive", label: "Plan B" }] };
+assert.deepEqual((await english("tfx4", qn, "question")).options.map((o) => o.label), ["Plan B"]);
+langNow = "fr";
+files[`${cache("tfx7")}.json`] = permission("tfx-p7");
+assert.deepEqual((await decide("tfx7", { full: true })).pending.options.map((o) => o.label), ["Oui", "Oui, avec une note", "Oui, et ne plus demander pour Bash(npm test:*) dans ce dépôt (local)", "Non", "Non, avec une consigne"]);
 console.log("decide (kt-kanban): ok");
