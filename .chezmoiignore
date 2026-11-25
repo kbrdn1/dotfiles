@@ -198,3 +198,20 @@ tmux_custom_modules/
 # build junk — le scanner de me:codebase-visualizer produit du __pycache__
 **/__pycache__/
 **/*.pyc
+
+# ===================================================================
+# Codex : seule la part déclarative est versionnée (liste blanche).
+# config.toml (Codex y écrit la confiance des hooks et l'état de l'interface,
+# relu à chaque tour par toutes les sessions), auth.json, sessions, sqlite,
+# logs et caches n'entrent jamais, même par un chezmoi add explicite.
+# ===================================================================
+.codex/*
+!.codex/AGENTS.md
+!.codex/hooks.json
+!.codex/hooks
+!.codex/rules
+# ~/.agents/skills porte des centaines de skills tiers : seuls les me-* sont à nous.
+.agents/*
+!.agents/skills
+.agents/skills/*
+!.agents/skills/me-*

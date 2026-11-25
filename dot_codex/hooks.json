@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/kbrdn1/.nix-profile/bin/bun /Users/kbrdn1/.claude/hooks/no-shell-write.ts",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "/Users/kbrdn1/.nix-profile/bin/bun /Users/kbrdn1/.codex/hooks/mailbox-guard.ts",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bash '/Users/kbrdn1/.codex/herdr-agent-state.sh' session",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "afplay -v 0.1 /Users/kbrdn1/.claude/song/finish.mp3",
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}
