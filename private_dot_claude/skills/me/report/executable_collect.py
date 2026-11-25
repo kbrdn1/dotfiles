@@ -8,7 +8,7 @@ Options : --repo PATH, --base BRANCH, --out DIR, --offline (pas de gh).
 Racine des rapports : $ME_REPORTS_ROOT, sinon ~/Reports (pas de dossier caché : Sheprd
 refuse de servir une page rangée sous un dossier qui commence par un point).
 """
-import argparse, contextlib, fnmatch, glob, hashlib, io, json, os, re, shutil, subprocess, sys, tempfile
+import argparse, base64, contextlib, fnmatch, glob, hashlib, io, json, os, re, shutil, subprocess, sys, tempfile
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -360,7 +360,69 @@ def previews(repo, base_ref, files, out):
     write_atomic(os.path.join(out, 'docs.js'), 'window.__docs=' + json.dumps(docs, ensure_ascii=False) + ';\n')
 
 
-def install_shell(out):
+# le diff touche au rendu : les captures deviennent obligatoires à l'entrée en review. Motifs fnmatch (« * » traverse
+# les dossiers). Par projet : ~/Reports/<owner>-<repo>/front-patterns.txt, un motif par ligne (# commentaire), remplace
+# cette liste ; un fichier vide = jamais de captures exigées. Pas de `app/*` ici : c'est du front en Nuxt, du back en
+# Laravel ou Rails ; un dépôt Nuxt le met dans son front-patterns.txt.
+FRONT = ('*.vue', '*.css', '*.scss', '*.sass', '*.less', '*.tsx', '*.jsx', '*.svelte', '*.astro', '*.html',
+         '*.blade.php', '*.twig', '*.erb', '*components/*', '*pages/*', '*layouts/*', '*i18n/*', '*locales/*', '*styles/*',
+         'public/*.png', 'public/*.jpg', 'public/*.jpeg', 'public/*.webp', 'public/*.avif', 'public/*.gif', 'public/*.svg',
+         '*app.config.*', '*tailwind.config.*', '*uno.config.*')
+
+
+def front_patterns(slug, repo):
+    p = os.path.join(ROOT, (slug or os.path.basename(repo)).replace('/', '-'), 'front-patterns.txt')
+    if not os.path.exists(p):
+        return FRONT
+    return [l.strip() for l in open(p, encoding='utf-8') if l.strip() and not l.lstrip().startswith('#')]
+
+
+def png_size(path):
+    with open(path, 'rb') as f:
+        h = f.read(24)
+    return (int.from_bytes(h[16:20], 'big'), int.from_bytes(h[20:24], 'big')) if h[:8] == b'\x89PNG\r\n\x1a\n' else (None, None)
+
+
+def capture_img(path, rel):
+    """une image de capture pour la page : src versionné (la PNG refaite garde son nom, le cache du navigateur non)."""
+    st = os.stat(path)
+    w, h = png_size(path)
+    return {'src': f"{rel}?v={int(st.st_mtime)}-{st.st_size}", 'w': w, 'h': h, 'size': st.st_size}
+
+
+def capture_facts(repo, head, out):
+    """captures.json (écrit par le modèle) + captures/*.png (capture.mjs) → le fait `captures`. STALE comme une
+    section : un fichier de `files` a changé depuis captures/sha ; sha absent ou hors de l'historique = toutes."""
+    mpath = os.path.join(out, 'captures.json')
+    if not os.path.exists(mpath):
+        return None
+    try:
+        m = json.load(open(mpath, encoding='utf-8'))
+    except ValueError as e:
+        return {'error': f'captures.json invalide ({e})', 'shots': [], 'stale': [], 'missing': []}
+    d = os.path.join(out, 'captures')
+    shaf = os.path.join(d, 'sha')
+    sha = open(shaf).read().strip() if os.path.exists(shaf) else None
+    rewritten = bool(sha) and run(['git', 'merge-base', '--is-ancestor', sha, head], repo) is None
+    changed = [l for l in (git(repo, 'diff', '--name-only', sha, head) or '').splitlines() if l] if sha and not rewritten else []
+    shots = []
+    for s in m.get('shots') or []:
+        if not isinstance(s, dict) or not re.fullmatch(r'[a-z0-9-]+', str(s.get('id') or '')):
+            continue
+        row = {k: s[k] for k in ('id', 'title', 'route', 'selector', 'viewport', 'theme', 'note', 'midway', 'files') if k in s}
+        png, bef = os.path.join(d, s['id'] + '.png'), os.path.join(d, s['id'] + '.before.png')
+        if os.path.exists(png):
+            row['after'] = capture_img(png, f"captures/{s['id']}.png")
+            if os.path.exists(bef):
+                row['before'] = capture_img(bef, f"captures/{s['id']}.before.png")
+        row['missing'] = 'after' not in row
+        row['stale'] = not row['missing'] and bool(s.get('files')) and (not sha or rewritten or matches_any(changed, s['files']))
+        shots.append(row)
+    return {'sha': sha, 'rewritten': rewritten, 'baseUrl': m.get('baseUrl'), 'beforeUrl': m.get('beforeUrl'), 'shots': shots,
+            'stale': [x['id'] for x in shots if x['stale']], 'missing': [x['id'] for x in shots if x['missing']]}
+
+
+def install_shell(out, kind='report'):
     os.makedirs(out, exist_ok=True)
     write_atomic(os.path.join(out, 'zed-theme.js'), 'window.__zedThemes=' + json.dumps(zed_themes(), ensure_ascii=False) + ';\n')
     for name in SHELL_FILES:
@@ -370,6 +432,11 @@ def install_shell(out):
     for name in SHELL_FILES:
         v = hashlib.sha1(open(os.path.join(SHELL, name), 'rb').read()).hexdigest()[:8]
         html = html.replace(f'"{name}"', f'"{name}?v={v}"')
+    # favicon du type de page, icons/<kind>.svg (~/.claude/scripts/dither-tile.py) en data URI : sans le fichier, celle de la coquille reste
+    ico = os.path.join(HERE, 'icons', kind + '.svg')
+    if os.path.exists(ico):
+        tag = '<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,' + base64.b64encode(open(ico, 'rb').read()).decode() + '">'
+        html = re.sub(r'<link rel="icon"[^>]*>', lambda m: tag, html, count=1)
     write_atomic(os.path.join(out, 'index.html'), html)
 
 
@@ -402,6 +469,43 @@ def rollup(checks):
     return {'total': len(st), 'ok': ok, 'fail': ko, 'pending': len(st) - ok - ko} if st else None
 
 
+def plan_captures(rep_dir, n, out, keep):
+    """Les captures du rapport de la branche, telles que sa dernière collecte les a vues (STALE compris : pas de git en
+    mode plan). Les PNG sont liées dans plans/<slug>/captures/ : la page, et Sheprd, ne lisent que leur propre dossier."""
+    try:
+        cap = json.load(open(os.path.join(rep_dir, 'facts.json'), encoding='utf-8'))['facts'].get('captures') or {}
+    except (OSError, ValueError, KeyError, AttributeError):
+        return []
+    if not cap.get('shots'):
+        return []
+    os.makedirs(os.path.join(out, 'captures'), exist_ok=True)
+    shots = []
+    for s in cap.get('shots') or []:
+        s = dict(s)
+        for side in ('after', 'before'):
+            if not s.get(side):
+                continue
+            src = os.path.join(rep_dir, s[side]['src'].split('?')[0])
+            name = f"{n}-{s['id']}" + ('.before' if side == 'before' else '') + '.png'
+            dst = os.path.join(out, 'captures', name)
+            try:
+                if not os.path.exists(dst) or not os.path.samefile(src, dst):
+                    tmp = dst + '.tmp'
+                    with contextlib.suppress(FileNotFoundError):
+                        os.remove(tmp)
+                    try:
+                        os.link(src, tmp)
+                    except OSError:
+                        shutil.copyfile(src, tmp)  # autre volume : une copie
+                    os.replace(tmp, dst)
+            except OSError:
+                s.pop(side); continue
+            keep.add(name)
+            s[side] = {**s[side], 'src': 'captures/' + name + '?' + s[side]['src'].split('?', 1)[-1]}
+        shots.append(s)
+    return shots
+
+
 def plan_facts(repo, slug, items, offline, out):
     """État vivant des issues d'un plan, 0 token : issue (GraphQL, un appel), PR liée (Closes #N, sinon branche
     #N-), sa CI, le worktree gwm et ses agents, le rapport me:report de la branche s'il existe.
@@ -428,7 +532,7 @@ def plan_facts(repo, slug, items, offline, out):
         except ValueError:
             ws = []
     issue_of = lambda ref: (lambda m: int(m.group(1)) if m else None)(re.search(r'#(\d+)(?!\d)', ref or ''))
-    rows = []
+    rows, keep = [], set()
     for i in items:
         if not str(i.get('n', '')).isdigit():
             continue
@@ -445,7 +549,12 @@ def plan_facts(repo, slug, items, offline, out):
                                    'branch': pr.get('headRefName'), 'ci': rollup(pr.get('statusCheckRollup'))},
                      'worktree': wt and {'path': wt.get('path'), 'branch': wt.get('branch'),
                                          'agents': [{'name': a.get('name'), 'kind': a.get('kind'), 'freshness': a.get('freshness')} for a in sessions[:3]]},
-                     'report': os.path.relpath(os.path.join(rep_dir, 'index.html'), out) if rep_dir and os.path.exists(os.path.join(rep_dir, 'index.html')) else None})
+                     'report': os.path.relpath(os.path.join(rep_dir, 'index.html'), out) if rep_dir and os.path.exists(os.path.join(rep_dir, 'index.html')) else None,
+                     'captures': plan_captures(rep_dir, n, out, keep) if rep_dir else []})
+    cdir = os.path.join(out, 'captures')
+    for f in os.listdir(cdir) if os.path.isdir(cdir) else []:
+        if f not in keep:
+            os.remove(os.path.join(cdir, f))  # capture retirée de son rapport, ou issue sortie du plan
     # statut dérivé, une seule source pour la page et pour Herdr : fait > review > en cours > bloqué > à faire
     done = {r['n'] for r in rows if r['state'] == 'CLOSED' or (r['pr'] or {}).get('state') == 'MERGED'}
     for r in rows:
@@ -470,7 +579,7 @@ def collect_plan(a):
     if a.dir:
         print(out)
         return
-    install_shell(out)
+    install_shell(out, 'plan')
     notes, notes_state, npath = read_notes(out)
     issues = plan_facts(repo, slug, (notes or {}).get('issues') or [], a.offline, out) if repo else []
     write_payload(out, {'kind': 'plan', 'facts': {'plan': name, 'repo': slug, 'repoPath': repo, 'issues': issues,
@@ -480,6 +589,11 @@ def collect_plan(a):
     print('FACTS  ', f"plan {name} · " + (slug or repo or 'hors dépôt') + (f" · {len(issues)} issues : {c['done']} faites, {c['review']} en review, "
           f"{c['wip']} en cours, {c['blocked']} bloquées, {c['todo']} à faire" if issues else ' · aucune issue suivie'))
     print('NOTES  ', notes_state + (' → écrire ' + npath if notes is None else ''))
+    caps = [(r['n'], s) for r in issues for s in r.get('captures') or []]
+    if caps:
+        miss = sum(not s.get('after') for _, s in caps)
+        print('CAPTURES', f"{len(caps)} sur {len({n for n, _ in caps})} issue(s) ({sum(bool(s.get('stale')) for _, s in caps)} en retard"
+              + (f", {miss} sans image" if miss else '') + ')')
 
 
 def refresh_plans(slug, repo, issue, offline):
@@ -583,6 +697,9 @@ def main():
     install_shell(out)
     previews(repo, base_ref, files, out)
 
+    captures = capture_facts(repo, head, out)
+    fpats = front_patterns(slug, repo)
+    front = [f['path'] for f in files if f['status'] != 'D' and matches(f['path'], fpats)]
     review = parse_review(out)
     review_codex = parse_review(out, 'codex')
     passes = review['passes'] if review else []
@@ -603,6 +720,7 @@ def main():
     payload = {'kind': 'report', 'facts': {
         'repo': slug, 'repoPath': repo, 'branch': branch, 'head': head, 'headShort': head[:7], 'base': base, 'issue': issue,
         'pushed': pushed, 'dirty': dirty, 'pr': pr, 'files': files, 'totals': totals, 'commits': commits, 'ci': ci, 'review': review, 'reviewCodex': review_codex, 'agents': agents,
+        'captures': captures, 'capturesMissing': front[:30] if captures is None and front else None,
         'stale': stale, 'notesState': notes_state, 'basedOn': based}, 'notes': notes}
     write_payload(out, payload)
     dfiles, dcut = split_patch(git(repo, 'diff', '-M', rng))
@@ -627,6 +745,15 @@ def main():
         print('NOTES  ', notes_state, '→ écrire', npath)
     else:
         print('NOTES  ', notes_state, '· basedOn', (based or '-')[:7], '· STALE=' + ','.join(stale))
+    cap = os.path.join(HERE, 'capture.mjs')
+    if captures is not None:
+        k, miss = len(captures['stale']), len(captures['missing'])
+        print('CAPTURES', f"{len(captures['shots'])} ({k} en retard" + (f", {miss} sans image" if miss else '') + ')'
+              + (f" · {captures['error']}" if captures.get('error') else '') + (f" · sha {captures['sha']}" if captures['sha'] else ' · pas de captures/sha')
+              + (f" → node {cap} --stale" if k or miss else ''))
+    elif front:
+        print('CAPTURES', f"absentes → le diff touche au rendu ({len(front)} fichiers : {', '.join(front[:4])}{'…' if len(front) > 4 else ''}) :"
+              f" écrire {os.path.join(out, 'captures.json')} (format : {os.path.join(HERE, 'references', 'captures.md')}), puis node {cap}")
     plans = refresh_plans(slug, repo, issue, a.offline)
     if plans:
         print('PLANS  ', ', '.join(plans), '· relus avec la branche')

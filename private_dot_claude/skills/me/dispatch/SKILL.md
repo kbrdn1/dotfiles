@@ -142,7 +142,9 @@ ne crée ni issue ni worktree. <État : « PR #<P> ouverte » | « commits sans 
 Suis le workflow worktree (skill git-flow-worktree) à partir de là :
 - reprise : lis l'issue, git log <base>..HEAD, et le rapport ~/Reports/<owner>-<repo>/<branche>/ s'il existe ;
 - implémentation : commits atomiques Gitmoji + Conventional qui référencent #<N> ; lint et format avant chaque commit ;
-- entrée en review : /me:report, puis PR depuis le template du dépôt si elle n'existe pas ;
+- entrée en review : /me:report, puis PR depuis le template du dépôt si elle n'existe pas ; diff qui touche au
+  rendu : captures obligatoires (captures.json + capture.mjs, skill me:report, section « Captures du rendu »),
+  refaites après chaque passe de review qui touche le front, le corps de PR pointe vers leur dossier de rapport ;
 - /me:loop:claude-review-pr jusqu'à 0 bloquant pertinent, puis /me:loop:ci-until-green ;
 - PR sensible (sécurité, argent, données, auth) : les deux reviewers EN PARALLÈLE, claude-review-pr (ses deux
   agents) et le check codex (`cd <chemin> && bash ~/.claude/skills/me/loop/codex-review-pr/check.sh`, en helper) ;
@@ -264,11 +266,11 @@ Une PR qu'une règle du dépôt (`CLAUDE.md`, mémoire du projet) ou l'utilisate
 sur la seule review. Les preuves sont rangées avec le rapport de la branche, jamais dans `/tmp`, qui disparaît et
 casse les liens du corps de la PR :
 
-- captures (bureau 1440, mobile 390, thèmes) dans `~/Reports/<owner>-<repo>/<branche>/captures/`, produites par
-  un script du dépôt s'il en a un (e2e, Playwright), sinon par un script rangé au même endroit ;
+- les captures du rapport de la branche (`~/Reports/<owner>-<repo>/<branche>/captures/`, bureau et mobile, thèmes,
+  avant / après), faites par `capture.mjs` de `me:report` (section « Captures du rendu »), à jour sur le sha final ;
 - envoyées à l'utilisateur (`SendUserFile` si disponible, sinon le chemin, ou un onglet Sheprd), avec une
   question : « ok, merge » ou « retouches », et les points de rendu en choix multiple ;
-- merge seulement sur son « ok ». Le script de captures devient-il un outil du dépôt : c'est à lui de le dire.
+- merge seulement sur son « ok ».
 
 ## Garde-fous
 

@@ -207,7 +207,7 @@ print("SPEC_COUNT=%d" % spec)
 print("P0P1P2_COUNT=%d" % (std + spec))
 PY
 # (D) dans le même bloc, à ne jamais retirer : la passe part dans le rapport live et le rapport est régénéré.
-~/.claude/skills/me/report/collect.py --pass "$R_STD" "$([ "${SPEC_SKIPPED:-0}" = 1 ] && echo - || echo "$R_SPEC")" 2>&1 | head -4 || true
+~/.claude/skills/me/report/collect.py --pass "$R_STD" "$([ "${SPEC_SKIPPED:-0}" = 1 ] && echo - || echo "$R_SPEC")" 2>&1 | head -6 || true
 ```
 
 > ⚠️ Si `RESUME:` annonce des bloquants mais que le bloc `blocking` correspondant est vide (ou l'inverse), l'agent a mal formaté : relancer **cet axe** en (B), ne pas trancher au jugé.
@@ -219,6 +219,8 @@ PY
 À chaque passe, la section review du rapport HTML de la branche se remplit pendant que le loop tourne (passes, deux axes séparés, findings dépliables, ouvrir à la ligne). L'onglet Flow de Herdr la lit aussi : sans elle, la Review ne s'y déplie pas.
 
 **(D) tient en une ligne, et c'est la dernière du bloc (C)** : `collect.py --pass "$R_STD" <spec>` copie la passe telle quelle dans `review/` (`pass-N-standards.md`, `pass-N-spec.md`, `pass-N.sha`), puis régénère le rapport (`facts.json`). Un axe spec non lancé s'écrit `SPEC_SKIPPED=1`, jamais le RESUME à zéro (il s'afficherait « propre »). Rejouer (C) sur les mêmes rapports n'ajoute pas de passe. Ne recopie pas (C) sans cette ligne : c'était une étape à part, et les sessions la sautaient ou n'en gardaient que les copies (rapport figé sur la passe 1, ou « passe 6/8 » dans Flow pour 4 passes au rapport). Le dossier du rapport reste donné par `collect.py --dir`. Check : `~/.claude/skills/me/report/collect-pass.check.sh`.
+
+Captures du rendu : si la sortie de (D) dit `CAPTURES … (k en retard` avec k > 0 (les correctifs de la passe ont touché le front), `node ~/.claude/skills/me/report/capture.mjs --stale` depuis le worktree, serveur de la branche lancé, avant la passe suivante ; `CAPTURES absentes` : les écrire (skill `me:report`, « Captures du rendu »).
 
 Décisions (Step 2), une ligne par finding tranché dans `$RD/review/decisions.tsv` (`RD=$(~/.claude/skills/me/report/collect.py --dir)`), écrite avec **Write** (création) ou **Edit** (ajout), jamais par `printf >>` : le hook `no-shell-write` refuse une écriture shell hors du git dir et du dossier temporaire. Séparateur tabulation : `p<N>-<axe>-<rang>	fixed	<sha du commit>` après la correction, `p<N>-<axe>-<rang>	discarded	<raison en une phrase>` pour un écartement (`rang` = position de la puce dans le rapport de l'axe, à partir de 1, en comptant **toutes** les puces dans l'ordre du fichier, P3 compris : un rang compté sur les seuls bloquants attache la décision au mauvais finding). Un écartement sans raison s'affiche en rouge dans le rapport.
 

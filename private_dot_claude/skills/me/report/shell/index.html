@@ -9,7 +9,7 @@
   // thème avant le premier rendu : auto (système), clair ou sombre, gardé par la page
   (function () {
     var t = 'auto';
-    try { t = localStorage.getItem('me-report:theme') || 'auto'; } catch (e) {}
+    try { t = JSON.parse(localStorage.getItem('me-report:theme')) || 'auto'; } catch (e) {} // écrit par ls() de view.js, en JSON
     var light = t === 'light' || (t === 'auto' && matchMedia('(prefers-color-scheme: light)').matches);
     document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
   })();

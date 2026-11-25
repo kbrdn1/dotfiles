@@ -39,6 +39,9 @@ dépendent. Issues déjà existantes : les reprendre, ne pas dupliquer.
 - `issues` : `[{ "n": 12 }, { "n": 13, "deps": [12] }]`, la source des dépendances ;
 - `questions` : seulement ce qui bloque vraiment une décision.
 
+Le rendu des issues de front y arrive seul (vignettes sur les cartes, galerie « Rendu ») dès que le rapport de leur
+branche a ses captures : chaque issue qui touche au rendu les fait à son entrée en review (skill `me:report`).
+
 Puis `$C --plan <slug>` et donner le chemin de la page (dans Herdr : `sheprd browser open <REPORT>`).
 
 ## 3. Exécution
@@ -48,7 +51,7 @@ Les issues `todo` dont toutes les dépendances sont faites (`status` dans `facts
 - **dans une session ouverte dans Herdr** : `/me:dispatch` avec ces issues ; il crée chaque worktree, y lance un agent
   Claude et rend la main. Reprendre ici au retour des agents ;
 - **ailleurs** : en séquentiel, une issue après l'autre, par le workflow worktree (skill `git-flow-worktree`,
-  l'issue existe déjà : le lui dire), jusqu'à la PR ; puis `/me:report`, `/me:loop:claude-review-pr`
+  l'issue existe déjà : le lui dire), jusqu'à la PR ; puis `/me:report` (captures du rendu si le front bouge), `/me:loop:claude-review-pr`
   (`/me:loop:codex-review-pr` en plus si la PR est sensible), `/me:loop:ci-until-green`. Le cwd ne tient pas
   d'un appel Bash à l'autre hors du répertoire de travail : chaque commande, loops compris, commence par
   `cd "$WT" &&` (détail et PR de bots : section « Repli séquentiel » de `me:dispatch`).

@@ -96,6 +96,7 @@ Before generating any HTML:
 5. For pages with 4+ sections: also read `~/.claude/skills/visual-explainer/references/responsive-nav.md`
 
 **Output:** write to `~/.claude/diagrams/`, open in browser (`open` on macOS, `xdg-open` on Linux).
+**Favicon :** la page écrite, avant de l'ouvrir, `python3 ~/.claude/scripts/dither-tile.py --inject explainer <page.html>` pose l'icône (`~/.claude/skills/me/visual-explainer/icons/explainer.svg`, tuile tramée) en data URI dans le `<head>` ; glyphe dans `GLYPHS` du script, `dither-tile.py` sans argument la régénère.
 **Palette:** Claude Dark Pure Dark. Copy the CSS template from the palette reference verbatim. Do not improvise colors.
 **surf-cli (optional):** if `which surf` succeeds, consider generating AI illustrations via `surf gemini --generate-image`. Embed as base64 data URI. Skip if not available.
 

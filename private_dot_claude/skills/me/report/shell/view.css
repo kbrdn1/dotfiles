@@ -616,3 +616,43 @@ footer.foot { position: relative; z-index: 1; max-width: 80rem; margin: 0 auto; 
 .pv-cmp-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0.75rem; border: 1px solid var(--panel-border); border-radius: 0.75rem; }
 .pv-cmp-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .viewer .pv-frame { width: 100%; height: 100%; border: 0; background: #fff; }
+.viewer .v-bar .v-sub { min-width: 0; flex: 1 1 18rem; font: 500 11px/1.4 var(--font-mono); color: var(--label); }
+/* curseur glissant avant / après : l'avant au-dessus, découpé à --pos ; un range transparent couvre l'image */
+.viewer .v-body.pv-slider { display: grid; place-items: center; padding: 1.5rem 1.5rem 4rem; }
+.pv-slide { position: relative; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 0.75rem; box-shadow: var(--panel-shadow); }
+.pv-slide img { display: block; width: 100%; height: auto; user-select: none; pointer-events: none; }
+.pv-slide-top { position: absolute; inset: 0; clip-path: inset(0 calc(100% - var(--pos, 50%)) 0 0); }
+.pv-slide-line { position: absolute; inset-block: 0; left: var(--pos, 50%); width: 2px; translate: -1px 0; background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); pointer-events: none; }
+.pv-slide-line::after { content: ""; position: absolute; top: 50%; left: 50%; width: 1.75rem; height: 1.75rem; translate: -50% -50%; border: 2px solid var(--accent); border-radius: 50%; background: var(--panel-bg); }
+.pv-slide-tag { position: absolute; top: 0.6rem; padding: 0.2rem 0.55rem; border: 1px solid var(--panel-border); border-radius: 999px; background: var(--panel-bg); font: 500 10.5px var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--label); pointer-events: none; }
+.pv-slide-tag.l { left: 0.6rem; } .pv-slide-tag.r { right: 0.6rem; }
+.pv-slide-range { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
+.pv-slide:has(.pv-slide-range:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* rendu : galerie des captures, groupée par écran (rapport) ou par issue (plan) */
+.cap-groups { padding: 0.375rem; }
+.cap-group + .cap-group { margin-top: 0.9rem; }
+.cap-gh { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; padding: 0.35rem 0.4rem 0.5rem; }
+.cap-gt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.cap-gt { color: var(--text-hi); font-size: 14px; } a.cap-gt:hover { color: var(--accent-text); }
+.cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); grid-auto-flow: dense; gap: 0.5rem; }
+.cap { margin: 0; display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; padding: 0.4rem; border: 1px solid var(--panel-border); border-radius: 0.875rem; background: var(--card-bg); }
+.cap.d { grid-column: span 2; }
+.cap.stale { border-color: color-mix(in srgb, var(--warn) 45%, var(--panel-border)); }
+.cap-stage { display: flex; align-items: center; justify-content: center; height: 13rem; padding: 0.4rem; border: 1px solid var(--panel-border); border-radius: 0.625rem; overflow: hidden; cursor: zoom-in; transition: border-color 0.2s ease; }
+.cap-stage:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.cap-stage img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 0.375rem; }
+.cap-stage.empty { cursor: default; }
+.cap figcaption { display: flex; flex-direction: column; gap: 0.35rem; padding: 0 0.2rem 0.15rem; }
+.cap figcaption .t { color: var(--text-hi); font-size: 13.5px; line-height: 1.4; }
+.cap figcaption .tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.cap figcaption .s { font-size: 12.5px; line-height: 1.5; color: var(--dim); }
+@media (max-width: 30rem) { .cap.d { grid-column: auto; } .cap-grid { grid-template-columns: minmax(0, 1fr); } }
+/* vignette d'une issue du plan : sa première capture */
+.kthumb, .lthumb { position: relative; display: block; overflow: hidden; border: 1px solid var(--panel-border); border-radius: 0.5rem; cursor: zoom-in; transition: border-color 0.2s ease; }
+.kthumb:hover, .lthumb:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.kthumb { width: 100%; height: 6.5rem; margin-top: 0.45rem; }
+.lthumb { flex-shrink: 0; width: 5.5rem; height: 3.5rem; }
+.kthumb img, .lthumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.kthumb .n, .lthumb .n, .kthumb .st, .lthumb .st { position: absolute; bottom: 0.25rem; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--panel-bg); font: 500 10px/1.5 var(--font-mono); color: var(--label); }
+.kthumb .n, .lthumb .n { right: 0.25rem; }
+.kthumb .st, .lthumb .st { left: 0.25rem; color: var(--warn); }

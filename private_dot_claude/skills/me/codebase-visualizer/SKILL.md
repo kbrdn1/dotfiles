@@ -92,6 +92,7 @@ le moteur ici est une reconstruction, re-thémée sur ma charte artifacts et out
 | `references/atlas-template.html` | Le moteur **et** un atlas complet (gwm-cli). On copie, on remplace la section DATA. |
 | `scripts/atlas_scan.py` | Mesure le dépôt : LOC par module, graphe d'imports **avec provenance**, dossier technique (manifestes, CI, binaires appelés), stats, méta git. Sert aussi au rafraîchissement, au mode diff et au mode workspace. |
 | `scripts/atlas_check.mjs` | Valide le DATA **et** confronte chaque arête au graphe mesuré. À lancer avant toute publication. |
+| `icons/atlas.svg` | Favicon du `.html` local (un cube isométrique sur tuile tramée), déjà en data URI dans le template. Glyphe dans `GLYPHS` de `~/.claude/scripts/dither-tile.py` ; après `dither-tile.py` (sans argument), `dither-tile.py --inject atlas references/atlas-template.html`. |
 
 ## Charte
 

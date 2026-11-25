@@ -203,6 +203,8 @@ The PR is open: development is over, review starts. From the worktree, generate 
 
 `NOTES absentes` → write `notes.json` (schema in the skill), rerun, open the page once (`open <REPORT>`, or Sheprd in Herdr): it refreshes itself. The review loop's step (D) fills its review section at every pass. After the review, if the code moved, `/me:report refresh` rewrites only the sections flagged stale.
 
+Diff that touches the rendering (`CAPTURES absentes`): captures are mandatory before review. Write `captures.json` in the report folder, run `node ~/.claude/skills/me/report/capture.mjs` from the checkout with the branch's server up (skill `me:report`, « Captures du rendu »), and point the PR body to the report's `captures/` folder, never `/tmp`.
+
 ### 7. Review the PR
 
 Default review source: the **`/me:loop:claude-review-pr`** loop (a Claude agent spawned with **fresh** context, self-paced — fixes relevant blocking findings P0/P1/P2 until clean). For a sensitive PR, double up with `/me:loop:codex-review-pr` (local Codex CLI — a **third-party** reviewer). In branch mode you are already on the feature branch in the current checkout — run it directly:

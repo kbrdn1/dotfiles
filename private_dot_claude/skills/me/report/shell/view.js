@@ -323,10 +323,10 @@
     ])]);
   }
   // visionneuse plein écran : tout l'écran, fond quadrillé, zoom affiché, ajusté à l'ouverture
-  function viewer(title, acts, body, onKey) {
+  function viewer(title, acts, body, onKey, sub) {
     closeViewer();
     var v = el('div', { class: 'viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, [
-      el('div', { class: 'v-bar' }, [el('h2', { text: title }), el('div', { class: 'acts' }, acts.concat([
+      el('div', { class: 'v-bar' }, [el('h2', { text: title }), sub ? el('span', { class: 'v-sub', text: sub }) : null, el('div', { class: 'acts' }, acts.concat([
         ibtn('', { icon: 'expand', title: 'plein écran du système', onclick: function () { if (document.fullscreenElement) document.exitFullscreen(); else if (v.requestFullscreen) v.requestFullscreen(); } }),
         ibtn('fermer', { title: 'fermer (échap)', onclick: closeViewer })]))]), body]);
     v.onKey = onKey; UI.viewer = v; document.body.appendChild(v); document.documentElement.style.overflow = 'hidden';
@@ -374,7 +374,7 @@
   }
   function closeOverlay() { if (UI.overlay) { UI.overlay.remove(); UI.overlay = null; } }
   function keysHelp() {
-    var rows = [['⌘ K', 'chercher dans le rapport'], ['j / k', 'section suivante / précédente'], ['← / →', 'passe de review précédente / suivante'], ['/', 'filtrer les fichiers'], ['x', 'replier la section courante'], ['t', 'thème suivant'], ['g', 'haut de page'], ['+ / − / 0', 'zoom en plein écran'], ['?', 'cette aide'], ['échap', 'fermer']];
+    var rows = [['⌘ K', 'chercher dans le rapport'], ['j / k', 'section suivante / précédente'], ['← / →', 'passe de review précédente / suivante'], ['/', 'filtrer les fichiers'], ['x', 'replier la section courante'], ['t', 'thème suivant'], ['g', 'haut de page'], ['+ / − / 0', 'zoom en plein écran'], ['c / s', 'avant / après : côte à côte, curseur (plein écran)'], ['j / k', 'capture suivante / précédente (plein écran)'], ['?', 'cette aide'], ['échap', 'fermer']];
     openOverlay(el('div', { class: 'panel' }, [el('div', { class: 'p-head' }, [el('h2', { text: 'Raccourcis' })]),
       el('div', { class: 'card keys' }, rows.map(function (r) { return el('div', { class: 'k' }, [el('span', { text: r[1] }), el('kbd', { text: r[0] })]); }))]));
   }
@@ -450,6 +450,9 @@
     t.push(tag(rv ? 'review p' + rv.pass + ' · ' + plural(rv.p0 + rv.p1 + rv.p2, 'bloquant') : 'review : aucune passe', rv ? (rv.p0 + rv.p1 + rv.p2 ? 'c-warn' : 'c-ok') : 'c-label', true, { href: '#f-review' }));
     var cx = f.review && f.reviewCodex && f.reviewCodex.passes.length ? f.reviewCodex.passes[f.reviewCodex.passes.length - 1] : null;
     if (cx) t.push(tag('codex p' + cx.pass + ' · ' + plural(cx.p0 + cx.p1 + cx.p2, 'bloquant'), cx.p0 + cx.p1 + cx.p2 ? 'c-warn' : 'c-ok', true, { href: '#f-review' }));
+    var cp = f.captures;
+    if (cp) t.push(tag(plural(cp.shots.length, 'capture') + (cp.stale.length ? ' · ' + cp.stale.length + ' en retard' : ''), cp.stale.length || cp.missing.length ? 'c-warn' : 'c-ok', true, { href: '#f-captures' }));
+    else if (f.capturesMissing) t.push(tag('captures absentes', 'c-warn', true, { href: '#f-captures', title: 'le diff touche au rendu' }));
     if (f.stale && f.stale.length) t.push(tag(plural(f.stale.length, 'section') + ' en retard', 'c-warn', true));
     if (f.dirty) t.push(tag(plural(f.dirty, 'fichier') + ' non commité' + (f.dirty > 1 ? 's' : ''), 'c-warn', true, { title: 'le rapport ne couvre que HEAD' }));
     return t;
@@ -581,6 +584,7 @@
           el('div', { class: 'kn' }, [r.url ? el('a', { href: r.url, target: '_blank', rel: 'noopener', class: PST[k][1], text: '#' + r.n }) : el('span', { class: PST[k][1], text: '#' + r.n }),
             r.report ? ibtn('rapport', { href: r.report }) : null]),
           el('div', { class: 'kt', text: r.title || 'issue #' + r.n }),
+          issueThumb(r, 'kthumb checker'),
           deps.length ? el('div', { class: 'ks' }, ['après '].concat(deps.reduce(function (a, x, i) { return a.concat(i ? [', ', x] : [x]); }, []))) : null,
           r.pr || (r.worktree && r.worktree.agents && r.worktree.agents.length) ? el('div', { class: 'ktags' }, [prTag(r.pr), ciTag(r.pr), r.worktree && (r.worktree.agents || []).some(function (a) { return a.freshness === 'active'; }) ? tag('agent actif', 'c-accent', true) : null]) : null]);
       }) : [el('div', { class: 'kempty', text: '—' })]));
@@ -591,6 +595,7 @@
       var deps = depLinks(r);
       return el('div', { class: 'row issue', id: 'issue-' + r.n }, [
         el('span', { class: 'icon-box ' + st[1], title: st[0], text: '#' + r.n }),
+        issueThumb(r, 'lthumb checker'),
         el('div', { class: 'main' }, [el('div', { class: 't' }, [r.url ? el('a', { href: r.url, target: '_blank', rel: 'noopener', text: r.title || 'issue #' + r.n }) : (r.title || 'issue #' + r.n)]),
           el('div', { class: 's' }, [tag(st[0], st[1], true), deps.length ? el('span', { class: 'c-label' }, [' après '].concat(deps.reduce(function (a, x, i) { return a.concat(i ? [', ', x] : [x]); }, []))) : null,
             w ? el('span', { class: 'path', title: w.path, text: ' · ' + w.branch }) : null,
@@ -715,43 +720,145 @@
     return el('div', { class: 'pv' }, [el('div', { class: 'pv-grid' }, cards), delta]);
   }
   // plein écran façon kt-viewer : ajusté, molette et pinch de 10 à 800 %, glisser, ← → avant / après, comparer côte à côte
-  function mediaViewer(x, idx) {
+  // ou au curseur glissant. o (captures du rendu) : title, sub, acts, mode de départ ('slide'), nav { pos, go(±1) } (j / k)
+  function mediaViewer(x, idx, o) {
+    o = o || {};
     var pv = x.preview, sides = [['Avant', pv.before], ['Après', pv.after]].filter(function (s) { return s[1] && !s[1].skipped; });
     if (!sides.length) return;
-    var i = Math.max(0, Math.min(idx, sides.length - 1)), cmp = false, img = null, z = null;
+    var two = pv.kind === 'image' && sides.length === 2;
+    var i = Math.max(0, Math.min(idx, sides.length - 1)), mode = two && o.mode ? o.mode : 'one', img = null, z = null;
     var body = el('div', { class: 'v-body' }), zl = el('span', { class: 'zoom', text: '100 %' });
-    var opts = sides.map(function (s, k) { return [String(k), s[0]]; }); if (pv.kind === 'image' && sides.length === 2) opts.push(['cmp', 'comparer']);
-    var seg = el('div', { class: 'segmented', role: 'group', 'aria-label': 'version' }, opts.map(function (o) {
-      return el('button', { class: 'segment', type: 'button', 'data-v': o[0], 'aria-pressed': String(o[0] === String(i)), onclick: function () { if (o[0] === 'cmp') cmp = true; else { cmp = false; i = +o[0]; } draw(); } }, [o[1]]);
+    var opts = sides.map(function (s, k) { return [String(k), s[0]]; }); if (two) opts.push(['cmp', 'côte à côte'], ['slide', 'curseur']);
+    var seg = el('div', { class: 'segmented', role: 'group', 'aria-label': 'version' }, opts.map(function (op) {
+      return el('button', { class: 'segment', type: 'button', 'data-v': op[0], 'aria-pressed': 'false', onclick: function () { set(op[0]); } }, [op[1]]);
     }));
+    function set(v) { if (v === 'cmp' || v === 'slide') mode = mode === v ? 'one' : v; else { mode = 'one'; i = +v; } draw(); }
     function fit() {
-      if (!img || cmp) return;
+      if (!img || mode !== 'one') return;
       var r = body.getBoundingClientRect(), w = img.naturalWidth || 400, h = img.naturalHeight || 300;
       img.style.width = w + 'px'; img.style.height = h + 'px';
       var k = Math.max(0.1, Math.min(8, Math.min(r.width / w, r.height / h) * 0.92)); z.set(k, (r.width - w * k) / 2, (r.height - h * k) / 2);
     }
-    function real() { if (!img || cmp) return; var r = body.getBoundingClientRect(); z.set(1, (r.width - img.naturalWidth) / 2, (r.height - img.naturalHeight) / 2); }
+    function real() { if (!img || mode !== 'one') return; var r = body.getBoundingClientRect(); z.set(1, (r.width - img.naturalWidth) / 2, (r.height - img.naturalHeight) / 2); }
+    var nav = o.nav ? ' · j k capture suivante / précédente' : '';
+    // curseur glissant : l'avant posé sur l'après, découpé à la position du curseur ; un range natif couvre l'image
+    // (glisser n'importe où, et ← → au clavier une fois focalisé)
+    function slider() {
+      var under = el('img', { src: sides[1][1].src, draggable: 'false', alt: 'après : ' + (o.title || x.path) });
+      var range = el('input', { type: 'range', class: 'pv-slide-range', min: '0', max: '100', step: '0.5', value: '50', 'aria-label': 'curseur avant / après' });
+      var box = el('div', { class: 'pv-slide checker' }, [under, el('div', { class: 'pv-slide-top' }, [el('img', { src: sides[0][1].src, draggable: 'false', alt: 'avant : ' + (o.title || x.path) })]),
+        el('span', { class: 'pv-slide-line', 'aria-hidden': 'true' }), el('span', { class: 'pv-slide-tag l', text: 'avant' }), el('span', { class: 'pv-slide-tag r', text: 'après' }), range]);
+      var put = function () { box.style.setProperty('--pos', range.value + '%'); };
+      var size = function () {
+        var r = body.getBoundingClientRect(), w = under.naturalWidth || 400, h = under.naturalHeight || 300, k = Math.min(1, (r.width - 48) / w, (r.height - 88) / h);
+        box.style.width = Math.round(w * k) + 'px'; box.style.height = Math.round(h * k) + 'px';
+      };
+      range.addEventListener('input', put); put();
+      if (under.complete && under.naturalWidth) requestAnimationFrame(size); else under.addEventListener('load', size);
+      body.appendChild(box);
+      body.appendChild(el('div', { class: 'v-hint', text: 'glisser = curseur · tab puis ← → au clavier · c côte à côte · s une image' + nav + ' · échap' }));
+    }
     function draw() {
-      body.textContent = ''; body.classList.toggle('pv-compare', cmp); img = null;
-      Array.prototype.forEach.call(seg.querySelectorAll('.segment'), function (b) { var v = b.getAttribute('data-v'); b.setAttribute('aria-pressed', String(cmp ? v === 'cmp' : v === String(i))); });
+      body.textContent = ''; body.classList.toggle('pv-compare', mode === 'cmp'); body.classList.toggle('pv-slider', mode === 'slide'); img = null; z = null;
+      Array.prototype.forEach.call(seg.querySelectorAll('.segment'), function (b) { var v = b.getAttribute('data-v'); b.setAttribute('aria-pressed', String(mode === 'one' ? v === String(i) : v === mode)); });
       if (pv.kind === 'pdf') { body.appendChild(el('iframe', { class: 'pv-frame', src: sides[i][1].src, title: sides[i][0] + ' : ' + x.path })); return; }
-      if (cmp) { sides.forEach(function (s) { body.appendChild(el('figure', { class: 'pv-cmp' }, [el('figcaption', { class: 'eyebrow' }, [s[0] + ' · ', el('span', { class: 'pv-size', text: sizeStr(s[1].size) })]), el('div', { class: 'pv-cmp-stage checker' }, [el('img', { src: s[1].src, draggable: 'false', alt: s[0] + ' : ' + x.path })])])); }); return; }
+      if (mode === 'cmp') { sides.forEach(function (s) { body.appendChild(el('figure', { class: 'pv-cmp' }, [el('figcaption', { class: 'eyebrow' }, [s[0] + ' · ', el('span', { class: 'pv-size', text: sizeStr(s[1].size) })]), el('div', { class: 'pv-cmp-stage checker' }, [el('img', { src: s[1].src, draggable: 'false', alt: s[0] + ' : ' + x.path })])])); }); return; }
+      if (mode === 'slide') return slider();
       img = el('img', { src: sides[i][1].src, draggable: 'false', alt: sides[i][0] + ' : ' + x.path });
       body.appendChild(img);
-      body.appendChild(el('div', { class: 'v-hint', text: (sides.length > 1 ? '← → avant / après · c comparer · ' : '') + 'molette = zoom · glisser = déplacer · 0 ajuster · 1 = 100 % · échap' }));
+      body.appendChild(el('div', { class: 'v-hint', text: (two ? '← → avant / après · c côte à côte · s curseur · ' : '') + 'molette = zoom · glisser = déplacer · 0 ajuster · 1 = 100 %' + nav + ' · échap' }));
       z = zoomable(body, img, true, function (k) { zl.textContent = Math.round(k * 100) + ' %'; });
       if (img.complete && img.naturalWidth) requestAnimationFrame(fit); else img.addEventListener('load', fit);
     }
-    var zoomCtl = pv.kind === 'image' ? [ibtn('', { icon: 'zoomout', title: 'dézoomer (−)', onclick: function () { if (z && !cmp) z.zout(); } }), zl, ibtn('', { icon: 'zoomin', title: 'zoomer (+)', onclick: function () { if (z && !cmp) z.zin(); } }),
+    var zoomCtl = pv.kind === 'image' ? [ibtn('', { icon: 'zoomout', title: 'dézoomer (−)', onclick: function () { if (z) z.zout(); } }), zl, ibtn('', { icon: 'zoomin', title: 'zoomer (+)', onclick: function () { if (z) z.zin(); } }),
       ibtn('ajuster', { icon: 'fit', title: 'ajuster à l\'écran (0)', onclick: fit }), ibtn('100 %', { title: 'taille réelle (1)', onclick: real })] : [];
-    viewer(x.path, (opts.length > 1 ? [inkify(seg)] : []).concat(zoomCtl, [ibtn('zed', { href: zed(absOf(x.path)) })]), body, function (ev) {
-      if ((ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && sides.length > 1) { cmp = false; i = ev.key === 'ArrowLeft' ? 0 : sides.length - 1; draw(); return true; }
-      if (ev.key === 'c' && opts.length > 2) { cmp = !cmp; draw(); return true; }
-      if (pv.kind !== 'image' || cmp || !z) return false;
+    var navCtl = o.nav ? [ibtn('‹', { title: 'capture précédente (k)', onclick: function () { o.nav.go(-1); } }), el('span', { class: 'zoom', text: o.nav.pos }), ibtn('›', { title: 'capture suivante (j)', onclick: function () { o.nav.go(1); } })] : [];
+    viewer(o.title || x.path, navCtl.concat(opts.length > 1 ? [inkify(seg)] : [], zoomCtl, o.acts || [ibtn('zed', { href: zed(absOf(x.path)) })]), body, function (ev) {
+      if (o.nav && (ev.key === 'j' || ev.key === 'k')) { o.nav.go(ev.key === 'j' ? 1 : -1); return true; }
+      if ((ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && sides.length > 1) { mode = 'one'; i = ev.key === 'ArrowLeft' ? 0 : sides.length - 1; draw(); return true; }
+      if ((ev.key === 'c' || ev.key === 's') && two) { set(ev.key === 'c' ? 'cmp' : 'slide'); return true; }
+      if (pv.kind !== 'image' || mode !== 'one' || !z) return false;
       if (ev.key === '+' || ev.key === '=') z.zin(); else if (ev.key === '-') z.zout(); else if (ev.key === '0') fit(); else if (ev.key === '1') real(); else return false;
       return true;
-    });
+    }, o.sub);
     draw();
+  }
+  // ================= rendu : captures du front (captures.json + capture.mjs), dans un rapport et dans un plan =================
+  function capShots(d) {
+    var f = d.facts;
+    if (d.kind !== 'plan') return (f.captures || {}).shots || [];
+    return [].concat.apply([], (f.issues || []).map(function (r) { return (r.captures || []).map(function (s) { return Object.assign({ issue: r.n, issueTitle: r.title, issueUrl: r.url }, s); }); }));
+  }
+  function capPreview(s) { return { kind: 'image', before: s.before ? { src: s.before.src, size: s.before.size } : null, after: { src: s.after.src, size: s.after.size } }; }
+  function capSub(s) { return [s.issue ? '#' + s.issue : null, s.viewport === 'mobile' ? 'mobile 390' : s.viewport === 'desktop' ? 'bureau 1440' : s.viewport, s.theme, s.route, s.stale ? 'en retard' : null].filter(Boolean).join(' · ') + (s.note ? ' — ' + s.note : ''); }
+  // list : les captures qui ont une image, dans l'ordre de la galerie filtrée ; j / k les parcourt
+  function captureViewer(list, k) {
+    var s = list[k]; if (!s || !s.after) return;
+    mediaViewer({ path: s.id, preview: capPreview(s) }, 1, { title: s.title || s.id, sub: capSub(s), mode: s.before ? 'slide' : null, acts: [],
+      nav: list.length > 1 ? { pos: (k + 1) + ' / ' + list.length, go: function (dk) { captureViewer(list, (k + dk + list.length) % list.length); } } : null });
+  }
+  function capTags(s) {
+    return [s.viewport ? tag(s.viewport === 'mobile' ? 'mobile' : 'bureau', 'c-label') : null, s.theme ? tag(s.theme, 'c-label') : null,
+      s.midway != null ? tag('mi-course', 'c-label', false, { title: 'figée à ' + s.midway + ' ms de l\'animation' }) : null,
+      s.before ? tag('avant / après', 'c-info') : null,
+      s.stale ? tag('en retard', 'c-warn', true, { title: 'un fichier de ce rendu a changé depuis la capture : capture.mjs --stale' }) : null];
+  }
+  function capCard(s, list) {
+    var k = list.indexOf(s), a = s.after;
+    var stage = a ? el('button', { class: 'cap-stage checker', type: 'button', title: 'ouvrir en grand' + (s.before ? ' : avant / après au curseur' : ''), onclick: function () { captureViewer(list, k); } }, [
+      el('img', { src: a.src, alt: (s.title || s.id) + ' · ' + capSub(s), loading: 'lazy', draggable: 'false', width: a.w || null, height: a.h || null })])
+      : el('div', { class: 'cap-stage hatched empty' }, [el('span', { class: 'eyebrow', text: 'pas encore capturée' })]);
+    return el('figure', { class: 'cap ' + (s.viewport === 'mobile' ? 'm' : 'd') + (s.stale ? ' stale' : ''), id: 'cap-' + (s.issue ? s.issue + '-' : '') + s.id }, [stage,
+      el('figcaption', {}, [el('div', { class: 't', text: s.title || s.id }), el('div', { class: 'tags' }, capTags(s)), s.note ? el('div', { class: 's', text: s.note }) : null])]);
+  }
+  function capturesBlock(d, num) {
+    var f = d.facts, plan = d.kind === 'plan', c = f.captures || {}, shots = capShots(d);
+    if (!plan && !f.captures) return panel('f-captures', num, 'Rendu', { acts: [tag('captures absentes', 'c-warn', true)], body: [el('div', { class: 'card' }, [el('div', { class: 'empty hatched' }, [
+      el('b', { text: 'le diff touche au rendu, et aucune capture. ' }), 'Écrire ', el('code', { text: 'captures.json' }), ' à côté de ce rapport, puis lancer ',
+      el('code', { text: 'node ~/.claude/skills/me/report/capture.mjs' }), ' depuis le worktree. Fichiers : ' + (f.capturesMissing || []).slice(0, 6).join(', ') + ((f.capturesMissing || []).length > 6 ? '…' : '')])])] });
+    var uniq = function (k) { var seen = {}; return shots.map(function (s) { return s[k]; }).filter(function (v) { if (!v || seen[v]) return false; seen[v] = 1; return true; }); };
+    var flt = ls(S.key + ':cap') || {}, grid = el('div', { class: 'cap-groups' });
+    var segOf = function (k, vals, label, name) {
+      if (vals.length < 2) return null;
+      return inkify(el('div', { class: 'segmented', role: 'group', 'aria-label': label }, [['', 'tous']].concat(vals.map(function (v) { return [v, name ? name(v) : v]; })).map(function (o) {
+        return el('button', { class: 'segment', type: 'button', 'aria-pressed': String((flt[k] || '') === o[0]), onclick: function (ev) {
+          flt[k] = o[0]; ls(S.key + ':cap', flt);
+          Array.prototype.forEach.call(ev.currentTarget.parentNode.querySelectorAll('.segment'), function (b) { b.setAttribute('aria-pressed', String(b === ev.currentTarget)); });
+          draw();
+        } }, [o[1]]);
+      })));
+    };
+    var segs = [segOf('vp', uniq('viewport'), 'filtrer par fenêtre', function (v) { return v === 'mobile' ? 'mobile' : v === 'desktop' ? 'bureau' : v; }), segOf('th', uniq('theme'), 'filtrer par thème')].filter(Boolean);
+    function draw() {
+      var shown = shots.filter(function (s) { return (!flt.vp || s.viewport === flt.vp) && (!flt.th || s.theme === flt.th); });
+      var list = shown.filter(function (s) { return s.after; }), groups = [], byKey = {};
+      // groupé par écran (route) dans un rapport, par issue dans un plan ; ordre du manifeste gardé
+      shown.forEach(function (s) { var g = plan ? s.issue : s.route || '—'; if (!byKey[g]) { byKey[g] = []; groups.push(g); } byKey[g].push(s); });
+      grid.textContent = '';
+      groups.forEach(function (g) {
+        var items = byKey[g], first = items[0];
+        var head = plan ? el('a', { href: first.issueUrl || '#', target: '_blank', rel: 'noopener', class: 'cap-gt' }, ['#' + g + ' · ' + (first.issueTitle || '')]) : el('span', { class: 'path cap-gt', text: g });
+        grid.appendChild(el('section', { class: 'cap-group', 'aria-label': plan ? 'issue #' + g : 'écran ' + g }, [el('div', { class: 'cap-gh' }, [head, el('span', { class: 'eyebrow', text: plural(items.length, 'capture') })]),
+          stagger(el('div', { class: 'cap-grid' }, items.map(function (s) { return capCard(s, list); })))]));
+      });
+      if (!shown.length) grid.appendChild(el('div', { class: 'empty hatched', text: shots.length ? 'aucune capture pour ce filtre' : 'captures.json ne déclare aucun plan' }));
+    }
+    draw();
+    var stale = shots.filter(function (s) { return s.stale; }).length, miss = shots.filter(function (s) { return !s.after; }).length;
+    return panel('f-captures', num, 'Rendu', { stale: stale > 0, acts: segs,
+      sub: plural(shots.length, 'capture') + (stale ? ' · ' + stale + ' en retard' : '') + (miss ? ' · ' + miss + ' sans image' : '') + (plan ? '' : c.sha ? ' · sur ' + c.sha : ' · pas de captures/sha') + (c.error ? ' · ' + c.error : ''),
+      body: [el('div', { class: 'card' }, [grid])],
+      foot: plan ? 'captures des rapports de branche, telles que leur dernière collecte les a vues · clic = en grand' : 'clic = en grand · avant / après au curseur ou côte à côte · branche ' + (c.baseUrl || '—') + (c.beforeUrl ? ' · avant ' + c.beforeUrl : '') });
+  }
+  // vignette d'une issue (kanban, liste) : la première capture de son rapport de branche
+  function issueThumb(r, cls) {
+    var list = (r.captures || []).filter(function (s) { return s.after; }).map(function (s) { return Object.assign({ issue: r.n, issueTitle: r.title }, s); });
+    if (!list.length) return null;
+    var s = list[0];
+    return el('button', { class: cls, type: 'button', title: 'rendu de #' + r.n + ' : ' + plural(list.length, 'capture') + ', clic = en grand', onclick: function (ev) { ev.stopPropagation(); captureViewer(list, 0); } }, [
+      el('img', { src: s.after.src, alt: 'rendu de #' + r.n + ' : ' + (s.title || s.id), loading: 'lazy', draggable: 'false' }),
+      list.length > 1 ? el('span', { class: 'n', text: '+' + (list.length - 1) }) : null,
+      list.some(function (x) { return x.stale; }) ? el('span', { class: 'st', text: 'en retard' }) : null]);
   }
   // markdown du dépôt : rendu dans une iframe sandbox (aucun script), aux couleurs de la page
   function mdFrame(text) {
@@ -1194,7 +1301,7 @@
   }
 
   // ================= assemblage =================
-  var FACTS = { files: filesBlock, commits: commitsBlock, review: reviewBlock, ci: ciBlock, issues: issuesBlock };
+  var FACTS = { files: filesBlock, commits: commitsBlock, review: reviewBlock, ci: ciBlock, issues: issuesBlock, captures: capturesBlock };
   var GROUPS = [['synthèse', 'synth'], ['code', 'code'], ['qualité', 'qual'], ['suite', 'suite']];
   function blocks(d) {
     var n = d.notes || {}, secs = (n.sections || []).filter(Boolean), qs = n.questions || [], out = [], num = 0, F = d.facts;
@@ -1204,6 +1311,13 @@
     var order = [], plan = d.kind === 'plan', first = plan ? ((F.issues || []).length ? 'issues' : null) : 'files';
     secs.forEach(function (s, i) { order.push(s); if (i === 0 && first && !placed[first]) order.push({ fact: first }); });
     if (!secs.length && first) order.push({ fact: first });
+    // le rendu d'abord : juste après « En bref » (avant les fichiers) dans un rapport, après les issues dans un plan
+    var caps = capShots(d), hasCap = plan ? caps.length > 0 : !!(F.captures || F.capturesMissing);
+    var capStale = caps.some(function (s) { return s.stale; });
+    if (hasCap && !placed.captures) {
+      var at = plan ? order.map(function (o) { return o.fact; }).indexOf('issues') + 1 : 0;
+      order.splice(at || (secs.length ? 1 : 0), 0, { fact: 'captures' });
+    }
     if (!plan) ['commits', 'ci', 'review'].forEach(function (k) { if (!placed[k]) order.push({ fact: k }); });
     var qaIn = {}, rest = [];
     qs.forEach(function (q) { if (q.in && secs.some(function (s) { return s.id === q.in; })) (qaIn[q.in] = qaIn[q.in] || []).push(q); else rest.push(q); });
@@ -1212,8 +1326,10 @@
     var group = 'synth';
     order.forEach(function (s) {
       if (s.fact && FACTS[s.fact]) {
-        var k = s.fact, nn = ++num; group = k === 'files' || k === 'commits' || k === 'issues' ? 'code' : 'qual';
-        out.push({ key: 'f-' + k, title: { files: 'Fichiers', commits: 'Commits', ci: 'CI', review: 'Review', issues: 'Issues' }[k], fact: k, group: group, sig: [nn, F[k], k === 'files' ? [F.repoPath, F.pr, F.head, F.totals] : k === 'review' ? F.reviewCodex : 0, F.base, F.pushed, F.headShort, F.repo], build: function () { return FACTS[k](d, nn); } });
+        if (s.fact === 'captures' && !hasCap) return; // placé par le modèle, mais rien à montrer ni à réclamer
+        var k = s.fact, nn = ++num; group = k === 'captures' ? (plan ? 'code' : 'synth') : k === 'files' || k === 'commits' || k === 'issues' ? 'code' : 'qual';
+        out.push({ key: 'f-' + k, title: { files: 'Fichiers', commits: 'Commits', ci: 'CI', review: 'Review', issues: 'Issues', captures: 'Rendu' }[k], fact: k, group: group, stale: k === 'captures' && capStale,
+          sig: [nn, F[k], k === 'files' ? [F.repoPath, F.pr, F.head, F.totals] : k === 'review' ? F.reviewCodex : k === 'captures' ? [caps, F.capturesMissing] : 0, F.base, F.pushed, F.headShort, F.repo], build: function () { return FACTS[k](d, nn); } });
       } else if (s.id) {
         var m = ++num, g = group === 'qual' ? 'suite' : group;
         out.push({ key: 'n-' + s.id, title: s.title || s.id, prose: true, group: g, stale: (F.stale || []).indexOf(s.id) >= 0, sig: [m, s, (F.stale || []).indexOf(s.id) >= 0, qaIn[s.id], n.sources, F.repoPath], build: function () { return proseBlock(s, m, d, srcIndex, qaIn[s.id]); } });
@@ -1307,6 +1423,7 @@
       if (b.fact === 'files') cnt = (f.files || []).length;
       else if (b.fact === 'issues') { var pc = planCounts(f); cnt = pc.done + '/' + (f.issues || []).length; cls = pc.blocked ? 'c-err' : pc.done === (f.issues || []).length ? 'c-ok' : ''; }
       else if (b.fact === 'commits') cnt = (f.commits || []).length;
+      else if (b.fact === 'captures') { var cs = capShots(d); cnt = cs.length || '!'; cls = !cs.length || b.stale ? 'c-warn' : ''; }
       else if (b.fact === 'ci') { cnt = f.ci ? f.ci.ok + '/' + f.ci.total : '–'; cls = f.ci ? (f.ci.fail ? 'c-err' : f.ci.pending ? 'c-warn' : 'c-ok') : ''; }
       else if (b.fact === 'review') { var rv = lastPass(f); cnt = rv ? rv.p0 + rv.p1 + rv.p2 : '–'; cls = rv ? (rv.p0 + rv.p1 + rv.p2 ? 'c-warn' : 'c-ok') : ''; }
       else if (b.qa) { cnt = qaAnswered() + '/' + questions().length; cls = qaAnswered() === questions().length ? 'c-ok' : 'c-accent'; }
@@ -1363,6 +1480,8 @@
     closeOverlay();
     var d = S.cur, f = d.facts, items = [], sel = 0, shown = [];
     (S.blocks || []).forEach(function (b) { items.push({ g: 'sections', t: b.title, s: '', go: function () { goTo(b.key); } }); });
+    var caps = capShots(d), shown = caps.filter(function (x) { return x.after; });
+    caps.forEach(function (x) { items.push({ g: 'rendu', t: x.title || x.id, s: capSub(x), go: function () { goTo('f-captures'); var k = shown.indexOf(x); if (k >= 0) setTimeout(function () { captureViewer(shown, k); }, 350); } }); });
     (f.files || []).forEach(function (x) { items.push({ g: 'fichiers', t: x.path.split('/').pop(), s: x.path + '  +' + x.add + ' −' + x.del, go: function () { openFile(x.path); } }); });
     [].concat((f.review || {}).findings || [], (f.reviewCodex || {}).findings || []).forEach(function (x) { items.push({ g: 'findings', t: x.title.replace(/`/g, ''), s: x.prio + ' · ' + x.axis + ' · passe ' + x.pass + ' · ' + x.loc, go: function () { goFinding(x); } }); });
     ((d.notes || {}).sources || []).forEach(function (x) { items.push({ g: 'sources', t: x.label || x.id, s: x.path || x.href || '', go: function () { location.hash = 'src-' + x.id; } }); });

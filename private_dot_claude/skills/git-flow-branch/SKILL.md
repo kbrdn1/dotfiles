@@ -194,6 +194,8 @@ The PR is open: development is over, review starts. From the worktree, generate 
 
 `NOTES absentes` → write `notes.json` (schema in the skill), rerun, open the page once (`open <REPORT>`, or Sheprd in Herdr): it refreshes itself. The review loop's step (D) fills its review section at every pass. After the review, if the code moved, `/me:report refresh` rewrites only the sections flagged stale.
 
+Diff that touches the rendering (`CAPTURES absentes`): captures are mandatory before review. Write `captures.json` in the report folder, run `node ~/.claude/skills/me/report/capture.mjs` from the checkout with the branch's server up (skill `me:report`, « Captures du rendu »), and point the PR body to the report's `captures/` folder, never `/tmp`.
+
 ### 4 bis. Review, then CI — *this step was missing from this skill until 2026-09-07*
 
 Every other flow (`git-flow-worktree`, both `spec-git-flow-*`) gates the PR before merge; this one went straight from "PR opened" to "note at merge". It no longer does.

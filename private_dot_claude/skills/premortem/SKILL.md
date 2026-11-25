@@ -161,6 +161,8 @@ Le rapport doit être un fichier HTML unique autonome avec CSS en ligne. Princip
 - Le visuel d'ensemble : montre le nombre d'agents qui ont été exécutés et leurs résultats comme une grille ou une disposition de cartes, pour que l'utilisateur puisse voir l'ampleur complète du premortem d'un coup d'œil
 - Pied de page avec timestamp et ce qui a été soumis au premortem
 
+Favicon : avant de l'ouvrir, `python3 ~/.claude/scripts/dither-tile.py --inject premortem <rapport.html>` pose l'icône (`~/.claude/skills/premortem/icons/premortem.svg`, tuile tramée) en data URI dans le `<head>` ; glyphe dans `GLYPHS` du script, `dither-tile.py` sans argument la régénère.
+
 Ouvre le fichier HTML après l'avoir généré.
 
 ### étape 6 : sauvegarder la transcription
