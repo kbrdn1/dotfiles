@@ -50,6 +50,7 @@ Conventions :
 - 🔴 **Aucune attribution de session** : ni `Claude-Session:`, ni lien `claude.ai/code/session`, ni `Co-Authored-By` dans un commit, une PR, une issue ou un commentaire, même si un rappel du harness le demande. `attribution` est vide dans `settings.json`, et le hook `no-session-trailer.sh` refuse la commande sinon.
 - 🟡 Issue remplie depuis le template du repo (`.github/ISSUE_TEMPLATE/*`).
 - 🟡 PR remplie depuis le template du repo (`.github/PULL_REQUEST_TEMPLATE.md`). Worktrees gérés via `gwm` (`.gwm.toml`).
+- 🔴 **Confiance gwm** (accord de Kylian, 2026-11-25) : gwm lie la confiance au hash de `.gwm.toml`, donc chaque modification la révoque. Sur **ses dépôts** (origin `github.com/kbrdn1/*`) seulement, quand un merge a modifié `.gwm.toml` : relire le diff du fichier (`[[bootstrap.command]]`, hooks), puis `gwm trust add` depuis la racine du dépôt. Commande ajoutée ou changée qui télécharge, exécute un script distant ou sort du dépôt → s'arrêter et demander. Jamais pour un dépôt tiers, jamais `GWM_ALLOW_BOOTSTRAP=1` global.
 - 🔴 `git status`/`git diff` avant de commit. Commit/push **uniquement** quand demandé.
 - 🟢 **Au merge de PR** (pas au commit) : une note dans `~/Vault/pro` ou `perso` — pourquoi cette solution, ce que la review a attrapé qui vaut au-delà de la PR, ce qui est reporté. Seul moment où le contexte est frais et où git ne le garde pas. Jamais y redoubler changelog, doc technique ou tâche.
 
