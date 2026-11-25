@@ -260,13 +260,15 @@ export function compaction(entries) {
   return null;
 }
 
-/** Messages typed while the agent worked and not taken yet (queue-operation, FIFO). */
+/** Messages typed while the agent worked and not taken yet (queue-operation, FIFO; popAll: the queue
+ *  back into the prompt, all of it). */
 export function pendingQueue(entries) {
   const fifo = [];
   for (const e of entries) {
     if (e.k !== "queue") continue;
     if (e.op === "enqueue") fifo.push(e);
     else if (e.op === "dequeue") fifo.shift();
+    else if (e.op === "popAll") fifo.length = 0;
     else if (e.op === "remove") {
       const i = e.text != null ? fifo.findIndex((q) => q.text === e.text) : -1;
       fifo.splice(i < 0 ? 0 : i, 1);

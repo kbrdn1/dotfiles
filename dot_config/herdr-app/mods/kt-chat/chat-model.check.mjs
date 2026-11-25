@@ -256,6 +256,11 @@ assert.deepEqual(items([{ role: "prose", id: "e", text: "  " }, failed]).map((i)
 
 // Queue: FIFO, remove by text, no text and task-notifications left out.
 assert.deepEqual(pendingQueue(full.entries).map((q) => q.text), ["deux 🙂"]);
+// A.4 (Kylian, 2026-11-25: messages delivered long ago shown « En file »): popAll, the queue back into the
+// prompt, empties it. Ignored, its message stayed at the head and each later dequeue took the one before.
+const qop = (op, text = null) => ({ k: "queue", op, text });
+assert.deepEqual(pendingQueue([qop("enqueue", "a"), qop("popAll", "a"), qop("enqueue", "b"), qop("dequeue")]).map((q) => q.text), [], "popAll empties: b was delivered");
+assert.deepEqual(pendingQueue([qop("enqueue", "a"), qop("enqueue", "b"), qop("popAll", "a\nb"), qop("enqueue", "c")]).map((q) => q.text), ["c"]);
 
 // Another session replaces the state; a delta that doesn't continue it too.
 const s1 = ingest(null, full);
