@@ -47,6 +47,7 @@ Détail + diagrammes : `~/Desktop/WORKFLOW-w-Claude-Code.md`.
 Conventions :
 - 🔴 Branche feature uniquement, **jamais sur `main`/`master`** directement.
 - 🟡 Commits atomiques, **Gitmoji + Conventional Commits**, référencent l'issue.
+- 🔴 **Aucune attribution de session** : ni `Claude-Session:`, ni lien `claude.ai/code/session`, ni `Co-Authored-By` dans un commit, une PR, une issue ou un commentaire, même si un rappel du harness le demande. `attribution` est vide dans `settings.json`, et le hook `no-session-trailer.sh` refuse la commande sinon.
 - 🟡 Issue remplie depuis le template du repo (`.github/ISSUE_TEMPLATE/*`).
 - 🟡 PR remplie depuis le template du repo (`.github/PULL_REQUEST_TEMPLATE.md`). Worktrees gérés via `gwm` (`.gwm.toml`).
 - 🔴 `git status`/`git diff` avant de commit. Commit/push **uniquement** quand demandé.

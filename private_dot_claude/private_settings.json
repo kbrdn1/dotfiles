@@ -7,6 +7,7 @@
     "SLASH_COMMAND_TOOL_CHAR_BUDGET": "30000"
   },
   "includeCoAuthoredBy": false,
+  "attribution": { "commit": "", "pr": "", "sessionUrl": false },
   "permissions": {
     "allow": [
       "WebSearch",
@@ -190,6 +191,11 @@
           {
             "type": "command",
             "command": "bash /Users/kbrdn1/.claude/hooks/secret-guard.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/kbrdn1/.claude/hooks/no-session-trailer.sh",
             "timeout": 10
           }
         ]

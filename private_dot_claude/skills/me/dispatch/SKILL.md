@@ -195,8 +195,9 @@ Au retour :
    l'utilisateur : ouvrir une issue par reste est sa décision, pas celle du lead.
 4. `collect.py --plan <slug>`, puis lancer les issues que ce merge débloque (étapes 2 et 3).
 5. Conflit au merge : le résoudre dans le worktree de la branche, jamais sur `dev` directement. Après un conflit,
-   ne pas faire `git commit --no-edit` : le message garderait les lignes `# Conflicts:` et n'aurait pas le trailer
-   `Claude-Session`. Écrire le message (Gitmoji + Conventional, trailer compris).
+   ne pas faire `git commit --no-edit` : le message garderait les lignes `# Conflicts:`. Écrire le message
+   (Gitmoji + Conventional), sans trailer de session : Kylian n'en veut ni dans les commits, ni dans les PR, ni
+   dans les issues (`attribution` vide dans settings.json).
 6. Une fois l'issue mergée : `hc kill i<N>` puis `hc rm i<N>`, et ses helpers s'il en reste.
 
 ## 5b. Contexte et compaction

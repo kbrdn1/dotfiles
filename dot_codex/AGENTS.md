@@ -89,6 +89,7 @@ Avant tout changement significatif : `git status`, branche courante, racine rée
 - Workflow par défaut : issue puis worktree isolé via `gwm` (`$me-issue-worktree-pr`). Si le dépôt ne le permet pas, branche dédiée (`$me-issue-branch-pr`).
 - Après création d'un worktree, attacher la session avec `gwm agents attach`; un échec best-effort est signalé mais ne justifie pas un bricolage de worktree.
 - Commits atomiques, Gitmoji + Conventional Commits, `refs #N` sur les intermédiaires, `closes #N` uniquement sur le dernier.
+- Aucune attribution d'agent ou de session dans un commit, une PR, une issue ou un commentaire : ni lien de session, ni `Co-Authored-By`, ni signature d'outil (règle de Kylian, 2026-11-25).
 - Remplir issue et PR depuis les templates du dépôt. Ne cocher que les validations réellement exécutées.
 - Commit et push uniquement lorsque la demande ou la procédure les autorise.
 - Ne jamais merger sans demande explicite. Sur les dépôts de Kylian : merge commit, jamais squash, jamais suppression automatique de branche, sauf convention locale explicitement contraire.
