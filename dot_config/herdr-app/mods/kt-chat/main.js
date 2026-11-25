@@ -48,12 +48,16 @@
 // state in its first image; a cold copy (its first show, or after a save) shows its skeleton at once.
 
 import { View, div, svg, image, PathBuilder, Background } from "gpui-kit";
-import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea } from "gpui-base";
+import { v_flex, h_flex, ScrollHandle, TextView, TextareaState, Textarea, InputState, Input } from "gpui-base";
 import { agents, focused, panes, terminals, theme, settings, shared, setShared, home, appHome, exec, hc, readTextFile, writeTextFile, checking, nextCommand, notify, props, layout, run, openOverlay } from "herdr";
 // #56: the composer (pure, composer.check.mjs); kt-threads' decide.js (a byte-identical copy, with
 // decide.strings.js): what a blocked agent waits on, and its Accepter / Refuser.
 import { mode as sendMode, canSend, sendArgs, sendResult } from "./composer.js";
-import { decide, decisionButtons } from "./decide.js";
+import { decide, decisionButtons, acknowledge, reply } from "./decide.js";
+// kbrdn-herdr #18: herdr-bridge 0.6.0's requests answered whole (an AskUserQuestion's questions, an MCP
+// form), and who asks when it is a sub-agent.
+import { cardOf, heldOf, inputsOf, whoOf, rowsOf, enterRow, moveCursor, slotsOf, MAX_FIELDS } from "./bridge-model.js";
+import { bridgeCard, setUp, sendable } from "./bridge-card.js";
 import { askOf, callId, shownRows } from "./ask.js";
 import { ingest, prepend, build, buildInc, tally, foldedSteps, foldTree, arrivals, trim, pendingQueue, subPath, subItems, subArrivals, compaction } from "./chat-model.js";
 import { resolveCodexLink, shouldPollCodex, CODEX_RECHECK_MS } from "./codex-link.js";
@@ -127,7 +131,9 @@ const AHEAD = { near: 1.5, rest: 150, chunk: 3, give: 10000 };
 const KEEP = 1200; // entries the live tail keeps (trim), whole turns, before the oldest go
 // The live tail: a delta read this often, only while the Chat shows and its agent works.
 const TICK = 750;
-const BRIDGE = 2000; // #84: the bridge file read again while the agent works or shows sub-agents
+// #84: the bridge file read again while the agent works or shows sub-agents. 1.5 s: a request that
+// waits on Herdr's acknowledgement goes back to the terminal after 3 s (kbrdn-herdr #18).
+const BRIDGE = 1500;
 const SUB_TRIES = 3; // #58: failed reads of a sub-agent's transcript in a row before it stops trying (until unfolded again)
 const STALE = 30000; // #81: the completions' catalog is read again when older, as the menu opens or the field takes focus
 const ASK_TTL = 300000; // #81: a kt-confirm « yes » later than this after its ask sends nothing
@@ -354,6 +360,32 @@ export default class Chat extends View {
     this.decision = null; // decide(terminal) while the agent is blocked
     this.ask = null; // #79: askOf(pending, call): the card worked out when the request or its call (chat-index.ts --tool) arrives
     this.askOpen = false; // #79: the request shown whole
+    // kbrdn-herdr #18 (bridge-card.js): the request the card answers whole, { id, kind, card, held, cursor,
+    // ready }, and the inputs it types in: a pool made here (never in render or a task), MAX_FIELDS of
+    // them. A keystroke redraws only when the card's button changes (sendable or not).
+    this.bridgeAsk = null;
+    this.bridgeBusy = false;
+    // #79: the request's card at the end of the conversation (body() sets it, composerView reads it), what
+    // the card says when a click found the request changed { id, text }, and a choice waiting for its note
+    // { id, key, label } (typed in the pool's first input).
+    this.reqInTail = false;
+    this.reqSaid = null;
+    this.noteFor = null;
+    this.bridgeInputs = Array.from({ length: MAX_FIELDS }, () => InputState.new());
+    this.bridgeTyping = false; // one of them has the keyboard: its keys are its own (press)
+    // Which of them hold text: a multi-select's « Autre » box is checked by its text (a redraw when it fills or empties).
+    this.bridgeFilled = this.bridgeInputs.map(() => false);
+    for (const [i, s] of this.bridgeInputs.entries()) {
+      s.on("change", (_e, cx) => {
+        const b = this.bridgeAsk;
+        const ready = Boolean(b && sendable(b.card, b.held, this.bridgeInputs));
+        const was = this.bridgeFilled[i];
+        this.bridgeFilled[i] = s.value().trim() !== "";
+        if (b && (ready !== b.ready || was !== this.bridgeFilled[i])) { b.ready = ready; cx.notify(); }
+      });
+      s.on("focus", () => { this.bridgeTyping = true; });
+      s.on("blur", () => { this.bridgeTyping = false; });
+    }
     this.composer = TextareaState.new({ placeholder: tr("composer.ph") });
     // Monocode's field: one row of 22 px, up to 140 (input.rs:27, :407-411).
     this.composer.set_auto_grow(1, 6);
@@ -1018,6 +1050,12 @@ export default class Chat extends View {
   }
 
   press(e, cx) {
+    // kbrdn-herdr #18: a field of the bridge's card has the keyboard: its keys are its own, esc gives it back.
+    if (this.bridgeTyping) {
+      if (keyOf(e).name !== "escape") return false;
+      this.focusIn();
+      return true;
+    }
     // The composer has the keyboard: typing is its own; esc gives the keyboard back to the turns. The
     // completion menu open (#81) takes its keys first: esc closes it (a second esc gives the keyboard back).
     if (this.typing) {
@@ -1026,6 +1064,8 @@ export default class Chat extends View {
       this.focusIn();
       return true;
     }
+    // A question card up (Kylian, 2026-11-25): ↑/↓ and Entrée are its own; j/k keep reading the turns.
+    if (this.questionKey(keyOf(e).name, cx)) return true;
     // i: into the composer (when there is an agent to write to).
     if (keyOf(e).name === "i" && this.composerShown()) {
       this.composer.focus();
@@ -1671,19 +1711,33 @@ export default class Chat extends View {
   }
 
   // The blocked agent's request (decide.js reads the bridge's cache, or the screen for a held message):
-  // read when the status turns blocked, dropped when it leaves it.
+  // read when the status turns blocked, dropped when it leaves it. kbrdn-herdr #18: a request that waits
+  // on Herdr's acknowledgement (`ack`: a sub-agent's dialog, an MCP form) comes while the agent works
+  // (readBridge): read the same, then acknowledged once its card shows, once (decide.js acknowledge).
   readDecision(cx, address) {
     cx.spawn(async (cx) => {
-      const d = await decide(address).catch(() => null);
-      const still = target().agent?.address === address && target().agent?.status === "blocked";
+      // #79: every choice the terminal offers (yes, yes for the session or the repo, no, each with a note).
+      let d = await decide(address, { full: true }).catch(() => null);
+      // A sub-agent's request has no note: it would go to the lead agent as Kylian's message, not to it.
+      if (d?.pending?.agent) d = { ...d, pending: { ...d.pending, options: (d.pending.options ?? []).filter((o) => !o.note) } };
+      const still = target().agent?.address === address && (target().agent?.status === "blocked" || Boolean(d?.pending?.ack));
       if (still) {
-        // A language refresh keeps an opened card open when it is still the same request.
+        // A language refresh keeps an opened card open when it is still the same request (and what its
+        // card holds: bridgeCardOf).
         const same = d?.pending?.id != null && this.decision?.pending?.id === d.pending.id;
+        if (!same) {
+          this.noteFor = null;
+          this.reqSaid = null;
+        }
         this.decision = d;
+        this.decisionFor = address;
         this.ask = askOf(d?.pending, null);
         this.askOpen = same && this.askOpen;
+        this.bridgeAsk = this.bridgeCardOf(d?.pending);
       }
       cx.notify();
+      // Acknowledged only while this face shows it (else readBridge does, once it shows).
+      if (still && d?.pending?.ack && this.isShown()) await acknowledge(address, d.pending);
       // #79: the call itself, read back from the transcript by its id: what an edit changes (the bridge
       // publishes its path only). Never during the render.
       const id = still ? callId(d?.pending) : null;
@@ -1701,6 +1755,95 @@ export default class Chat extends View {
         cx.notify();
       }
     });
+  }
+
+  /** kbrdn-herdr #18: the card a request gets answered whole in (bridge-model.js cardOf), its inputs set up; else null. */
+  bridgeCardOf(pending) {
+    // The same request read again (readBridge and live() both read it, a language refresh too): what is
+    // typed or picked, and the cursor, stay.
+    if (this.bridgeAsk && this.bridgeAsk.id === pending?.id && this.bridgeAsk.kind === pending?.kind) return this.bridgeAsk;
+    const card = cardOf(pending);
+    if (!card || inputsOf(card) > this.bridgeInputs.length) return null;
+    setUp(card, this.bridgeInputs);
+    const held = card.kind === "form" ? heldOf(card.fields) : heldOf();
+    return { id: pending.id, kind: pending.kind, card, held, cursor: 0, ready: Boolean(sendable(card, held, this.bridgeInputs)) };
+  }
+
+  /**
+   * kbrdn-herdr #18: what the card does: a form's pick or toggle; the questions' cursor (hover) and their
+   * Entrée or click (enter); the send (decide.js reply); the terminal.
+   */
+  bridgeOn(address, pending) {
+    const b = this.bridgeAsk;
+    const ready = () => { b.ready = Boolean(sendable(b.card, b.held, this.bridgeInputs)); };
+    const set = (k, h, cx) => {
+      b.held[k] = { ...(b.held[k] ?? {}), ...h };
+      ready();
+      cx.notify();
+    };
+    const send = (fields, cx) => {
+      // The keyboard back to the Chat first: a field of the pool keeping it would take the next card's ↑/↓.
+      this.focusIn();
+      this.bridgeBusy = true;
+      cx.notify();
+      cx.spawn(async (cx) => {
+        const r = await reply(address, pending, fields);
+        this.bridgeBusy = false;
+        // #79: the request changed meanwhile, or the answer didn't go: said in the card (requestCard).
+        this.reqSaid = !r.ok && r.reason ? { id: pending.id, text: r.reason } : null;
+        cx.notify();
+      });
+    };
+    return {
+      pick: (k, v, cx) => set(k, { pick: v }, cx),
+      toggle: (k, v, cx) => {
+        const picks = b.held[k]?.picks ?? [];
+        set(k, { picks: picks.includes(v) ? picks.filter((x) => x !== v) : [...picks, v] }, cx);
+      },
+      // The pointer moves the questions' cursor (the preview follows it): a redraw only when it moves.
+      hover: (r, cx) => {
+        if (b.cursor === r) return;
+        b.cursor = r;
+        cx.notify();
+      },
+      // Entrée on a row, or a click: the Chat takes the keyboard (↑/↓ then reach the card), the row's pick
+      // (bridge-model.js enterRow), its field focused when it has one; on « Envoyer », the send once the
+      // card is complete. A pick never sends.
+      enter: (r, cx) => {
+        this.focusIn();
+        const row = rowsOf(b.card)[r];
+        if (row?.kind === "send") {
+          b.cursor = r;
+          const now = sendable(b.card, b.held, this.bridgeInputs);
+          if (now && !this.bridgeBusy) send(now, cx);
+          else cx.notify();
+          return;
+        }
+        const e = enterRow(b.card, b.held, r);
+        b.held = e.held;
+        b.cursor = e.to;
+        ready();
+        if (e.focus) this.bridgeInputs[slotsOf(b.card)[b.card.questions[row.q].question]]?.focus();
+        cx.notify();
+      },
+      send,
+      openTerminal: () => this.openTerminal(),
+    };
+  }
+
+  /**
+   * The questions card's keys (Kylian, 2026-11-25), while the card shows the request this Chat holds: ↑/↓
+   * move its cursor over the rows, Entrée is the row's (bridgeOn enter). True when the key was the card's.
+   */
+  questionKey(name, cx) {
+    const b = this.bridgeAsk;
+    const p = this.decision?.pending;
+    if (!b || b.card.kind !== "questions" || p?.id !== b.id || (name !== "up" && name !== "down" && name !== "enter")) return false;
+    const a = target().agent;
+    if (this.fixed || !a || (a.status !== "blocked" && !p.ack)) return false;
+    if (name === "enter") this.bridgeOn(a.address, p).enter(b.cursor, cx);
+    else b.cursor = moveCursor(b.cursor, name === "down" ? 1 : -1, rowsOf(b.card).length);
+    return true;
   }
 
   /** The blocked request must be read again after a new blocking, agent or interface language. */
@@ -3419,6 +3562,11 @@ export default class Chat extends View {
     const children = [this.head(t), ...turns];
     if (to < this.turns.length) children.push(this.later(t, this.turns.length - to));
     else if (this.builtLive) children.push(this.working(t));
+    // #79: the request a dialog waits on, at the end of the conversation (Monocode's card), when the window
+    // reaches it; else over the composer (composerView reads reqInTail, drawn after this).
+    const req = to >= this.turns.length && !this.fixed ? this.requestCard(t, target()) : null;
+    this.reqInTail = Boolean(req);
+    if (req) children.push(this.col(v_flex().pb(10).min_w(0).child(req), "kc-req"));
     // The 1 px end mark: revealing it shows the bottom of a last turn taller than the view.
     children.push(div().flex_none().h(1));
     const last = children.length - 1;
@@ -3485,13 +3633,26 @@ export default class Chat extends View {
    * the theme's accent with its accent_foreground on it: Kylian, 2026-11-20). Under it (pt 6, px 15, gap 10, 12 px at 0.55): the checkout or worktree, the branch, and on
    * the right what the composer says, then the context.
    */
-  composerView(t, tg, pr, cx) {
-    if (this.fieldLang != null && this.fieldLang !== lang()) this.relang();
+  /**
+   * #79, the request a dialog waits on (decide.js; kbrdn-herdr #18: also while the agent works, when it
+   * waits on Herdr's acknowledgement), at the end of the conversation as Monocode draws it (body()), else
+   * over the composer: what it asks, whole; every choice the terminal offers (decide { full }), a choice
+   * with a note asking for it first and sending it as Kylian's own message (sendNote); an AskUserQuestion
+   * or an MCP form answered whole (bridge-card.js: the questions one option per row, ↑/↓ and Entrée,
+   * their previews beside them); who asks when it is a sub-agent. A click that finds the request changed
+   * (answered in the terminal, another one) sends nothing, and the card says so. Null when nothing waits.
+   */
+  requestCard(t, tg) {
     const a = tg.agent;
     const dark = Boolean(settings().dark);
     const m = sendMode(a?.status ?? null);
-    const can = canSend({ status: a?.status ?? null, text: this.draft, sending: this.sending, atts: this.drafts.length });
-    const p = m === "blocked" ? this.decision?.pending : null;
+    // kbrdn-herdr #18: a request waiting on Herdr's acknowledgement shows while the agent works too.
+    const p = m === "blocked" || this.decision?.pending?.ack ? this.decision?.pending : null;
+    if (m !== "blocked" && !p?.ack) return null;
+    const bc = p && this.bridgeAsk?.id === p.id ? this.bridgeAsk : null;
+    const who = whoOf(p);
+    const said = p && this.reqSaid?.id === p.id ? this.reqSaid.text : null;
+    const note = p && !bc && this.noteFor?.id === p.id ? this.noteFor : null;
     const pill = (id, label, onClick) => h_flex().id(id).flex_none().h(24).px(8).items_center().rounded(6).bg(ink(t, 0.1))
       .text_size(12).text_color(ink(t, 1)).cursor_pointer().hover((s) => s.bg(ink(t, 0.15)))
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(cx); cx.notify(); })
@@ -3518,20 +3679,77 @@ export default class Chat extends View {
           .child(pill("kc-ask-fold", this.askOpen ? tr("composer.askFold") : tr("composer.askAll", { n: ask.length }), () => { this.askOpen = !this.askOpen; }))
           .when(this.askOpen && shown.more > 0, (el) => el.child(div().text_size(12).text_color(ink(t, 0.5)).child(tr("composer.askMore", { n: shown.more }))))))
       : null;
-    // A dialog waits in the terminal: what it asks, its answers when it has some, the terminal.
-    const blocked = m === "blocked"
-      ? v_flex().gap(6).px(12).py(10).rounded(12).border(1).border_color(alpha(t.blocked, "66")).bg(alpha(t.blocked, dark ? "14" : "1f"))
-        .child(h_flex().gap(8).items_center()
-          .child(div().size(6).flex_none().rounded_full().bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))
-          .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(ink(t, 1)).child(p?.title || tr("composer.blocked"))))
-        .when(Boolean(askView), (el) => el.child(askView))
+    // A choice with a note: the note typed here first (the pool's first input: no bridge card is up).
+    const noteRow = note
+      ? v_flex().gap(6).min_w(0)
+        .child(div().text_size(12).text_color(ink(t, 0.6)).child(note.label))
+        .child(Input.new(this.bridgeInputs[0]).h(28).w_full().px(8).rounded(6).border(1).border_color(ink(t, 0.15)).bg(ink(t, 0.04)).text_size(13).text_color(ink(t, 1)))
         .child(h_flex().gap(6).items_center()
-          .when(Boolean(p?.options?.length), (el) => el.child(decisionButtons(this.decision, { onDone: (r, cx) => {
-            if (!r?.ok && r?.reason) notify({ title: tr("composer.answerFailed"), body: r.reason, level: "error" });
-            cx.notify();
-          } })))
-          .child(pill("kc-open-term", tr("composer.openTerminal"), () => this.openTerminal())))
+          .child(pill("kc-note-send", tr("bridge.send"), (cx) => this.sendNote(cx, a.address, p, note.key)))
+          .child(pill("kc-note-cancel", tr("bridge.cancel"), () => { this.noteFor = null; })))
       : null;
+    const done = (r, cx) => {
+      this.reqSaid = !r?.ok && r?.reason ? { id: p?.id, text: r.reason } : null;
+      cx.notify();
+    };
+    const toNote = (key, label, cx) => {
+      this.noteFor = { id: p.id, key, label };
+      this.reqSaid = null;
+      this.bridgeInputs[0].set_value("");
+      this.bridgeInputs[0].focus();
+      cx.notify();
+    };
+    // A dialog waits in the terminal: what it asks, its answers when it has some, the terminal.
+    return v_flex().gap(6).px(12).py(10).rounded(12).border(1).border_color(alpha(t.blocked, "66")).bg(alpha(t.blocked, dark ? "14" : "1f"))
+      .child(h_flex().gap(8).items_center()
+        .child(div().size(6).flex_none().rounded_full().bg(t.blocked).loop("opacity", { from: 0.3, to: 1, period: 1200 }))
+        .child(div().flex_1().min_w(0).truncate().text_size(13).font_medium().text_color(ink(t, 1)).child(p?.title || tr("composer.blocked")))
+        .when(Boolean(who), (el) => el.child(div().flex_none().text_size(11).text_color(ink(t, 0.5)).child(tr("bridge.sub", { name: who })))))
+      .when(Boolean(bc), (el) => el.child(bridgeCard(t, { ...bc, inputs: this.bridgeInputs, tr, busy: this.bridgeBusy, mono: CODE }, this.bridgeOn(a?.address, p))))
+      .when(!bc && Boolean(askView), (el) => el.child(askView))
+      .when(Boolean(noteRow), (el) => el.child(noteRow))
+      .when(!bc && !note, (el) => el.child(h_flex().flex_wrap().gap(6).items_center()
+        .when(Boolean(p?.options?.length), (el) => el.child(decisionButtons(this.decision, { onDone: done, onNote: toNote })))
+        .child(pill("kc-open-term", tr("composer.openTerminal"), () => this.openTerminal()))))
+      // The request changed meanwhile (decide.js said why), or the answer didn't go: said here, nothing sent.
+      .when(Boolean(said), (el) => el.child(div().text_size(12).text_color(ERR).child(said)));
+  }
+
+  // #79: a choice with a note: the choice first (it closes the dialog), then the note as Kylian's own
+  // message once the dialog is gone (hc send never types into one: it would answer it). A note that can't
+  // go once the card is gone shows in a notification, its text with it (never lost).
+  sendNote(cx, address, pending, key) {
+    const text = this.bridgeInputs[0].value();
+    if (!text.trim()) {
+      this.reqSaid = { id: pending.id, text: tr("note.empty") };
+      return;
+    }
+    const d = this.decision;
+    cx.spawn(async (cx) => {
+      const r = await d.choose(key);
+      if (!r.ok) {
+        this.reqSaid = { id: pending.id, text: r.reason };
+        return cx.notify();
+      }
+      this.noteFor = null;
+      this.bridgeInputs[0].set_value("");
+      cx.notify();
+      for (let i = 0; i < 40 && agents().find((x) => x.address === address)?.status === "blocked"; i++) await cx.sleep(250);
+      const a = agents().find((x) => x.address === address);
+      const s = a ? await this.deliver(cx, a, { via: "send" }, text, []) : { ok: false };
+      if (!s.ok) notify({ title: tr("note.failed"), body: text, level: "error" });
+      cx.notify();
+    });
+  }
+
+  composerView(t, tg, pr, cx) {
+    if (this.fieldLang != null && this.fieldLang !== lang()) this.relang();
+    const a = tg.agent;
+    const dark = Boolean(settings().dark);
+    const m = sendMode(a?.status ?? null);
+    const can = canSend({ status: a?.status ?? null, text: this.draft, sending: this.sending, atts: this.drafts.length });
+    // #79: the request, over the composer when the conversation's end isn't drawn (else at its end, body()).
+    const blocked = this.reqInTail ? null : this.requestCard(t, tg);
     const toolPill = (icon, parts, color) => h_flex().h(26).px(6).gap(4).flex_none().items_center().rounded(6).bg(ink(t, 0.1))
       .child(svg(icon).size(14).flex_none().text_color(color ?? ink(t, 0.5)))
       .children(parts.map(([text, a]) => div().text_size(11).text_color(color ?? ink(t, a)).child(text)));
@@ -3709,11 +3927,24 @@ export default class Chat extends View {
       this.bridgeReading = false;
       const now = Date.now();
       const src = tasksOf(next?.todos, plan);
-      const key = JSON.stringify([address, src?.todos ?? null, next?.agents ?? null, shownAgents(next?.agents, now).map((a) => agentAge(a, now)), src?.at ? relative(src.at, { now }) : ""]);
+      const key = JSON.stringify([address, src?.todos ?? null, next?.agents ?? null, shownAgents(next?.agents, now).map((a) => agentAge(a, now)), src?.at ? relative(src.at, { now }) : "", next?.pending?.id ?? null, next?.pending?.kind ?? null]);
       this.bridgeFor = address;
       this.bridge = next;
       this.plan = plan;
       this.feedRunner(); // runner: its action, its status or its agent may have just changed
+      // kbrdn-herdr #18: a request that waits on Herdr's acknowledgement, or one the card answers whole,
+      // read (then acknowledged) as it comes, and again when its kind changes (an AskUserQuestion is a
+      // `question` while its call runs, then the same id as a `permission` with its questions: a blocked
+      // status read in between saw the first). One that went (answered, given back to the terminal) drops
+      // its card, unless the agent is blocked meanwhile (its dialog, read by live()).
+      const p = next?.pending ?? null;
+      const had = this.decision?.pending;
+      if ((p?.ack || cardOf(p)) && (had?.id !== p.id || had?.kind !== p.kind)) this.readDecision(cx, address);
+      else if (p?.ack && had?.id === p.id) await acknowledge(address, p); // once it shows (once per id)
+      else if (!p?.ack && had?.ack && target().agent?.status !== "blocked") {
+        this.decision = null;
+        this.bridgeAsk = null;
+      }
       if (key !== this.bridgeKey) {
         this.bridgeKey = key;
         cx.notify();
@@ -3750,8 +3981,9 @@ export default class Chat extends View {
   watchBridge(cx) {
     const tg = target();
     const address = !this.fixed && tg.agent && !tg.reason ? tg.agent.address : null;
+    // kbrdn-herdr #18: blocked too, while this face shows: the request may change its kind meanwhile (readBridge).
     const on = watching({ address, shown: this.isShown(), status: tg.agent?.status, agents: this.bridgeOf(address)?.agents, now: Date.now(),
-      tasks: Boolean(tasksLedge(this.tasksFor(address)?.todos)) });
+      tasks: Boolean(tasksLedge(this.tasksFor(address)?.todos)) }) || (Boolean(address) && this.isShown() && tg.agent?.status === "blocked");
     if (on && !this.bridgeTicker) {
       this.bridgeTicker = cx.timer.every(BRIDGE, (cx) => {
         this.watchBridge(cx);
@@ -3930,9 +4162,11 @@ export default class Chat extends View {
       this.decisionFor = want;
       this.decisionLang = lang();
       this.readDecision(cx, want);
-    } else if (status !== "blocked") {
+    } else if (status !== "blocked" && !(this.decision?.pending?.ack && this.decisionFor === want)) {
+      // (kbrdn-herdr #18: a request waiting on Herdr's acknowledgement stays while the agent works; readBridge drops it.)
       this.decisionFor = null;
       this.decision = null;
+      this.bridgeAsk = null;
       if (this.sendErr?.why === "blocked") this.sendErr = null;
     }
     // #84: the agent's herdr-bridge file (its tasks, its sub-agents), read when this face shows or its
@@ -3993,6 +4227,7 @@ export default class Chat extends View {
   render(cx) {
     const t = theme();
     this.m = frame(this.motion, Boolean(shared("kt.reducedMotion")));
+    this.reqInTail = false; // #79: body() sets it when it draws the request at the conversation's end
     const tg = target();
     const want = this.wanted(tg);
     if (!checking() && want !== this.loadedFor) {

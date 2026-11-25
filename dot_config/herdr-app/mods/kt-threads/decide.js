@@ -19,6 +19,11 @@
 //   again and finding the same dialog; Enter only once the cursor is seen on the chosen line.
 // - kind "question" (AskUserQuestion, a plan) or "input" (blocked or idle, waiting for a reply): no
 //   options. Only open(): Kylian answers in the conversation.
+// - herdr-bridge >= 0.6.0 (kbrdn-herdr #18), the Chat alone: an AskUserQuestion's `questions`, answered
+//   whole, and an MCP server's form (kind "elicitation"), answered by reply(). A request marked `ack`
+//   (a sub-agent's dialog, a form) is drawn by the terminal only once the plugin gives up on Herdr: the
+//   Chat says it shows it, acknowledge(), and the plugin then waits for the answer; else it gives it
+//   back to the terminal after 3 s. The cards, which don't acknowledge, offer such a request Ouvrir only.
 // Nothing here answers on its own: choose() runs from a click. The cards (toast, sidebar, Kanban) get
 // the plain choices only: Yes, No, a plan's Yes, a question's answers. A choice that sets a rule or a
 // mode (`update`), or that takes a note, is offered by the Chat alone, `decide(t, { full: true })`,
@@ -163,13 +168,66 @@ export function labelOf(o) {
   return o?.label ?? o?.key ?? "";
 }
 
+// The request's one-time token from <t>.ask.json, for this id only, or null.
+async function tokenFor(terminal, pending) {
+  const ask = await readJson(`${cache(terminal)}.ask.json`);
+  return ask?.id === pending.id && typeof ask.token === "string" && ask.token ? ask.token : null;
+}
+
+// Ids acknowledged from this mod: once each.
+const acked = new Set();
+
+/**
+ * Herdr shows `pending` (marked `ack`: a sub-agent's dialog, an MCP form): <t>.ack.json = { id, token },
+ * once per id. The Chat calls it from a task once its card shows the request; true when written.
+ */
+export async function acknowledge(terminal, pending) {
+  if (!pending?.ack || acked.has(pending.id)) return false;
+  acked.add(pending.id);
+  try {
+    const token = await tokenFor(terminal, pending);
+    if (!token) return false;
+    const path = `${cache(terminal)}.ack.json`;
+    await writeTextFile(path, JSON.stringify({ id: pending.id, token }), await readTextFile(path));
+    return true;
+  } catch {
+    acked.delete(pending.id); // read again, tried again
+    return false;
+  }
+}
+
+/**
+ * The Chat's whole answer to `pending` (herdr-bridge >= 0.6.0): `fields` is { answers } for an
+ * AskUserQuestion, { action, content? } for an MCP form (bridge-model.js builds them). Written with the
+ * request's token, once, while the plugin still waits on that id: { ok, reason? }.
+ */
+export async function reply(terminal, pending, fields) {
+  if (!pending?.id) return { ok: false, reason: tr("nothing") };
+  if (answered.has(pending.id) || busy.has(pending.id)) return { ok: false, reason: tr("already") };
+  busy.add(pending.id);
+  try {
+    const live = await readJson(`${cache(terminal)}.json`);
+    const token = live?.pending?.id === pending.id ? await tokenFor(terminal, pending) : null;
+    if (!token) return { ok: false, reason: tr("gone") };
+    const path = `${cache(terminal)}.decision.json`;
+    await writeTextFile(path, JSON.stringify({ ...fields, id: pending.id, token }), await readTextFile(path));
+    answered.add(pending.id);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: tr("failed", { why: e?.message ?? e }) };
+  } finally {
+    busy.delete(pending.id);
+  }
+}
+
 // What `terminal` waits on now, and how to answer it. The screen is read only for a blocked agent the
 // plugin says nothing actionable about. `full`: every choice the terminal offers (the Chat); else the
-// plain ones only (the cards).
-export async function decide(terminal, { full = false } = {}) {
+// plain ones only (the cards). `acks`: the caller acknowledges what it shows (the Chat, acknowledge()),
+// so a request that waits on it keeps its choices; else it gets « Ouvrir » only.
+export async function decide(terminal, { full = false, acks = full } = {}) {
   let pending = (await readJson(`${cache(terminal)}.json`))?.pending ?? null;
   const blocked = agents().find((a) => a.address === terminal)?.status === "blocked";
-  if (blocked && pending?.kind !== "permission" && pending?.kind !== "question") {
+  if (blocked && !["permission", "question", "elicitation"].includes(pending?.kind)) {
     const held = await look(terminal).catch(() => null);
     if (held) pending = { id: held.id, kind: "held", title: tr("from", { sender: held.sender }), detail: held.body, options: HELD_OPTIONS };
     else pending ??= { id: `input:${terminal}`, kind: "input", title: tr("waiting"), options: [] };
@@ -178,6 +236,9 @@ export async function decide(terminal, { full = false } = {}) {
   const withToken = tokened(pending);
   // The cards' choices: none that sets a rule or a mode, none that takes a note.
   if (pending?.kind === "permission" && !full) pending = { ...pending, options: (pending.options ?? []).filter((o) => !o.note && !o.update) };
+  // A request that waits on an acknowledgement: only a caller that gives it answers (a click elsewhere
+  // would count for nothing).
+  if (pending?.ack && !acks) pending = { ...pending, options: [] };
   // Answered once from here: the same dialog gets no buttons again.
   if (pending && answered.has(pending.id)) pending = { ...pending, options: [] };
   // Said in the language shown (titleOf, labelOf): every card reads these.
@@ -202,11 +263,14 @@ export async function press(d, key) {
 // The pills for `d`: its choices when it has options, Ouvrir when it only has a conversation to go
 // to, null when nothing waits. A click stops there (the card under it is not opened) and hands its
 // result to `onDone(result, cx)`: { ok, reason? }. Ids carry the terminal, so several cards can share
-// one view. `cursor`: the key of the pill under a keyboard cursor, drawn with an accent ring.
-export function decisionButtons(d, { onDone, cursor = null } = {}) {
+// one view. `cursor`: the key of the pill under a keyboard cursor, drawn with an accent ring. `onNote(key,
+// label, cx)`: a choice that takes a note (`note`) asks for it there first, nothing written yet (the Chat:
+// the note typed, then press(), then the note sent as Kylian's message once the dialog is gone).
+export function decisionButtons(d, { onDone, cursor = null, onNote = null } = {}) {
   const p = d?.pending;
   if (!p) return null;
   const t = theme();
+  const noted = (key) => Boolean(onNote) && p.options?.some((o) => o.key === key && o.note);
   const pill = (key, label, color) =>
     div().id(`decide-${key}-${d.terminal}`).flex_none().h(20).px(8).flex().items_center().rounded_full()
       .border(1).border_color(key === cursor ? alpha(t.accent, "99") : color ? alpha(color, "4d") : t.input)
@@ -215,6 +279,7 @@ export function decisionButtons(d, { onDone, cursor = null } = {}) {
       .hover((s) => s.bg(color ? alpha(color, "33") : t.hover))
       .on_click((_e, cx) => {
         cx.stop_propagation();
+        if (noted(key)) return onNote(key, label, cx);
         cx.spawn(async (cx) => onDone?.(await press(d, key), cx));
       })
       .child(label.toUpperCase());

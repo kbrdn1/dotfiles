@@ -26,7 +26,7 @@ mock.module("herdr", () => ({
 const chain = () => new Proxy(() => {}, { get: () => chain, apply: () => chain() });
 mock.module("gpui-kit", () => ({ div: chain, svg: chain }));
 mock.module("gpui-base", () => ({ h_flex: chain, v_flex: chain }));
-const { decide, press, pillKeys } = await import("./decide.js");
+const { acknowledge, decide, press, pillKeys, reply } = await import("./decide.js");
 
 const cache = (t) => `${HOME}/.claude/cache/herdr/${t}`;
 const TOKEN = "test-token-fixture";
@@ -114,9 +114,47 @@ assert.deepEqual(reads, [["read", "tfx6"]]); // the screen read for a blocked ag
 blocked = new Set();
 assert.equal((await decide("tfx5")).pending, null);
 
+// herdr-bridge 0.6.0 (kbrdn-herdr #18). A sub-agent's dialog waits on an acknowledgement: a card, which
+// gives none, offers it « Ouvrir » only; the Chat gets its choices and acknowledges it, once:
+// <t>.ack.json = { id, token }.
+const sub = (id) => JSON.stringify({ pending: { ...JSON.parse(permission(id)).pending, agent: { id: "a1", type: "Explore" }, ack: true } });
+files[`${cache("tfx10")}.json`] = sub("agent-1-1");
+ask("tfx10", "agent-1-1");
+blocked = new Set();
+assert.deepEqual(pillKeys(await decide("tfx10")), ["open"]);
+assert.deepEqual(pillKeys(await decide("tfx10", { acks: true })), ["yes", "no"]); // the Chat: its plain choices
+const s = await decide("tfx10", { full: true });
+assert.deepEqual(pillKeys(s), ["yes", "yes-note", "rule-0", "no", "no-note"]);
+assert.equal(await acknowledge("tfx10", s.pending), true);
+assert.equal(await acknowledge("tfx10", s.pending), false); // once
+assert.deepEqual(writes.at(-1), [`${cache("tfx10")}.ack.json`, JSON.stringify({ id: "agent-1-1", token: TOKEN })]);
+assert.equal(await acknowledge("tfx10", JSON.parse(permission("tfx-p9")).pending), false); // one that waits on none
+assert.equal(writes.length, 4);
+
+// An AskUserQuestion answered whole (bridge-model.js builds the answers): reply() writes them with the
+// id and the token, once.
+const questions = [{ question: "Quelle base ?", options: [{ label: "SQLite" }, { label: "Postgres" }] }];
+files[`${cache("tfx11")}.json`] = JSON.stringify({ pending: { id: "toolu_01Q", kind: "permission", tool: "AskUserQuestion", title: "Question", options: [], questions } });
+ask("tfx11", "toolu_01Q");
+const qa = await decide("tfx11", { full: true });
+assert.deepEqual(await reply("tfx11", qa.pending, { answers: { "Quelle base ?": { label: "SQLite" } } }), { ok: true });
+assert.deepEqual(JSON.parse(writes.at(-1)[1]), { answers: { "Quelle base ?": { label: "SQLite" } }, id: "toolu_01Q", token: TOKEN });
+assert.deepEqual(await reply("tfx11", qa.pending, { answers: {} }), { ok: false, reason: "Déjà répondu." });
+assert.equal(writes.length, 5);
+// An MCP form published while its agent is blocked by another dialog keeps its kind (never read off the
+// screen); gone meanwhile (another took its place), nothing is written.
+files[`${cache("tfx12")}.json`] = JSON.stringify({ pending: { id: "elicit-1-2", kind: "elicitation", server: "tracker", title: "Votre nom ?", mode: "form", schema: {}, options: [], ack: true } });
+ask("tfx12", "elicit-1-2");
+blocked = new Set(["tfx12"]);
+const f = await decide("tfx12", { full: true });
+assert.equal(f.pending.kind, "elicitation");
+files[`${cache("tfx12")}.json`] = JSON.stringify({ pending: null });
+assert.deepEqual(await reply("tfx12", f.pending, { action: "decline" }), { ok: false, reason: "La demande n'est plus en attente." });
+assert.equal(writes.length, 5);
+
 // Only the made-up home was written.
 assert.ok(writes.every(([p]) => p.startsWith(`${HOME}/`)));
-assert.equal(writes.length, 3);
+assert.equal(writes.length, 5);
 
 // In English, a card has no French word (w-docs, #77: herdr-bridge publishes its title and labels in
 // French). Said again from what it publishes as data: the tool, each option's kind, note, update, mode.
