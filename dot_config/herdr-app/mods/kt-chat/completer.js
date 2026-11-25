@@ -7,7 +7,6 @@ import { tokenAt, rank, commandPiece, toolPiece, toolOf } from "./complete.js";
 import { ORDER } from "./categories.js";
 
 const LIMIT = 50;
-const base = (p) => p.slice(p.lastIndexOf("/") + 1);
 
 // The servers as rows, each with its tools' count; the tools of one server as rows.
 const servers = (tools) => {
@@ -55,18 +54,19 @@ export function move(menu, dir) {
 }
 
 /**
- * What picking `row` writes: { start, end, text, piece, reopen }. The token's range [start, end) is
- * replaced by `text`; `piece` (attach.js' shape) is the part of it a chip shows, from `start`, when the
- * field takes tokens. A server only narrows the list (`#server/`, reopen). mention: attach.js'
- * mentionText(program, path) (#93), the one way a file's mention is written.
+ * What picking `row` writes: { start, end, text, piece, reopen, attach? }. The token's range [start, end)
+ * is replaced by `text`; `piece` (attach.js' shape) is the part of it a chip shows, from `start`, when the
+ * field takes tokens. A server only narrows the list (`#server/`, reopen). A file (Kylian, 2026-11-25)
+ * leaves the text (its `@word` goes) and joins above the field as a drop does: `attach`, its absolute
+ * path (`root`, the folder the catalog's files were listed from, before a relative one).
  */
-export function pick(menu, row, { mention = (p) => `@${p}` } = {}) {
+export function pick(menu, row, { root = null } = {}) {
   const { start, end } = menu;
   if (row.type === "server") return { start, end, text: `#${row.name}/`, piece: null, reopen: true };
   if (row.type === "command") { const piece = commandPiece(row.item); return { start, end, text: `${piece.text} `, piece, reopen: false }; }
   if (row.type === "tool") { const piece = toolPiece(row.name); return { start, end, text: `${piece.text} `, piece, reopen: false }; }
-  const text = mention(row.path);
-  return { start, end, text: `${text} `, piece: { id: `file:${row.path}`, kind: "file", category: "file", label: base(row.path), text, source: "complete" }, reopen: false };
+  const attach = row.path.startsWith("/") || !root ? row.path : `${root.replace(/\/+$/, "")}/${row.path}`;
+  return { start, end, text: "", piece: null, reopen: false, attach };
 }
 
 /** The commands typed by hand anywhere in the message (Kylian, 2026-11-20: several skills in one), each

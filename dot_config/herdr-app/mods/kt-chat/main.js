@@ -70,7 +70,7 @@ import { attachmentsOf, photoSize, extOf, familyOf, tileOf, CARD, colsFor, gridW
 // #93: a turn's assets (its tools' images and files, the files its answer cites: assets.js), and the
 // field's attachments (a drop, a paste, a picked file) and « Citer » (attach.js).
 import { turnAssets } from "./assets.js";
-import { add as addDraft, remove as dropDraft, promptOf, mentionText, PASTE_DIR, pasteArgs, pasteChoice, copyArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
+import { add as addDraft, remove as dropDraft, promptOf, PASTE_DIR, pasteArgs, pasteChoice, copyArgs, pasteName, isPasteName, pasteSweep, pasted, pickArgs, picked, quoteOf } from "./attach.js";
 // kt-keys' categories.js (a byte-identical copy, with workflows.js): the pieces' one chip (#81 and #93).
 import { classify, colorOf } from "./categories.js";
 // #81: the field's completions (/ # @): completer.js' menu over kt-keys' complete.js (byte-identical
@@ -1291,10 +1291,14 @@ export default class Chat extends View {
     const menu = c.menu ?? c.last;
     const row = menu?.rows?.[i];
     if (!row) return;
-    const program = target().agent?.program ?? "claude";
-    const p = menuPick(menu, row, { mention: (x) => mentionText(program, x) });
+    const p = menuPick(menu, row, { root: c.catalog?.root ?? null });
     c.dismissed = null;
-    if (p.piece && CHIPS) {
+    if (p.attach) {
+      // A file (Kylian, 2026-11-25): its `@word` leaves the field, the file joins above it as a drop does.
+      this.composer.set_selected_range({ start: p.start, end: p.end });
+      this.composer.replace("");
+      this.attach(cx, [p.attach], "complete");
+    } else if (p.piece && CHIPS) {
       this.markWord(cx, p.piece, { start: p.start, end: p.end });
       this.composer.replace(" ");
     } else {
@@ -1388,7 +1392,7 @@ export default class Chat extends View {
       c.loading = false;
       if (j) c.catalog = { ...c.catalog, commands: merge(j.items, j.listing, classify), tools: j.tools ?? [] };
       const read = filesRead(g, f);
-      if (read) c.catalog = { ...c.catalog, files: read.files, filesCut: read.cut };
+      if (read) c.catalog = { ...c.catalog, files: read.files, filesCut: read.cut, root: cwd }; // relative to cwd: a pick joins root/path
       // The open menu again, on what was read.
       if (c.menu) {
         const { end } = this.composer.selected_range();

@@ -13,7 +13,6 @@ plugin({
 const { menuFor, move, pick, typed } = await import("./completer.js");
 const { merge } = await import("./complete.js");
 const { classify } = await import("./categories.js");
-const { mentionText } = await import("./attach.js");
 
 const catalog = {
   commands: merge(
@@ -46,14 +45,14 @@ p = pick(m, m.rows[0]);
 assert.equal(p.text, "mcp__docs__query ", "the real name goes");
 assert.equal(p.piece.label, "docs › query");
 
-// "@": the files; the mention is attach.js' (#93), the one form for a file.
+// "@": the files. A pick (Kylian, 2026-11-25) joins the file above the field as a drop does, by its
+// absolute path (the catalog's root, then the listed path); its `@word` leaves the text.
 m = menuFor("lis @comp", 9, catalog);
 assert.equal(m.rows[0].path, "mods/kt-chat/composer.js");
-p = pick(m, m.rows[0], { mention: (x) => mentionText("claude", x) });
-assert.deepEqual(p, { start: 4, end: 9, text: "@mods/kt-chat/composer.js ", piece: { id: "file:mods/kt-chat/composer.js", kind: "file", category: "file", label: "composer.js", text: "@mods/kt-chat/composer.js", source: "complete" }, reopen: false });
-p = pick(m, m.rows[0], { mention: (x) => mentionText("codex", `/abs/${x}`) });
-assert.equal(p.text, "/abs/mods/kt-chat/composer.js ", "Codex: the path, as attach.js writes it");
-assert.equal(pick({ start: 0, end: 4 }, { type: "file", path: "notes/a b.md" }, { mention: (x) => mentionText("claude", x) }).text, '"notes/a b.md" ', "a space: quoted, as attach.js writes it");
+p = pick(m, m.rows[0], { root: "/w/home/" });
+assert.deepEqual(p, { start: 4, end: 9, text: "", piece: null, reopen: false, attach: "/w/home/mods/kt-chat/composer.js" }, "no word in the text: the file, to join");
+assert.equal(pick({ start: 0, end: 4 }, { type: "file", path: "notes/a b.md" }, { root: "/w" }).attach, "/w/notes/a b.md", "a space: the path as it is (attach.js writes the mention)");
+assert.equal(pick({ start: 0, end: 4 }, { type: "file", path: "/abs/x.md" }, { root: "/w" }).attach, "/abs/x.md", "an absolute path stays");
 
 // 20 000 files: a keystroke in `@` sorts nothing (#81 review: the whole list went through localeCompare
 // at each keystroke); the best matches still come first.

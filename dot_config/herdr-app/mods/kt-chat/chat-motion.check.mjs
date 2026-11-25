@@ -427,6 +427,19 @@ const menuNode = (c, gen) => flat(c.menuEl(T)).find((n) => callsOf(n, "id").some
   assert.deepEqual([...c.cpl.pieces.keys()], ["cmd:me:goal#1", "cmd:me:goal#2"]);
 }
 {
+  // A file picked from `@` (Kylian, 2026-11-25): a piece above the field, as a drop gives, by its absolute
+  // path; its `@word` leaves the text, and no word is marked in it.
+  const c = completing(chat(), "lis @comp");
+  Object.assign(c.cpl.catalog, { files: ["mods/kt-chat/composer.js"], root: "/w" });
+  c.drafts = [];
+  const x = cx();
+  c.complete(x);
+  c.accept(0, x);
+  assert.deepEqual(c.composer.wrote, [["select", { start: 4, end: 9 }], ["replace", ""]], "the @word goes, nothing typed");
+  assert.deepEqual(c.drafts.map((d) => [d.path, d.label, d.text, d.source]), [["/w/mods/kt-chat/composer.js", "composer.js", "@/w/mods/kt-chat/composer.js", "complete"]], "the file joins as a piece");
+  assert.equal(c.cpl.pieces.size, 0, "no marked word");
+}
+{
   // #93, Cmd+V in the field: the composer's card carries the binding's context and takes its action
   // (pasteKey, ahead of the field's own paste). The pasteboard says whether files came, never the text's
   // shape: a Finder copy's text is its names (one alone: no « / », no \r; two: joined by \r; probed in the
