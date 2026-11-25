@@ -64,7 +64,7 @@
     yq-go
 
     # System Tools
-    neofetch
+    fastfetch # neofetch removed from nixpkgs (unmaintained upstream)
     # thefuck removed from nixpkgs (unmaintained)
     tmux
     htop
@@ -123,7 +123,7 @@
     curl
     wget
     httpie
-    dogdns
+    doggo # dogdns removed from nixpkgs (unmaintained, insecure deps)
 
     # Music
     rmpc
@@ -598,12 +598,9 @@
       commit.gpgsign = false;
       tag.gpgSign = true;
 
-      filter.lfs = {
-        clean = "git-lfs clean -- %f";
-        smudge = "git-lfs smudge -- %f";
-        process = "git-lfs filter-process";
-        required = true;
-      };
+      # filter.lfs retiré : `lfs.enable = true` (plus bas) génère désormais les mêmes
+      # clés clean/smudge/process/required, avec le chemin absolu du store — les deux
+      # définitions entraient en conflit depuis le bump home-manager.
     };
 
     signing = {
