@@ -167,7 +167,11 @@
       "Edit(~/.claude/cache/herdr/*.decision.json)",
       "Edit(~/.claude/cache/herdr/*.saytoken.json)",
       "Edit(~/.claude/cache/herdr/*.say.json)",
-      "Edit(~/.claude/cache/herdr/*.said.json)"
+      "Edit(~/.claude/cache/herdr/*.said.json)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(!**/.env.example)",
+      "Read(!**/.env.schema)"
     ],
     "ask": [],
     "defaultMode": "bypassPermissions"
@@ -181,6 +185,11 @@
           {
             "type": "command",
             "command": "bun /Users/kbrdn1/.claude/hooks/no-shell-write.ts",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/kbrdn1/.claude/hooks/secret-guard.sh",
             "timeout": 10
           }
         ]

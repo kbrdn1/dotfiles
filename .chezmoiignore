@@ -85,6 +85,12 @@
 **/*.pem
 **/*.key
 **/id_rsa*
+# L'outil /me:secret porte « secret » dans ses noms mais aucune valeur : exceptions nommées, une par
+# chemin (un ! l'emporte sur tout motif d'exclusion, quel que soit l'ordre).
+!.claude/scripts/secret
+!.claude/scripts/secret.test.sh
+!.claude/hooks/secret-guard.sh
+!.claude/commands/me/secret.md
 
 # ===================================================================
 # Config exclusions
