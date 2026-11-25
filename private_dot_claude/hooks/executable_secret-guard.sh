@@ -31,9 +31,11 @@ AT1='(^|[;&|(`]|\$\(|-c[[:space:]]+['"'"'"])[[:space:]]*((sudo|command|exec|buil
 SENSITIVE='(_KEY|_SECRET|_TOKEN)$|PASSWORD'
 lines() { printf '%s\n' "$cmd"; }
 
-# 1. env / printenv nus, printenv d'un nom sensible
-lines | grep -Eq "${AT1}(env|printenv)[[:space:]]*(\$|[;&|)\`'\"]|[0-9]*>)" && deny "env ou printenv nu affiche tout l’environnement"
-lines | grep -oE "${AT1}printenv[[:space:]]+[A-Za-z_][A-Za-z0-9_]*" | grep -oE '[A-Za-z_][A-Za-z0-9_]*$' \
+# 1. env / printenv nus, printenv d'un nom sensible. Un motif de grep ou rg n'est pas une commande : il est
+# masqué d'abord (grep -E 'a|env|b'). Ni jq ni awk : leur env et leur system() exécutent.
+pat() { lines | sed -E "s/((^|[^[:alnum:]_])(grep|egrep|fgrep|rg)([[:space:]]+-[^[:space:]'\"]+)*[[:space:]]+)('[^']*'|\"[^\"]*\")/\1''/g"; }
+pat | grep -Eq "${AT1}(env|printenv)[[:space:]]*(\$|[;&|)\`'\"]|[0-9]*>)" && deny "env ou printenv nu affiche tout l’environnement"
+pat | grep -oE "${AT1}printenv[[:space:]]+[A-Za-z_][A-Za-z0-9_]*" | grep -oE '[A-Za-z_][A-Za-z0-9_]*$' \
   | grep -Eiq "$SENSITIVE" && deny "printenv d’une variable sensible"
 
 # 2. lecteurs sur un fichier .env*

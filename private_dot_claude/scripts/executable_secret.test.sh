@@ -181,6 +181,7 @@ deny_cases=(
   'grep RESEND .env.production' "awk -F= '{print \$1}' .env" "sed -n '1,5p' config/.env"
   "bash -c 'cat .env'" "sh -c 'env'" '/bin/cat .env' 'ls && tail -n 3 $HOME/.env' 'echo $RESEND_API_KEY'
   'printf "%s" "${NUXT_APP_SECRET}"' 'echo "$DB_PASSWORD"' 'ls && echo ${GH_TOKEN:-none}'
+  'grep x f | env' "grep -E 'a|b' f; env" "jq -n '1|env'" "ssh main-vps 'cd /srv; env'"
 )
 allow_cases=(
   '~/.claude/scripts/secret names --env .env' '~/.claude/scripts/secret set X --from env:.env --to gh'
@@ -189,6 +190,7 @@ allow_cases=(
   'env FOO=1 bun run build' '/usr/bin/env bash x.sh' 'git commit -m "fix: lire le .env"'
   'cp .env.example .env' 'cmd 2>&1 | tail -3' 'printf "%s\n" "$PATH"'
   "jq -c '.permissions.deny | map(select(test(\"env\")))' settings.json"
+  "grep -E 'a|env|b' f" "rg -n '(env|x)' ." 'git grep -nE "x|env"' "cat f | grep 'a|env' | head"
 )
 for B in /bin/bash "$(command -v bash)"; do
   label="hook $B"
